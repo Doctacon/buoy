@@ -8,6 +8,7 @@ models, or call turbopuffer.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any, Iterable
@@ -58,6 +59,7 @@ class ChunkManifestRecord:
     row_id: str
     row_id_candidate: str
     site_id: str
+    duplicate_ordinal: int
     canonical_url: str
     page_content_path: str
     page_hash: str
@@ -92,6 +94,7 @@ class PlanDocument:
     schema_version: int
     command: str
     plan_id: str
+    created_at: str
     base_url: str
     site_id: str
     namespace: str
@@ -141,10 +144,20 @@ def generic_site_row_id(
     canonical_url: str,
     section_path: str,
     chunk_hash: str,
+    duplicate_ordinal: int = 0,
 ) -> str:
-    """Return a stable generic-site row ID independent of page-level hashes."""
+    """Return a stable generic-site row ID independent of page-level hashes.
 
-    digest = sha256_text("\n".join([site_id, canonical_url, section_path, chunk_hash]))[:32]
+    The default identity uses semantic chunk inputs only. A duplicate ordinal is
+    included only when the same URL/section/content group appears more than
+    once in a manifest, preventing row ID collisions without making ordinary
+    unique chunks depend on page hash, page path, or chunk index.
+    """
+
+    parts = [site_id, canonical_url, section_path, chunk_hash]
+    if duplicate_ordinal:
+        parts.extend(["duplicate", str(duplicate_ordinal)])
+    digest = sha256_text("\n".join(parts))[:32]
     return f"ts_{digest}"
 
 
@@ -156,6 +169,7 @@ def generic_row_id_candidate(
     chunk_hash: str,
     page_content_path: str = "",
     chunk_index: int | None = None,
+    duplicate_ordinal: int = 0,
 ) -> str:
     """Return a deterministic candidate row ID for generic-site chunks.
 
@@ -170,6 +184,7 @@ def generic_row_id_candidate(
         canonical_url=canonical_url,
         section_path=section_path,
         chunk_hash=chunk_hash,
+        duplicate_ordinal=duplicate_ordinal,
     )
 
 
@@ -197,10 +212,12 @@ def build_plan_artifacts(
     site_id = site_id_for_url(normalized_base_url)
     pages = build_page_records(indexing_plan)
     page_hashes = {page.content_path: page.page_hash for page in pages}
-    chunks = [
-        build_chunk_record(chunk, site_id=site_id, page_hash=page_hashes.get(chunk.path, chunk.source_hash))
-        for chunk in indexing_plan.chunks
-    ]
+    chunks = disambiguate_duplicate_chunk_row_ids(
+        [
+            build_chunk_record(chunk, site_id=site_id, page_hash=page_hashes.get(chunk.path, chunk.source_hash))
+            for chunk in indexing_plan.chunks
+        ]
+    )
     manifest = ManifestDocument(
         schema_version=PLAN_SCHEMA_VERSION,
         site_id=site_id,
@@ -230,6 +247,7 @@ def build_plan_artifacts(
         schema_version=PLAN_SCHEMA_VERSION,
         command="plan",
         plan_id=plan_id,
+        created_at=datetime.now(timezone.utc).isoformat(),
         base_url=normalized_base_url,
         site_id=site_id,
         namespace=namespace_value,
@@ -291,6 +309,7 @@ def build_chunk_record(chunk: MarkdownChunk, *, site_id: str, page_hash: str) ->
         row_id=row_id,
         row_id_candidate=row_id,
         site_id=site_id,
+        duplicate_ordinal=0,
         canonical_url=chunk.url,
         page_content_path=chunk.path,
         page_hash=page_hash,
@@ -304,6 +323,57 @@ def build_chunk_record(chunk: MarkdownChunk, *, site_id: str, page_hash: str) ->
         doc_kind=chunk.doc_kind,
         tags=list(chunk.tags),
     )
+
+
+def disambiguate_duplicate_chunk_row_ids(chunks: list[ChunkManifestRecord]) -> list[ChunkManifestRecord]:
+    """Return chunks with deterministic row IDs for duplicate identity groups.
+
+    Unique chunks keep their ordinary row ID. Only repeated URL/section/content
+    groups receive a non-zero duplicate ordinal on later occurrences, avoiding
+    collision while preserving normal incremental stability.
+    """
+
+    counts: dict[str, int] = {}
+    for chunk in chunks:
+        counts[chunk.row_id] = counts.get(chunk.row_id, 0) + 1
+
+    seen: dict[str, int] = {}
+    disambiguated: list[ChunkManifestRecord] = []
+    for chunk in chunks:
+        base_row_id = chunk.row_id
+        duplicate_ordinal = seen.get(base_row_id, 0)
+        seen[base_row_id] = duplicate_ordinal + 1
+        if counts[base_row_id] == 1:
+            disambiguated.append(chunk)
+            continue
+        row_id = generic_site_row_id(
+            site_id=chunk.site_id,
+            canonical_url=chunk.canonical_url,
+            section_path=chunk.section_path,
+            chunk_hash=chunk.chunk_hash,
+            duplicate_ordinal=duplicate_ordinal,
+        )
+        disambiguated.append(
+            ChunkManifestRecord(
+                row_id=row_id,
+                row_id_candidate=row_id,
+                site_id=chunk.site_id,
+                duplicate_ordinal=duplicate_ordinal,
+                canonical_url=chunk.canonical_url,
+                page_content_path=chunk.page_content_path,
+                page_hash=chunk.page_hash,
+                chunk_hash=chunk.chunk_hash,
+                embedding_text_hash=chunk.embedding_text_hash,
+                title=chunk.title,
+                section_path=chunk.section_path,
+                chunk_index=chunk.chunk_index,
+                content=chunk.content,
+                content_preview=chunk.content_preview,
+                doc_kind=chunk.doc_kind,
+                tags=list(chunk.tags),
+            )
+        )
+    return disambiguated
 
 
 def build_generic_site_row(

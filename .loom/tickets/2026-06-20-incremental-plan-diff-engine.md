@@ -1,4 +1,4 @@
-Status: open
+Status: done
 Created: 2026-06-20
 Updated: 2026-06-20
 Parent: .loom/tickets/2026-06-20-generic-site-rag-incremental-plan-apply.md
@@ -55,7 +55,12 @@ Changed chunks may appear as old row stale + new row upsert if row ID includes c
 ## Progress and notes
 
 - 2026-06-20: Ticket opened as Phase 1 foundation.
+- 2026-06-20: Implemented `src/turbo_search/plan_diff.py` as a pure local diff engine comparing `ManifestDocument` desired chunks to `AppliedState` rows.
+- 2026-06-20: Diff output includes compact summary fields plus machine-readable lists for unchanged chunks, chunks/rows needing embed/upsert, stale active rows, and retained-stale rows.
+- 2026-06-20: Implemented first-apply, no-change, changed-chunk, removed-page/stale-row, retained-stale visibility, retained-stale reactivation, and deleted-row-ignore behavior.
+- 2026-06-20: Added `tests/test_plan_diff.py` with hand-authored manifest/state fixtures for the ticket scenarios. No crawling, embeddings, credentials, or turbopuffer calls are used.
+- 2026-06-20: Validation passed. Evidence: `.loom/evidence/2026-06-20-incremental-plan-diff-engine-validation.md`.
 
 ## Blockers
 
-Depends on plan/manifest model, stable row IDs, and local state model.
+None.

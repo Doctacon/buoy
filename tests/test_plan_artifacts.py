@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 import unittest
 
-from turbo_search.indexer import process_corpus
+from turbo_search.indexer import IndexingPlan, IndexingStats, MarkdownChunk, process_corpus
 from turbo_search.plan_artifacts import (
     GENERIC_SITE_TURBOPUFFER_SCHEMA,
     PLAN_SCHEMA_VERSION,
@@ -71,6 +71,7 @@ class PlanArtifactTests(unittest.TestCase):
         self.assertEqual(plan["schema_version"], PLAN_SCHEMA_VERSION)
         self.assertEqual(plan["command"], "plan")
         self.assertTrue(plan["plan_id"].startswith("plan_"))
+        self.assertRegex(plan["created_at"], r"^\d{4}-\d{2}-\d{2}T")
         self.assertEqual(plan["base_url"], "https://example.com/docs/")
         self.assertEqual(plan["site_id"], "example-com")
         self.assertEqual(plan["namespace_candidate"], "site-example-com-v1")
@@ -98,6 +99,7 @@ class PlanArtifactTests(unittest.TestCase):
         self.assertTrue(chunk["row_id"].startswith("ts_"))
         self.assertEqual(len(chunk["row_id"]), 35)
         self.assertEqual(chunk["row_id_candidate"], chunk["row_id"])
+        self.assertEqual(chunk["duplicate_ordinal"], 0)
         self.assertEqual(chunk["site_id"], "example-com")
         self.assertEqual(chunk["canonical_url"], "https://example.com/docs/page")
         self.assertEqual(chunk["page_content_path"], "page.md")
@@ -178,6 +180,117 @@ class PlanArtifactTests(unittest.TestCase):
 
         self.assertNotEqual(original_chunk.chunk_hash, changed_chunk.chunk_hash)
         self.assertNotEqual(original_chunk.row_id, changed_chunk.row_id)
+
+    def test_duplicate_chunks_get_deterministic_disambiguated_row_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            corpus = root / "pages"
+            corpus.mkdir()
+            write_page(corpus, crawl_timestamp="2026-06-20T00:00:00+00:00", body="# Intro\n\nRepeated text.")
+            duplicate_chunks = [
+                MarkdownChunk(
+                    id=f"jf_duplicate_{index}",
+                    content="Repeated text.",
+                    title="Example Page",
+                    url="https://example.com/docs/page",
+                    path="page.md",
+                    section_path="Intro",
+                    chunk_index=index,
+                    doc_kind="page",
+                    tags=["page"],
+                    source_hash="page-hash",
+                )
+                for index in range(2)
+            ]
+            indexing_plan = IndexingPlan(
+                corpus_dir=corpus,
+                files_discovered=1,
+                chunks=duplicate_chunks,
+                stats=IndexingStats(chunks_generated=2),
+            )
+
+            first = build_plan_artifacts(
+                indexing_plan=indexing_plan,
+                base_url="https://example.com/docs/",
+                out_dir=root / "first",
+            )
+            second = build_plan_artifacts(
+                indexing_plan=indexing_plan,
+                base_url="https://example.com/docs/",
+                out_dir=root / "second",
+            )
+
+        first_chunks = first.manifest.chunks
+        second_chunks = second.manifest.chunks
+        self.assertEqual(len({chunk.row_id for chunk in first_chunks}), 2)
+        self.assertEqual([chunk.duplicate_ordinal for chunk in first_chunks], [0, 1])
+        self.assertEqual(first_chunks[0].chunk_hash, first_chunks[1].chunk_hash)
+        self.assertEqual(first_chunks[0].row_id, first_chunks[0].row_id_candidate)
+        self.assertEqual(first_chunks[1].row_id, first_chunks[1].row_id_candidate)
+        self.assertNotEqual(first_chunks[0].row_id, first_chunks[1].row_id)
+        self.assertEqual([chunk.row_id for chunk in first_chunks], [chunk.row_id for chunk in second_chunks])
+
+    def test_duplicate_disambiguation_does_not_reintroduce_page_hash_churn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            corpus = root / "pages"
+            corpus.mkdir()
+            write_page(corpus, crawl_timestamp="2026-06-20T00:00:00+00:00", body="# Intro\n\nRepeated text.")
+            chunks = [
+                MarkdownChunk(
+                    id=f"jf_duplicate_{index}",
+                    content="Repeated text.",
+                    title="Example Page",
+                    url="https://example.com/docs/page",
+                    path="page.md",
+                    section_path="Intro",
+                    chunk_index=index,
+                    doc_kind="page",
+                    tags=["page"],
+                    source_hash=source_hash,
+                )
+                for index, source_hash in enumerate(["page-hash-old", "page-hash-old"])
+            ]
+            changed_page_hash_chunks = [
+                MarkdownChunk(
+                    id=f"jf_duplicate_{index}",
+                    content=chunk.content,
+                    title=chunk.title,
+                    url=chunk.url,
+                    path=chunk.path,
+                    section_path=chunk.section_path,
+                    chunk_index=chunk.chunk_index,
+                    doc_kind=chunk.doc_kind,
+                    tags=chunk.tags,
+                    source_hash="page-hash-new",
+                )
+                for index, chunk in enumerate(chunks)
+            ]
+            original = build_plan_artifacts(
+                indexing_plan=IndexingPlan(
+                    corpus_dir=corpus,
+                    files_discovered=1,
+                    chunks=chunks,
+                    stats=IndexingStats(chunks_generated=2),
+                ),
+                base_url="https://example.com/docs/",
+                out_dir=root / "original",
+            )
+            changed = build_plan_artifacts(
+                indexing_plan=IndexingPlan(
+                    corpus_dir=corpus,
+                    files_discovered=1,
+                    chunks=changed_page_hash_chunks,
+                    stats=IndexingStats(chunks_generated=2),
+                ),
+                base_url="https://example.com/docs/",
+                out_dir=root / "changed",
+            )
+
+        self.assertEqual(
+            [chunk.row_id for chunk in original.manifest.chunks],
+            [chunk.row_id for chunk in changed.manifest.chunks],
+        )
 
     def test_generic_site_row_contains_incremental_metadata(self) -> None:
         artifacts = self.build_artifacts()

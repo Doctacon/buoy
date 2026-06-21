@@ -12,6 +12,7 @@ htmlcov/
 .venv/
 venv/
 ENV/
+.turbo-search/
 
 # Local environment/secrets files
 .env

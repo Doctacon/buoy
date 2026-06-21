@@ -1,4 +1,4 @@
-Status: done
+Status: active
 Created: 2026-06-20
 Updated: 2026-06-20
 Parent: .loom/tickets/2026-06-20-generic-site-rag-incremental-plan-apply.md
@@ -51,10 +51,11 @@ The schema should continue storing `content` in turbopuffer for MVP retrieval er
 - 2026-06-20: Added `GENERIC_SITE_TURBOPUFFER_SCHEMA` extending the existing Jellyfish schema with incremental metadata fields while leaving existing Jellyfish `build_row()` behavior untouched.
 - 2026-06-20: Added tests for stable row IDs across unrelated page-section changes, row ID changes when chunk content changes, and generic row metadata/schema construction.
 - 2026-06-20: Validation passed. Evidence: `.loom/evidence/2026-06-20-generic-site-stable-row-ids-and-schema-validation.md`.
+- 2026-06-20: Phase 1 review found a blocker: repeated identical chunks within the same URL and section can collide because row IDs use `site_id + canonical_url + section_path + chunk_hash`. Review: `.loom/reviews/2026-06-20-generic-site-plan-apply-phase1-review.md`.
 
 ## Blockers
 
-None.
+- Row ID collision handling must be fixed before apply/CLI continuation.
 
 ## Residual risks
 

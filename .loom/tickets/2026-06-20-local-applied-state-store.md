@@ -1,4 +1,4 @@
-Status: open
+Status: done
 Created: 2026-06-20
 Updated: 2026-06-20
 Parent: .loom/tickets/2026-06-20-generic-site-rag-incremental-plan-apply.md
@@ -50,7 +50,11 @@ If an apply fails after live work starts, this ticket's primitives should make i
 ## Progress and notes
 
 - 2026-06-20: Ticket opened after choosing local applied-state manifest first.
+- 2026-06-20: Implemented `src/turbo_search/applied_state.py` with typed local state rows/state objects, default path helpers, missing-state first-apply loading, schema/site/namespace/base URL validation, active/retained-stale/deleted row statuses, history writes, and atomic `last-applied.json` replacement.
+- 2026-06-20: Added `.turbo-search/` to `.gitignore` so local applied state is not committed by default.
+- 2026-06-20: Added `tests/test_applied_state.py` covering default paths, missing state, valid load/save, invalid schema, conflicting state, invalid row status, retained-stale/deleted persistence, and atomic save behavior using temporary directories.
+- 2026-06-20: Validation passed. Evidence: `.loom/evidence/2026-06-20-local-applied-state-store-validation.md`.
 
 ## Blockers
 
-None known.
+None.
