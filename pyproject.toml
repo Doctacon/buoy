@@ -1,7 +1,7 @@
 [project]
 name = "turbo-search"
 version = "0.1.0"
-description = "Local Python prototype scaffold for Jellyfish docs RAG with turbopuffer."
+description = "Website-to-turbopuffer hybrid RAG planning, apply, retrieval, and eval CLI."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "UNLICENSED" }

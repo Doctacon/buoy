@@ -1,16 +1,14 @@
-"""Markdown ingestion and turbopuffer indexing helpers.
+"""Markdown ingestion, chunking, embedding, and turbopuffer writer helpers.
 
-The default path through this module is safe for dry-runs: parsing and chunking
-are local-only and do not load embedding models, read credentials, or contact
-external APIs. Turbopuffer writes are isolated behind ``write_chunks`` and require
-an explicit caller opt-in plus ``TURBOPUFFER_API_KEY`` from the environment.
+Parsing and chunking are local-only and do not load embedding models, read
+credentials, or contact external APIs. Live writes are performed by the explicit
+plan/apply path, which injects credentials at the call site.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 import hashlib
-import os
 from pathlib import Path
 import re
 from typing import Iterable, Iterator, Sequence, TypeVar
@@ -543,14 +541,14 @@ def build_row(chunk: MarkdownChunk, vector: Sequence[float]) -> dict[str, object
 
 
 class SentenceTransformerEmbedder:
-    """Lazy local BGE embedder used only for explicit write mode."""
+    """Lazy local BGE embedder used only for approved live apply/retrieval paths."""
 
     def __init__(self, model_name: str) -> None:
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError as exc:  # pragma: no cover - depends on optional install.
             raise RuntimeError(
-                "sentence-transformers is required for write mode. Run `uv sync` first."
+                "sentence-transformers is required for approved live embedding. Run `uv sync` first."
             ) from exc
         self._model = SentenceTransformer(model_name)
 
@@ -563,29 +561,6 @@ class SentenceTransformerEmbedder:
         return [embedding.tolist() if hasattr(embedding, "tolist") else list(embedding) for embedding in embeddings]
 
 
-def write_chunks(
-    chunks: Sequence[MarkdownChunk],
-    *,
-    config: RuntimeConfig,
-    batch_size: int,
-) -> int:
-    """Embed chunks locally and upsert them to turbopuffer in batches."""
-
-    api_key = os.environ.get("TURBOPUFFER_API_KEY")
-    if not api_key:
-        raise RuntimeError("TURBOPUFFER_API_KEY must be set in the environment for --write mode.")
-
-    embedder = SentenceTransformerEmbedder(config.embedding_model)
-    writer = TurbopufferWriter(config=config, api_key=api_key)
-    rows_written = 0
-    for batch in batched(chunks, batch_size):
-        vectors = embedder.encode([chunk.embedding_text for chunk in batch])
-        rows = [build_row(chunk, vector) for chunk, vector in zip(batch, vectors, strict=True)]
-        writer.upsert_rows(rows)
-        rows_written += len(rows)
-    return rows_written
-
-
 class TurbopufferWriter:
     """Small wrapper around the turbopuffer SDK write path."""
 
@@ -593,7 +568,7 @@ class TurbopufferWriter:
         try:
             import turbopuffer as tpuf
         except ImportError as exc:  # pragma: no cover - depends on optional install.
-            raise RuntimeError("turbopuffer is required for write mode. Run `uv sync` first.") from exc
+            raise RuntimeError("turbopuffer is required for approved apply. Run `uv sync` first.") from exc
 
         self._tpuf = tpuf
         self._schema = schema or TURBOPUFFER_SCHEMA
@@ -627,7 +602,7 @@ class TurbopufferWriter:
             )
         except TypeError:
             # Some SDK versions use ``rows`` for upserts. Keep the fallback local
-            # to write mode so dry-runs never depend on SDK shape.
+            # to approved apply so dry-runs never depend on SDK shape.
             self._namespace.write(
                 rows=list(rows),
                 schema=self._schema,

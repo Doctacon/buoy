@@ -1,6 +1,6 @@
 ---
 name: turbopuffer-site-rag
-description: Build, operate, or query turbopuffer-backed RAG indexes for websites. Use for the existing Jellyfish docs namespace, future Scrapling crawls, dry-run crawl/index validation, namespace planning, retrieval with citations, and cost-safe guardrails around turbopuffer writes.
+description: Build, operate, or query turbopuffer-backed RAG indexes for websites. Use for the existing Jellyfish docs namespace, future Scrapling crawls, local plan/apply validation, namespace planning, retrieval with citations, and cost-safe guardrails around turbopuffer writes.
 ---
 
 # Turbopuffer Site RAG
@@ -17,7 +17,7 @@ If this skill is installed globally by symlink, resolve the symlink target to fi
 
 - Do **not** persist API keys, Proton Pass output, tokens, private vault names, private item titles, or share IDs to disk.
 - Do **not** run live turbopuffer writes, namespace deletion, namespace replacement, or live evals unless the user explicitly approves that action in the current conversation.
-- Default all crawl/index commands to dry-run/local-only.
+- Default crawl/plan/apply-preflight commands to dry-run/local-only.
 - Use open-source/local components where practical:
   - local embeddings: `BAAI/bge-small-en-v1.5`
   - scraper/crawler: Scrapling

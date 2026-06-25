@@ -43,7 +43,7 @@ uv run turbo-search retrieve \
 Default dry-run retrieval plan, no credentials/API calls:
 
 ```bash
-PYTHONPATH=src uv run --no-sync python -m turbo_search retrieve \
+uv run turbo-search retrieve \
   "<question>" \
   --dry-run \
   --json
@@ -60,10 +60,9 @@ PYTHONPATH=src uv run --no-sync python -m turbo_search retrieve \
 
 Do not run these unless the user explicitly asks in the current conversation:
 
-- `uv run turbo-search index --write ...`
 - `uv run turbo-search evals --live ...`
 - namespace deletion/replacement/cutover
-- reindexing existing Jellyfish corpus
+- reindexing or replacing the existing Jellyfish namespace
 
 ## Cost notes
 

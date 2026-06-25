@@ -1,4 +1,4 @@
-"""Command-line interface for the Jellyfish docs RAG prototype."""
+"""Command-line interface for website RAG planning, apply, retrieval, and evals."""
 
 from __future__ import annotations
 
@@ -40,9 +40,7 @@ from turbo_search.evals import (
 from turbo_search.indexer import (
     DEFAULT_OVERLAP_SENTENCES,
     DEFAULT_TARGET_TOKENS,
-    IndexingPlan,
     process_corpus,
-    write_chunks,
 )
 from turbo_search.plan_artifacts import (
     DEFAULT_PLAN_EMBEDDING_MODEL,
@@ -65,61 +63,11 @@ from turbo_search.retriever import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="turbo-search",
-        description="Local site RAG utilities. Crawl/index commands are dry-run by default unless explicitly documented otherwise.",
+        description="Local site RAG utilities. Website planning is local-only by default unless explicitly documented otherwise.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     subparsers = parser.add_subparsers(dest="command")
-
-    index_parser = subparsers.add_parser(
-        "index",
-        help="parse and chunk Markdown docs; write only when --write is passed",
-        description=(
-            "Parse and chunk a Markdown corpus. Default mode is a safe dry-run: "
-            "no credentials, embeddings, or turbopuffer API calls are used."
-        ),
-    )
-    index_parser.add_argument(
-        "--corpus-dir",
-        default="jellyfish-site-docs",
-        help="Markdown corpus directory to index.",
-    )
-    index_parser.add_argument(
-        "--max-files",
-        type=positive_int,
-        default=None,
-        help="Process at most this many Markdown files.",
-    )
-    index_parser.add_argument(
-        "--limit-chunks",
-        type=positive_int,
-        default=None,
-        help="Stop after generating this many chunks.",
-    )
-    index_parser.add_argument(
-        "--batch-size",
-        type=positive_int,
-        default=64,
-        help="Turbopuffer upsert batch size for --write mode.",
-    )
-    index_parser.add_argument(
-        "--target-tokens",
-        type=positive_int,
-        default=DEFAULT_TARGET_TOKENS,
-        help="Approximate target tokens per chunk.",
-    )
-    index_parser.add_argument(
-        "--overlap-sentences",
-        type=nonnegative_int,
-        default=DEFAULT_OVERLAP_SENTENCES,
-        help="Number of trailing sentences to overlap between adjacent chunks in a section.",
-    )
-    index_parser.add_argument(
-        "--write",
-        action="store_true",
-        help="Explicitly embed chunks and write batched upserts to turbopuffer.",
-    )
-    index_parser.set_defaults(func=_run_index)
 
     crawl_parser = subparsers.add_parser(
         "crawl",
@@ -410,7 +358,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     retrieve_parser.add_argument(
         "query",
-        help="Question to retrieve relevant Jellyfish docs chunks for.",
+        help="Question to retrieve relevant chunks for.",
     )
     retrieve_parser.add_argument(
         "--live",
@@ -451,7 +399,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     evals_parser = subparsers.add_parser(
         "evals",
-        help="list or run Jellyfish retrieval smoke evals",
+        help="list or run retrieval smoke evals for a namespace",
         description=(
             "List or execute hand-authored retrieval smoke evals for the configured namespace. "
             "Default mode is safe: it lists eval questions and expected source hints without "
@@ -487,7 +435,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--dataset",
         type=Path,
         default=None,
-        help="Optional path to a JSON eval dataset. Defaults to the built-in Jellyfish smoke set.",
+        help="Optional path to a JSON eval dataset. Defaults to the built-in Jellyfish smoke set; pass a site-specific dataset for generic site namespaces.",
     )
     add_runtime_config_arguments(evals_parser)
     evals_parser.add_argument(
@@ -555,75 +503,6 @@ def nonnegative_float(value: str) -> float:
 
 def _print_json(payload: dict[str, object]) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True))
-
-
-def _run_index(args: argparse.Namespace) -> int:
-    config = load_config()
-    corpus_dir = Path(args.corpus_dir)
-    try:
-        plan = process_corpus(
-            corpus_dir,
-            max_files=args.max_files,
-            limit_chunks=args.limit_chunks,
-            target_tokens=args.target_tokens,
-            overlap_sentences=args.overlap_sentences,
-        )
-    except FileNotFoundError as exc:
-        print(f"Corpus directory not found: {exc}", file=sys.stderr)
-        return 2
-    except NotADirectoryError as exc:
-        print(f"Corpus path is not a directory: {exc}", file=sys.stderr)
-        return 2
-
-    dry_run = not args.write
-    rows_written = 0
-    api_calls_occurred = False
-    if args.write:
-        try:
-            rows_written = write_chunks(plan.chunks, config=config, batch_size=args.batch_size)
-            plan.stats.rows_written = rows_written
-            api_calls_occurred = rows_written > 0
-        except RuntimeError as exc:
-            print(str(exc), file=sys.stderr)
-            return 2
-
-    _print_json(index_summary(plan, args=args, config=config, dry_run=dry_run, api_calls_occurred=api_calls_occurred))
-    return 0
-
-
-def index_summary(
-    plan: IndexingPlan,
-    *,
-    args: argparse.Namespace,
-    config: object,
-    dry_run: bool,
-    api_calls_occurred: bool,
-) -> dict[str, object]:
-    return {
-        "command": "index",
-        "dry_run": dry_run,
-        "credentials_required": not dry_run,
-        "turbopuffer_api_calls": api_calls_occurred,
-        "api_calls_occurred": api_calls_occurred,
-        "corpus_dir": str(plan.corpus_dir),
-        "corpus_dir_exists": plan.corpus_dir.exists(),
-        "files_discovered": plan.files_discovered,
-        "files_seen": plan.stats.files_seen,
-        "files_skipped_empty": plan.stats.files_skipped_empty,
-        "files_error": plan.stats.files_error,
-        "chunks_generated": plan.stats.chunks_generated,
-        "rows_written": plan.stats.rows_written,
-        "limit_reached": plan.limit_reached,
-        "max_files": args.max_files,
-        "limit_chunks": args.limit_chunks,
-        "batch_size": args.batch_size,
-        "target_tokens": args.target_tokens,
-        "overlap_sentences": args.overlap_sentences,
-        "region": config.region,
-        "namespace": config.namespace,
-        "embedding_model": config.embedding_model,
-        "errors": [error.__dict__ for error in plan.stats.errors[:10]],
-    }
 
 
 def _run_crawl(args: argparse.Namespace) -> int:
