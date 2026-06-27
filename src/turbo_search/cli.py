@@ -27,6 +27,8 @@ from turbo_search.crawler import (
     DEFAULT_CRAWL_MAX_CHUNKS,
     DEFAULT_CRAWL_MAX_PAGES,
     DEFAULT_CRAWL_STRATEGY,
+    DEFAULT_GITHUB_REPO_MAX_CHUNKS,
+    DEFAULT_GITHUB_REPO_MAX_FILES,
     GitHubRepoSource,
     CrawlOptions,
     crawl_site,
@@ -95,14 +97,20 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument(
         "--max-pages",
         type=positive_int,
-        default=DEFAULT_CRAWL_MAX_PAGES,
-        help="Maximum pages to scrape.",
+        default=None,
+        help=(
+            "Maximum pages/files to scrape. Defaults: "
+            f"websites={DEFAULT_CRAWL_MAX_PAGES}, GitHub repos={DEFAULT_GITHUB_REPO_MAX_FILES}."
+        ),
     )
     crawl_parser.add_argument(
         "--max-chunks",
         type=positive_int,
-        default=DEFAULT_CRAWL_MAX_CHUNKS,
-        help="Maximum chunks to generate from crawled pages.",
+        default=None,
+        help=(
+            "Maximum chunks to generate. Defaults: "
+            f"websites={DEFAULT_CRAWL_MAX_CHUNKS}, GitHub repos={DEFAULT_GITHUB_REPO_MAX_CHUNKS}."
+        ),
     )
     crawl_parser.add_argument(
         "--concurrent-requests",
@@ -218,14 +226,20 @@ def build_parser() -> argparse.ArgumentParser:
     plan_parser.add_argument(
         "--max-pages",
         type=positive_int,
-        default=DEFAULT_CRAWL_MAX_PAGES,
-        help="Maximum pages to scrape.",
+        default=None,
+        help=(
+            "Maximum pages/files to scrape. Defaults: "
+            f"websites={DEFAULT_CRAWL_MAX_PAGES}, GitHub repos={DEFAULT_GITHUB_REPO_MAX_FILES}."
+        ),
     )
     plan_parser.add_argument(
         "--max-chunks",
         type=positive_int,
-        default=DEFAULT_CRAWL_MAX_CHUNKS,
-        help="Maximum chunks to generate from crawled pages.",
+        default=None,
+        help=(
+            "Maximum chunks to generate. Defaults: "
+            f"websites={DEFAULT_CRAWL_MAX_CHUNKS}, GitHub repos={DEFAULT_GITHUB_REPO_MAX_CHUNKS}."
+        ),
     )
     plan_parser.add_argument(
         "--concurrent-requests",
@@ -508,6 +522,13 @@ def _print_json(payload: dict[str, object]) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 
+def _apply_source_cap_defaults(args: argparse.Namespace, source: object) -> None:
+    if args.max_pages is None:
+        args.max_pages = DEFAULT_GITHUB_REPO_MAX_FILES if isinstance(source, GitHubRepoSource) else DEFAULT_CRAWL_MAX_PAGES
+    if args.max_chunks is None:
+        args.max_chunks = DEFAULT_GITHUB_REPO_MAX_CHUNKS if isinstance(source, GitHubRepoSource) else DEFAULT_CRAWL_MAX_CHUNKS
+
+
 def _run_crawl(args: argparse.Namespace) -> int:
     try:
         source = detect_source(args.base_url)
@@ -516,6 +537,7 @@ def _run_crawl(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
+    _apply_source_cap_defaults(args, source)
     out_dir = args.out_dir if args.out_dir is not None else default_out_dir(base_url)
     options = CrawlOptions(
         base_url=base_url,
@@ -561,6 +583,7 @@ def _run_plan(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
+    _apply_source_cap_defaults(args, source)
     out_dir = args.out_dir if args.out_dir is not None else default_out_dir(base_url).with_name(
         f"{default_out_dir(base_url).name}-plan"
     )

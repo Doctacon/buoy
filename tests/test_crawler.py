@@ -8,6 +8,8 @@ from unittest.mock import patch
 from turbo_search.crawler import (
     DEFAULT_CRAWL_MAX_CHUNKS,
     DEFAULT_CRAWL_MAX_PAGES,
+    DEFAULT_GITHUB_REPO_MAX_CHUNKS,
+    DEFAULT_GITHUB_REPO_MAX_FILES,
     CrawledPage,
     CrawlOptions,
     GitHubRepoSource,
@@ -34,6 +36,8 @@ class CrawlerHelperTests(unittest.TestCase):
     def test_default_caps_are_useful_for_site_plans(self) -> None:
         self.assertEqual(DEFAULT_CRAWL_MAX_PAGES, 250)
         self.assertEqual(DEFAULT_CRAWL_MAX_CHUNKS, 10000)
+        self.assertEqual(DEFAULT_GITHUB_REPO_MAX_FILES, 5000)
+        self.assertEqual(DEFAULT_GITHUB_REPO_MAX_CHUNKS, 100000)
 
     def test_validate_base_url_accepts_absolute_http_urls_and_strips_fragment(self) -> None:
         self.assertEqual(

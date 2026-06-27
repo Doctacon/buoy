@@ -68,12 +68,14 @@ Plan artifacts are written under `artifacts/site-crawls/...` and local applied s
 
 ## Shape the crawl
 
-Defaults are meant for normal sites:
+Defaults are source-aware:
 
 ```text
 crawl_strategy: hybrid
-max_pages: 250
-max_chunks: 10000
+website max_pages: 250
+website max_chunks: 10000
+GitHub repo max_files: 5000
+GitHub repo max_chunks: 100000
 strip_trailing_slash: true
 ```
 

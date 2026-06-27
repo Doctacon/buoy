@@ -307,6 +307,8 @@ class CliTests(unittest.TestCase):
     def test_crawl_command_defaults_to_hybrid_strategy(self) -> None:
         def fake_crawl(options: CrawlOptions) -> dict[str, object]:
             self.assertEqual(options.crawl_strategy, "hybrid")
+            self.assertEqual(options.max_pages, 250)
+            self.assertEqual(options.max_chunks, 10000)
             return fake_plan_crawl_summary(options)
 
         stdout = StringIO()
@@ -330,6 +332,8 @@ class CliTests(unittest.TestCase):
             out_dir = Path(tmp) / "github-crawl"
 
             def fake_github_crawl(source, options: CrawlOptions) -> dict[str, object]:  # noqa: ANN001
+                self.assertEqual(options.max_pages, 5000)
+                self.assertEqual(options.max_chunks, 100000)
                 write_fake_github_page(options.out_dir / "pages")
                 return fake_github_crawl_summary(source, options)
 
@@ -433,6 +437,8 @@ class CliTests(unittest.TestCase):
         state_root = root / "state"
 
         def fake_github_crawl(source, options: CrawlOptions) -> dict[str, object]:  # noqa: ANN001
+            self.assertEqual(options.max_pages, 5000)
+            self.assertEqual(options.max_chunks, 100000)
             write_fake_github_page(options.out_dir / "pages")
             return fake_github_crawl_summary(source, options)
 

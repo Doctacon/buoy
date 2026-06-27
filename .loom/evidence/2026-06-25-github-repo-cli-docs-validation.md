@@ -78,6 +78,72 @@ Ran 103 tests in 1.586s
 OK
 ```
 
+After increasing source-specific GitHub defaults to `5000` repo files and `100000` chunks, validation was rerun:
+
+```bash
+uv run python -m unittest tests.test_cli tests.test_crawler tests.test_github_repo tests.test_plan_artifacts tests.test_apply_cli
+uv run python -m unittest discover tests
+uv run turbo-search plan --help | rg -n "max-pages|max-chunks|GitHub" -C 1
+```
+
+Outputs:
+
+```text
+...........................................................................
+----------------------------------------------------------------------
+Ran 75 tests in 1.750s
+
+OK
+.......................................................................................................
+----------------------------------------------------------------------
+Ran 103 tests in 1.711s
+
+OK
+```
+
+```text
+35:  --max-pages MAX_PAGES
+36-                        Maximum pages/files to scrape. Defaults: websites=250,
+37:                        GitHub repos=5000.
+38:  --max-chunks MAX_CHUNKS
+39-                        Maximum chunks to generate. Defaults: websites=10000,
+40:                        GitHub repos=100000.
+```
+
+Live public GitHub URL smoke test:
+
+```bash
+SMOKE_ROOT=$(mktemp -d /tmp/turbo-search-github-smoke.XXXXXX)
+uv run turbo-search plan https://github.com/Doctacon/open-streaming-lab \
+  --out-dir "$SMOKE_ROOT/plan" \
+  --state-root "$SMOKE_ROOT/state" \
+  --max-pages 30 \
+  --max-chunks 100 \
+  --json
+```
+
+Key output fields:
+
+```json
+{
+  "source_kind": "github_repo",
+  "base_url": "https://github.com/Doctacon/open-streaming-lab",
+  "namespace": "github-doctacon-open-streaming-lab-v1",
+  "site_id": "github-doctacon-open-streaming-lab",
+  "acquisition_strategy": "git-shallow-clone",
+  "repo_full_name": "Doctacon/open-streaming-lab",
+  "repo_ref": "main",
+  "commit_sha": "fa5894b0711bdad49e6d6b6637bf844e7a524173",
+  "files_discovered": 49,
+  "files_selected": 30,
+  "chunks_generated": 100,
+  "rows_to_upsert": 100,
+  "limit_reached": true,
+  "credentials_required": false,
+  "turbopuffer_api_calls": false
+}
+```
+
 ## Procedure
 
 1. Wired CLI source detection for `crawl` and `plan`.
@@ -85,6 +151,7 @@ OK
 3. Added mocked CLI tests that avoid live GitHub/turbopuffer calls.
 4. Updated README and workflow docs.
 5. Ran full unit tests and CLI help inspection.
+6. Ran a live public GitHub URL smoke test against `https://github.com/Doctacon/open-streaming-lab` with low page/chunk caps and temporary output/state directories.
 
 ## What this supports or challenges
 
@@ -92,10 +159,10 @@ Supports the ticket acceptance criteria that:
 
 - CLI help mentions public GitHub repositories.
 - JSON summary fields include source kind/repo metadata/file counts through tests.
-- End-to-end dry-run behavior is covered with mocks/local fixtures rather than live GitHub/turbopuffer dependencies.
+- End-to-end dry-run behavior is covered with mocks/local fixtures and a live public GitHub URL smoke test.
 - Ordinary website tests still pass.
 - Documentation includes the GitHub repo example and repo-relative filters.
 
 ## Limits
 
-This evidence does not include a live public GitHub clone of `Doctacon/open-streaming-lab`; validation intentionally avoids live network dependency. It also does not include live turbopuffer apply, which remains guarded by explicit approval.
+This evidence does not include live turbopuffer apply, which remains guarded by explicit approval. The live GitHub smoke used temporary directories and low caps (`--max-pages 30`, `--max-chunks 100`), so it validates the one-command path without exhaustively indexing the full repository.

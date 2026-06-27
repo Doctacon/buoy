@@ -51,7 +51,7 @@ The plan compares generated chunks to local applied state under `.turbo-search/s
 - `sitemap`: use robots/sitemap discovery; fall back to link crawling only when the sitemap path yields no pages. Use this for a lighter, sitemap-trusting crawl.
 - `link`: ignore sitemap URLs and crawl same-site links from the base URL.
 
-Hybrid/link crawling still obeys robots.txt, host restrictions, page caps, concurrency, and delay settings. Default planning caps are `250` pages and `10000` chunks; lower them for smoke tests or raise them for unusually large sites.
+Hybrid/link crawling still obeys robots.txt, host restrictions, page caps, concurrency, and delay settings. Default website planning caps are `250` pages and `10000` chunks; default GitHub repository caps are `5000` repo files and `100000` chunks. Lower them for smoke tests or raise them for unusually large sources.
 
 ### Path filters and URL canonicalization
 
