@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-06-28
 Updated: 2026-06-28
 Depends-On: .10x/evidence/2026-06-28-repo-search-metadata-cross-repo-validation.md, .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
@@ -30,3 +30,4 @@ The mode must preserve default behavior unless explicitly requested.
 ## Progress and notes
 
 - 2026-06-28: Opened after metadata preamble improved average/P@5 but regressed turbo-search and Requests by composite score. File cards are intended to test metadata discoverability without perturbing ordinary code chunk embeddings.
+- 2026-06-28: Implemented opt-in `--repo-file-cards`, added unit coverage, live-applied new file-card namespaces across the five-repo basket, and ran retrieval evals. File cards improved four of five repos and average score/P@5, but turbo-search regressed, so no default promotion. Evidence: `.10x/evidence/2026-06-28-repo-file-card-metadata-validation.md`.

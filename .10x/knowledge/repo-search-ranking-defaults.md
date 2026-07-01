@@ -33,6 +33,7 @@ ranking_aggregation = adaptive_sum_3
 - process/project-agent and run-artifact paths such as `.pi/`, `.10x/`, `.loom/`, `.claude/`, `.cursor/`, `.turbo-search/`, `artifacts/`, and `autoresearch/` are demoted strongly;
 - eval/fixture/dataset JSON under `/data/` is demoted strongly so answer-key-like files do not dominate implementation queries;
 - `docs/`, README/CHANGELOG, and other Markdown files are demoted gently, with a partial recovery for exact documentation filename matches such as `docs/api.rst` on API queries;
+- example/demo paths such as `examples/`, `docs_src/`, `example_scripts/`, `/example/`, and `/examples/` are demoted for non-example queries;
 - `tests/` files get a light boost because repository evals often ask where behavior is validated;
 - source/config files are mostly neutral, with conservative query-aware boosts for exact source filename matches and Python `def`/`class` declarations already present in retrieved chunks;
 - when top five lacks docs/tests and rank 1 is an implementation file, one strong docs/tests companion may be promoted into slot five without replacing the top implementation hit.
@@ -59,6 +60,10 @@ Live ablations on pytest and Typer showed metadata-only indexing is promising wh
 
 Metadata-only cross-repo validation improved the five-repo average score/P@5 and improved pytest, Typer, and Click, but regressed turbo-search (`87.760 -> 85.568`) and Requests (`84.426 -> 84.000`) by composite score. Under the no-regression policy, do not promote metadata-only as a default. Keep `--repo-search-metadata` opt-in until metadata placement/scoring is retuned. Evidence: `.10x/evidence/2026-06-28-repo-search-metadata-cross-repo-validation.md`.
 
+File-card metadata indexing (`--repo-file-cards`) is a better opt-in metadata shape than universal preambles, but still not default-safe. It adds separate metadata pages per selected file while keeping code chunks clean. Five-repo validation improved average score/P@5 and improved Requests, Click, pytest, and Typer, but turbo-search regressed (`87.760 -> 85.874`), so default promotion remains blocked. Evidence: `.10x/evidence/2026-06-28-repo-file-card-metadata-validation.md`.
+
+Conditional example/demo path demotion is now part of the default `repo_code` profile. It improved Click (`72.474 -> 72.816`), pytest (`84.742 -> 86.042`), and Typer (`59.423 -> 59.710`) while leaving turbo-search and Requests unchanged. Evidence: `.10x/evidence/2026-06-28-repo-example-path-demotion-validation.md`.
+
 Evidence:
 
 - `.10x/evidence/2026-06-28-repo-search-file-ranking-promotion-validation.md`
@@ -70,3 +75,6 @@ Evidence:
 - `.10x/evidence/2026-06-28-repo-adaptive-aggregation-validation.md`
 - `.10x/evidence/2026-06-28-cross-corpus-live-retrieval-evals.md`
 - `.10x/evidence/2026-06-28-repo-oversize-metadata-live-eval.md`
+- `.10x/evidence/2026-06-28-repo-search-metadata-cross-repo-validation.md`
+- `.10x/evidence/2026-06-28-repo-file-card-metadata-validation.md`
+- `.10x/evidence/2026-06-28-repo-example-path-demotion-validation.md`

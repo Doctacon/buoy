@@ -235,6 +235,22 @@ class RetrieverTests(unittest.TestCase):
             ranking_profile_multiplier(SearchHit(id="test", repo_path="tests/test_retriever.py"), "repo_code"),
             1.10,
         )
+        self.assertEqual(
+            ranking_profile_multiplier(
+                SearchHit(id="example", repo_path="examples/termui/app.py"),
+                "repo_code",
+                query="Where is terminal prompt behavior implemented?",
+            ),
+            0.70,
+        )
+        self.assertEqual(
+            ranking_profile_multiplier(
+                SearchHit(id="example", repo_path="examples/termui/app.py"),
+                "repo_code",
+                query="Where is the terminal prompt example?",
+            ),
+            1.0,
+        )
 
     def test_repo_code_profile_uses_query_intent_for_implementation_vs_experiment_files(self) -> None:
         implementation_query = "Where is the repository search composite eval metric implemented and validated?"
@@ -301,6 +317,33 @@ class RetrieverTests(unittest.TestCase):
             ),
             0.91,
         )
+
+    def test_file_card_groups_need_precise_path_match_to_outrank_code_hits(self) -> None:
+        hits = [
+            SearchHit(
+                id="generic-card",
+                title="tests/test_github_repo.py file metadata",
+                section_path="File metadata: tests/testgithubrepo.py",
+                repo_path="tests/test_github_repo.py",
+                content="Path tokens: tests test github repo Symbols: metadata helper",
+            ),
+            SearchHit(id="cli-code", repo_path="src/turbo_search/cli.py", content="def plan_crawl_options(): pass"),
+            SearchHit(
+                id="plan-card",
+                title="src/turbo_search/plan_artifacts.py file metadata",
+                section_path="File metadata: src/turbosearch/planartifacts.py",
+                repo_path="src/turbo_search/plan_artifacts.py",
+                content="Path tokens: src turbo search plan artifacts Symbols: build_plan_artifacts build_chunk_record",
+            ),
+        ]
+
+        ranked = rank_hits(
+            hits,
+            options=RetrievalOptions(top_k=3, ranking_pool=3),
+            query="Which code in plan artifacts propagates GitHub repo metadata into chunk rows?",
+        )
+
+        self.assertEqual(ranked[0].repo_path, "src/turbo_search/plan_artifacts.py")
 
     def test_file_ranking_can_use_symbol_matches_from_later_chunks_in_group(self) -> None:
         hits = [

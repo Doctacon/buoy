@@ -618,6 +618,7 @@ def hit_with_ranking_info(
 IMPLEMENTATION_INTENT_TOKENS = {"code", "function", "functions", "implement", "implemented", "implementation", "logic", "source"}
 EXPERIMENT_INTENT_TOKENS = {"autoresearch", "benchmark", "benchmarks", "experiment", "experiments", "fixture", "fixtures", "hypothesis", "hypotheses", "research"}
 EXPERIMENT_PATH_TOKENS = {"autoresearch", "benchmark", "benchmarks", "experiment", "experiments", "fixture", "fixtures", "hypothesis", "hypotheses"}
+EXAMPLE_INTENT_TOKENS = {"demo", "demos", "example", "examples", "sample", "samples", "tutorial", "tutorials"}
 PATH_SYMBOL_STOP_TOKENS = {
     "and",
     "are",
@@ -703,7 +704,37 @@ def ranking_group_profile_multiplier(
 
     if profile == "none":
         return 1.0
-    return max(ranking_profile_multiplier(hit, profile, query=query) for _rank, hit in group)
+    multiplier = max(ranking_profile_multiplier(hit, profile, query=query) for _rank, hit in group)
+    if profile == "repo_code" and all(hit_is_repo_file_card(hit) for _rank, hit in group):
+        multiplier *= repo_file_card_group_multiplier(group, query=query)
+    return multiplier
+
+
+def hit_is_repo_file_card(hit: SearchHit) -> bool:
+    return hit.title.endswith(" file metadata") or hit.section_path.startswith("File metadata:")
+
+
+def repo_file_card_group_multiplier(group: Sequence[tuple[int, SearchHit]], *, query: str = "") -> float:
+    query_tokens = ranking_signal_tokens(query)
+    if not query_tokens:
+        return 0.75
+    best_path_bonus = 0.75
+    best_content_overlap = 0
+    for _rank, hit in group:
+        path = normalize_path(hit.repo_path)
+        if file_stem_matches_query(query_tokens, file_stem(path)):
+            best_path_bonus = max(best_path_bonus, 1.30)
+        elif related_token_count(query_tokens, ranking_signal_tokens(path)) >= 2:
+            best_path_bonus = max(best_path_bonus, 1.05)
+        best_content_overlap = max(
+            best_content_overlap,
+            related_token_count(query_tokens, ranking_signal_tokens(f"{hit.title} {hit.section_path} {hit.content}")),
+        )
+    if best_path_bonus > 0.75:
+        return best_path_bonus
+    if best_content_overlap >= 3:
+        return 0.90
+    return 0.75
 
 
 def ranking_profile_multiplier(hit: SearchHit, profile: str, *, query: str = "") -> float:
@@ -720,6 +751,8 @@ def ranking_profile_multiplier(hit: SearchHit, profile: str, *, query: str = "")
         marker in lower_path for marker in ("eval", "fixture", "seed", "dataset")
     ):
         multiplier *= 0.20
+    elif is_repo_example_path(lower_path) and not query_tokens & EXAMPLE_INTENT_TOKENS:
+        multiplier *= 0.70
     elif lower_path.startswith("docs/") or lower_path.endswith(".md") or lower_path in {"readme.md", "changelog.md"}:
         multiplier *= 0.70
     elif lower_path.startswith("tests/"):
@@ -730,6 +763,15 @@ def ranking_profile_multiplier(hit: SearchHit, profile: str, *, query: str = "")
         multiplier *= 1.12
     multiplier *= repo_path_symbol_multiplier(hit, query=query)
     return multiplier
+
+
+def is_repo_example_path(lower_path: str) -> bool:
+    return (
+        lower_path.startswith(("docs_src/", "examples/"))
+        or "example_scripts/" in lower_path
+        or "/example/" in lower_path
+        or "/examples/" in lower_path
+    )
 
 
 def repo_path_symbol_multiplier(hit: SearchHit, *, query: str = "") -> float:
