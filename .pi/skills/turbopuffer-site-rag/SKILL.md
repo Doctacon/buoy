@@ -31,7 +31,7 @@ Use this when building or testing the “base URL → crawl → chunks → names
 
 The polished workflow is Terraform-like:
 
-1. `turbo-search plan`: local-only preview. Crawl with Scrapling, extract Markdown, chunk, compare with local applied state, and write review artifacts. No credentials, embeddings, namespace creation, or turbopuffer calls. Interactive text-mode runs show default one-line stderr progress; use `--no-progress` to disable it.
+1. `turbo-search plan`: local-only preview. Crawl with Scrapling, extract Markdown, chunk, compare with local applied state, and write review artifacts. No credentials, embeddings, namespace creation, or turbopuffer calls. Interactive text-mode runs show default one-line stderr progress; use `--no-progress` to disable it. Versioned docs sites stop before page crawling by default with `--docs-version-policy warn`; use `latest`, `stable-latest`, `latest-nightly`, or `all` to make the policy explicit.
 2. `turbo-search apply` without `--approve`: local-only preflight. Re-read the saved plan, verify artifacts, recompute the local diff, and report what would happen. No credentials, embeddings, or turbopuffer calls.
 3. `turbo-search apply --approve`: explicit live path. Require `TURBOPUFFER_API_KEY` in the environment, embed/upsert only new or changed chunks, and update local applied state after success.
 4. `--delete-stale`: extra delete guardrail. Stale rows are retained by default; live stale deletion requires both `--approve` and `--delete-stale`.

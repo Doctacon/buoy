@@ -25,6 +25,7 @@ base URL
 - Obey robots.txt by default.
 - Restrict to the base URL host/domain unless the user approves otherwise.
 - Default planning caps are intentionally useful for larger docs sites: `3000` pages and `120000` chunks.
+- Default docs-version policy is `warn`: detect repeated `/docs/{version}/...` sitemap families and stop before page crawling so the user chooses intentionally. Use `--docs-version-policy latest`, `stable-latest`, `latest-nightly`, or `all` when a site has duplicated version docs.
 - Lower caps for smoke tests when needed:
   - `--max-pages 10` or `25`
   - `--max-chunks 100` or `200`

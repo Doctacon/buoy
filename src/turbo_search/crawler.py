@@ -10,12 +10,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from fnmatch import fnmatchcase
+from gzip import GzipFile
 import hashlib
+from io import BytesIO
 import json
 from pathlib import Path
 import re
 from typing import Any, Callable, Literal, Sequence
+from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urlparse, urlunparse
+from urllib.request import Request, urlopen
 
 from turbo_search.chunker import (
     DEFAULT_OVERLAP_SENTENCES,
@@ -36,6 +40,15 @@ DEFAULT_CRAWL_DOWNLOAD_DELAY = 0.25
 DEFAULT_CRAWL_OUT_DIR = Path("artifacts/site-crawls")
 DEFAULT_CRAWL_STRATEGY = "hybrid"
 CRAWL_STRATEGIES = ("sitemap", "link", "hybrid")
+DEFAULT_DOCS_VERSION_POLICY = "warn"
+DOCS_VERSION_POLICIES = ("warn", "all", "latest", "stable-latest", "latest-nightly")
+DOCS_VERSION_CURRENT_ALIASES = {"latest", "current", "stable"}
+DOCS_VERSION_PREVIEW_ALIASES = {"nightly", "main", "master", "dev", "snapshot"}
+DOCS_VERSION_MIN_VERSION_COUNT = 3
+DOCS_VERSION_MIN_URL_COUNT = 30
+MAX_SITEMAP_ANALYSIS_URLS = 100
+MAX_SITEMAP_ANALYSIS_PAGE_URLS = 100_000
+SITEMAP_ANALYSIS_TIMEOUT_SECONDS = 10
 ProgressCallback = Callable[[str], None]
 GITHUB_HOSTS = {"github.com", "www.github.com"}
 GITHUB_NON_REPO_PATHS = {
@@ -138,6 +151,7 @@ class CrawlOptions:
     concurrent_requests_per_domain: int = DEFAULT_CRAWL_CONCURRENT_REQUESTS_PER_DOMAIN
     download_delay: float = DEFAULT_CRAWL_DOWNLOAD_DELAY
     crawl_strategy: str = DEFAULT_CRAWL_STRATEGY
+    docs_version_policy: str = DEFAULT_DOCS_VERSION_POLICY
     include_paths: tuple[str, ...] = ()
     exclude_paths: tuple[str, ...] = ()
     strip_trailing_slash: bool = True
@@ -417,6 +431,280 @@ def url_allowed_by_path_filters(
     if includes and not any(path_matches_pattern(path, pattern) for pattern in includes):
         return False
     return not any(path_matches_pattern(path, pattern) for pattern in excludes)
+
+
+def local_xml_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def fetch_url_bytes(url: str, *, timeout: int = SITEMAP_ANALYSIS_TIMEOUT_SECONDS) -> bytes | None:
+    try:
+        request = Request(url, headers={"User-Agent": "turbo-search-sitemap-analysis/0.1"})
+        with urlopen(request, timeout=timeout) as response:
+            return response.read()
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError):
+        return None
+
+
+def sitemap_urls_from_robots(body: bytes) -> list[str]:
+    text = body.decode("utf-8", errors="replace")
+    urls: list[str] = []
+    for line in text.splitlines():
+        name, sep, value = line.partition(":")
+        if sep and name.strip().lower() == "sitemap" and value.strip():
+            urls.append(value.strip())
+    return urls
+
+
+def maybe_decompress_sitemap(body: bytes, url: str) -> bytes:
+    if urlparse(url).path.endswith(".gz") or body[:2] == b"\x1f\x8b":
+        try:
+            out = bytearray()
+            with GzipFile(fileobj=BytesIO(body)) as gzip_file:
+                while chunk := gzip_file.read1(8192):
+                    out.extend(chunk)
+            return bytes(out)
+        except OSError:
+            return body
+    return body
+
+
+def sitemap_locations_from_xml(body: bytes, url: str) -> tuple[list[str], list[str]]:
+    from xml.etree import ElementTree
+
+    try:
+        root = ElementTree.fromstring(maybe_decompress_sitemap(body, url))
+    except ElementTree.ParseError:
+        return [], []
+
+    root_name = local_xml_name(root.tag)
+    page_urls: list[str] = []
+    child_sitemaps: list[str] = []
+    if root_name == "urlset":
+        for url_el in root:
+            if local_xml_name(url_el.tag) != "url":
+                continue
+            for child in url_el:
+                if local_xml_name(child.tag) == "loc" and child.text and child.text.strip():
+                    page_urls.append(child.text.strip())
+                    break
+    elif root_name == "sitemapindex":
+        for sitemap_el in root:
+            if local_xml_name(sitemap_el.tag) != "sitemap":
+                continue
+            for child in sitemap_el:
+                if local_xml_name(child.tag) == "loc" and child.text and child.text.strip():
+                    child_sitemaps.append(child.text.strip())
+                    break
+    return page_urls, child_sitemaps
+
+
+def same_host_url(url: str, allowed_host: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.scheme in {"http", "https"} and (parsed.hostname or parsed.netloc).lower() == allowed_host
+
+
+def discover_sitemap_page_urls(options: CrawlOptions) -> list[str]:
+    allowed_host = host_from_url(options.base_url)
+    queue = sitemap_seed_urls(options.base_url)
+    visited: set[str] = set()
+    page_urls: list[str] = []
+    seen_pages: set[str] = set()
+
+    while queue and len(visited) < MAX_SITEMAP_ANALYSIS_URLS and len(page_urls) < MAX_SITEMAP_ANALYSIS_PAGE_URLS:
+        url = queue.pop(0)
+        if url in visited or not same_host_url(url, allowed_host):
+            continue
+        visited.add(url)
+        body = fetch_url_bytes(url)
+        if body is None:
+            continue
+        if urlparse(url).path.endswith("/robots.txt"):
+            queue.extend(sitemap_url for sitemap_url in sitemap_urls_from_robots(body) if sitemap_url not in visited)
+            continue
+
+        pages, child_sitemaps = sitemap_locations_from_xml(body, url)
+        queue.extend(sitemap_url for sitemap_url in child_sitemaps if sitemap_url not in visited)
+        for page_url in pages:
+            if not same_host_url(page_url, allowed_host):
+                continue
+            if not url_allowed_by_path_filters(
+                page_url,
+                include_paths=options.include_paths,
+                exclude_paths=options.exclude_paths,
+                strip_trailing_slash=options.strip_trailing_slash,
+            ):
+                continue
+            canonical = page_identity_url(page_url, strip_trailing_slash=options.strip_trailing_slash)
+            if canonical in seen_pages:
+                continue
+            seen_pages.add(canonical)
+            page_urls.append(canonical)
+            if len(page_urls) >= MAX_SITEMAP_ANALYSIS_PAGE_URLS:
+                break
+    return page_urls
+
+
+def parse_docs_semver(segment: str) -> tuple[int, ...] | None:
+    value = segment.lower().removeprefix("v")
+    if not re.fullmatch(r"\d+(?:\.\d+){1,3}(?:[-+][a-z0-9.-]+)?", value):
+        return None
+    core = re.split(r"[-+]", value, maxsplit=1)[0]
+    return tuple(int(part) for part in core.split("."))
+
+
+def docs_version_kind(segment: str) -> str | None:
+    value = segment.lower()
+    if value in DOCS_VERSION_CURRENT_ALIASES:
+        return "current"
+    if value in DOCS_VERSION_PREVIEW_ALIASES:
+        return "preview"
+    if parse_docs_semver(value) is not None:
+        return "semver"
+    return None
+
+
+def version_sort_key(version: str) -> tuple[int, tuple[int, ...] | str]:
+    semver = parse_docs_semver(version)
+    if semver is not None:
+        return (0, semver)
+    return (1, version.lower())
+
+
+def highest_semver_version(versions: Sequence[str]) -> str | None:
+    semver_versions = [(parse_docs_semver(version), version) for version in versions]
+    semver_versions = [(key, version) for key, version in semver_versions if key is not None]
+    if not semver_versions:
+        return None
+    return max(semver_versions, key=lambda item: item[0])[1]
+
+
+def selected_docs_versions(versions: Sequence[str], policy: str) -> list[str]:
+    version_set = set(versions)
+    current = sorted(version_set & DOCS_VERSION_CURRENT_ALIASES)
+    preview = sorted(version_set & DOCS_VERSION_PREVIEW_ALIASES)
+    stable_latest = highest_semver_version(versions)
+    if policy == "stable-latest":
+        return [stable_latest] if stable_latest else current[:1] or preview[:1]
+    if policy == "latest-nightly":
+        selected = current + preview
+        if not selected and stable_latest:
+            selected.append(stable_latest)
+        return selected
+    if policy == "latest":
+        if current:
+            return current
+        return [stable_latest] if stable_latest else preview[:1]
+    return []
+
+
+def path_docs_version_parts(path: str) -> tuple[str, str] | None:
+    segments = [segment for segment in normalize_url_path(path).split("/") if segment]
+    for index in range(len(segments) - 1):
+        version = segments[index + 1]
+        if docs_version_kind(version) is None:
+            continue
+        root_path = "/" + "/".join(segments[: index + 1])
+        return root_path, version
+    return None
+
+
+def analyze_docs_version_urls(urls: Sequence[str], *, policy: str) -> dict[str, object]:
+    groups: dict[str, dict[str, set[str]]] = {}
+    for url in urls:
+        parts = path_docs_version_parts(urlparse(url).path)
+        if parts is None:
+            continue
+        root_path, version = parts
+        groups.setdefault(root_path, {}).setdefault(version, set()).add(url)
+
+    candidates: list[tuple[int, int, str, dict[str, set[str]]]] = []
+    for root_path, versions in groups.items():
+        version_count = len(versions)
+        url_count = sum(len(values) for values in versions.values())
+        if version_count >= DOCS_VERSION_MIN_VERSION_COUNT and url_count >= DOCS_VERSION_MIN_URL_COUNT:
+            candidates.append((url_count, version_count, root_path, versions))
+    if not candidates:
+        return {"detected": False, "policy": policy}
+
+    _url_count, _version_count, root_path, versions = max(candidates, key=lambda item: (item[0], item[1]))
+    version_names = sorted(versions, key=version_sort_key)
+    selected = selected_docs_versions(version_names, policy)
+    excluded = [version for version in version_names if version not in selected] if selected else []
+    added_excludes = [f"{root_path}/{version}/**" for version in excluded]
+    report: dict[str, object] = {
+        "detected": True,
+        "policy": policy,
+        "root_path": root_path,
+        "version_count": len(version_names),
+        "versions": version_names,
+        "versioned_url_count": sum(len(values) for values in versions.values()),
+        "url_count_by_version": {version: len(versions[version]) for version in version_names},
+        "selected_versions": selected,
+        "excluded_versions": excluded,
+        "added_exclude_paths": added_excludes,
+        "applied": bool(selected and policy in {"latest", "stable-latest", "latest-nightly"}),
+    }
+    if policy == "warn":
+        report["suggested_policy"] = "latest"
+    return report
+
+
+def docs_version_block_message(report: dict[str, object]) -> str | None:
+    if not report.get("detected") or report.get("applied") or report.get("policy") != "warn":
+        return None
+    suggested = report.get("suggested_policy")
+    if not suggested:
+        return None
+    return (
+        "detected versioned docs "
+        f"under {report.get('root_path')} "
+        f"({report.get('version_count')} versions, {report.get('versioned_url_count')} sitemap URLs); "
+        "stopping before page crawl. "
+        f"Rerun with --docs-version-policy {suggested} to keep current docs and prune old versions, "
+        "or --docs-version-policy all to keep every version."
+    )
+
+
+def apply_docs_version_policy(options: CrawlOptions) -> tuple[CrawlOptions, dict[str, object]]:
+    policy = options.docs_version_policy
+    if policy not in DOCS_VERSION_POLICIES:
+        raise ValueError(f"docs version policy must be one of: {', '.join(DOCS_VERSION_POLICIES)}")
+    if policy == "all" or options.crawl_strategy == "link":
+        return options, {"detected": False, "policy": policy}
+
+    urls = discover_sitemap_page_urls(options)
+    report = analyze_docs_version_urls(urls, policy=policy)
+    if not report.get("applied"):
+        return options, report
+
+    existing_excludes = list(options.exclude_paths)
+    added_excludes = [str(pattern) for pattern in report.get("added_exclude_paths", [])]
+    for pattern in added_excludes:
+        if pattern not in existing_excludes:
+            existing_excludes.append(pattern)
+    return CrawlOptions(
+        base_url=options.base_url,
+        out_dir=options.out_dir,
+        max_pages=options.max_pages,
+        max_chunks=options.max_chunks,
+        repo_max_file_bytes=options.repo_max_file_bytes,
+        repo_search_metadata=options.repo_search_metadata,
+        repo_file_cards=options.repo_file_cards,
+        repo_oversize_file_cards=options.repo_oversize_file_cards,
+        concurrent_requests=options.concurrent_requests,
+        concurrent_requests_per_domain=options.concurrent_requests_per_domain,
+        download_delay=options.download_delay,
+        crawl_strategy=options.crawl_strategy,
+        docs_version_policy=options.docs_version_policy,
+        include_paths=options.include_paths,
+        exclude_paths=tuple(existing_excludes),
+        strip_trailing_slash=options.strip_trailing_slash,
+        css_selector=options.css_selector,
+        target_tokens=options.target_tokens,
+        overlap_sentences=options.overlap_sentences,
+        progress_callback=options.progress_callback,
+    ), report
 
 
 def yaml_scalar(value: object) -> str:
@@ -788,6 +1076,7 @@ def build_summary(
     crawl_strategy: str,
     plan: IndexingPlan,
     pages_dir: Path,
+    docs_version_report: dict[str, object],
 ) -> dict[str, object]:
     return {
         "command": "crawl",
@@ -800,6 +1089,8 @@ def build_summary(
         "namespace_candidate": namespace_candidate(options.base_url),
         "crawl_strategy": crawl_strategy,
         "requested_crawl_strategy": options.crawl_strategy,
+        "docs_version_policy": options.docs_version_policy,
+        "docs_version_report": docs_version_report,
         "sitemap_seed_urls": sitemap_seed_urls(options.base_url),
         "out_dir": str(options.out_dir),
         "pages_dir": str(pages_dir),
@@ -838,6 +1129,7 @@ def crawl_site(options: CrawlOptions) -> dict[str, object]:
         concurrent_requests_per_domain=options.concurrent_requests_per_domain,
         download_delay=options.download_delay,
         crawl_strategy=options.crawl_strategy,
+        docs_version_policy=options.docs_version_policy,
         include_paths=options.include_paths,
         exclude_paths=options.exclude_paths,
         strip_trailing_slash=options.strip_trailing_slash,
@@ -846,6 +1138,26 @@ def crawl_site(options: CrawlOptions) -> dict[str, object]:
         overlap_sentences=options.overlap_sentences,
         progress_callback=options.progress_callback,
     )
+    options, docs_version_report = apply_docs_version_policy(options)
+    block_message = docs_version_block_message(docs_version_report)
+    if block_message:
+        raise RuntimeError(block_message)
+    if docs_version_report.get("detected"):
+        if docs_version_report.get("applied"):
+            emit_progress(
+                options.progress_callback,
+                "crawl docs versions: "
+                f"policy={docs_version_report.get('policy')}; "
+                f"selected={','.join(docs_version_report.get('selected_versions', []))}; "
+                f"excluded={len(docs_version_report.get('excluded_versions', []))}",
+            )
+        else:
+            emit_progress(
+                options.progress_callback,
+                "crawl docs versions: "
+                f"detected {docs_version_report.get('version_count')} versions under "
+                f"{docs_version_report.get('root_path')}; policy={docs_version_report.get('policy')}",
+            )
     pages, stats, crawl_strategy = crawl_pages(options)
     pages_dir = options.out_dir / "pages"
     emit_progress(options.progress_callback, f"crawl: writing {len(pages)} markdown pages")
@@ -864,6 +1176,7 @@ def crawl_site(options: CrawlOptions) -> dict[str, object]:
         crawl_strategy=crawl_strategy,
         plan=plan,
         pages_dir=pages_dir,
+        docs_version_report=docs_version_report,
     )
     options.out_dir.mkdir(parents=True, exist_ok=True)
     (options.out_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")

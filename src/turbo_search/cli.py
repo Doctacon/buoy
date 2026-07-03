@@ -29,9 +29,11 @@ from turbo_search.crawler import (
     DEFAULT_CRAWL_MAX_CHUNKS,
     DEFAULT_CRAWL_MAX_PAGES,
     DEFAULT_CRAWL_STRATEGY,
+    DEFAULT_DOCS_VERSION_POLICY,
     DEFAULT_GITHUB_REPO_MAX_CHUNKS,
     DEFAULT_GITHUB_REPO_MAX_FILE_BYTES,
     DEFAULT_GITHUB_REPO_MAX_FILES,
+    DOCS_VERSION_POLICIES,
     GitHubRepoSource,
     CrawlOptions,
     crawl_site,
@@ -219,6 +221,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     crawl_parser.add_argument(
+        "--docs-version-policy",
+        choices=DOCS_VERSION_POLICIES,
+        default=DEFAULT_DOCS_VERSION_POLICY,
+        help=(
+            "Website sitemap docs-version handling. Default: warn detects repeated /docs/{version}/ "
+            "families and stops before crawling; latest, stable-latest, and latest-nightly add effective excludes; "
+            "all keeps every version."
+        ),
+    )
+    crawl_parser.add_argument(
         "--include-path",
         action="append",
         default=[],
@@ -371,6 +383,16 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Discovery mode. Default: hybrid, which merges sitemap pages with same-site link discovery. "
             "sitemap trusts sitemap pages with link fallback only when empty; link ignores sitemaps."
+        ),
+    )
+    plan_parser.add_argument(
+        "--docs-version-policy",
+        choices=DOCS_VERSION_POLICIES,
+        default=DEFAULT_DOCS_VERSION_POLICY,
+        help=(
+            "Website sitemap docs-version handling. Default: warn detects repeated /docs/{version}/ "
+            "families and stops before crawling; latest, stable-latest, and latest-nightly add effective excludes; "
+            "all keeps every version."
         ),
     )
     plan_parser.add_argument(
@@ -740,6 +762,7 @@ def _run_crawl(args: argparse.Namespace) -> int:
         concurrent_requests_per_domain=args.concurrent_requests_per_domain,
         download_delay=args.download_delay,
         crawl_strategy=args.crawl_strategy,
+        docs_version_policy=args.docs_version_policy,
         include_paths=tuple(args.include_path),
         exclude_paths=tuple(args.exclude_path),
         strip_trailing_slash=args.strip_trailing_slash,
@@ -797,6 +820,7 @@ def _run_plan(args: argparse.Namespace) -> int:
         concurrent_requests_per_domain=args.concurrent_requests_per_domain,
         download_delay=args.download_delay,
         crawl_strategy=args.crawl_strategy,
+        docs_version_policy=args.docs_version_policy,
         include_paths=tuple(args.include_path),
         exclude_paths=tuple(args.exclude_path),
         strip_trailing_slash=args.strip_trailing_slash,
@@ -822,7 +846,7 @@ def _run_plan(args: argparse.Namespace) -> int:
             base_url=base_url,
             out_dir=out_dir,
             namespace=namespace,
-            crawl_options=plan_crawl_options(args),
+            crawl_options=plan_crawl_options(args, crawl_summary),
             chunk_options=plan_chunk_options(args),
             embedding_model=DEFAULT_PLAN_EMBEDDING_MODEL,
             state_root=args.state_root,
@@ -841,7 +865,7 @@ def _run_plan(args: argparse.Namespace) -> int:
             base_url=base_url,
             out_dir=out_dir,
             namespace=namespace,
-            crawl_options=plan_crawl_options(args),
+            crawl_options=plan_crawl_options(args, crawl_summary),
             chunk_options=plan_chunk_options(args),
             embedding_model=DEFAULT_PLAN_EMBEDDING_MODEL,
             diff=diff.to_dict(),
@@ -868,7 +892,7 @@ def _run_plan(args: argparse.Namespace) -> int:
     return 0
 
 
-def plan_crawl_options(args: argparse.Namespace) -> dict[str, object]:
+def plan_crawl_options(args: argparse.Namespace, crawl_summary: dict[str, object] | None = None) -> dict[str, object]:
     return {
         "max_pages": args.max_pages,
         "max_chunks": args.max_chunks,
@@ -880,8 +904,9 @@ def plan_crawl_options(args: argparse.Namespace) -> dict[str, object]:
         "concurrent_requests_per_domain": args.concurrent_requests_per_domain,
         "download_delay": args.download_delay,
         "crawl_strategy": args.crawl_strategy,
-        "include_paths": list(args.include_path),
-        "exclude_paths": list(args.exclude_path),
+        "docs_version_policy": getattr(args, "docs_version_policy", DEFAULT_DOCS_VERSION_POLICY),
+        "include_paths": list(crawl_summary.get("include_paths", args.include_path)) if crawl_summary else list(args.include_path),
+        "exclude_paths": list(crawl_summary.get("exclude_paths", args.exclude_path)) if crawl_summary else list(args.exclude_path),
         "strip_trailing_slash": args.strip_trailing_slash,
         "css_selector": args.css_selector,
     }
@@ -1051,6 +1076,7 @@ def print_crawl_text(payload: dict[str, object]) -> None:
     print(f"  pages_scraped: {payload['pages_scraped']}; chunks_generated: {payload['chunks_generated']}")
     print_limit_summary(payload)
     print_filter_summary(payload)
+    print_docs_version_summary(payload)
     print(f"  out_dir: {payload['out_dir']}")
     print("  live writes: not supported by this command")
 
@@ -1075,6 +1101,7 @@ def print_plan_text(payload: dict[str, object]) -> None:
     print(f"  pages_scraped: {payload['pages_scraped']}; chunks_generated: {payload['chunks_generated']}")
     print_limit_summary(payload)
     print_filter_summary(payload)
+    print_docs_version_summary(payload)
     diff = payload.get("diff", {}) if isinstance(payload.get("diff"), dict) else {}
     print(
         "  diff: "
@@ -1119,6 +1146,36 @@ def print_filter_summary(payload: dict[str, object]) -> None:
             f"exclude={list(exclude_paths)}; "
             f"strip_trailing_slash={strip_trailing_slash}"
         )
+
+
+def print_docs_version_summary(payload: dict[str, object]) -> None:
+    report = payload.get("docs_version_report")
+    if not isinstance(report, dict) or not report.get("detected"):
+        return
+    policy = report.get("policy")
+    root_path = report.get("root_path")
+    version_count = report.get("version_count")
+    url_count = report.get("versioned_url_count")
+    if report.get("applied"):
+        selected = report.get("selected_versions") or []
+        excluded = report.get("excluded_versions") or []
+        print(
+            "  docs_versions: "
+            f"policy={policy}; root={root_path}; versions={version_count}; "
+            f"versioned_urls={url_count}; selected={list(selected)}; excluded_versions={len(list(excluded))}"
+        )
+    else:
+        suggested = report.get("suggested_policy")
+        print(
+            "  docs_versions: "
+            f"detected root={root_path}; versions={version_count}; versioned_urls={url_count}; policy={policy}"
+        )
+        if suggested:
+            print(
+                "  suggestion: rerun with "
+                f"--docs-version-policy {suggested} to keep current docs and prune old versions, "
+                "or --docs-version-policy all to keep/suppress this warning."
+            )
 
 
 def print_apply_text(payload: dict[str, object]) -> None:

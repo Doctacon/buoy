@@ -74,6 +74,7 @@ Defaults are source-aware:
 crawl_strategy: hybrid
 website max_pages: 3000
 website max_chunks: 120000
+website docs_version_policy: warn
 GitHub repo max_files: 5000
 GitHub repo max_chunks: 100000
 GitHub repo max_file_bytes: 51200
@@ -93,7 +94,12 @@ uv run turbo-search plan https://example.com/ --exclude-path /blog/**
 
 # Bigger site
 uv run turbo-search plan https://example.com/ --max-pages 1000 --max-chunks 50000
+
+# Versioned docs site: keep current docs and exclude old version folders
+uv run turbo-search plan https://example.com/ --docs-version-policy latest
 ```
+
+For sites with repeated `/docs/{version}/...` pages, the default `warn` policy stops before page crawling and asks you to choose. Use `--docs-version-policy latest`, `stable-latest`, or `latest-nightly` to add effective excludes for older docs versions while keeping non-versioned pages like blogs/specs eligible. Use `--docs-version-policy all` to keep every version.
 
 Other crawl strategies:
 

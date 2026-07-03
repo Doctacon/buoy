@@ -152,6 +152,8 @@ def fake_plan_crawl_summary(options: CrawlOptions) -> dict[str, object]:
         "namespace_candidate": "site-example-com-v1",
         "crawl_strategy": options.crawl_strategy,
         "requested_crawl_strategy": options.crawl_strategy,
+        "docs_version_policy": options.docs_version_policy,
+        "docs_version_report": {"detected": False, "policy": options.docs_version_policy},
         "sitemap_seed_urls": [],
         "out_dir": str(options.out_dir),
         "pages_dir": str(options.out_dir / "pages"),
@@ -342,6 +344,7 @@ class CliTests(unittest.TestCase):
     def test_crawl_command_defaults_to_hybrid_strategy(self) -> None:
         def fake_crawl(options: CrawlOptions) -> dict[str, object]:
             self.assertEqual(options.crawl_strategy, "hybrid")
+            self.assertEqual(options.docs_version_policy, "warn")
             self.assertEqual(options.max_pages, 3000)
             self.assertEqual(options.max_chunks, 120000)
             return fake_plan_crawl_summary(options)
@@ -426,6 +429,8 @@ class CliTests(unittest.TestCase):
                         "/docs/**",
                         "--exclude-path",
                         "/llms-full.txt",
+                        "--docs-version-policy",
+                        "latest",
                         "--css-selector",
                         "main",
                         "--json",
@@ -445,6 +450,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["diff"]["stale_rows"], 0)
         self.assertEqual(payload["namespace"], "site-example-com-v1")
         self.assertEqual(payload["crawl_strategy"], "hybrid")
+        self.assertEqual(payload["docs_version_policy"], "latest")
         self.assertEqual(payload["include_paths"], ["/docs/**"])
         self.assertEqual(payload["exclude_paths"], ["/llms-full.txt"])
         self.assertTrue(payload["strip_trailing_slash"])
@@ -458,6 +464,7 @@ class CliTests(unittest.TestCase):
         chunks = [json.loads(line) for line in (out_dir / "chunks.jsonl").read_text(encoding="utf-8").splitlines()]
         self.assertEqual(plan["diff"]["rows_to_upsert"], 1)
         self.assertEqual(plan["crawl_options"]["crawl_strategy"], "hybrid")
+        self.assertEqual(plan["crawl_options"]["docs_version_policy"], "latest")
         self.assertEqual(plan["crawl_options"]["include_paths"], ["/docs/**"])
         self.assertEqual(plan["crawl_options"]["exclude_paths"], ["/llms-full.txt"])
         self.assertTrue(plan["crawl_options"]["strip_trailing_slash"])
@@ -465,6 +472,38 @@ class CliTests(unittest.TestCase):
         self.assertEqual(len(manifest["pages"]), 1)
         self.assertEqual(len(chunks), 1)
         crawl_mock.assert_called_once()
+
+    def test_plan_command_stops_default_docs_version_warning_before_crawl(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        urls = []
+        for version in ("1.0.0", "1.1.0", "latest"):
+            for page in range(10):
+                urls.append(f"https://example.com/docs/{version}/page-{page}/")
+
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch("turbo_search.crawler.discover_sitemap_page_urls", return_value=urls):
+            with patch("turbo_search.crawler.crawl_pages") as crawl_pages_mock:
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    result = main(
+                        [
+                            "plan",
+                            "https://example.com/",
+                            "--out-dir",
+                            str(root / "plan"),
+                            "--state-root",
+                            str(root / "state"),
+                            "--no-progress",
+                        ]
+                    )
+
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("detected versioned docs under /docs", stderr.getvalue())
+        self.assertIn("--docs-version-policy latest", stderr.getvalue())
+        crawl_pages_mock.assert_not_called()
 
     def test_plan_command_routes_github_repo_urls_to_repo_corpus_and_artifacts(self) -> None:
         tmp = tempfile.TemporaryDirectory()

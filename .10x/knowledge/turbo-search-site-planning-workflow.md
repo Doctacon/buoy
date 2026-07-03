@@ -14,6 +14,8 @@ From 2026-07-02 onward, interactive text-mode `plan` and `crawl` runs show a def
 
 Default website planning caps are `3000` pages and `120000` chunks. Use lower caps for smoke tests or when you only need a subset.
 
+Default website docs-version behavior is `--docs-version-policy warn`: detect repeated sitemap families such as `/docs/1.10.2/**`, `/docs/latest/**`, and `/docs/nightly/**`, then stop before page crawling so the user chooses intentionally. For duplicated version docs, prefer `--docs-version-policy latest` for moving current docs, `stable-latest` for the highest semantic version, `latest-nightly` for current plus preview docs, or `all` to keep every version.
+
 Progress behavior:
 
 - enabled by default only for interactive terminals;

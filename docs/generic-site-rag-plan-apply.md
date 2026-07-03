@@ -53,6 +53,8 @@ The plan compares generated chunks to local applied state under `.turbo-search/s
 
 Hybrid/link crawling still obeys robots.txt, host restrictions, page caps, concurrency, and delay settings. Default website planning caps are `3000` pages and `120000` chunks; default GitHub repository caps are `5000` repo files, `100000` chunks, and `51200` bytes per text file. Lower them for smoke tests or raise them for unusually large sources. Interactive progress uses `cap=` for crawl limits and, during sitemap crawl, shows a sitemap-derived page estimate after matching sitemap URLs are discovered.
 
+For sitemap-heavy versioned docs sites, the default docs version policy is `warn`: detect repeated `/docs/{version}/...` families and stop before page crawling so the user chooses intentionally. Use `--docs-version-policy latest` to keep moving current docs such as `/docs/latest/**`, `--docs-version-policy stable-latest` to keep the highest semantic version, `--docs-version-policy latest-nightly` to keep current plus preview docs, or `--docs-version-policy all` to keep every version.
+
 ### Path filters and URL canonicalization
 
 Use repeatable path globs to shape the local corpus before a live apply:

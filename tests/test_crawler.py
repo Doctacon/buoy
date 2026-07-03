@@ -14,10 +14,14 @@ from turbo_search.crawler import (
     CrawlOptions,
     GitHubRepoSource,
     WebsiteSource,
+    analyze_docs_version_urls,
+    apply_docs_version_policy,
     build_sitemap_spider_class,
+    docs_version_block_message,
     canonicalize_page_url,
     allowed_domains_for_url,
     crawl_pages,
+    crawl_site,
     crawled_page_from_response,
     default_out_dir,
     detect_source,
@@ -144,6 +148,85 @@ class CrawlerHelperTests(unittest.TestCase):
             sitemap_page_progress_label(1, sitemap_url_count=5231, cap=3000),
             "1/3000; sitemap=5231; cap=3000",
         )
+
+    def test_analyze_docs_version_urls_detects_iceberg_style_version_family(self) -> None:
+        urls = []
+        for version in ("1.10.0", "1.10.1", "1.10.2", "latest", "nightly"):
+            for page in range(8):
+                urls.append(f"https://iceberg.apache.org/docs/{version}/page-{page}/")
+        urls.append("https://iceberg.apache.org/blog/release/")
+
+        warning = analyze_docs_version_urls(urls, policy="warn")
+        latest = analyze_docs_version_urls(urls, policy="latest")
+        stable = analyze_docs_version_urls(urls, policy="stable-latest")
+        latest_nightly = analyze_docs_version_urls(urls, policy="latest-nightly")
+
+        self.assertTrue(warning["detected"])
+        self.assertEqual(warning["root_path"], "/docs")
+        self.assertEqual(warning["version_count"], 5)
+        self.assertEqual(warning["versioned_url_count"], 40)
+        self.assertEqual(warning["suggested_policy"], "latest")
+        self.assertEqual(latest["selected_versions"], ["latest"])
+        self.assertIn("/docs/1.10.2/**", latest["added_exclude_paths"])
+        self.assertEqual(stable["selected_versions"], ["1.10.2"])
+        self.assertEqual(latest_nightly["selected_versions"], ["latest", "nightly"])
+
+    def test_apply_docs_version_policy_adds_effective_excludes(self) -> None:
+        urls = []
+        for version in ("1.0.0", "1.1.0", "latest"):
+            for page in range(10):
+                urls.append(f"https://example.com/docs/{version}/page-{page}/")
+        options = CrawlOptions(
+            base_url="https://example.com/",
+            out_dir=Path("unused"),
+            docs_version_policy="latest",
+            exclude_paths=("/private/**",),
+        )
+
+        with patch("turbo_search.crawler.discover_sitemap_page_urls", return_value=urls):
+            effective, report = apply_docs_version_policy(options)
+
+        self.assertTrue(report["applied"])
+        self.assertEqual(report["selected_versions"], ["latest"])
+        self.assertEqual(effective.exclude_paths, ("/private/**", "/docs/1.0.0/**", "/docs/1.1.0/**"))
+
+    def test_docs_version_block_message_recommends_explicit_policy(self) -> None:
+        message = docs_version_block_message(
+            {
+                "detected": True,
+                "policy": "warn",
+                "root_path": "/docs",
+                "version_count": 22,
+                "versioned_url_count": 837,
+                "suggested_policy": "latest",
+            }
+        )
+
+        self.assertIsNotNone(message)
+        assert message is not None
+        self.assertIn("detected versioned docs under /docs", message)
+        self.assertIn("stopping before page crawl", message)
+        self.assertIn("--docs-version-policy latest", message)
+        self.assertIn("--docs-version-policy all", message)
+
+    def test_crawl_site_stops_default_warn_policy_before_page_crawl(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            urls = []
+            for version in ("1.0.0", "1.1.0", "latest"):
+                for page in range(10):
+                    urls.append(f"https://example.com/docs/{version}/page-{page}/")
+
+            options = CrawlOptions(
+                base_url="https://example.com/",
+                out_dir=Path(tmp),
+                docs_version_policy="warn",
+            )
+            with patch("turbo_search.crawler.discover_sitemap_page_urls", return_value=urls):
+                with patch("turbo_search.crawler.crawl_pages") as crawl_pages_mock:
+                    with self.assertRaisesRegex(RuntimeError, "stopping before page crawl"):
+                        crawl_site(options)
+
+        crawl_pages_mock.assert_not_called()
 
     def test_sitemap_spider_estimates_unique_filtered_urls_beyond_cap(self) -> None:
         events: list[str] = []
