@@ -1409,7 +1409,8 @@ def print_apply_text(payload: dict[str, object]) -> None:
             f"write={timing['write_seconds']:.1f}s; "
             f"embedding_batch_size={timing['embedding_batch_size']}; "
             f"write_batch_size={timing['write_batch_size']}; "
-            f"precision={timing['embedding_precision']}"
+            f"precision={timing['embedding_precision']}; "
+            f"pipeline={timing['pipeline_mode']}"
         )
     if not payload.get("approved"):
         print("  live: pass --approve to embed and upsert selected rows")

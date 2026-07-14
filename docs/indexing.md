@@ -143,7 +143,7 @@ If credentials live in this repository's `.env`, load them only into the command
 )
 ```
 
-Approved apply acquires a fail-fast lock for the target namespace, embeds and upserts the recomputed diff serially, and commits local state only after successful remote work. Interactive runs show completed batches/rows on one stderr line; the final summary separates elapsed, embedding, and write time. Tune the two independent batch controls only after measuring the workload:
+Approved apply acquires a fail-fast lock for the target namespace and overlaps one local embedding batch with one ordered remote upsert. It never runs concurrent embeddings or concurrent writes, and commits local state only after all remote work succeeds. Interactive runs show confirmed batches/rows on one stderr line; the final summary separates elapsed, embedding, and write time, whose stage totals may exceed wall time because they overlap. Tune the two independent batch controls only after measuring the workload:
 
 ```bash
 uv run buoy apply --approve \

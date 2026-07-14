@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-07-14
 Updated: 2026-07-14
 Parent: None
@@ -20,6 +20,10 @@ Review the current Buoy codebase after float16 inference and single-pass plannin
 ## Exclusions
 
 Live operations, code changes, generic refactoring, and already completed optimization work.
+
+## Progress and notes
+
+- 2026-07-14: Three independent post-optimization reviews synthesized at `.10x/reviews/2026-07-14-post-optimization-performance-ux-review.md`; exactly three recommendations have durable owners.
 
 ## Blockers
 

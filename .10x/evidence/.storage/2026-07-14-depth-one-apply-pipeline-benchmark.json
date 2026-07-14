@@ -1,0 +1,28 @@
+{
+  "created": "2026-07-14",
+  "kind": "deterministic no-remote delay benchmark",
+  "rows": 16,
+  "write_batch_size": 1,
+  "embedding_delay_seconds_per_batch": 0.04,
+  "write_delay_seconds_per_batch": 0.02,
+  "runs": 5,
+  "serial_seconds": [
+    2.2478898339904845,
+    1.1905726669356227,
+    1.1887102911714464,
+    1.197845249902457,
+    1.1901703749317676
+  ],
+  "pipeline_seconds": [
+    0.7871023339685053,
+    0.7927277081180364,
+    0.7904960000887513,
+    0.794257584027946,
+    0.7991024579387158
+  ],
+  "serial_median_seconds": 1.1905726669356227,
+  "pipeline_median_seconds": 0.7927277081180364,
+  "median_reduction_seconds": 0.3978449588175863,
+  "median_reduction_fraction": 0.33416268478730227,
+  "remote_calls": 0
+}

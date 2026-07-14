@@ -1,0 +1,259 @@
+{
+  "created": "2026-07-14",
+  "host": "Apple M2 Pro 16 GB; macOS 26.5.1 arm64",
+  "source": "artifacts/site-crawls/iceberg-apache-org-plan/chunks.jsonl",
+  "source_sha256": "426a04277e3e613047ce97fa62dfcf76e4c23ca5075af445204f849c1f86dece",
+  "row_ids_sha256": "7c5a21d33cba4e7e7dac1306b43e965f2d698a0a9def91eb7d067fb50522be52",
+  "samples": 1024,
+  "batch_size": 32,
+  "query": "How does Apache Iceberg handle table metadata and snapshots?",
+  "acceptance": {
+    "minimum_document_cosine": 0.999,
+    "exact_top10_ordered_equality": true
+  },
+  "versions_ephemeral_environment": {
+    "sentence_transformers": "5.6.0",
+    "torch": "2.13.0",
+    "onnxruntime": "1.27.0",
+    "openvino": "2026.2.1-21919-ede283a88e3-releases/2026/2",
+    "fastembed": "0.7.4",
+    "mlx": "unknown",
+    "mlx_embeddings": "0.0.5",
+    "numpy": "2.4.6"
+  },
+  "results": {
+    "torch_mps": {
+      "lane": "torch_mps",
+      "status": "ok",
+      "model": "BAAI/bge-small-en-v1.5",
+      "samples": 1024,
+      "batch_size": 32,
+      "python": "3.13.0",
+      "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+      "load_seconds": 14.973586749983951,
+      "rss_before_bytes": 50757632,
+      "rss_after_load_bytes": 498368512,
+      "peak_rss_bytes": 641138688,
+      "seconds_runs": [
+        17.002713833004236,
+        16.803276416147128,
+        16.856735083041713
+      ],
+      "median_seconds": 16.856735083041713,
+      "median_rows_per_second": 60.747232186745876,
+      "dimension": 384,
+      "norm_min": 0.9999999403953552,
+      "norm_max": 1.000000238418579,
+      "top10": [
+        8,
+        3,
+        11,
+        1,
+        7,
+        17,
+        23,
+        118,
+        769,
+        759
+      ],
+      "observed_peak_rss_bytes": 641138688
+    },
+    "st_onnx_cpu": {
+      "lane": "st_onnx_cpu",
+      "status": "ok",
+      "model": "BAAI/bge-small-en-v1.5",
+      "samples": 1024,
+      "batch_size": 32,
+      "python": "3.13.0",
+      "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+      "load_seconds": 12.91082137497142,
+      "rss_before_bytes": 51183616,
+      "rss_after_load_bytes": 788594688,
+      "peak_rss_bytes": 2870657024,
+      "seconds_runs": [
+        73.84826766699553,
+        73.5151252921205,
+        73.35183354187757
+      ],
+      "median_seconds": 73.5151252921205,
+      "median_rows_per_second": 13.929106370029603,
+      "dimension": 384,
+      "norm_min": 0.9999998807907104,
+      "norm_max": 1.0000001192092896,
+      "top10": [
+        8,
+        3,
+        11,
+        1,
+        7,
+        17,
+        23,
+        118,
+        769,
+        759
+      ],
+      "parity": {
+        "baseline_top10": [
+          8,
+          3,
+          11,
+          1,
+          7,
+          17,
+          23,
+          118,
+          769,
+          759
+        ],
+        "exact_top10_ordered_equality": true,
+        "min_document_cosine": 0.9999998807907104,
+        "mean_document_cosine": 1.0,
+        "p01_document_cosine": 0.9999999403953552
+      },
+      "observed_peak_rss_bytes": 2870657024
+    },
+    "st_openvino_cpu": {
+      "lane": "st_openvino_cpu",
+      "status": "ok",
+      "model": "BAAI/bge-small-en-v1.5",
+      "samples": 1024,
+      "batch_size": 32,
+      "python": "3.13.0",
+      "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+      "load_seconds": 18.653248708928004,
+      "rss_before_bytes": 50577408,
+      "rss_after_load_bytes": 903364608,
+      "peak_rss_bytes": 1346732032,
+      "seconds_runs": [
+        42.34212299995124,
+        42.074920957908034,
+        40.852146999910474
+      ],
+      "median_seconds": 42.074920957908034,
+      "median_rows_per_second": 24.33753829328437,
+      "dimension": 384,
+      "norm_min": 0.9999998211860657,
+      "norm_max": 1.0000001192092896,
+      "top10": [
+        8,
+        3,
+        11,
+        1,
+        7,
+        17,
+        23,
+        118,
+        759,
+        769
+      ],
+      "parity": {
+        "baseline_top10": [
+          8,
+          3,
+          11,
+          1,
+          7,
+          17,
+          23,
+          118,
+          769,
+          759
+        ],
+        "exact_top10_ordered_equality": false,
+        "min_document_cosine": 0.9999562501907349,
+        "mean_document_cosine": 0.9999780654907227,
+        "p01_document_cosine": 0.9999606609344482
+      },
+      "observed_peak_rss_bytes": 1346732032
+    },
+    "mlx_bf16": {
+      "lane": "mlx_bf16",
+      "status": "ok",
+      "model": "BAAI/bge-small-en-v1.5",
+      "samples": 1024,
+      "batch_size": 32,
+      "python": "3.13.0",
+      "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+      "load_seconds": 14.390774542000145,
+      "rss_before_bytes": 51724288,
+      "rss_after_load_bytes": 671596544,
+      "peak_rss_bytes": 182255616,
+      "seconds_runs": [
+        38.66723900008947,
+        51.08164208289236,
+        67.35891466611065
+      ],
+      "median_seconds": 51.08164208289236,
+      "median_rows_per_second": 20.04634068611795,
+      "dimension": 384,
+      "norm_min": 0.9999998807907104,
+      "norm_max": 1.0000001192092896,
+      "top10": [
+        8,
+        3,
+        11,
+        7,
+        1,
+        17,
+        23,
+        118,
+        769,
+        10
+      ],
+      "parity": {
+        "baseline_top10": [
+          8,
+          3,
+          11,
+          1,
+          7,
+          17,
+          23,
+          118,
+          769,
+          759
+        ],
+        "exact_top10_ordered_equality": false,
+        "min_document_cosine": 0.9999414682388306,
+        "mean_document_cosine": 0.9999716281890869,
+        "p01_document_cosine": 0.9999611973762512
+      },
+      "observed_peak_rss_bytes": 671596544
+    },
+    "st_onnx_coreml": {
+      "lane": "st_onnx_coreml",
+      "status": "failed",
+      "provider_exposed": true,
+      "observation": "The original process terminated during the first 32-row warmup before producing a result artifact. No comparable timed run exists. Exact stderr/provider-node diagnostics were not retained and are not canonical evidence."
+    },
+    "fastembed_onnx": {
+      "lane": "fastembed_onnx",
+      "status": "failed",
+      "model": "BAAI/bge-small-en-v1.5",
+      "observation": "Neither original 1,024-row attempt completed within the five-minute lane bound; the operator terminated each without a result artifact. A one-text threads=4 sanity check completed, establishing installation/model support but not workload viability.",
+      "attempts": [
+        {
+          "threads": "default",
+          "minimum_elapsed_seconds": 300,
+          "outcome": "operator-terminated after bound"
+        },
+        {
+          "threads": 4,
+          "minimum_elapsed_seconds": 300,
+          "outcome": "operator-terminated after bound"
+        }
+      ]
+    }
+  },
+  "notes": [
+    "Torch baseline used the project environment (sentence-transformers 5.6.0, torch 2.12.1); candidate lanes used an ephemeral /tmp environment.",
+    "Candidate model exports and downloads were warmed/cached before model load timing where applicable. Warmup was excluded from three timed full runs.",
+    "RSS is process RSS sampled during encode; unified accelerator/runtime allocations and subprocess allocations can make it incomplete. observed_peak_rss_bytes is at least post-load RSS.",
+    "No remote API or project source/lock/package file was read for mutation.",
+    "Minimum cosine covers the 1,024 document vectors. Query cosine was not retained; query compatibility was assessed through ordered top-10 equality.",
+    "Exact top-10 means exact ordered-list equality, not set equality. OpenVINO returned the same ten IDs but swapped ranks 9 and 10.",
+    "Package/build portability, fallback integration, and plan compatibility were not evaluated because no candidate passed the earlier repeated-median performance promotion gate.",
+    "The canonical failed-lane facts are deliberately limited to provider exposure, warmup failure, and exceeding the five-minute FastEmbed bound; exact original process logs and exit-code normalization were not retained.",
+    "The reproduction wrapper recreates setup/invocation and preserves stdout, stderr, elapsed-bound metadata, and process results for future runs; it does not claim to regenerate this canonical JSON byte-for-byte."
+  ]
+}

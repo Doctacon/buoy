@@ -8,6 +8,7 @@ local diff.
 
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
@@ -261,28 +262,63 @@ def run_approved_apply(
                 config.embedding_model, precision=config.embedding_precision
             )
             assert writer is not None
-            for batch_index, batch in enumerate(batched(rows_to_upsert, batch_size), start=1):
-                embedding_started_at = observe_monotonic()
-                vectors = embedder.encode(
-                    [embedding_text_for_chunk(chunk) for chunk in batch],
-                    batch_size=embedding_batch_size,
-                )
-                embedding_seconds += elapsed_since(embedding_started_at)
-                embeddings_generated += len(vectors)
-                rows = [
-                    build_generic_site_row(chunk, vector, plan_id=str(verified.plan["plan_id"]), applied_at=applied_at)
-                    for chunk, vector in zip(batch, vectors, strict=True)
-                ]
+            in_flight: Future[float] | None = None
+            in_flight_batch_index = 0
+            in_flight_row_count = 0
+
+            def write_rows(rows: list[JsonObject]) -> float:
                 write_started_at = observe_monotonic()
                 writer.upsert_rows(rows)
-                write_seconds += elapsed_since(write_started_at)
-                rows_written += len(rows)
+                return elapsed_since(write_started_at)
+
+            def finish_in_flight() -> None:
+                nonlocal in_flight, rows_written, write_seconds
+                if in_flight is None:
+                    return
+                write_seconds += in_flight.result()
+                rows_written += in_flight_row_count
                 elapsed_seconds = elapsed_since(apply_started_at)
                 emit_progress(
                     "apply: embedding/upserting "
-                    f"batches={batch_index}/{total_batches}; rows={rows_written}/{total_rows}; "
+                    f"batches={in_flight_batch_index}/{total_batches}; rows={rows_written}/{total_rows}; "
                     f"elapsed={elapsed_seconds:.1f}s; embedding={embedding_seconds:.1f}s; write={write_seconds:.1f}s"
                 )
+                in_flight = None
+
+            with ThreadPoolExecutor(max_workers=1, thread_name_prefix="buoy-upsert") as executor:
+                try:
+                    for batch_index, batch in enumerate(batched(rows_to_upsert, batch_size), start=1):
+                        embedding_started_at = observe_monotonic()
+                        vectors = embedder.encode(
+                            [embedding_text_for_chunk(chunk) for chunk in batch],
+                            batch_size=embedding_batch_size,
+                        )
+                        embedding_seconds += elapsed_since(embedding_started_at)
+                        embeddings_generated += len(vectors)
+                        rows = [
+                            build_generic_site_row(
+                                chunk,
+                                vector,
+                                plan_id=str(verified.plan["plan_id"]),
+                                applied_at=applied_at,
+                            )
+                            for chunk, vector in zip(batch, vectors, strict=True)
+                        ]
+                        # The current batch was prepared while the previous upsert ran.
+                        # Confirm that write before submitting another one; failed writes
+                        # therefore discard these vectors without starting later work.
+                        finish_in_flight()
+                        in_flight_batch_index = batch_index
+                        in_flight_row_count = len(rows)
+                        in_flight = executor.submit(write_rows, rows)
+                    finish_in_flight()
+                except BaseException:
+                    if in_flight is not None:
+                        try:
+                            in_flight.result()
+                        except BaseException:
+                            pass
+                    raise
 
         if delete_stale and stale_row_ids:
             emit_progress(f"apply: deleting stale rows={len(stale_row_ids)}")
@@ -329,6 +365,7 @@ def run_approved_apply(
             "embedding_batch_size": embedding_batch_size,
             "write_batch_size": batch_size,
             "embedding_precision": config.embedding_precision,
+            "pipeline_mode": "depth_one",
         },
     )
 

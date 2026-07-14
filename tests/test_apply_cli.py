@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -126,6 +127,27 @@ def build_saved_plan(
         out_dir=out_dir,
         state_root=state_root or root / "state",
         embedding_precision=embedding_precision,
+    )
+    write_plan_artifacts(artifacts, out_dir)
+    return artifacts, out_dir / "plan.json"
+
+
+def build_three_row_plan(root: Path, *, state_root: Path):
+    corpus = root / "pages"
+    for index in range(3):
+        write_page(
+            corpus,
+            f"{index}.md",
+            f"https://example.com/docs/{index}",
+            f"Page {index}",
+            f"# Intro\n\nUseful docs {index}.",
+        )
+    out_dir = root / "plan"
+    artifacts = build_plan_artifacts(
+        indexing_plan=process_corpus(corpus),
+        base_url="https://example.com/docs/",
+        out_dir=out_dir,
+        state_root=state_root,
     )
     write_plan_artifacts(artifacts, out_dir)
     return artifacts, out_dir / "plan.json"
@@ -1003,6 +1025,305 @@ class ApplyCliTests(unittest.TestCase):
                 with acquire_namespace_apply_lock(site_id="example-com", namespace="site-two-v1", state_root=state_root):
                     pass
 
+    def test_depth_one_pipeline_overlaps_main_thread_embedding_with_one_ordered_writer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            artifacts, plan_path = build_three_row_plan(root, state_root=state_root)
+            verified = load_verified_apply_plan(
+                plan_path=plan_path,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            )
+            main_thread = threading.get_ident()
+            write_started = threading.Event()
+            release_first_write = threading.Event()
+
+            class OverlapEmbedder:
+                calls = 0
+                thread_ids: list[int] = []
+
+                def __init__(self, _model_name: str, *, precision: str = "float32") -> None:
+                    self.precision = precision
+
+                def encode(self, texts, *, batch_size: int = 32):
+                    del batch_size
+                    OverlapEmbedder.calls += 1
+                    OverlapEmbedder.thread_ids.append(threading.get_ident())
+                    if OverlapEmbedder.calls == 2:
+                        self.assert_event(write_started)
+                        release_first_write.set()
+                    return [[float(index), 0.0, 1.0] for index, _ in enumerate(texts, start=1)]
+
+                @staticmethod
+                def assert_event(event: threading.Event) -> None:
+                    if not event.wait(2):
+                        raise AssertionError("first write did not overlap second embedding batch")
+
+            class OrderedWriter:
+                calls: list[list[str]] = []
+                thread_ids: list[int] = []
+                active = 0
+                max_active = 0
+                lock = threading.Lock()
+
+                def __init__(self, *, config, api_key: str, schema=None) -> None:
+                    del config, api_key, schema
+
+                def upsert_rows(self, rows):
+                    row_ids = [str(row["id"]) for row in rows]
+                    with OrderedWriter.lock:
+                        OrderedWriter.active += 1
+                        OrderedWriter.max_active = max(OrderedWriter.max_active, OrderedWriter.active)
+                    try:
+                        OrderedWriter.thread_ids.append(threading.get_ident())
+                        if not OrderedWriter.calls:
+                            write_started.set()
+                            if not release_first_write.wait(2):
+                                raise AssertionError("second embedding batch did not run during first write")
+                        OrderedWriter.calls.append(row_ids)
+                    finally:
+                        with OrderedWriter.lock:
+                            OrderedWriter.active -= 1
+
+            with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "test-key"}, clear=True), patch(
+                "buoy_search.apply.SentenceTransformerEmbedder", OverlapEmbedder
+            ), patch("buoy_search.apply.TurbopufferWriter", OrderedWriter):
+                summary = run_approved_apply(
+                    verified,
+                    config=RuntimeConfig(namespace=artifacts.manifest.namespace),
+                    namespace=artifacts.manifest.namespace,
+                    batch_size=1,
+                )
+
+        expected_ids = [record.row_id for record in verified.diff.rows_to_upsert_records]
+        self.assertEqual([row_id for call in OrderedWriter.calls for row_id in call], expected_ids)
+        self.assertEqual(OverlapEmbedder.thread_ids, [main_thread, main_thread, main_thread])
+        self.assertTrue(all(thread_id != main_thread for thread_id in OrderedWriter.thread_ids))
+        self.assertEqual(OrderedWriter.max_active, 1)
+        self.assertEqual(summary["rows_upserted"], 3)
+        self.assertEqual(summary["timing"]["pipeline_mode"], "depth_one")
+
+    def test_depth_one_pipeline_discards_prepared_batch_after_prior_write_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            artifacts, plan_path = build_three_row_plan(root, state_root=state_root)
+            verified = load_verified_apply_plan(
+                plan_path=plan_path,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            )
+            write_started = threading.Event()
+            second_encoded = threading.Event()
+            progress: list[str] = []
+
+            class TwoBatchEmbedder:
+                calls = 0
+
+                def __init__(self, _model_name: str, *, precision: str = "float32") -> None:
+                    self.precision = precision
+
+                def encode(self, texts, *, batch_size: int = 32):
+                    del batch_size
+                    TwoBatchEmbedder.calls += 1
+                    if TwoBatchEmbedder.calls == 2:
+                        if not write_started.wait(2):
+                            raise AssertionError("first write did not start")
+                        second_encoded.set()
+                    return [[1.0, 0.0, 1.0] for _ in texts]
+
+            class FailingFirstWriter:
+                calls = 0
+
+                def __init__(self, *, config, api_key: str, schema=None) -> None:
+                    del config, api_key, schema
+
+                def upsert_rows(self, rows):
+                    del rows
+                    FailingFirstWriter.calls += 1
+                    write_started.set()
+                    if not second_encoded.wait(2):
+                        raise AssertionError("second batch was not prepared during first write")
+                    raise RuntimeError("late first write failure")
+
+            with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "test-key"}, clear=True), patch(
+                "buoy_search.apply.SentenceTransformerEmbedder", TwoBatchEmbedder
+            ), patch("buoy_search.apply.TurbopufferWriter", FailingFirstWriter):
+                with self.assertRaisesRegex(RuntimeError, "late first write failure"):
+                    run_approved_apply(
+                        verified,
+                        config=RuntimeConfig(namespace=artifacts.manifest.namespace),
+                        namespace=artifacts.manifest.namespace,
+                        batch_size=1,
+                        progress_callback=progress.append,
+                    )
+            state = load_applied_state(
+                site_id=artifacts.manifest.site_id,
+                namespace=artifacts.manifest.namespace,
+                base_url=artifacts.manifest.base_url,
+                state_root=state_root,
+            )
+
+        self.assertEqual(TwoBatchEmbedder.calls, 2)
+        self.assertEqual(FailingFirstWriter.calls, 1)
+        self.assertFalse(any("embedding/upserting" in message for message in progress))
+        self.assertTrue(state.first_apply)
+
+    def test_depth_one_pipeline_awaits_prior_write_when_embedding_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            artifacts, plan_path = build_three_row_plan(root, state_root=state_root)
+            verified = load_verified_apply_plan(
+                plan_path=plan_path,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            )
+            write_started = threading.Event()
+            release_write = threading.Event()
+            write_finished = threading.Event()
+
+            class FailingSecondEmbedder:
+                calls = 0
+
+                def __init__(self, _model_name: str, *, precision: str = "float32") -> None:
+                    self.precision = precision
+
+                def encode(self, texts, *, batch_size: int = 32):
+                    del batch_size
+                    FailingSecondEmbedder.calls += 1
+                    if FailingSecondEmbedder.calls == 2:
+                        if not write_started.wait(2):
+                            raise AssertionError("first write did not start")
+                        release_write.set()
+                        raise RuntimeError("second embedding failure")
+                    return [[1.0, 0.0, 1.0] for _ in texts]
+
+            class WaitingWriter:
+                calls = 0
+
+                def __init__(self, *, config, api_key: str, schema=None) -> None:
+                    del config, api_key, schema
+
+                def upsert_rows(self, rows):
+                    del rows
+                    WaitingWriter.calls += 1
+                    write_started.set()
+                    if not release_write.wait(2):
+                        raise AssertionError("embedding failure did not release prior write")
+                    write_finished.set()
+
+            with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "test-key"}, clear=True), patch(
+                "buoy_search.apply.SentenceTransformerEmbedder", FailingSecondEmbedder
+            ), patch("buoy_search.apply.TurbopufferWriter", WaitingWriter):
+                with self.assertRaisesRegex(RuntimeError, "second embedding failure"):
+                    run_approved_apply(
+                        verified,
+                        config=RuntimeConfig(namespace=artifacts.manifest.namespace),
+                        namespace=artifacts.manifest.namespace,
+                        batch_size=1,
+                    )
+            state = load_applied_state(
+                site_id=artifacts.manifest.site_id,
+                namespace=artifacts.manifest.namespace,
+                base_url=artifacts.manifest.base_url,
+                state_root=state_root,
+            )
+
+        self.assertTrue(write_finished.is_set())
+        self.assertEqual(FailingSecondEmbedder.calls, 2)
+        self.assertEqual(WaitingWriter.calls, 1)
+        self.assertTrue(state.first_apply)
+
+    def test_depth_one_pipeline_executor_failure_occurs_before_embedding_or_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            artifacts, plan_path = build_saved_plan(root, state_root=state_root)
+            verified = load_verified_apply_plan(
+                plan_path=plan_path,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            )
+            with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "test-key"}, clear=True), patch(
+                "buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder
+            ), patch("buoy_search.apply.TurbopufferWriter", FakeWriter), patch(
+                "buoy_search.apply.ThreadPoolExecutor", side_effect=RuntimeError("executor unavailable")
+            ):
+                with self.assertRaisesRegex(RuntimeError, "executor unavailable"):
+                    run_approved_apply(
+                        verified,
+                        config=RuntimeConfig(namespace=artifacts.manifest.namespace),
+                        namespace=artifacts.manifest.namespace,
+                        batch_size=1,
+                    )
+            state = load_applied_state(
+                site_id=artifacts.manifest.site_id,
+                namespace=artifacts.manifest.namespace,
+                base_url=artifacts.manifest.base_url,
+                state_root=state_root,
+            )
+
+        self.assertEqual(FakeEmbedder.texts, [])
+        self.assertEqual(FakeWriter.rows, [])
+        self.assertTrue(state.first_apply)
+
+    def test_depth_one_pipeline_preserves_zero_and_one_batch_behavior(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            artifacts, plan_path = build_saved_plan(root, state_root=state_root)
+            verified = load_verified_apply_plan(
+                plan_path=plan_path,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            )
+            main_thread = threading.get_ident()
+
+            class ThreadRecordingWriter(FakeWriter):
+                thread_ids: list[int] = []
+                call_count = 0
+
+                def upsert_rows(self, rows):
+                    ThreadRecordingWriter.thread_ids.append(threading.get_ident())
+                    ThreadRecordingWriter.call_count += 1
+                    super().upsert_rows(rows)
+
+            with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "test-key"}, clear=True), patch(
+                "buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder
+            ), patch("buoy_search.apply.TurbopufferWriter", ThreadRecordingWriter):
+                one_batch = run_approved_apply(
+                    verified,
+                    config=RuntimeConfig(namespace=artifacts.manifest.namespace),
+                    namespace=artifacts.manifest.namespace,
+                    batch_size=64,
+                )
+
+            verified_zero = load_verified_apply_plan(
+                plan_path=plan_path,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            )
+            with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "test-key"}, clear=True), patch(
+                "buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")
+            ), patch("buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")):
+                zero_batch = run_approved_apply(
+                    verified_zero,
+                    config=RuntimeConfig(namespace=artifacts.manifest.namespace),
+                    namespace=artifacts.manifest.namespace,
+                    batch_size=64,
+                )
+
+        self.assertEqual(ThreadRecordingWriter.call_count, 1)
+        self.assertTrue(all(thread_id != main_thread for thread_id in ThreadRecordingWriter.thread_ids))
+        self.assertEqual(one_batch["rows_upserted"], 2)
+        self.assertEqual(one_batch["timing"]["pipeline_mode"], "depth_one")
+        self.assertEqual(zero_batch["rows_to_upsert"], 0)
+        self.assertEqual(zero_batch["rows_upserted"], 0)
+        self.assertEqual(zero_batch["embeddings_generated"], 0)
+        self.assertEqual(zero_batch["timing"]["pipeline_mode"], "depth_one")
+
     def test_approved_apply_reports_controlled_stage_timings_and_batch_sizes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1013,7 +1334,14 @@ class ApplyCliTests(unittest.TestCase):
                 namespace=artifacts.manifest.namespace,
                 state_root=state_root,
             )
-            clock = iter([0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 10.0, 11.0, 15.0, 16.0, 17.0])
+            main_clock = iter([0.0, 1.0, 3.0, 4.0, 6.0, 7.0, 8.0, 17.0])
+            write_clock = iter([10.0, 13.0, 20.0, 26.0])
+
+            def clock() -> float:
+                if threading.current_thread().name.startswith("buoy-upsert"):
+                    return next(write_clock)
+                return next(main_clock)
+
             progress: list[str] = []
             with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "test-key"}, clear=True), patch(
                 "buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder
@@ -1025,7 +1353,7 @@ class ApplyCliTests(unittest.TestCase):
                     batch_size=1,
                     embedding_batch_size=7,
                     progress_callback=progress.append,
-                    monotonic=lambda: next(clock),
+                    monotonic=clock,
                 )
 
         self.assertEqual(FakeEmbedder.batch_sizes, [7, 7])
@@ -1034,14 +1362,15 @@ class ApplyCliTests(unittest.TestCase):
             {
                 "elapsed_seconds": 17.0,
                 "embedding_seconds": 4.0,
-                "write_seconds": 6.0,
+                "write_seconds": 9.0,
                 "embedding_batch_size": 7,
                 "write_batch_size": 1,
                 "embedding_precision": "float32",
+                "pipeline_mode": "depth_one",
             },
         )
         self.assertIn(
-            "apply: embedding/upserting batches=2/2; rows=2/2; elapsed=16.0s; embedding=4.0s; write=6.0s",
+            "apply: embedding/upserting batches=2/2; rows=2/2; elapsed=8.0s; embedding=4.0s; write=9.0s",
             progress,
         )
 
@@ -1148,6 +1477,7 @@ class ApplyCliTests(unittest.TestCase):
         self.assertEqual(result, 0, stderr)
         self.assertIn("timing: elapsed=", stdout)
         self.assertIn("embedding_batch_size=32; write_batch_size=1", stdout)
+        self.assertIn("pipeline=depth_one", stdout)
         rendered = stderr.replace("\x1b[K", "")
         self.assertIn("\rapply: verifying plan", rendered)
         self.assertIn("\rapply: acquiring namespace lock", rendered)
