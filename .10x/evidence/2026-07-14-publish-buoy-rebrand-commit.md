@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-14
 Updated: 2026-07-14
-Relates-To: .10x/tickets/2026-07-14-publish-buoy-rebrand-commit.md, .10x/tickets/2026-07-14-buoy-public-ci-release-plan.md
+Relates-To: .10x/tickets/done/2026-07-14-publish-buoy-rebrand-commit.md, .10x/tickets/2026-07-14-buoy-public-ci-release-plan.md
 
 # Buoy Rebrand and CI Commit Pre-Push Validation
 
@@ -41,6 +41,16 @@ The known cleanup-boundary warning appeared during tests and remained non-fatal.
 
 Supports creating one normal `feat: rebrand project as Buoy` commit and pushing it without tag, release, PyPI, force, history rewrite, or live Turbopuffer activity.
 
+## Commit, push, and hosted CI observation
+
+- Commit: `d846d2b2e965e7f62ff180442724d02705688a1a`
+- Subject: `feat: rebrand project as Buoy`
+- Push: normal fast-forward `836a921..d846d2b` to canonical `origin/main`; no force.
+- CI: https://github.com/Doctacon/buoy-search/actions/runs/29359814276 completed successfully.
+- Jobs: Python 3.11 passed in 32 seconds; Python 3.13 passed in 39 seconds; distribution build passed in 11 seconds.
+
+GitHub emitted deprecation annotations because the pinned checkout/setup-uv action revisions target the Node.js 20 action runtime and are currently forced onto Node.js 24. This did not fail CI; durable follow-up is `.10x/tickets/2026-07-14-update-node24-github-actions.md`.
+
 ## Limits
 
-Commit ID, push result, and hosted CI terminal result are recorded in the worker acceptance artifact because a commit cannot contain its own final object ID. No release tag is part of this evidence.
+No release tag, release, PyPI publication, force push, history rewrite, or live operation occurred. Post-commit ticket/evidence updates necessarily remain outside the commit whose ID they record.

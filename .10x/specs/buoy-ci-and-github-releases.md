@@ -20,7 +20,7 @@ Provide reproducible CI and GitHub-only release automation for the public Buoy r
 ## Release workflow
 
 - `.github/workflows/release.yml` MUST trigger only on tags matching `v*`.
-- Before release mutation it MUST verify the tag is exactly `v<project version>` and that package/module versions agree.
+- Before release mutation it MUST verify the tag is exactly `v<project version>`, package/module versions agree, and authoritative remote GitHub tag metadata identifies an annotated tag object. It MUST NOT infer annotation from checkout's dereferenced local ref.
 - It MUST run the complete release validation, build the wheel and sdist once from the tagged commit, and retain them as workflow artifacts.
 - The mutation job MUST use the GitHub environment `release`; environment approval is the launch boundary.
 - Release permissions MUST be minimal and explicit: read source, write release contents, issue OIDC identity, and write attestations only where needed.
@@ -36,4 +36,4 @@ Provide reproducible CI and GitHub-only release automation for the public Buoy r
 
 ## First release
 
-The first intended release is `v0.2.0`, only after the complete rebrand tree and workflows are committed/pushed and CI succeeds on canonical `main`.
+Public annotated `v0.2.0` and failed hosted run `29360369610` are preserved without a GitHub Release. The first intended GitHub Release is `v0.2.1`, only after the remote-tag validation fix and version bump are committed/pushed and CI succeeds on canonical `main`.

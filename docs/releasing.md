@@ -1,6 +1,6 @@
 # Releasing Buoy
 
-Buoy 0.2 releases on GitHub only. It is not published to PyPI.
+Buoy 0.2 releases on GitHub only. It is not published to PyPI. The annotated `v0.2.0` tag is preserved as a failed pre-release attempt without a GitHub Release; `v0.2.1` is the first intended Release.
 
 ## Release contract
 
@@ -19,7 +19,7 @@ The workflow never creates the tag, publishes to a package registry, modifies a 
    PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*.py' -q
    rm -rf /tmp/buoy-release-dist
    uv build --out-dir /tmp/buoy-release-dist
-   uv run --no-project python scripts/release_checks.py tag --tag v0.2.0
+   uv run --no-project python scripts/release_checks.py tag --tag v0.2.1
    uv run --no-project python scripts/release_checks.py assets --dist /tmp/buoy-release-dist
    ```
 
@@ -27,16 +27,16 @@ The workflow never creates the tag, publishes to a package registry, modifies a 
 5. Confirm the main CI workflow succeeds.
 6. Confirm the GitHub `release` environment exists with the intended approval rule.
 
-## Create v0.2.0
+## Create v0.2.1
 
 Create the tag only from the reviewed main commit:
 
 ```bash
 git switch main
 git pull --ff-only
-git tag -a v0.2.0 -m "Buoy v0.2.0"
-uv run --no-project python scripts/release_checks.py tag-object --tag v0.2.0
-git push origin v0.2.0
+git tag -a v0.2.1 -m "Buoy v0.2.1"
+# Hosted workflow verifies remote GitHub tag metadata after push
+git push origin v0.2.1
 ```
 
 The tag starts the release workflow. Review its validated commit and artifacts, then approve the pending `release` environment deployment. Do not approve a run for an unexpected commit, version, or artifact set.
@@ -46,7 +46,7 @@ The tag starts the release workflow. Review its validated commit and artifacts, 
 After the workflow succeeds:
 
 - confirm the GitHub Release points to the tag commit;
-- download and inspect both `buoy_search-0.2.0-py3-none-any.whl` and `buoy_search-0.2.0.tar.gz`;
+- download and inspect both `buoy_search-0.2.1-py3-none-any.whl` and `buoy_search-0.2.1.tar.gz`;
 - verify the GitHub provenance attestation;
 - confirm no PyPI project or publication was created;
 - record the workflow, release, tag, assets, and attestation in durable evidence;

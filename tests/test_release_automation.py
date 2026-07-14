@@ -13,7 +13,7 @@ import yaml
 from scripts.release_checks import (
     module_version,
     project_version,
-    verify_annotated_tag,
+    verify_remote_annotated_tag,
     verify_assets,
     verify_tag,
 )
@@ -70,7 +70,8 @@ class ReleaseAutomationTests(unittest.TestCase):
             {"contents": "write", "id-token": "write", "attestations": "write"},
         )
         text = (ROOT / ".github" / "workflows" / "release.yml").read_text()
-        self.assertEqual(text.count("scripts/release_checks.py tag-object"), 2)
+        self.assertEqual(text.count("scripts/release_checks.py remote-tag-object"), 2)
+        self.assertEqual(text.count("gh api \"repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}\""), 2)
         self.assertEqual(text.count("fetch-depth: 0"), 2)
         self.assertIn("actions/attest-build-provenance@", text)
         self.assertIn("gh release create", text)
@@ -92,35 +93,24 @@ class ReleaseAutomationTests(unittest.TestCase):
                 observed.add(owner_name)
         self.assertEqual(observed, set(EXPECTED_ACTION_MAJORS))
 
-    def test_release_requires_an_annotated_tag_object(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory)
-            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-            subprocess.run(["git", "config", "user.name", "Buoy Tests"], cwd=repo, check=True)
-            subprocess.run(["git", "config", "user.email", "tests@example.invalid"], cwd=repo, check=True)
-            (repo / "file.txt").write_text("fixture\n")
-            subprocess.run(["git", "add", "file.txt"], cwd=repo, check=True)
-            subprocess.run(["git", "commit", "-qm", "fixture"], cwd=repo, check=True)
-            subprocess.run(["git", "tag", "v0.2.0"], cwd=repo, check=True)
-            with self.assertRaisesRegex(ValueError, "must be annotated"):
-                verify_annotated_tag("v0.2.0", root=repo)
-            subprocess.run(["git", "tag", "-d", "v0.2.0"], cwd=repo, check=True, capture_output=True)
-            subprocess.run(["git", "tag", "-a", "v0.2.0", "-m", "Buoy v0.2.0"], cwd=repo, check=True)
-            verify_annotated_tag("v0.2.0", root=repo)
+    def test_release_requires_remote_annotated_tag_metadata(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be annotated"):
+            verify_remote_annotated_tag("v0.2.1", "commit")
+        verify_remote_annotated_tag("v0.2.1", "tag")
 
     def test_release_checks_accept_only_current_tag_and_exact_assets(self) -> None:
-        self.assertEqual(project_version(), "0.2.0")
-        self.assertEqual(module_version(), "0.2.0")
-        verify_tag("v0.2.0")
+        self.assertEqual(project_version(), "0.2.1")
+        self.assertEqual(module_version(), "0.2.1")
+        verify_tag("v0.2.1")
         with self.assertRaisesRegex(ValueError, "release tag mismatch"):
-            verify_tag("v0.2.1")
+            verify_tag("v0.2.0")
         with tempfile.TemporaryDirectory() as directory:
             dist = Path(directory)
-            for name in ("buoy_search-0.2.0-py3-none-any.whl", "buoy_search-0.2.0.tar.gz"):
+            for name in ("buoy_search-0.2.1-py3-none-any.whl", "buoy_search-0.2.1.tar.gz"):
                 (dist / name).touch()
             self.assertEqual(
                 verify_assets(dist),
-                ["buoy_search-0.2.0-py3-none-any.whl", "buoy_search-0.2.0.tar.gz"],
+                ["buoy_search-0.2.1-py3-none-any.whl", "buoy_search-0.2.1.tar.gz"],
             )
             (dist / "unexpected.txt").touch()
             with self.assertRaisesRegex(ValueError, "release assets mismatch"):
@@ -160,9 +150,10 @@ class ReleaseAutomationTests(unittest.TestCase):
 
     def test_changelog_keeps_unreleased_version_pending(self) -> None:
         changelog = (ROOT / "CHANGELOG.md").read_text()
-        self.assertIn("## 0.2.0 (pending GitHub release)", changelog)
-        self.assertNotIn("releases/tag/v0.2.0", changelog)
-        self.assertNotIn("compare/v0.2.0...HEAD", changelog)
+        self.assertIn("## 0.2.1 (pending GitHub release)", changelog)
+        self.assertIn("`v0.2.0` tag was preserved without a GitHub Release", changelog)
+        self.assertNotIn("releases/tag/v0.2.1", changelog)
+        self.assertNotIn("compare/v0.2.1...HEAD", changelog)
 
     def test_release_check_cli_rejects_mismatch_without_git_side_effects(self) -> None:
         before = subprocess.run(

@@ -1,0 +1,188 @@
+{
+  "artifacts": {
+    "artifacts": [],
+    "total_count": 0
+  },
+  "branch_protection": {
+    "message": "Branch not protected",
+    "status": 404
+  },
+  "captured_at": "2026-07-14",
+  "environment": {
+    "deployment_branch_policy": null,
+    "name": "release",
+    "protection_rules": [
+      {
+        "id": 59944013,
+        "node_id": "GA_kwDOTCenNM4DkqxN",
+        "prevent_self_review": false,
+        "reviewers": [
+          {
+            "reviewer": {
+              "avatar_url": "https://avatars.githubusercontent.com/u/61797492?v=4",
+              "events_url": "https://api.github.com/users/Doctacon/events{/privacy}",
+              "followers_url": "https://api.github.com/users/Doctacon/followers",
+              "following_url": "https://api.github.com/users/Doctacon/following{/other_user}",
+              "gists_url": "https://api.github.com/users/Doctacon/gists{/gist_id}",
+              "gravatar_id": "",
+              "html_url": "https://github.com/Doctacon",
+              "id": 61797492,
+              "login": "Doctacon",
+              "node_id": "MDQ6VXNlcjYxNzk3NDky",
+              "organizations_url": "https://api.github.com/users/Doctacon/orgs",
+              "received_events_url": "https://api.github.com/users/Doctacon/received_events",
+              "repos_url": "https://api.github.com/users/Doctacon/repos",
+              "site_admin": false,
+              "starred_url": "https://api.github.com/users/Doctacon/starred{/owner}{/repo}",
+              "subscriptions_url": "https://api.github.com/users/Doctacon/subscriptions",
+              "type": "User",
+              "url": "https://api.github.com/users/Doctacon",
+              "user_view_type": "public"
+            },
+            "type": "User"
+          }
+        ],
+        "type": "required_reviewers"
+      }
+    ]
+  },
+  "failure": "actions/checkout exposed refs/tags/v0.2.0 as a commit object in the runner checkout; release_checks.py required object type tag, so validation failed before build/environment deployment",
+  "jobs": [
+    {
+      "conclusion": "failure",
+      "id": 87178594354,
+      "name": "Validate and build",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Check out tagged source",
+          "number": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install uv and Python",
+          "number": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "failure",
+          "name": "Verify annotated tag and package versions",
+          "number": 4,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Sync locked dependencies",
+          "number": 5,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Run complete release validation",
+          "number": 6,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Build wheel and source distribution",
+          "number": 7,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Verify release assets",
+          "number": 8,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Retain release distributions",
+          "number": 9,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Post Install uv and Python",
+          "number": 17,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Check out tagged source",
+          "number": 18,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 19,
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "conclusion": "skipped",
+      "id": 87178642308,
+      "name": "Publish GitHub release",
+      "status": "completed",
+      "steps": []
+    }
+  ],
+  "local_tag": {
+    "object_type": "tag",
+    "peeled_commit": "d846d2b2e965e7f62ff180442724d02705688a1a"
+  },
+  "main_sha": "d846d2b2e965e7f62ff180442724d02705688a1a",
+  "pending_deployments": [],
+  "pypi_status": 404,
+  "release": null,
+  "repository": {
+    "default_branch": "main",
+    "full_name": "Doctacon/buoy-search",
+    "html_url": "https://github.com/Doctacon/buoy-search",
+    "visibility": "public"
+  },
+  "tag_object": {
+    "message": "Buoy v0.2.0\n",
+    "object": {
+      "sha": "d846d2b2e965e7f62ff180442724d02705688a1a",
+      "type": "commit",
+      "url": "https://api.github.com/repos/Doctacon/buoy-search/git/commits/d846d2b2e965e7f62ff180442724d02705688a1a"
+    },
+    "sha": "7eef05d045cc7e59000e2e8ae9abd268e2c21c5f",
+    "tag": "v0.2.0",
+    "tagger": {
+      "date": "2026-07-14T19:03:42Z",
+      "email": "connor@loughondata.com",
+      "name": "Connor"
+    }
+  },
+  "tag_ref": {
+    "object": {
+      "sha": "7eef05d045cc7e59000e2e8ae9abd268e2c21c5f",
+      "type": "tag",
+      "url": "https://api.github.com/repos/Doctacon/buoy-search/git/tags/7eef05d045cc7e59000e2e8ae9abd268e2c21c5f"
+    },
+    "ref": "refs/tags/v0.2.0"
+  },
+  "workflow_run": {
+    "conclusion": "failure",
+    "created_at": "2026-07-14T19:03:47Z",
+    "event": "push",
+    "head_branch": "v0.2.0",
+    "head_sha": "d846d2b2e965e7f62ff180442724d02705688a1a",
+    "html_url": "https://github.com/Doctacon/buoy-search/actions/runs/29360369610",
+    "id": 29360369610,
+    "name": "Release",
+    "status": "completed",
+    "updated_at": "2026-07-14T19:04:00Z"
+  }
+}

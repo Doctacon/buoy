@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import re
-import subprocess
 import sys
 import tomllib
 
@@ -36,21 +35,13 @@ def verify_tag(tag: str) -> None:
         raise ValueError(f"release tag mismatch: expected {expected!r}, received {tag!r}")
 
 
-def verify_annotated_tag(tag: str, *, root: Path = ROOT) -> None:
+def verify_remote_annotated_tag(tag: str, object_type: str) -> None:
+    """Verify authoritative GitHub tag-ref metadata reports an annotated tag."""
+
     verify_tag(tag)
-    result = subprocess.run(
-        ["git", "cat-file", "-t", f"refs/tags/{tag}"],
-        cwd=root,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    object_type = result.stdout.strip()
-    if result.returncode != 0:
-        raise ValueError(f"release tag {tag!r} does not exist in this checkout")
     if object_type != "tag":
         raise ValueError(
-            f"release tag {tag!r} must be annotated; found Git object type {object_type!r}"
+            f"release tag {tag!r} must be annotated; remote object type is {object_type!r}"
         )
 
 
@@ -78,8 +69,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     tag_parser = subparsers.add_parser("tag")
     tag_parser.add_argument("--tag", required=True)
-    tag_object_parser = subparsers.add_parser("tag-object")
+    tag_object_parser = subparsers.add_parser("remote-tag-object")
     tag_object_parser.add_argument("--tag", required=True)
+    tag_object_parser.add_argument("--object-type", required=True)
     assets_parser = subparsers.add_parser("assets")
     assets_parser.add_argument("--dist", type=Path, required=True)
     return parser
@@ -90,8 +82,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "tag":
             verify_tag(args.tag)
-        elif args.command == "tag-object":
-            verify_annotated_tag(args.tag)
+        elif args.command == "remote-tag-object":
+            verify_remote_annotated_tag(args.tag, args.object_type)
         else:
             verify_assets(args.dist)
     except (OSError, ValueError) as exc:

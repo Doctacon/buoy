@@ -29,10 +29,13 @@ jobs:
           python-version: "3.13"
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - name: Verify annotated tag and package versions
+      - name: Verify remote annotated tag and package versions
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          object_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}" --jq '.object.type')"
           uv run --no-project python scripts/release_checks.py tag --tag "${GITHUB_REF_NAME}"
-          uv run --no-project python scripts/release_checks.py tag-object --tag "${GITHUB_REF_NAME}"
+          uv run --no-project python scripts/release_checks.py remote-tag-object --tag "${GITHUB_REF_NAME}" --object-type "${object_type}"
       - name: Sync locked dependencies
         run: uv sync --locked --python 3.13
       - name: Run complete release validation
@@ -82,8 +85,9 @@ jobs:
             echo "GitHub release ${GITHUB_REF_NAME} already exists; refusing to overwrite it." >&2
             exit 1
           fi
+          object_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}" --jq '.object.type')"
           uv run --no-project python scripts/release_checks.py tag --tag "${GITHUB_REF_NAME}"
-          uv run --no-project python scripts/release_checks.py tag-object --tag "${GITHUB_REF_NAME}"
+          uv run --no-project python scripts/release_checks.py remote-tag-object --tag "${GITHUB_REF_NAME}" --object-type "${object_type}"
           uv run --no-project python scripts/release_checks.py assets --dist dist
       - name: Attest distribution provenance
         uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
