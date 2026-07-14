@@ -38,7 +38,7 @@ This limits repository-search validation because seed labels must avoid skipped 
 
 - `.10x/evidence/2026-06-28-cross-corpus-validation-local-plans.md`
 - `.10x/evidence/2026-06-28-cross-corpus-seed-eval-datasets.md`
-- `src/turbo_search/github_repo.py`
+- `src/buoy_search/github_repo.py`
 
 ## Progress and notes
 

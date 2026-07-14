@@ -5,9 +5,9 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from turbo_search.chunker import process_corpus
-from turbo_search.plan_artifacts import build_plan_artifacts, write_plan_artifacts
-from turbo_search.plan_cleanup import cleanup_applied_plan_directory, cleanup_superseded_plan_directories
+from buoy_search.chunker import process_corpus
+from buoy_search.plan_artifacts import build_plan_artifacts, write_plan_artifacts
+from buoy_search.plan_cleanup import cleanup_applied_plan_directory, cleanup_superseded_plan_directories
 
 
 def write_plan(root: Path, *, namespace: str) -> Path:

@@ -6,7 +6,7 @@ Updated: 2026-07-12
 
 ## Purpose and scope
 
-Define prospective automatic cleanup for `turbo-search` plan artifact directories. It covers artifacts created under the chosen `--out-dir` or default plan path.
+Define prospective automatic cleanup for Buoy plan artifact directories. It covers artifacts created under the chosen `--out-dir` or default plan path.
 
 It does not delete historical artifact backlogs, active DuckDB state, legacy-state cleanup, remote Turbopuffer data, or user-managed copies outside the plan artifact directory.
 
@@ -37,7 +37,7 @@ Plan cleanup is local-only. A cleanup failure after a successful apply MUST NOT 
 
 - Automatic cleanup applies only to future lifecycle events; historical artifacts require a separate explicit reconciliation/GC workflow.
 - The command MUST not follow symlinks outside the selected artifact root.
-- The command MUST not delete `.turbo-search/state/**`, credentials, user-managed copies, or Turbopuffer data.
+- The command MUST not delete `.buoy/state/**` or legacy `.turbo-search/state/**`, credentials, user-managed copies, or Turbopuffer data.
 - No additional confirmation flag is required for these ratified automatic lifecycle events.
 
 ## Acceptance criteria

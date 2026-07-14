@@ -6,7 +6,7 @@ Updated: 2026-07-02
 
 ## Purpose and scope
 
-`turbo-search crawl` and `turbo-search plan` SHOULD help users avoid indexing large families of duplicated versioned documentation unless they explicitly want the full historical corpus.
+`buoy crawl` and `buoy plan` SHOULD help users avoid indexing large families of duplicated versioned documentation unless they explicitly want the full historical corpus.
 
 This specification governs ordinary website sources only. GitHub repository ingestion is out of scope.
 
@@ -59,7 +59,7 @@ Successful JSON summaries MUST include the requested policy and a `docs_version_
 ### Default warning stops before crawl
 
 Given a website sitemap contains `/docs/1.9.0/...`, `/docs/1.10.2/...`, and `/docs/latest/...`
-When the user runs `turbo-search plan https://example.com/` with the default policy
+When the user runs `buoy plan https://example.com/` with the default policy
 Then the run stops before page crawling
 And the error reports that versioned docs were detected
 And the error suggests `--docs-version-policy latest` or another explicit policy.
@@ -67,7 +67,7 @@ And the error suggests `--docs-version-policy latest` or another explicit policy
 ### Latest policy prunes historical docs
 
 Given the same sitemap
-When the user runs `turbo-search plan https://example.com/ --docs-version-policy latest`
+When the user runs `buoy plan https://example.com/ --docs-version-policy latest`
 Then `/docs/latest/**` remains eligible
 And old `/docs/<semver>/**` prefixes are excluded
 And non-versioned pages such as `/blog/**` remain eligible.

@@ -6,7 +6,7 @@ Updated: 2026-07-12
 
 ## Purpose and scope
 
-Replace the JSON applied-state ledger for `turbo-search` with a compact, per-namespace embedded DuckDB ledger. This specification governs local incremental state, migration, history retention, and concurrent approved applies.
+Replace the JSON applied-state ledger for Buoy with a compact, per-namespace embedded DuckDB ledger. This specification governs local incremental state, migration, history retention, and concurrent approved applies.
 
 It does not compact plan artifacts, change crawl/chunk semantics, create or delete Turbopuffer namespaces, add Quack, or enable simultaneous applies to one namespace.
 
@@ -36,7 +36,7 @@ Migration MUST NOT contact Turbopuffer or load embeddings. Existing `legacy-json
 
 ## Plan behavior
 
-`turbo-search plan` MUST read the DuckDB current ledger for the matching state location when it exists. When no DuckDB state exists, it MUST return first-apply semantics without creating a database.
+`buoy plan` MUST read the DuckDB current ledger for the matching state location when it exists. When no DuckDB state exists, it MUST return first-apply semantics without creating a database.
 
 Given equivalent active rows, the DuckDB-backed diff MUST preserve the existing classifications: unchanged, new, changed, retained stale, and stale.
 

@@ -1,4 +1,4 @@
-# turbo-search Repo Search Autoresearch Program
+# buoy-search Repo Search Autoresearch Program
 
 This is the human-owned program for config-only repository search eval research.
 Autoresearch agents read it before proposing or running experiments. Do not edit
@@ -11,7 +11,7 @@ iteration, keep/discard decisions, and durable interpretation.
 
 ## Goal
 
-Improve repository search quality for `turbo-search` by comparing retrieval
+Improve repository search quality for `buoy-search` by comparing retrieval
 configurations against a fixed graded eval dataset.
 
 The primary metric is the composite repo search score:
@@ -47,7 +47,7 @@ You must not edit during a config-only run:
 Run one experiment with:
 
 ```bash
-uv run python -m turbo_search.autoresearch \
+uv run python -m buoy_search.autoresearch \
   --experiment autoresearch/experiments/<experiment-id>.json \
   --out autoresearch/runs/<experiment-id>
 ```
@@ -58,9 +58,9 @@ output directory outside the repo, or under an intentionally ignored/temporary
 path, when you only want to validate runner plumbing:
 
 ```bash
-uv run python -m turbo_search.autoresearch \
+uv run python -m buoy_search.autoresearch \
   --experiment autoresearch/experiments/repo-search-fixture-baseline.json \
-  --out /tmp/turbo-search-repo-search-fixture-baseline \
+  --out /tmp/buoy-search-repo-search-fixture-baseline \
   --json
 ```
 
@@ -72,9 +72,9 @@ Minimal fixture-mode example:
   "question": "Does the baseline config retrieve expected implementation files?",
   "hypothesis": "The baseline top_k/candidates config should rank direct source files highly.",
   "mode": "fixture",
-  "dataset_path": "src/turbo_search/data/turbo_search_repo_search_seed_evals.json",
+  "dataset_path": "src/buoy_search/data/buoy_search_repo_search_seed_evals.json",
   "config": {
-    "namespace": "github-owner-turbo-search-v1",
+    "namespace": "github-owner-buoy-search-v1",
     "region": "gcp-us-central1",
     "embedding_model": "BAAI/bge-small-en-v1.5"
   },
@@ -85,7 +85,7 @@ Minimal fixture-mode example:
   },
   "fixture_hits": {
     "github-url-routing": [
-      {"path": "src/turbo_search/crawler.py", "title": "crawler.py"}
+      {"path": "src/buoy_search/crawler.py", "title": "crawler.py"}
     ]
   }
 }
@@ -100,9 +100,9 @@ Live mode is retrieval-only and requires current human authorization plus
   "question": "How does the baseline live namespace score?",
   "hypothesis": "The indexed repo namespace should retrieve grade-3 source files in the top results.",
   "mode": "live",
-  "dataset_path": "src/turbo_search/data/turbo_search_repo_search_seed_evals.json",
+  "dataset_path": "src/buoy_search/data/buoy_search_repo_search_seed_evals.json",
   "config": {
-    "namespace": "github-owner-turbo-search-v1",
+    "namespace": "github-owner-buoy-search-v1",
     "region": "gcp-us-central1",
     "embedding_model": "BAAI/bge-small-en-v1.5"
   },
@@ -119,7 +119,7 @@ Live mode is retrieval-only and requires current human authorization plus
 1. State one hypothesis in the experiment JSON.
 2. Choose one config change only: `top_k`, `candidates`, `doc_kind`, or another
    already exposed retrieval option.
-3. Run exactly one experiment with `python -m turbo_search.autoresearch`.
+3. Run exactly one experiment with `python -m buoy_search.autoresearch`.
 4. Inspect `plan.json`, `result.json`, and `report.md`.
 5. Compare composite and component metrics against the current baseline.
 6. Record verdict and limits in durable evidence/review when the result matters.

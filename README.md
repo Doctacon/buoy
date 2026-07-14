@@ -1,251 +1,94 @@
-# turbo-search
-<img src="images/puffin.png" height="120" alt="turbo-search puffin" />
-Tiny CLI for turning public websites, public GitHub repositories, and local document files into turbopuffer-backed hybrid RAG indexes.
+# Buoy
 
-The main workflow is intentionally Terraform-like:
+<img src="images/buoy.svg" height="120" alt="Buoy navigation marker logo" />
 
-1. **plan**: crawl and chunk locally; no credentials or turbopuffer calls.
-2. **apply**: preflight the latest plan; still local-only.
-3. **apply --approve**: embed and upsert only the approved diff.
+Turn a public website, GitHub repository, or local document into a reviewed, incremental [turbopuffer](https://turbopuffer.com/) search index.
 
-It uses Scrapling for website crawling/extraction, git for public repository ingestion, MarkItDown for local document-to-Markdown conversion, local `BAAI/bge-small-en-v1.5` embeddings, and turbopuffer hybrid retrieval with ANN + BM25 + RRF.
+**Search that stays anchored to the source.**
 
-## Setup
+## Quick start
+
+Requires [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv sync
 ```
 
-Optional but recommended for fewer Hugging Face download warnings:
+Build and search a website index:
 
 ```bash
-uv run hf auth login
+# 1. Fetch, chunk, and plan locally. No Turbopuffer credentials, embeddings, or calls.
+uv run buoy plan https://example.com/
+
+# 2. Verify the plan and preview its diff. Still local-only.
+uv run buoy apply
+
+# 3. Approve the reviewed diff and write it to turbopuffer.
+export TURBOPUFFER_API_KEY="..."
+uv run buoy apply --approve
+
+# 4. Search the resulting namespace.
+uv run buoy retrieve \
+  "How does this feature work?" \
+  --live \
+  --namespace site-example-com-v1
 ```
 
-Do **not** commit API keys. Live apply/retrieval read `TURBOPUFFER_API_KEY` from the environment only.
+`plan` may fetch a public source, but it does not read Turbopuffer credentials, load embeddings, or contact Turbopuffer. Writes and searches require `--approve` or `--live` plus `TURBOPUFFER_API_KEY`; preflight and retrieval previews remain local-only.
+
+## Choose a source
+
+The same workflow accepts three source types:
+
+```bash
+# Website
+uv run buoy plan https://example.com/
+
+# Public GitHub repository
+uv run buoy plan https://github.com/owner/repository
+
+# Local document
+uv run buoy plan ./research-notes.pdf
+```
+
+Source type and namespace are detected automatically. Use `uv run buoy plan --help` to shape a crawl, filter repository paths, or inspect supported options.
+
+## What happens
+
+1. **Plan** — Scrapling, git, or MarkItDown produces local Markdown and deterministic chunks.
+2. **Preflight** — `apply` verifies artifacts and compares them with the local DuckDB ledger.
+3. **Approved apply** — the local BGE model embeds only new or changed chunks, then turbopuffer upserts them.
+4. **Retrieve** — hybrid ANN + BM25 search returns ranked, citable source chunks.
+
+Plans live under `artifacts/`; new applied state lives under `.buoy/`. Both are generated, local, and gitignored. Existing users should read [Migrating from turbo-search](docs/migrating-to-buoy.md).
+
+## Details on demand
+
+- [Index sources safely](docs/indexing.md) — source support, crawl controls, plan artifacts, incremental state, approved apply, and stale deletion.
+- [Retrieve and rank results](docs/retrieval.md) — dry runs, live search, citations, and namespace-aware ranking.
+- [Evaluate search quality](docs/evaluation.md) — smoke datasets, repository metrics, and one-shot autoresearch.
+- [Migrate to Buoy 0.2](docs/migrating-to-buoy.md) — command, import, environment, state, and plan compatibility.
+
+The CLI is the exhaustive option reference:
+
+```bash
+uv run buoy --help
+uv run buoy plan --help
+```
 
 ## Optional global command
 
-Install the CLI so `turbo-search` works from any directory:
-
 ```bash
-# from the repo root
 uv tool install --editable . --force
-
-# or from anywhere
-uv tool install --editable /path/to/turbo-search --force
+buoy --help
 ```
 
-Verify:
+Generated artifacts and state are created in the directory where the installed command runs.
+
+## Development
 
 ```bash
-turbo-search --help
+uv run python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-When run outside this repo, generated `artifacts/` and `.turbo-search/` state are created in the current directory.
-
-## Index a new website
-
-```bash
-# 1. Create a local plan. No credentials, embeddings, or live writes.
-uv run turbo-search plan https://example.com/
-
-# 2. Review what would be applied. Still no credentials or live calls.
-uv run turbo-search apply
-
-# 3. If the plan looks good, explicitly upsert to turbopuffer.
-export TURBOPUFFER_API_KEY="..."
-uv run turbo-search apply --approve
-```
-
-The namespace is derived from the site, for example:
-
-```text
-https://example.com/ -> site-example-com-v1
-```
-
-Plan artifacts are written under `artifacts/site-crawls/...` and local applied state is written under `.turbo-search/state/...`. Both are local/generated paths and are gitignored. A plan remains available while pending, preflighted, or retrying after a failed apply; its directory is removed automatically after a successful `apply --approve`, or when a newer verified plan for the same namespace supersedes it. Preserve a copy outside the artifact directory before approved apply if you need long-term audit/source records.
-
-## Local applied state and concurrent applies
-
-Each `(site, namespace)` has an embedded DuckDB ledger at:
-
-```text
-.turbo-search/state/<site-id>/<namespace>/state.duckdb
-```
-
-It stores the current applied rows plus compact per-apply summaries; it does not create full row snapshots. A legacy `last-applied.json` is deleted and the new ledger starts empty. This intentionally makes the next approved apply re-upsert the reviewed corpus rather than trusting rows that may no longer exist remotely.
-
-`apply --approve` takes a fail-fast lock for that namespace before loading embeddings or writing remotely. A second apply for the same namespace exits with a busy error; applies for different namespaces can proceed independently. This is embedded local state—there is no Quack service or listener.
-
-## Index a local document file
-
-v1 local document ingestion supports one filepath at a time. It uses Microsoft MarkItDown locally and cites the document URL/filename, not page/slide/sheet/cell positions.
-
-Supported extensions: `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.xls`, `.csv`, `.html`, `.htm`, `.txt`, `.text`, `.md`, `.markdown`, `.json`, `.jsonl`, `.xml`, `.ipynb`, `.epub`.
-
-Explicitly out of scope for v1: directories, archives, OCR/image captioning, audio/video transcription, YouTube, remote file URLs, Azure/cloud converters, and MarkItDown plugins.
-
-```bash
-# 1. Create a local plan. No credentials, embeddings, or live writes.
-uv run turbo-search plan ./Research\ Notes.csv
-
-# 2. Review locally.
-uv run turbo-search apply
-
-# 3. Explicitly apply when ready.
-export TURBOPUFFER_API_KEY="..."
-uv run turbo-search apply --approve
-```
-
-The default namespace is derived from the filename plus file hash:
-
-```text
-./Research Notes.pdf -> pdf-research-notes-<sha16>-v1
-./Research Notes.csv -> file-csv-research-notes-<sha16>-v1
-```
-
-Generated artifacts store the filename, extension, file hash, and synthetic `pdf://...` or `file://...` document URL; they do not need the absolute source filepath.
-
-Search after an approved apply:
-
-```bash
-uv run turbo-search retrieve \
-  "What does the research note say about onboarding?" \
-  --live \
-  --namespace file-csv-research-notes-<sha16>-v1
-```
-
-## Shape the crawl
-
-Defaults are source-aware:
-
-```text
-crawl_strategy: sitemap
-website max_pages: 3000
-website max_chunks: 120000
-website docs_version_policy: warn
-website language_policy: english
-GitHub repo max_files: 5000
-GitHub repo max_chunks: 100000
-GitHub repo max_file_bytes: 51200
-strip_trailing_slash: true
-```
-
-GitHub repo planning excludes generated/vendor directories plus local agent memory/run artifacts such as `.10x/`, `.loom/`, `.pi/`, `.turbo-search/`, `artifacts/`, `autoresearch/`, and eval fixture JSON under `/data/` by default. For repo-ranking experiments, use `--repo-max-file-bytes` to include larger text files, `--repo-search-metadata` to add searchable path/Python-symbol metadata to generated code pages, or `--repo-file-cards` to add separate searchable metadata card pages per file while keeping code chunks clean; these are opt-in and do not change the default plan.
-
-Useful filters:
-
-```bash
-# Only crawl docs pages
-uv run turbo-search plan https://example.com/ --include-path /docs/**
-
-# Exclude noisy paths
-uv run turbo-search plan https://example.com/ --exclude-path /blog/**
-
-# Bigger site
-uv run turbo-search plan https://example.com/ --max-pages 1000 --max-chunks 50000
-
-# Versioned docs site: keep current docs and exclude old version folders
-uv run turbo-search plan https://example.com/ --docs-version-policy latest
-
-# Multilingual site: keep every language instead of the default English-only filter
-uv run turbo-search plan https://example.com/ --language-policy all
-```
-
-For sites with repeated `/docs/{version}/...` pages, the default `warn` policy stops before page crawling and asks you to choose. Use `--docs-version-policy latest`, `stable-latest`, or `latest-nightly` to add effective excludes for older docs versions while keeping non-versioned pages like blogs/specs eligible. Use `--docs-version-policy all` to keep every version.
-
-For multilingual sites with locale prefixes such as `/de/**`, `/fr/**`, or `/pt-br/**`, the default `--language-policy english` keeps unprefixed and `/en/**` pages while adding effective excludes for detected non-English locale prefixes. Use `--language-policy all` when you intentionally want every language.
-
-Other crawl strategies:
-
-```bash
-# Crawl links from the base URL only.
-uv run turbo-search plan https://example.com/ --crawl-strategy link
-
-# Exhaustive mode: crawl sitemap URLs, then same-site links, and merge both.
-uv run turbo-search plan https://example.com/ --crawl-strategy hybrid
-```
-
-## Incremental updates
-
-Run the same sequence later:
-
-```bash
-uv run turbo-search plan https://example.com/
-uv run turbo-search apply
-uv run turbo-search apply --approve
-```
-
-`plan` compares the new crawl against local applied state and reports:
-
-```text
-upsert=<new or changed chunks>
-unchanged=<already indexed chunks>
-stale=<previously indexed chunks missing from the new crawl>
-```
-
-Approved apply embeds/upserts only new or changed chunks. Stale rows are retained by default. Delete them only with an extra explicit flag:
-
-```bash
-uv run turbo-search apply --approve --delete-stale
-```
-
-## Search an indexed site
-
-```bash
-uv run turbo-search retrieve \
-  "How does this feature work?" \
-  --live \
-  --namespace site-example-com-v1 \
-  --top-k 5
-```
-
-Retrieval defaults to hybrid ANN + BM25 + RRF, then namespace-aware final ranking. `site-*`, `pdf-*`, and `file-*` namespaces default to page/document-level ranking (`--ranking-mode page --ranking-profile none --ranking-pool 20 --ranking-aggregation max`). Repository namespaces default to file-level ranking (`--ranking-mode file --ranking-profile repo-code --ranking-pool 100 --ranking-aggregation adaptive-sum-3`), which deduplicates chunks by `repo_path`, uses the best chunk per file plus a small close-chunk evidence bonus, gently demotes repository process/docs/eval-artifact paths such as `.pi/`, `.10x/`, `.loom/`, `autoresearch/`, `docs/`, Markdown files, and eval fixture JSON, lightly boosts `tests/` files, applies conservative query-aware path/symbol boosts for exact source/doc filename or Python def/class matches, and may promote one strong doc/test companion into the top five without replacing the top implementation hit. Use `--ranking-aggregation max` for strict single-best-chunk file ranking, `--ranking-aggregation capped-sum-3` to fully reward up to three matching chunks from the same file, or `--ranking-mode chunk --ranking-profile none` to inspect raw chunk-level fused order.
-
-Dry-run retrieval is the default and does not contact turbopuffer:
-
-```bash
-uv run turbo-search retrieve "How does this feature work?" --namespace site-example-com-v1
-```
-
-## Evaluate repository search quality
-
-Repository search evals use graded source judgments and report a composite score
-from 0 to 100:
-
-```text
-repo_search_score = 100 * (
-  0.55 * NDCG@10
-+ 0.20 * Recall@10
-+ 0.15 * MRR@10
-+ 0.10 * Precision@5
-)
-```
-
-The seed dataset for this repo lives at:
-
-```text
-src/turbo_search/data/turbo_search_repo_search_seed_evals.json
-```
-
-Dataset cases contain a natural-language `question` and `judgments` with
-repo-relative `repo_path`, optional `url`/`section_path`, integer `grade` from
-0 to 3, and a reviewer-facing `reason`. The seed labels are assistant-drafted
-and marked `human_approved_ground_truth: false`; use them for calibration until
-reviewed.
-
-Run the safe fixture autoresearch sample without credentials or turbopuffer
-calls:
-
-```bash
-uv run python -m turbo_search.autoresearch \
-  --experiment autoresearch/experiments/repo-search-fixture-baseline.json \
-  --out /tmp/turbo-search-repo-search-fixture-baseline \
-  --json
-```
-
-The autoresearch runner executes exactly one config-only trial and writes
-`plan.json`, `result.json`, and `report.md`. Live autoresearch mode is
-retrieval-only and must target an already-applied namespace; it never performs
-apply, writes, deletes, or namespace management.
+Licensed under [Apache-2.0](LICENSE).

@@ -10,7 +10,7 @@ Make an approved apply's local embedding and Turbopuffer-write costs observable,
 
 ## Behavior
 
-- `turbo-search apply --approve` MUST retain `--batch-size` as the Turbopuffer write-batch size, with its current default of 64.
+- `buoy apply --approve` MUST retain `--batch-size` as the Turbopuffer write-batch size, with its current default of 64.
 - It MUST add a positive `--embedding-batch-size` option, defaulting to 32 to preserve the documented Sentence Transformers computation default currently used implicitly.
 - For each write batch, the embedder MUST receive the selected embedding batch size. A larger write batch MAY therefore contain multiple encoder computation batches.
 - Approved apply progress MUST report cumulative embedding time, write time, completed/total rows, and completed/total write batches after each successful write.

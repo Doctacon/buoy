@@ -6,7 +6,7 @@ Updated: 2026-07-03
 
 ## Purpose and scope
 
-`turbo-search crawl` and `turbo-search plan` SHOULD make sitemap-based website planning predictable by default. When a website publishes sitemap URLs, the default crawl SHOULD use those URLs only instead of silently continuing into broad same-site link discovery after the sitemap pass completes.
+`buoy crawl` and `buoy plan` SHOULD make sitemap-based website planning predictable by default. When a website publishes sitemap URLs, the default crawl SHOULD use those URLs only instead of silently continuing into broad same-site link discovery after the sitemap pass completes.
 
 This specification governs ordinary website sources. GitHub repository ingestion remains first-class git ingestion and is out of scope.
 
@@ -29,7 +29,7 @@ All crawl strategies MUST continue to obey robots.txt, host restrictions, includ
 
 ## Acceptance criteria
 
-- Running `turbo-search plan https://example.com/` without `--crawl-strategy` uses requested crawl strategy `sitemap`.
+- Running `buoy plan https://example.com/` without `--crawl-strategy` uses requested crawl strategy `sitemap`.
 - A non-empty sitemap crawl does not run the link spider.
 - An empty sitemap crawl falls back to link crawling and reports `link_fallback`.
 - CLI help describes `sitemap` as the default and `hybrid` as explicit merged sitemap+link mode.

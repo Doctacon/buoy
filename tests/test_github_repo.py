@@ -8,13 +8,13 @@ import unittest
 from unittest.mock import patch
 from urllib.error import URLError
 
-from turbo_search.applied_state import AppliedStateRow, build_applied_state, load_applied_state, save_applied_state
-from turbo_search.apply import apply_preflight_summary, load_verified_apply_plan
-from turbo_search.crawler import parse_github_repo_url
-from turbo_search.chunker import parse_markdown_file, process_corpus
-from turbo_search.plan_artifacts import build_generic_site_row, build_plan_artifacts, write_plan_artifacts
-from turbo_search.plan_diff import diff_manifest_against_state
-from turbo_search.github_repo import (
+from buoy_search.applied_state import AppliedStateRow, build_applied_state, load_applied_state, save_applied_state
+from buoy_search.apply import apply_preflight_summary, load_verified_apply_plan
+from buoy_search.crawler import parse_github_repo_url
+from buoy_search.chunker import parse_markdown_file, process_corpus
+from buoy_search.plan_artifacts import build_generic_site_row, build_plan_artifacts, write_plan_artifacts
+from buoy_search.plan_diff import diff_manifest_against_state
+from buoy_search.github_repo import (
     GitHubRepoError,
     GitHubRepoMetadata,
     acquire_github_repo,
@@ -109,7 +109,7 @@ class GitHubRepoAcquisitionTests(unittest.TestCase):
                 default_branch="main",
             )
 
-            with patch("turbo_search.github_repo.resolve_github_repo_metadata", return_value=metadata):
+            with patch("buoy_search.github_repo.resolve_github_repo_metadata", return_value=metadata):
                 acquisition = acquire_github_repo(source, out_dir)
 
             expected_sha = subprocess.run(
@@ -141,7 +141,7 @@ class GitHubRepoAcquisitionTests(unittest.TestCase):
                 default_branch="main",
             )
 
-            with patch("turbo_search.github_repo.resolve_github_repo_metadata", return_value=metadata):
+            with patch("buoy_search.github_repo.resolve_github_repo_metadata", return_value=metadata):
                 with self.assertRaisesRegex(GitHubRepoError, "subdirectory"):
                     acquire_github_repo(source, out_dir)
 
@@ -162,8 +162,10 @@ class GitHubRepoAcquisitionTests(unittest.TestCase):
                     "src/app.py": "def hello():\n    return 'world'\n",
                     "docs/private.md": "# Private docs\n",
                     ".10x/evidence/noise.md": "# Internal evidence\n",
+                    ".buoy/state/current.txt": "current state\n",
+                    ".turbo-search/state/legacy.txt": "legacy state\n",
                     "autoresearch/run.json": "{}\n",
-                    "src/turbo_search/data/repo_search_seed_evals.json": "{}\n",
+                    "src/buoy_search/data/repo_search_seed_evals.json": "{}\n",
                     "empty.txt": "",
                     "dist/bundle.js": "console.log('generated');\n",
                     "node_modules/pkg/index.js": "module.exports = {};\n",
@@ -182,12 +184,12 @@ class GitHubRepoAcquisitionTests(unittest.TestCase):
                 max_file_bytes=50,
             )
 
-            self.assertEqual(corpus.stats.files_discovered, 12)
+            self.assertEqual(corpus.stats.files_discovered, 14)
             self.assertEqual(corpus.stats.files_selected, 2)
             self.assertEqual(corpus.stats.files_skipped_empty, 1)
             self.assertEqual(corpus.stats.files_skipped_binary, 1)
             self.assertEqual(corpus.stats.files_skipped_oversize, 1)
-            self.assertEqual(corpus.stats.files_skipped_filtered, 7)
+            self.assertEqual(corpus.stats.files_skipped_filtered, 9)
             generated = sorted(pages_dir.glob("*.md"))
             self.assertEqual(len(generated), 2)
             parsed = [parse_markdown_file(path, pages_dir) for path in generated]
@@ -335,7 +337,7 @@ class GitHubRepoAcquisitionTests(unittest.TestCase):
                 clone_url=str(remote),
                 default_branch="main",
             )
-            with patch("turbo_search.github_repo.resolve_github_repo_metadata", return_value=metadata):
+            with patch("buoy_search.github_repo.resolve_github_repo_metadata", return_value=metadata):
                 acquisition = acquire_github_repo(source, root / "out")
 
             corpus = build_github_repo_corpus(acquisition, root / "pages", max_files=1)
@@ -501,7 +503,7 @@ def acquire_from_local_remote(root: Path, remote: Path):
         clone_url=str(remote),
         default_branch="main",
     )
-    with patch("turbo_search.github_repo.resolve_github_repo_metadata", return_value=metadata):
+    with patch("buoy_search.github_repo.resolve_github_repo_metadata", return_value=metadata):
         return acquire_github_repo(source, root / "out")
 
 

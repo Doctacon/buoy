@@ -6,7 +6,7 @@ Updated: 2026-07-08
 
 ## Purpose and scope
 
-`turbo-search` MUST support a single local PDF filepath as a first-class source for the existing local-only `crawl`/`plan` workflow and the existing explicit `apply` workflow.
+`buoy` MUST support a single local PDF filepath as a first-class source for the existing local-only `crawl`/`plan` workflow and the existing explicit `apply` workflow.
 
 This specification governs local PDF acquisition and artifact identity. Existing website and GitHub repository behavior remain in scope only insofar as they must not regress.
 
@@ -24,8 +24,8 @@ This specification governs local PDF acquisition and artifact identity. Existing
 
 ### CLI contract
 
-- `turbo-search plan <path-to-file.pdf>` MUST create a local plan for the PDF.
-- `turbo-search crawl --base-url <path-to-file.pdf>` MAY continue to work through the existing crawl source argument for compatibility, but CLI help SHOULD describe the argument as a source URL/path rather than only a base URL.
+- `buoy plan <path-to-file.pdf>` MUST create a local plan for the PDF.
+- `buoy crawl --base-url <path-to-file.pdf>` MAY continue to work through the existing crawl source argument for compatibility, but CLI help SHOULD describe the argument as a source URL/path rather than only a base URL.
 - `--namespace` MUST still override the deterministic PDF namespace candidate.
 - Existing website URL and GitHub repository URL usage MUST remain backward-compatible.
 
@@ -68,8 +68,8 @@ Plan, manifest, chunks JSONL, and summary output MUST preserve PDF source metada
 
 ## Acceptance criteria
 
-- `turbo-search plan ./example.pdf --json` succeeds for a text PDF and reports `source_kind: pdf`, one generated Markdown page, generated chunks, `namespace_candidate` matching `pdf-<filename-slug>-<sha16>-v1`, and no turbopuffer API calls.
+- `buoy plan ./example.pdf --json` succeeds for a text PDF and reports `source_kind: pdf`, one generated Markdown page, generated chunks, `namespace_candidate` matching `pdf-<filename-slug>-<sha16>-v1`, and no turbopuffer API calls.
 - PDF plan artifacts contain the filename and hash but not the absolute local filepath.
-- `turbo-search crawl --base-url ./example.pdf --json` produces the same local PDF corpus shape without live calls.
+- `buoy crawl --base-url ./example.pdf --json` produces the same local PDF corpus shape without live calls.
 - Empty/scanned PDF extraction fails clearly without writing a misleading successful plan.
 - Existing website/GitHub URL detection, namespace defaults, and tests continue to pass.

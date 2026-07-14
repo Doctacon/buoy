@@ -12,6 +12,7 @@ htmlcov/
 .venv/
 venv/
 ENV/
+.buoy/
 .turbo-search/
 
 # Local environment/secrets files

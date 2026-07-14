@@ -4,16 +4,17 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import hashlib
 import json
+import os
 import tempfile
 from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from turbo_search.applied_state import AppliedStateRow, build_applied_state, save_applied_state
-from turbo_search.cli import OneLineProgress, build_parser, main
-from turbo_search.crawler import CrawlOptions
-from turbo_search.chunker import process_corpus
-from turbo_search.plan_artifacts import build_plan_artifacts, write_plan_artifacts
+from buoy_search.applied_state import AppliedStateRow, build_applied_state, save_applied_state
+from buoy_search.cli import OneLineProgress, build_parser, legacy_main, main
+from buoy_search.crawler import CrawlOptions
+from buoy_search.chunker import process_corpus
+from buoy_search.plan_artifacts import build_plan_artifacts, write_plan_artifacts
 
 
 def write_fake_crawl_page(pages_dir: Path) -> None:
@@ -184,6 +185,112 @@ def fake_plan_crawl_summary(options: CrawlOptions) -> dict[str, object]:
 
 
 class CliTests(unittest.TestCase):
+    def test_help_identifies_primary_buoy_cli(self) -> None:
+        parser = build_parser()
+
+        self.assertEqual(parser.prog, "buoy")
+        self.assertTrue(parser.format_help().startswith("usage: buoy"))
+
+    def test_legacy_cli_warns_on_stderr_without_contaminating_json_stdout(self) -> None:
+        stdout = StringIO()
+        stderr = StringIO()
+
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            result = legacy_main(["retrieve", "How does this work?", "--dry-run", "--json"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(json.loads(stdout.getvalue())["command"], "retrieve")
+        self.assertEqual(
+            stderr.getvalue(),
+            "Warning: `turbo-search` is deprecated; use `buoy` instead. It will be removed in 0.3.\n",
+        )
+
+    def test_legacy_embedding_environment_warning_keeps_json_stdout_clean(self) -> None:
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch.dict(os.environ, {"TURBO_SEARCH_EMBEDDING_MODEL": "legacy/model"}, clear=True), redirect_stdout(
+            stdout
+        ), redirect_stderr(stderr):
+            result = main(["retrieve", "How does this work?", "--dry-run", "--json"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(json.loads(stdout.getvalue())["embedding_model"], "legacy/model")
+        self.assertIn("TURBO_SEARCH_EMBEDDING_MODEL is deprecated", stderr.getvalue())
+        self.assertNotIn("Warning", stdout.getvalue())
+
+    def test_conflicting_embedding_environment_returns_two_with_clean_stdout(self) -> None:
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch.dict(
+            os.environ,
+            {"BUOY_EMBEDDING_MODEL": "current/model", "TURBO_SEARCH_EMBEDDING_MODEL": "legacy/model"},
+            clear=True,
+        ), redirect_stdout(stdout), redirect_stderr(stderr):
+            result = main(["retrieve", "How does this work?", "--dry-run", "--json"])
+
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("conflicting BUOY_EMBEDDING_MODEL", stderr.getvalue())
+
+    def test_dual_implicit_state_roots_fail_before_plan_crawl(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            current = root / ".buoy"
+            legacy = root / ".turbo-search"
+            current.mkdir()
+            legacy.mkdir()
+            stdout = StringIO()
+            stderr = StringIO()
+            with patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), patch(
+                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
+            ), patch("buoy_search.cli.crawl_source") as crawl_mock, redirect_stdout(stdout), redirect_stderr(stderr):
+                result = main(["plan", "https://example.com/", "--json"])
+
+            self.assertEqual(result, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("both implicit state roots exist", stderr.getvalue())
+            self.assertIn("--state-root", stderr.getvalue())
+            crawl_mock.assert_not_called()
+
+    def test_explicit_state_root_bypasses_dual_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            current = root / ".buoy"
+            legacy = root / ".turbo-search"
+            explicit = root / "chosen-state"
+            out_dir = root / "plan"
+            current.mkdir()
+            legacy.mkdir()
+
+            def fake_crawl(_source, options):  # noqa: ANN001 - parser source union.
+                write_fake_crawl_page(options.out_dir / "pages")
+                return fake_plan_crawl_summary(options)
+
+            stdout = StringIO()
+            stderr = StringIO()
+            with patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), patch(
+                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
+            ), patch("buoy_search.cli.crawl_source", side_effect=fake_crawl), redirect_stdout(stdout), redirect_stderr(
+                stderr
+            ):
+                result = main(
+                    [
+                        "plan",
+                        "https://example.com/",
+                        "--out-dir",
+                        str(out_dir),
+                        "--state-root",
+                        str(explicit),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(result, 0)
+            self.assertEqual(json.loads(stdout.getvalue())["state_path"], str(explicit / "state/example-com/site-example-com-v1/state.duckdb"))
+            self.assertNotIn("legacy state root", stderr.getvalue())
+            self.assertFalse((current / "state").exists())
+            self.assertFalse((legacy / "state").exists())
+
     def test_help_mentions_current_safe_workflow_commands(self) -> None:
         help_text = build_parser().format_help()
 
@@ -267,7 +374,7 @@ class CliTests(unittest.TestCase):
                 ],
             }
             stdout = StringIO()
-            with patch("turbo_search.cli.crawl_site", return_value=fake_summary) as crawl_mock:
+            with patch("buoy_search.cli.crawl_site", return_value=fake_summary) as crawl_mock:
                 with redirect_stdout(stdout):
                     result = main(
                         [
@@ -336,7 +443,7 @@ class CliTests(unittest.TestCase):
                 "sample_chunks": [],
             }
             stdout = StringIO()
-            with patch("turbo_search.cli.crawl_site", return_value=fake_summary):
+            with patch("buoy_search.cli.crawl_site", return_value=fake_summary):
                 with redirect_stdout(stdout):
                     result = main(["crawl", "--base-url", "https://example.com/", "--max-pages", "3", "--max-chunks", "5"])
 
@@ -355,7 +462,7 @@ class CliTests(unittest.TestCase):
             return fake_plan_crawl_summary(options)
 
         stdout = StringIO()
-        with patch("turbo_search.cli.crawl_site", side_effect=fake_crawl):
+        with patch("buoy_search.cli.crawl_site", side_effect=fake_crawl):
             with redirect_stdout(stdout):
                 result = main(
                     [
@@ -383,8 +490,8 @@ class CliTests(unittest.TestCase):
                 return fake_github_crawl_summary(source, options)
 
             stdout = StringIO()
-            with patch("turbo_search.cli.crawl_github_repo", side_effect=fake_github_crawl) as github_mock:
-                with patch("turbo_search.cli.crawl_site") as site_mock:
+            with patch("buoy_search.cli.crawl_github_repo", side_effect=fake_github_crawl) as github_mock:
+                with patch("buoy_search.cli.crawl_site") as site_mock:
                     with redirect_stdout(stdout):
                         result = main(
                             [
@@ -415,10 +522,10 @@ class CliTests(unittest.TestCase):
 
             stdout = StringIO()
             with patch(
-                "turbo_search.crawler.markitdown_pdf_to_markdown",
+                "buoy_search.crawler.markitdown_pdf_to_markdown",
                 return_value="# Local Handbook\n\nUseful PDF content for retrieval.",
             ):
-                with patch("turbo_search.cli.crawl_site") as site_mock:
+                with patch("buoy_search.cli.crawl_site") as site_mock:
                     with redirect_stdout(stdout):
                         result = main(
                             [
@@ -456,10 +563,10 @@ class CliTests(unittest.TestCase):
 
             stdout = StringIO()
             with patch(
-                "turbo_search.crawler.markitdown_file_to_markdown",
+                "buoy_search.crawler.markitdown_file_to_markdown",
                 return_value="| topic | value |\n| --- | --- |\n| onboarding | ready |",
             ):
-                with patch("turbo_search.cli.crawl_site") as site_mock:
+                with patch("buoy_search.cli.crawl_site") as site_mock:
                     with redirect_stdout(stdout):
                         result = main(
                             [
@@ -497,7 +604,7 @@ class CliTests(unittest.TestCase):
             return fake_plan_crawl_summary(options)
 
         stdout = StringIO()
-        with patch("turbo_search.cli.crawl_site", side_effect=fake_crawl) as crawl_mock:
+        with patch("buoy_search.cli.crawl_site", side_effect=fake_crawl) as crawl_mock:
             with redirect_stdout(stdout):
                 result = main(
                     [
@@ -585,7 +692,7 @@ class CliTests(unittest.TestCase):
             return fake_plan_crawl_summary(options)
 
         stdout = StringIO()
-        with patch("turbo_search.cli.crawl_site", side_effect=fake_crawl):
+        with patch("buoy_search.cli.crawl_site", side_effect=fake_crawl):
             with redirect_stdout(stdout):
                 result = main(
                     [
@@ -614,8 +721,8 @@ class CliTests(unittest.TestCase):
 
         stdout = StringIO()
         stderr = StringIO()
-        with patch("turbo_search.crawler.discover_sitemap_page_urls", return_value=urls):
-            with patch("turbo_search.crawler.crawl_pages") as crawl_pages_mock:
+        with patch("buoy_search.crawler.discover_sitemap_page_urls", return_value=urls):
+            with patch("buoy_search.crawler.crawl_pages") as crawl_pages_mock:
                 with redirect_stdout(stdout), redirect_stderr(stderr):
                     result = main(
                         [
@@ -653,8 +760,8 @@ class CliTests(unittest.TestCase):
             return fake_github_crawl_summary(source, options)
 
         stdout = StringIO()
-        with patch("turbo_search.cli.crawl_github_repo", side_effect=fake_github_crawl) as github_mock:
-            with patch("turbo_search.cli.crawl_site") as site_mock:
+        with patch("buoy_search.cli.crawl_github_repo", side_effect=fake_github_crawl) as github_mock:
+            with patch("buoy_search.cli.crawl_site") as site_mock:
                 with redirect_stdout(stdout):
                     result = main(
                         [
@@ -711,11 +818,11 @@ class CliTests(unittest.TestCase):
 
         stdout = StringIO()
         with patch(
-            "turbo_search.crawler.markitdown_pdf_to_markdown",
+            "buoy_search.crawler.markitdown_pdf_to_markdown",
             return_value="# Research Notes\n\nUseful PDF text for retrieval and planning.",
         ):
-            with patch("turbo_search.cli.crawl_site") as site_mock:
-                with patch("turbo_search.cli.crawl_github_repo") as github_mock:
+            with patch("buoy_search.cli.crawl_site") as site_mock:
+                with patch("buoy_search.cli.crawl_github_repo") as github_mock:
                     with redirect_stdout(stdout):
                         result = main(
                             [
@@ -778,11 +885,11 @@ class CliTests(unittest.TestCase):
 
         stdout = StringIO()
         with patch(
-            "turbo_search.crawler.markitdown_file_to_markdown",
+            "buoy_search.crawler.markitdown_file_to_markdown",
             return_value="| topic | value |\n| --- | --- |\n| onboarding | ready |",
         ):
-            with patch("turbo_search.cli.crawl_site") as site_mock:
-                with patch("turbo_search.cli.crawl_github_repo") as github_mock:
+            with patch("buoy_search.cli.crawl_site") as site_mock:
+                with patch("buoy_search.cli.crawl_github_repo") as github_mock:
                     with redirect_stdout(stdout):
                         result = main(
                             [
@@ -877,7 +984,7 @@ class CliTests(unittest.TestCase):
             return fake_plan_crawl_summary(options)
 
         stdout = StringIO()
-        with patch("turbo_search.cli.crawl_site", side_effect=fake_crawl):
+        with patch("buoy_search.cli.crawl_site", side_effect=fake_crawl):
             with redirect_stdout(stdout):
                 result = main(
                     [
@@ -975,7 +1082,7 @@ class CliTests(unittest.TestCase):
                     "Where is repo routing implemented?",
                     "--dry-run",
                     "--namespace",
-                    "github-doctacon-turbo-search-v1",
+                    "github-doctacon-buoy-search-v1",
                     "--json",
                 ]
             )
@@ -1139,9 +1246,9 @@ class CliTests(unittest.TestCase):
                     "evals",
                     "--dry-run",
                     "--dataset",
-                    "src/turbo_search/data/turbo_search_repo_search_seed_evals.json",
+                    "src/buoy_search/data/buoy_search_repo_search_seed_evals.json",
                     "--namespace",
-                    "github-doctacon-turbo-search-v1",
+                    "github-doctacon-buoy-search-v1",
                     "--json",
                 ]
             )
@@ -1161,7 +1268,7 @@ class CliTests(unittest.TestCase):
                     "evals",
                     "--dry-run",
                     "--dataset",
-                    "src/turbo_search/data/scrapling_retrieval_smoke_evals.json",
+                    "src/buoy_search/data/scrapling_retrieval_smoke_evals.json",
                     "--namespace",
                     "site-scrapling-readthedocs-io-v1",
                     "--region",
@@ -1203,7 +1310,7 @@ class CliTests(unittest.TestCase):
                         "evals",
                         "--live",
                         "--dataset",
-                        "src/turbo_search/data/scrapling_retrieval_smoke_evals.json",
+                        "src/buoy_search/data/scrapling_retrieval_smoke_evals.json",
                         "--namespace",
                         "site-scrapling-readthedocs-io-v1",
                         "--json",

@@ -7,10 +7,11 @@ import tempfile
 from pathlib import Path
 import unittest
 
-from turbo_search.autoresearch import AutoresearchExperimentError, load_experiment, main, run_experiment
+from buoy_search.autoresearch import AutoresearchExperimentError, load_experiment, main, run_experiment
 
 
 SAMPLE_EXPERIMENT = Path("autoresearch/experiments/repo-search-fixture-baseline.json")
+LIVE_EXPERIMENT = Path("autoresearch/experiments/repo-search-live-baseline.json")
 
 
 class AutoresearchRunnerTests(unittest.TestCase):
@@ -23,7 +24,7 @@ class AutoresearchRunnerTests(unittest.TestCase):
 
         self.assertEqual(experiment.experiment_id, "fixture-baseline")
         self.assertEqual(experiment.mode, "fixture")
-        self.assertEqual(experiment.config.namespace, "github-owner-turbo-search-v1")
+        self.assertEqual(experiment.config.namespace, "github-owner-buoy-search-v1")
         self.assertEqual(experiment.retrieval_options.top_k, 5)
         self.assertEqual(experiment.retrieval_options.ranking_mode, "file")
         self.assertEqual(experiment.retrieval_options.ranking_profile, "repo_code")
@@ -58,7 +59,7 @@ class AutoresearchRunnerTests(unittest.TestCase):
             root = Path(tmp)
             experiment_path = write_experiment(
                 root,
-                extra={"code_changes": ["change src/turbo_search/retriever.py"]},
+                extra={"code_changes": ["change src/buoy_search/retriever.py"]},
                 fixture_hits={"case-a": [{"path": "README.md"}]},
             )
 
@@ -70,7 +71,7 @@ class AutoresearchRunnerTests(unittest.TestCase):
             root = Path(tmp)
             experiment_path = write_experiment(
                 root,
-                extra={"command": "turbo-search apply --approve"},
+                extra={"command": "buoy apply --approve"},
                 fixture_hits={"case-a": [{"path": "README.md"}]},
             )
 
@@ -87,13 +88,13 @@ class AutoresearchRunnerTests(unittest.TestCase):
                 fixture_hits={
                     "case-a": [
                         {
-                            "path": "src/turbo_search/autoresearch.py",
+                            "path": "src/buoy_search/autoresearch.py",
                             "title": "autoresearch.py",
-                            "url": "https://github.com/owner/turbo-search/blob/main/src/turbo_search/autoresearch.py",
+                            "url": "https://github.com/owner/buoy-search/blob/main/src/buoy_search/autoresearch.py",
                         },
                         {"path": "tests/test_autoresearch.py", "title": "test_autoresearch.py"},
                     ],
-                    "case-b": [{"path": "src/turbo_search/evals.py", "title": "evals.py"}],
+                    "case-b": [{"path": "src/buoy_search/evals.py", "title": "evals.py"}],
                 },
             )
             experiment = load_experiment(experiment_path)
@@ -112,7 +113,7 @@ class AutoresearchRunnerTests(unittest.TestCase):
             report = (out_dir / "report.md").read_text(encoding="utf-8")
             self.assertIn("Composite repo search score", report)
             self.assertIn("case-a", report)
-            self.assertIn("src/turbo_search/autoresearch.py", report)
+            self.assertIn("src/buoy_search/autoresearch.py", report)
             self.assertNotIn("no locator", report)
 
     def test_module_main_runs_one_fixture_experiment_and_prints_json(self) -> None:
@@ -123,8 +124,8 @@ class AutoresearchRunnerTests(unittest.TestCase):
                 root,
                 dataset_path=dataset_path,
                 fixture_hits={
-                    "case-a": [{"path": "src/turbo_search/autoresearch.py"}],
-                    "case-b": [{"path": "src/turbo_search/evals.py"}],
+                    "case-a": [{"path": "src/buoy_search/autoresearch.py"}],
+                    "case-b": [{"path": "src/buoy_search/evals.py"}],
                 },
             )
             out_dir = root / "out"
@@ -164,6 +165,14 @@ class AutoresearchRunnerTests(unittest.TestCase):
         self.assertAlmostEqual(result["score"], 100.0)
         self.assertEqual(result["eval"]["passed"], 10)
 
+    def test_live_sample_preserves_pre_rebrand_remote_namespace(self) -> None:
+        experiment = load_experiment(LIVE_EXPERIMENT)
+
+        self.assertEqual(experiment.mode, "live")
+        self.assertEqual(experiment.config.namespace, "github-doctacon-turbo-search-v1")
+        self.assertIn("preserved pre-rebrand", experiment.question)
+        self.assertIn("does not rename or recreate it", experiment.notes)
+
 
 def write_dataset(root: Path) -> Path:
     dataset_path = root / "dataset.json"
@@ -175,7 +184,7 @@ def write_dataset(root: Path) -> Path:
                         "id": "case-a",
                         "question": "Where is the autoresearch runner implemented?",
                         "judgments": [
-                            {"repo_path": "src/turbo_search/autoresearch.py", "grade": 3, "reason": "runner implementation"},
+                            {"repo_path": "src/buoy_search/autoresearch.py", "grade": 3, "reason": "runner implementation"},
                             {"repo_path": "tests/test_autoresearch.py", "grade": 2, "reason": "runner tests"},
                         ],
                     },
@@ -183,7 +192,7 @@ def write_dataset(root: Path) -> Path:
                         "id": "case-b",
                         "question": "Where are repo eval metrics implemented?",
                         "judgments": [
-                            {"repo_path": "src/turbo_search/evals.py", "grade": 3, "reason": "metric implementation"}
+                            {"repo_path": "src/buoy_search/evals.py", "grade": 3, "reason": "metric implementation"}
                         ],
                     },
                 ]
@@ -208,7 +217,7 @@ def write_experiment(
         "mode": "fixture",
         "dataset_path": str(dataset_path or write_dataset(root)),
         "config": {
-            "namespace": "github-owner-turbo-search-v1",
+            "namespace": "github-owner-buoy-search-v1",
             "region": "gcp-us-central1",
             "embedding_model": "BAAI/bge-small-en-v1.5",
         },

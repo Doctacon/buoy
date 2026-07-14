@@ -1,8 +1,8 @@
 Status: open
 Created: 2026-07-13
-Updated: 2026-07-13
+Updated: 2026-07-14
 Parent: None
-Depends-On: .10x/tickets/done/2026-07-12-approved-apply-throughput-measurement.md
+Depends-On: .10x/tickets/done/2026-07-12-approved-apply-throughput-measurement.md, .10x/tickets/done/2026-07-14-buoy-release-integration-validation.md
 
 # Add Opt-In Float16 Embedding Inference
 
@@ -35,6 +35,8 @@ Focused tests, full-suite output, real-chunk no-write vector/ranking parity, hos
 ## Progress and notes
 
 - 2026-07-13: User authorized implementation and selected explicit precision configuration: plans govern apply; retrieval/evals use a CLI flag or environment setting.
+- 2026-07-14: Blocked behind the Buoy package rebrand to avoid implementing and then mechanically renaming the same cross-cutting plan/apply/retrieval surface. The governing spec now targets `buoy_search`, `buoy`, and `BUOY_EMBEDDING_PRECISION` with the 0.2 legacy environment contract.
+- 2026-07-14: Buoy release integration closed with pass review; this ticket is unblocked and remains separately executable after the rebrand plan.
 
 ## Blockers
 

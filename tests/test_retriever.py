@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from turbo_search.config import RuntimeConfig
-from turbo_search.evals import hit_summary
-from turbo_search.retriever import (
+from buoy_search.config import RuntimeConfig
+from buoy_search.evals import hit_summary
+from buoy_search.retriever import (
     RETRIEVAL_ATTRIBUTES,
     HybridRetriever,
     RetrievalOptions,
@@ -43,7 +43,7 @@ class CapturingNamespace:
                         "section_path": "Fetcher choices",
                         "content": "Choose Fetcher, DynamicFetcher, or StealthyFetcher based on the target site.",
                         "path": "fetching/choosing.md",
-                        "repo_path": "src/turbo_search/retriever.py",
+                        "repo_path": "src/buoy_search/retriever.py",
                         "doc_kind": "docs",
                         "chunk_index": 3,
                         "vector": [9.0, 9.0],
@@ -180,9 +180,9 @@ class RetrieverTests(unittest.TestCase):
         self.assertNotIn("vector", str(payload))
         self.assertEqual(payload["hits"][0]["url"], "https://scrapling.readthedocs.io/en/latest/fetching/choosing.html")
         self.assertEqual(payload["hits"][0]["section_path"], "Fetcher choices")
-        self.assertEqual(payload["hits"][0]["repo_path"], "src/turbo_search/retriever.py")
-        self.assertEqual(result.hits[0].repo_path, "src/turbo_search/retriever.py")
-        self.assertEqual(hit_summary(result.hits[0], 1)["repo_path"], "src/turbo_search/retriever.py")
+        self.assertEqual(payload["hits"][0]["repo_path"], "src/buoy_search/retriever.py")
+        self.assertEqual(result.hits[0].repo_path, "src/buoy_search/retriever.py")
+        self.assertEqual(hit_summary(result.hits[0], 1)["repo_path"], "src/buoy_search/retriever.py")
         self.assertIn("score_info", payload["hits"][0])
 
     def test_client_side_rrf_fallback_when_server_rerank_unsupported(self) -> None:
@@ -234,7 +234,7 @@ class RetrieverTests(unittest.TestCase):
         )
         self.assertEqual(
             ranking_profile_multiplier(
-                SearchHit(id="eval-data", repo_path="src/turbo_search/data/repo_search_seed_evals.json"),
+                SearchHit(id="eval-data", repo_path="src/buoy_search/data/repo_search_seed_evals.json"),
                 "repo_code",
             ),
             0.20,
@@ -421,7 +421,7 @@ class RetrieverTests(unittest.TestCase):
         )
         self.assertAlmostEqual(
             ranking_profile_multiplier(
-                SearchHit(id="cli", repo_path="src/turbo_search/cli.py"),
+                SearchHit(id="cli", repo_path="src/buoy_search/cli.py"),
                 "repo_code",
                 query="Where is local planning implemented?",
             ),
@@ -429,7 +429,7 @@ class RetrieverTests(unittest.TestCase):
         )
         self.assertAlmostEqual(
             ranking_profile_multiplier(
-                SearchHit(id="cli", repo_path="src/turbo_search/cli.py"),
+                SearchHit(id="cli", repo_path="src/buoy_search/cli.py"),
                 "repo_code",
                 query="Where is the CLI command runner implemented?",
             ),
@@ -489,7 +489,7 @@ class RetrieverTests(unittest.TestCase):
 
         self.assertGreater(
             ranking_profile_multiplier(
-                SearchHit(id="evals", repo_path="src/turbo_search/evals.py"),
+                SearchHit(id="evals", repo_path="src/buoy_search/evals.py"),
                 "repo_code",
                 query=implementation_query,
             ),
@@ -497,7 +497,7 @@ class RetrieverTests(unittest.TestCase):
         )
         self.assertLess(
             ranking_profile_multiplier(
-                SearchHit(id="autoresearch", repo_path="src/turbo_search/autoresearch.py"),
+                SearchHit(id="autoresearch", repo_path="src/buoy_search/autoresearch.py"),
                 "repo_code",
                 query=implementation_query,
             ),
@@ -505,7 +505,7 @@ class RetrieverTests(unittest.TestCase):
         )
         self.assertGreaterEqual(
             ranking_profile_multiplier(
-                SearchHit(id="autoresearch", repo_path="src/turbo_search/autoresearch.py"),
+                SearchHit(id="autoresearch", repo_path="src/buoy_search/autoresearch.py"),
                 "repo_code",
                 query="Where is the autoresearch experiment runner implemented?",
             ),
@@ -527,7 +527,7 @@ class RetrieverTests(unittest.TestCase):
         )
         self.assertAlmostEqual(
             ranking_profile_multiplier(
-                SearchHit(id="plan-diff", repo_path="src/turbo_search/plan_diff.py", content="def build_plan_diff(): pass"),
+                SearchHit(id="plan-diff", repo_path="src/buoy_search/plan_diff.py", content="def build_plan_diff(): pass"),
                 "repo_code",
                 query="Which code propagates GitHub repo metadata into plan manifests and chunk rows?",
             ),
@@ -559,12 +559,12 @@ class RetrieverTests(unittest.TestCase):
                 repo_path="tests/test_github_repo.py",
                 content="Path tokens: tests test github repo Symbols: metadata helper",
             ),
-            SearchHit(id="cli-code", repo_path="src/turbo_search/cli.py", content="def plan_crawl_options(): pass"),
+            SearchHit(id="cli-code", repo_path="src/buoy_search/cli.py", content="def plan_crawl_options(): pass"),
             SearchHit(
                 id="plan-card",
-                title="src/turbo_search/plan_artifacts.py file metadata",
+                title="src/buoy_search/plan_artifacts.py file metadata",
                 section_path="File metadata: src/turbosearch/planartifacts.py",
-                repo_path="src/turbo_search/plan_artifacts.py",
+                repo_path="src/buoy_search/plan_artifacts.py",
                 content="Path tokens: src turbo search plan artifacts Symbols: build_plan_artifacts build_chunk_record",
             ),
         ]
@@ -575,7 +575,7 @@ class RetrieverTests(unittest.TestCase):
             query="Which code in plan artifacts propagates GitHub repo metadata into chunk rows?",
         )
 
-        self.assertEqual(ranked[0].repo_path, "src/turbo_search/plan_artifacts.py")
+        self.assertEqual(ranked[0].repo_path, "src/buoy_search/plan_artifacts.py")
 
     def test_file_ranking_can_use_symbol_matches_from_later_chunks_in_group(self) -> None:
         hits = [

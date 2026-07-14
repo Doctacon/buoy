@@ -49,4 +49,4 @@ Out of scope:
 ## References
 
 - `.10x/specs/website-language-policy.md`
-- `.10x/knowledge/turbo-search-site-planning-workflow.md`
+- `.10x/knowledge/buoy-site-planning-workflow.md`

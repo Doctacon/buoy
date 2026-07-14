@@ -1,0 +1,52 @@
+{
+  "captured_at": "2026-07-14T17:57:40Z",
+  "authenticated_host": "github.com",
+  "authenticated_account": "Doctacon",
+  "source_before": {
+    "nameWithOwner": "Doctacon/turbo-search",
+    "url": "https://github.com/Doctacon/turbo-search",
+    "isPrivate": false,
+    "defaultBranch": "main"
+  },
+  "target_preflight": {
+    "nameWithOwner": "Doctacon/buoy-search",
+    "available": true,
+    "observation": "gh repo view returned repository-not-found before rename"
+  },
+  "rename": {
+    "command_shape": "gh repo rename -R Doctacon/turbo-search buoy-search --yes",
+    "exit_code": 0
+  },
+  "repository_after": {
+    "nameWithOwner": "Doctacon/buoy-search",
+    "url": "https://github.com/Doctacon/buoy-search",
+    "isPrivate": false,
+    "defaultBranch": "main",
+    "description": "Plan, index, and search public knowledge sources with anchored citations."
+  },
+  "endpoint_observations": {
+    "new_url_status": 200,
+    "old_url_status": 301,
+    "old_url_location": "https://github.com/Doctacon/buoy-search",
+    "gh_old_name_resolves_to": "Doctacon/buoy-search"
+  },
+  "local_remote_after": {
+    "fetch": "git@github.com:Doctacon/buoy-search.git",
+    "push": "git@github.com:Doctacon/buoy-search.git",
+    "ls_remote_default_branch": "main",
+    "observed_head": "bd3dec6aabb6401638735ec6270701df1ab1013f"
+  },
+  "package_metadata_after": {
+    "Repository": "https://github.com/Doctacon/buoy-search",
+    "Issues": "https://github.com/Doctacon/buoy-search/issues",
+    "wheel_project_urls_verified": true
+  },
+  "preserved_semantic_reference": "autoresearch/experiments/repo-search-live-baseline.json retains the original https://github.com/Doctacon/turbo-search source URL because it documents an existing pre-rebrand applied namespace",
+  "excluded_operations": {
+    "package_publication": false,
+    "github_release": false,
+    "branch_or_tag_mutation": false,
+    "issue_mutation": false,
+    "turbopuffer_calls": false
+  }
+}

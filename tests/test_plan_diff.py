@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from turbo_search.applied_state import (
+from buoy_search.applied_state import (
     APPLIED_STATE_SCHEMA_VERSION,
     ROW_STATUS_ACTIVE,
     ROW_STATUS_DELETED,
@@ -10,8 +10,8 @@ from turbo_search.applied_state import (
     AppliedState,
     AppliedStateRow,
 )
-from turbo_search.plan_artifacts import ChunkManifestRecord, ManifestDocument, PageManifestRecord, generic_site_row_id, sha256_text
-from turbo_search.plan_diff import PlanDiffError, diff_manifest_against_state, diff_summary_for_plan
+from buoy_search.plan_artifacts import ChunkManifestRecord, ManifestDocument, PageManifestRecord, generic_site_row_id, sha256_text
+from buoy_search.plan_diff import PlanDiffError, diff_manifest_against_state, diff_summary_for_plan
 
 
 SITE_ID = "example-com"

@@ -5,28 +5,28 @@ import tempfile
 from pathlib import Path
 import unittest
 
-from turbo_search.evals import EvalCase, RepoEvalScore, aggregate_repo_scores, hit_summary, load_eval_cases, score_hits, score_repo_hits
-from turbo_search.retriever import SearchHit
+from buoy_search.evals import EvalCase, RepoEvalScore, aggregate_repo_scores, hit_summary, load_eval_cases, score_hits, score_repo_hits
+from buoy_search.retriever import SearchHit
 
 
-TURBO_SEARCH_REPO_EVAL_DATASET = Path("src/turbo_search/data/turbo_search_repo_search_seed_evals.json")
+BUOY_REPO_EVAL_DATASET = Path("src/buoy_search/data/buoy_search_repo_search_seed_evals.json")
 VALIDATION_BASKET_EVAL_DATASETS = (
-    Path("src/turbo_search/data/pytest_repo_search_seed_evals.json"),
-    Path("src/turbo_search/data/typer_repo_search_seed_evals.json"),
-    Path("src/turbo_search/data/ruff_site_search_seed_evals.json"),
-    Path("src/turbo_search/data/typer_site_search_seed_evals.json"),
+    Path("src/buoy_search/data/pytest_repo_search_seed_evals.json"),
+    Path("src/buoy_search/data/typer_repo_search_seed_evals.json"),
+    Path("src/buoy_search/data/ruff_site_search_seed_evals.json"),
+    Path("src/buoy_search/data/typer_site_search_seed_evals.json"),
 )
 EXPANDED_REPO_EVAL_DATASETS = (
-    Path("src/turbo_search/data/black_repo_search_seed_evals.json"),
-    Path("src/turbo_search/data/ruff_repo_search_seed_evals.json"),
-    Path("src/turbo_search/data/flask_repo_search_seed_evals.json"),
-    Path("src/turbo_search/data/django_repo_search_seed_evals.json"),
-    Path("src/turbo_search/data/pydantic_repo_search_seed_evals.json"),
-    Path("src/turbo_search/data/httpx_repo_search_seed_evals.json"),
-    Path("src/turbo_search/data/mkdocs_repo_search_seed_evals.json"),
-    Path("src/turbo_search/data/rich_repo_search_seed_evals.json"),
+    Path("src/buoy_search/data/black_repo_search_seed_evals.json"),
+    Path("src/buoy_search/data/ruff_repo_search_seed_evals.json"),
+    Path("src/buoy_search/data/flask_repo_search_seed_evals.json"),
+    Path("src/buoy_search/data/django_repo_search_seed_evals.json"),
+    Path("src/buoy_search/data/pydantic_repo_search_seed_evals.json"),
+    Path("src/buoy_search/data/httpx_repo_search_seed_evals.json"),
+    Path("src/buoy_search/data/mkdocs_repo_search_seed_evals.json"),
+    Path("src/buoy_search/data/rich_repo_search_seed_evals.json"),
 )
-EXPECTED_TURBO_SEARCH_COVERAGE_AREAS = {
+EXPECTED_BUOY_COVERAGE_AREAS = {
     "github_repository_ingestion_flow",
     "plan_apply_safety_local_only_behavior",
     "retrieval_command_behavior",
@@ -47,7 +47,7 @@ class EvalHarnessTests(unittest.TestCase):
             self.assertTrue(case.expected_urls or case.expected_topics)
 
     def test_loads_scrapling_smoke_eval_dataset(self) -> None:
-        cases = load_eval_cases(Path("src/turbo_search/data/scrapling_retrieval_smoke_evals.json"))
+        cases = load_eval_cases(Path("src/buoy_search/data/scrapling_retrieval_smoke_evals.json"))
 
         self.assertGreaterEqual(len(cases), 4)
         questions = {case.question for case in cases}
@@ -136,7 +136,7 @@ class EvalHarnessTests(unittest.TestCase):
                                 "question": "Where is GitHub repo URL routing implemented?",
                                 "judgments": [
                                     {
-                                        "repo_path": "src/turbo_search/crawler.py",
+                                        "repo_path": "src/buoy_search/crawler.py",
                                         "grade": 3,
                                         "reason": "Source detection lives here.",
                                     },
@@ -156,7 +156,7 @@ class EvalHarnessTests(unittest.TestCase):
             cases = load_eval_cases(dataset)
 
         self.assertEqual(len(cases), 1)
-        self.assertEqual(cases[0].judgments[0].repo_path, "src/turbo_search/crawler.py")
+        self.assertEqual(cases[0].judgments[0].repo_path, "src/buoy_search/crawler.py")
         self.assertEqual(cases[0].judgments[0].grade, 3)
 
     def test_score_repo_hits_perfect_ranking_gets_full_composite_score(self) -> None:
@@ -165,7 +165,7 @@ class EvalHarnessTests(unittest.TestCase):
         score = score_repo_hits(
             case,
             [
-                {"path": "src/turbo_search/crawler.py", "url": "https://github.com/owner/repo/blob/main/src/turbo_search/crawler.py"},
+                {"path": "src/buoy_search/crawler.py", "url": "https://github.com/owner/repo/blob/main/src/buoy_search/crawler.py"},
                 {"source_metadata": {"repo_path": "tests/test_crawler.py"}},
                 {"url": "https://github.com/owner/repo/blob/main/README.md"},
             ],
@@ -200,13 +200,13 @@ class EvalHarnessTests(unittest.TestCase):
             {
                 "title": "repo file",
                 "path": "generated-page.md",
-                "source_metadata": {"repo_path": "src/turbo_search/evals.py"},
+                "source_metadata": {"repo_path": "src/buoy_search/evals.py"},
             },
             1,
         )
 
         self.assertEqual(summary["path"], "generated-page.md")
-        self.assertEqual(summary["repo_path"], "src/turbo_search/evals.py")
+        self.assertEqual(summary["repo_path"], "src/buoy_search/evals.py")
 
     def test_score_repo_hits_partial_ranking_uses_grades_and_ranks(self) -> None:
         case = graded_case()
@@ -217,7 +217,7 @@ class EvalHarnessTests(unittest.TestCase):
                 {"path": "docs/unrelated.md"},
                 {"source_metadata": {"repo_path": "tests/test_crawler.py"}},
                 {"source_metadata": {"repo_path": "tests/test_crawler.py"}},
-                {"path": "src/turbo_search/crawler.py"},
+                {"path": "src/buoy_search/crawler.py"},
             ],
         )
 
@@ -238,7 +238,7 @@ class EvalHarnessTests(unittest.TestCase):
         self.assertEqual(score.matched_rank, 2)
 
     def test_score_repo_hits_no_match_scores_zero(self) -> None:
-        score = score_repo_hits(graded_case(), [{"path": "src/turbo_search/apply.py"}])
+        score = score_repo_hits(graded_case(), [{"path": "src/buoy_search/apply.py"}])
 
         self.assertFalse(score.passed)
         self.assertEqual(score.matched_rank, None)
@@ -255,7 +255,7 @@ class EvalHarnessTests(unittest.TestCase):
                 "question": "Where is source routing implemented?",
                 "judgments": [
                     {
-                        "repo_path": "src/turbo_search/crawler.py",
+                        "repo_path": "src/buoy_search/crawler.py",
                         "grade": 3,
                     }
                 ],
@@ -265,8 +265,8 @@ class EvalHarnessTests(unittest.TestCase):
         score = score_repo_hits(
             case,
             [
-                {"path": "src/turbo_search/crawler.py"},
-                {"path": "src/turbo_search/crawler.py"},
+                {"path": "src/buoy_search/crawler.py"},
+                {"path": "src/buoy_search/crawler.py"},
             ],
         )
 
@@ -312,23 +312,23 @@ class EvalHarnessTests(unittest.TestCase):
         self.assertFalse(wrong_section.passed)
         self.assertTrue(right_section.passed)
 
-    def test_loads_turbo_search_seed_repo_eval_dataset(self) -> None:
-        cases = load_eval_cases(TURBO_SEARCH_REPO_EVAL_DATASET)
-        raw = json.loads(TURBO_SEARCH_REPO_EVAL_DATASET.read_text(encoding="utf-8"))
+    def test_loads_buoy_search_seed_repo_eval_dataset(self) -> None:
+        cases = load_eval_cases(BUOY_REPO_EVAL_DATASET)
+        raw = json.loads(BUOY_REPO_EVAL_DATASET.read_text(encoding="utf-8"))
 
         self.assertGreaterEqual(len(cases), 8)
         self.assertEqual(raw["metadata"]["status"], "seed-draft")
         self.assertFalse(raw["metadata"]["human_approved_ground_truth"])
         coverage_areas = {case["coverage_area"] for case in raw["cases"]}
-        self.assertTrue(EXPECTED_TURBO_SEARCH_COVERAGE_AREAS.issubset(coverage_areas))
+        self.assertTrue(EXPECTED_BUOY_COVERAGE_AREAS.issubset(coverage_areas))
         case_ids = {case.id for case in cases}
         self.assertIn("github-url-routing", case_ids)
         self.assertIn("plan-command-local-only", case_ids)
         self.assertIn("retrieval-hybrid-command", case_ids)
         self.assertIn("evals-composite-metrics", case_ids)
 
-    def test_turbo_search_seed_repo_eval_judgments_are_graded_and_draft(self) -> None:
-        cases = load_eval_cases(TURBO_SEARCH_REPO_EVAL_DATASET)
+    def test_buoy_search_seed_repo_eval_judgments_are_graded_and_draft(self) -> None:
+        cases = load_eval_cases(BUOY_REPO_EVAL_DATASET)
 
         for case in cases:
             with self.subTest(case=case.id):
@@ -376,7 +376,7 @@ def graded_case() -> EvalCase:
             "id": "repo-routing",
             "question": "Where is GitHub repo URL routing implemented?",
             "judgments": [
-                {"repo_path": "src/turbo_search/crawler.py", "grade": 3},
+                {"repo_path": "src/buoy_search/crawler.py", "grade": 3},
                 {"repo_path": "tests/test_crawler.py", "grade": 2},
                 {"url": "https://github.com/owner/repo/blob/main/README.md", "grade": 1},
                 {"repo_path": "docs/unrelated.md", "grade": 0},

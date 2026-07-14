@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 import unittest
 
-from turbo_search.chunker import (
+from buoy_search.chunker import (
     approximate_token_count,
     chunk_document,
     derive_doc_kind_and_tags,

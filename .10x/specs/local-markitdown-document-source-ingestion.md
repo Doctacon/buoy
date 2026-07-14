@@ -6,7 +6,7 @@ Updated: 2026-07-08
 
 ## Purpose and scope
 
-`turbo-search` MUST support a single local document/data filepath from a fixed MarkItDown-backed allowlist as a first-class source for the existing local-only `crawl`/`plan` workflow and existing explicit `apply` workflow.
+`buoy` MUST support a single local document/data filepath from a fixed MarkItDown-backed allowlist as a first-class source for the existing local-only `crawl`/`plan` workflow and existing explicit `apply` workflow.
 
 This specification extends `.10x/specs/local-pdf-source-ingestion.md`. Existing PDF behavior MUST remain backward-compatible.
 
@@ -48,8 +48,8 @@ The v1 allowlist is:
 
 ### CLI contract
 
-- `turbo-search plan <path-to-supported-file>` MUST create a local plan for the file.
-- `turbo-search crawl --base-url <path-to-supported-file>` MAY continue to work through the existing source argument for compatibility.
+- `buoy plan <path-to-supported-file>` MUST create a local plan for the file.
+- `buoy crawl --base-url <path-to-supported-file>` MAY continue to work through the existing source argument for compatibility.
 - CLI help SHOULD describe the source argument as a URL/path, not only a base URL.
 - `--namespace` MUST still override the deterministic namespace candidate.
 - Existing website URL, GitHub repository URL, and local PDF behavior MUST remain backward-compatible.
@@ -99,8 +99,8 @@ Plan, manifest, chunks JSONL, summaries, rows, and applied state MUST preserve l
 
 ## Acceptance criteria
 
-- `turbo-search plan ./example.docx --json` succeeds for a supported text-bearing file and reports `source_kind: local_file`, one generated Markdown document, generated chunks, `namespace_candidate` matching `file-docx-<filename-slug>-<sha16>-v1`, and no turbopuffer API calls.
-- `turbo-search crawl --base-url ./example.csv --json` produces the same local document corpus shape without live calls.
+- `buoy plan ./example.docx --json` succeeds for a supported text-bearing file and reports `source_kind: local_file`, one generated Markdown document, generated chunks, `namespace_candidate` matching `file-docx-<filename-slug>-<sha16>-v1`, and no turbopuffer API calls.
+- `buoy crawl --base-url ./example.csv --json` produces the same local document corpus shape without live calls.
 - Existing PDF plans still use `pdf-<filename-slug>-<sha16>-v1`, not `file-pdf-...`.
 - Generated artifacts and rows contain filename, extension, hash, source ID, and source kind but not the absolute source filepath.
 - Empty MarkItDown extraction fails clearly without writing a misleading successful plan.

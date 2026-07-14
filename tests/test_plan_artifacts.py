@@ -5,8 +5,8 @@ import tempfile
 from pathlib import Path
 import unittest
 
-from turbo_search.chunker import IndexingPlan, IndexingStats, MarkdownChunk, process_corpus
-from turbo_search.plan_artifacts import (
+from buoy_search.chunker import IndexingPlan, IndexingStats, MarkdownChunk, process_corpus
+from buoy_search.plan_artifacts import (
     GENERIC_SITE_TURBOPUFFER_SCHEMA,
     PLAN_SCHEMA_VERSION,
     build_generic_site_row,
@@ -79,7 +79,7 @@ class PlanArtifactTests(unittest.TestCase):
         self.assertEqual(plan["state_backend"], "local")
         self.assertEqual(
             plan["state_path"],
-            ".turbo-search/state/example-com/site-example-com-v1/state.duckdb",
+            ".buoy/state/example-com/site-example-com-v1/state.duckdb",
         )
         self.assertEqual(plan["diff"]["rows_to_upsert"], 1)
         self.assertEqual(plan["diff"]["chunks_to_embed"], 1)
@@ -107,6 +107,20 @@ class PlanArtifactTests(unittest.TestCase):
         self.assertRegex(chunk["embedding_text_hash"], r"^[0-9a-f]{64}$")
         self.assertIn("Useful documentation", chunk["content"])
         self.assertIn("Useful documentation", chunk["content_preview"])
+
+    def test_pre_rebrand_plan_identity_golden_is_preserved(self) -> None:
+        artifacts = self.build_artifacts()
+        plan = artifacts.plan_dict()
+        chunks = list(chunk_jsonl_records(artifacts.chunks_jsonl))
+
+        # These values were captured from the standard fixture before the Buoy
+        # rebrand. Branding must not force remote row or namespace replacement.
+        self.assertEqual(
+            plan["artifact_hash"],
+            "aa7faed6db9f353d87a959cc575a408e3278963610eacec1ef7f2aca0f71f7c8",
+        )
+        self.assertEqual(plan["namespace"], "site-example-com-v1")
+        self.assertEqual(chunks[0]["row_id"], "ts_2fd4695f91b79df01d0f8b1d47587127")
 
     def test_pdf_source_metadata_is_preserved_in_manifest_chunks_and_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

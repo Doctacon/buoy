@@ -9,8 +9,8 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from turbo_search.apply import load_verified_apply_plan, run_approved_apply
-from turbo_search.applied_state import (
+from buoy_search.apply import load_verified_apply_plan, run_approved_apply
+from buoy_search.applied_state import (
     ROW_STATUS_ACTIVE,
     ROW_STATUS_RETAINED_STALE,
     ApplyRunSummary,
@@ -22,10 +22,10 @@ from turbo_search.applied_state import (
     load_apply_run_summaries,
     save_applied_state,
 )
-from turbo_search.cli import build_parser, main
-from turbo_search.chunker import process_corpus
-from turbo_search.config import RuntimeConfig
-from turbo_search.plan_artifacts import build_plan_artifacts, write_plan_artifacts
+from buoy_search.cli import build_parser, main
+from buoy_search.chunker import process_corpus
+from buoy_search.config import RuntimeConfig
+from buoy_search.plan_artifacts import build_plan_artifacts, write_plan_artifacts
 
 
 class TtyStringIO(StringIO):
@@ -178,6 +178,7 @@ class ApplyCliTests(unittest.TestCase):
         defaults = parser.parse_args(["apply"])
         self.assertEqual(defaults.batch_size, 64)
         self.assertEqual(defaults.embedding_batch_size, 32)
+        self.assertIsNone(defaults.state_root)
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             parser.parse_args(["apply", "--embedding-batch-size", "0"])
 
@@ -202,8 +203,8 @@ class ApplyCliTests(unittest.TestCase):
             state_root = root / "state"
             _, plan_path = build_saved_plan(root, state_root=state_root)
 
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")), patch(
-                "turbo_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")), patch(
+                "buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
             ):
                 result, stdout, stderr = self.run_main(
                     [
@@ -232,24 +233,36 @@ class ApplyCliTests(unittest.TestCase):
         self.assertEqual(payload["rows_upserted"], 0)
         self.assertEqual(stderr, "")
 
-    def test_apply_defaults_to_latest_plan_and_plan_namespace(self) -> None:
+    def test_apply_defaults_to_latest_old_plan_and_uses_legacy_state_in_place(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             old_cwd = Path.cwd()
             try:
                 os.chdir(root)
+                legacy_root = Path(".turbo-search")
+                legacy_root.mkdir()
+                marker = legacy_root / "marker"
+                marker.write_text("preserve", encoding="utf-8")
                 _, old_plan_path = build_saved_plan(
                     root / "artifacts/site-crawls/old-site-plan",
-                    state_root=Path(".turbo-search"),
+                    state_root=legacy_root,
                 )
                 _, latest_plan_path = build_saved_plan(
                     root / "artifacts/site-crawls/latest-site-plan",
-                    state_root=Path(".turbo-search"),
+                    state_root=legacy_root,
                 )
+                old_artifact_hash = json.loads(latest_plan_path.read_text(encoding="utf-8"))["artifact_hash"]
                 os.utime(old_plan_path, (1, 1))
                 os.utime(latest_plan_path, (2, 2))
 
-                result, stdout, stderr = self.run_main(["apply", "--json"])
+                with patch(
+                    "buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")
+                ), patch("buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")):
+                    result, stdout, stderr = self.run_main(["apply", "--json"])
+
+                self.assertFalse(Path(".buoy").exists())
+                self.assertEqual(marker.read_text(encoding="utf-8"), "preserve")
+                self.assertEqual(json.loads(latest_plan_path.read_text(encoding="utf-8"))["artifact_hash"], old_artifact_hash)
             finally:
                 os.chdir(old_cwd)
 
@@ -257,8 +270,32 @@ class ApplyCliTests(unittest.TestCase):
         self.assertEqual(result, 0, stderr)
         self.assertEqual(payload["plan_path"], str(latest_plan_path.relative_to(root)))
         self.assertEqual(payload["namespace"], "site-example-com-v1")
+        self.assertEqual(payload["state_path"], ".turbo-search/state/example-com/site-example-com-v1/state.duckdb")
         self.assertFalse(payload["approved"])
         self.assertFalse(payload["turbopuffer_api_calls"])
+        self.assertIn("using legacy state root .turbo-search in place", stderr)
+        self.assertNotIn("Warning", stdout)
+
+    def test_dual_implicit_state_roots_fail_before_apply_plan_or_remote_work(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            current = root / ".buoy"
+            legacy = root / ".turbo-search"
+            current.mkdir()
+            legacy.mkdir()
+            with patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), patch(
+                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
+            ), patch("buoy_search.cli.discover_latest_plan_path") as discover_mock, patch(
+                "buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")
+            ), patch("buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")):
+                result, stdout, stderr = self.run_main(
+                    ["apply", "--approve", "--json"], env={"TURBOPUFFER_API_KEY": "not-used"}
+                )
+
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout, "")
+        self.assertIn("both implicit state roots exist", stderr)
+        discover_mock.assert_not_called()
 
     def test_apply_without_plan_fails_clearly_when_no_local_plan_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -281,8 +318,8 @@ class ApplyCliTests(unittest.TestCase):
             state_root = root / "state"
             _, plan_path = build_saved_plan(root, state_root=state_root)
 
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")), patch(
-                "turbo_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")), patch(
+                "buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
             ):
                 result, stdout, stderr = self.run_main(
                     [
@@ -331,8 +368,8 @@ class ApplyCliTests(unittest.TestCase):
                 state_root=state_root,
             )
 
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
-                "turbo_search.apply.TurbopufferWriter", FakeWriter
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
             ):
                 result, stdout, stderr = self.run_main(
                     [
@@ -388,10 +425,10 @@ class ApplyCliTests(unittest.TestCase):
             state_root = root / "state"
             artifacts, plan_path = build_saved_plan(root, state_root=state_root)
 
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
-                "turbo_search.apply.TurbopufferWriter", FakeWriter
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
             ), patch(
-                "turbo_search.cli.cleanup_applied_plan_directory",
+                "buoy_search.cli.cleanup_applied_plan_directory",
                 return_value=[f"could not remove plan artifact directory {plan_path.parent}: denied"],
             ):
                 result, stdout, stderr = self.run_main(
@@ -451,8 +488,8 @@ class ApplyCliTests(unittest.TestCase):
             save_applied_state(previous_state, state_root=state_root, apply_run=previous_summary)
             FakeWriter.should_fail = True
 
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
-                "turbo_search.apply.TurbopufferWriter", FakeWriter
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
             ):
                 result, stdout, stderr = self.run_main(
                     [
@@ -495,8 +532,8 @@ class ApplyCliTests(unittest.TestCase):
             artifacts, plan_path = build_saved_plan(root, state_root=state_root)
             FakeWriter.should_fail = True
 
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
-                "turbo_search.apply.TurbopufferWriter", FakeWriter
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
             ):
                 result, stdout, stderr = self.run_main(
                     [
@@ -530,8 +567,8 @@ class ApplyCliTests(unittest.TestCase):
             state_root = root / "state"
             artifacts, plan_path = build_saved_plan(root, state_root=state_root)
 
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")), patch(
-                "turbo_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")), patch(
+                "buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
             ):
                 result, stdout, stderr = self.run_main(
                     [
@@ -565,8 +602,8 @@ class ApplyCliTests(unittest.TestCase):
             manifest["chunks"][0]["content"] = "tampered content"
             manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")), patch(
-                "turbo_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")), patch(
+                "buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
             ):
                 result, stdout, stderr = self.run_main(
                     [
@@ -696,8 +733,8 @@ class ApplyCliTests(unittest.TestCase):
                 state_root=state_root,
             )
 
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
-                "turbo_search.apply.TurbopufferWriter", FakeWriter
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
             ):
                 result, stdout, stderr = self.run_main(
                     [
@@ -737,8 +774,8 @@ class ApplyCliTests(unittest.TestCase):
             state_root = root / "state"
             artifacts, _, plan_path, _stale = build_one_page_plan_with_stale_state(root, state_root)
 
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")), patch(
-                "turbo_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")), patch(
+                "buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
             ):
                 result, stdout, stderr = self.run_main(
                     [
@@ -771,8 +808,8 @@ class ApplyCliTests(unittest.TestCase):
             state_root = root / "state"
             artifacts, _, plan_path, stale = build_one_page_plan_with_stale_state(root, state_root)
 
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")), patch(
-                "turbo_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")), patch(
+                "buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
             ):
                 result, stdout, stderr = self.run_main(
                     [
@@ -812,8 +849,8 @@ class ApplyCliTests(unittest.TestCase):
             state_root = root / "state"
             artifacts, _, plan_path, stale = build_one_page_plan_with_stale_state(root, state_root)
 
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
-                "turbo_search.apply.TurbopufferWriter", FakeWriter
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
             ):
                 result, stdout, stderr = self.run_main(
                     [
@@ -855,8 +892,8 @@ class ApplyCliTests(unittest.TestCase):
             artifacts, _, plan_path, stale = build_one_page_plan_with_stale_state(root, state_root)
             FakeWriter.should_delete_fail = True
 
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
-                "turbo_search.apply.TurbopufferWriter", FakeWriter
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
             ):
                 result, stdout, stderr = self.run_main(
                     [
@@ -904,8 +941,8 @@ class ApplyCliTests(unittest.TestCase):
                 raise AppliedStateError("approved apply is already in progress for namespace 'site-example-com-v1'")
                 yield
 
-            with patch("turbo_search.apply.acquire_namespace_apply_lock", contended_lock), patch(
-                "turbo_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
+            with patch("buoy_search.apply.acquire_namespace_apply_lock", contended_lock), patch(
+                "buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
             ):
                 result, stdout, stderr = self.run_main(
                     [
@@ -947,8 +984,8 @@ class ApplyCliTests(unittest.TestCase):
             clock = iter([0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 10.0, 11.0, 15.0, 16.0, 17.0])
             progress: list[str] = []
             with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "test-key"}, clear=True), patch(
-                "turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder
-            ), patch("turbo_search.apply.TurbopufferWriter", FakeWriter):
+                "buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder
+            ), patch("buoy_search.apply.TurbopufferWriter", FakeWriter):
                 summary = run_approved_apply(
                     verified,
                     config=RuntimeConfig(namespace=artifacts.manifest.namespace),
@@ -993,8 +1030,8 @@ class ApplyCliTests(unittest.TestCase):
                 return next(clock)
 
             with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "test-key"}, clear=True), patch(
-                "turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder
-            ), patch("turbo_search.apply.TurbopufferWriter", FakeWriter):
+                "buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder
+            ), patch("buoy_search.apply.TurbopufferWriter", FakeWriter):
                 summary = run_approved_apply(
                     verified,
                     config=RuntimeConfig(namespace=artifacts.manifest.namespace),
@@ -1027,7 +1064,7 @@ class ApplyCliTests(unittest.TestCase):
             clock = iter([0.0, 1.0, 4.0, 5.0, 6.0])
             progress: list[str] = []
             with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "test-key"}, clear=True), patch(
-                "turbo_search.apply.TurbopufferWriter", FakeWriter
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
             ):
                 summary = run_approved_apply(
                     verified,
@@ -1055,8 +1092,8 @@ class ApplyCliTests(unittest.TestCase):
             root = Path(tmp)
             state_root = root / "state"
             artifacts, plan_path = build_saved_plan(root, state_root=state_root)
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
-                "turbo_search.apply.TurbopufferWriter", FakeWriter
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
             ):
                 result, stdout, stderr = self.run_main(
                     [
@@ -1121,8 +1158,8 @@ class ApplyCliTests(unittest.TestCase):
             root = Path(tmp)
             state_root = root / "state"
             artifacts, plan_path = build_saved_plan(root, state_root=state_root)
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
-                "turbo_search.apply.TurbopufferWriter", FakeWriter
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
             ):
                 json_result, json_stdout, json_stderr = self.run_main(
                     [
@@ -1140,8 +1177,8 @@ class ApplyCliTests(unittest.TestCase):
                     stderr=TtyStringIO(),
                 )
             artifacts, plan_path = build_saved_plan(root / "no-progress", state_root=root / "state-no-progress")
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
-                "turbo_search.apply.TurbopufferWriter", FakeWriter
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
             ):
                 quiet_result, _quiet_stdout, quiet_stderr = self.run_main(
                     [
@@ -1180,8 +1217,8 @@ class ApplyCliTests(unittest.TestCase):
                 raise OSError("simulated progress failure")
 
             with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "test-key"}, clear=True), patch(
-                "turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder
-            ), patch("turbo_search.apply.TurbopufferWriter", FakeWriter):
+                "buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder
+            ), patch("buoy_search.apply.TurbopufferWriter", FakeWriter):
                 summary = run_approved_apply(
                     verified,
                     config=RuntimeConfig(namespace=artifacts.manifest.namespace),
@@ -1220,8 +1257,8 @@ class ApplyCliTests(unittest.TestCase):
                 raise OSError("simulated progress failure")
 
             with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "test-key"}, clear=True), patch(
-                "turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder
-            ), patch("turbo_search.apply.TurbopufferWriter", FakeWriter):
+                "buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder
+            ), patch("buoy_search.apply.TurbopufferWriter", FakeWriter):
                 with self.assertRaisesRegex(RuntimeError, "fake upsert failure"):
                     run_approved_apply(
                         verified,
@@ -1236,8 +1273,8 @@ class ApplyCliTests(unittest.TestCase):
             root = Path(tmp)
             state_root = root / "state"
             artifacts, plan_path = build_saved_plan(root, state_root=state_root)
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
-                "turbo_search.apply.TurbopufferWriter", FakeWriter
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
             ):
                 result, _stdout, _stderr = self.run_main(
                     [
@@ -1270,8 +1307,8 @@ class ApplyCliTests(unittest.TestCase):
             state_root = root / "state"
             artifacts, plan_path = build_saved_plan(root, state_root=state_root)
             FakeWriter.should_fail = True
-            with patch("turbo_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
-                "turbo_search.apply.TurbopufferWriter", FakeWriter
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
             ):
                 result, _stdout, _stderr = self.run_main(
                     [

@@ -7,7 +7,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from turbo_search.crawler import (
+from buoy_search.crawler import (
     DEFAULT_CRAWL_MAX_CHUNKS,
     DEFAULT_CRAWL_MAX_PAGES,
     DEFAULT_GITHUB_REPO_MAX_CHUNKS,
@@ -43,7 +43,7 @@ from turbo_search.crawler import (
     validate_base_url,
     write_markdown_corpus,
 )
-from turbo_search.chunker import process_corpus
+from buoy_search.chunker import process_corpus
 
 
 class CrawlerHelperTests(unittest.TestCase):
@@ -256,7 +256,7 @@ class CrawlerHelperTests(unittest.TestCase):
             exclude_paths=("/private/**",),
         )
 
-        with patch("turbo_search.crawler.discover_sitemap_page_urls", return_value=urls):
+        with patch("buoy_search.crawler.discover_sitemap_page_urls", return_value=urls):
             effective, report = apply_docs_version_policy(options)
 
         self.assertTrue(report["applied"])
@@ -289,7 +289,7 @@ class CrawlerHelperTests(unittest.TestCase):
             exclude_paths=("/private/**",),
         )
 
-        with patch("turbo_search.crawler.discover_sitemap_page_urls", return_value=urls):
+        with patch("buoy_search.crawler.discover_sitemap_page_urls", return_value=urls):
             effective, report = apply_language_policy(options)
 
         self.assertTrue(report["applied"])
@@ -303,7 +303,7 @@ class CrawlerHelperTests(unittest.TestCase):
             language_policy="all",
         )
 
-        with patch("turbo_search.crawler.discover_sitemap_page_urls", return_value=urls) as discover_mock:
+        with patch("buoy_search.crawler.discover_sitemap_page_urls", return_value=urls) as discover_mock:
             effective, report = apply_language_policy(options)
 
         self.assertFalse(report["detected"])
@@ -341,8 +341,8 @@ class CrawlerHelperTests(unittest.TestCase):
                 out_dir=Path(tmp),
                 docs_version_policy="warn",
             )
-            with patch("turbo_search.crawler.discover_sitemap_page_urls", return_value=urls):
-                with patch("turbo_search.crawler.crawl_pages") as crawl_pages_mock:
+            with patch("buoy_search.crawler.discover_sitemap_page_urls", return_value=urls):
+                with patch("buoy_search.crawler.crawl_pages") as crawl_pages_mock:
                     with self.assertRaisesRegex(RuntimeError, "stopping before page crawl"):
                         crawl_site(options)
 
@@ -475,7 +475,7 @@ class CrawlerHelperTests(unittest.TestCase):
             options = CrawlOptions(base_url=source.base_url, out_dir=root / "crawl", max_chunks=10)
 
             with patch(
-                "turbo_search.crawler.markitdown_pdf_to_markdown",
+                "buoy_search.crawler.markitdown_pdf_to_markdown",
                 return_value="# Annual Plan\n\nUseful PDF text for retrieval.",
             ):
                 summary = crawl_pdf(source, options)
@@ -508,7 +508,7 @@ class CrawlerHelperTests(unittest.TestCase):
             options = CrawlOptions(base_url=source.base_url, out_dir=root / "crawl", max_chunks=10)
 
             with patch(
-                "turbo_search.crawler.markitdown_file_to_markdown",
+                "buoy_search.crawler.markitdown_file_to_markdown",
                 return_value="| metric | value |\n| --- | --- |\n| revenue | 42 |",
             ):
                 summary = crawl_local_document(source, options)
@@ -544,7 +544,7 @@ class CrawlerHelperTests(unittest.TestCase):
             assert isinstance(source, PdfSource)
             options = CrawlOptions(base_url=source.base_url, out_dir=root / "crawl")
 
-            with patch("turbo_search.crawler.markitdown_pdf_to_markdown", return_value=" \n"):
+            with patch("buoy_search.crawler.markitdown_pdf_to_markdown", return_value=" \n"):
                 with self.assertRaisesRegex(RuntimeError, "No text was extracted"):
                     crawl_pdf(source, options)
 
@@ -559,7 +559,7 @@ class CrawlerHelperTests(unittest.TestCase):
             assert isinstance(source, LocalFileSource)
             options = CrawlOptions(base_url=source.base_url, out_dir=root / "crawl")
 
-            with patch("turbo_search.crawler.markitdown_file_to_markdown", return_value=" \n"):
+            with patch("buoy_search.crawler.markitdown_file_to_markdown", return_value=" \n"):
                 with self.assertRaisesRegex(RuntimeError, "No text was extracted"):
                     crawl_local_document(source, options)
 
@@ -570,7 +570,7 @@ class CrawlerHelperTests(unittest.TestCase):
             status = 200
             url = "https://example.com/control-chars"
 
-        with patch("turbo_search.crawler.markdown_from_response", side_effect=ValueError("bad html")):
+        with patch("buoy_search.crawler.markdown_from_response", side_effect=ValueError("bad html")):
             self.assertIsNone(crawled_page_from_response(Response()))
 
     def test_hybrid_crawl_merges_sitemap_and_link_pages(self) -> None:
@@ -612,9 +612,9 @@ class CrawlerHelperTests(unittest.TestCase):
             max_pages=10,
             crawl_strategy="hybrid",
         )
-        with patch("turbo_search.crawler.build_sitemap_spider_class", return_value=SitemapSpider):
-            with patch("turbo_search.crawler.build_link_spider_class", return_value=LinkSpider):
-                with patch("turbo_search.crawler.run_scrapling_spider", side_effect=fake_run):
+        with patch("buoy_search.crawler.build_sitemap_spider_class", return_value=SitemapSpider):
+            with patch("buoy_search.crawler.build_link_spider_class", return_value=LinkSpider):
+                with patch("buoy_search.crawler.run_scrapling_spider", side_effect=fake_run):
                     pages, stats, strategy = crawl_pages(options)
 
         self.assertEqual(strategy, "hybrid")
@@ -645,9 +645,9 @@ class CrawlerHelperTests(unittest.TestCase):
             out_dir=Path("unused"),
             max_pages=10,
         )
-        with patch("turbo_search.crawler.build_sitemap_spider_class", return_value=SitemapSpider):
-            with patch("turbo_search.crawler.build_link_spider_class", return_value=LinkSpider) as link_mock:
-                with patch("turbo_search.crawler.run_scrapling_spider", side_effect=fake_run):
+        with patch("buoy_search.crawler.build_sitemap_spider_class", return_value=SitemapSpider):
+            with patch("buoy_search.crawler.build_link_spider_class", return_value=LinkSpider) as link_mock:
+                with patch("buoy_search.crawler.run_scrapling_spider", side_effect=fake_run):
                     pages, stats, strategy = crawl_pages(options)
 
         self.assertEqual(strategy, "sitemap")
@@ -682,9 +682,9 @@ class CrawlerHelperTests(unittest.TestCase):
             max_pages=10,
             crawl_strategy="sitemap",
         )
-        with patch("turbo_search.crawler.build_sitemap_spider_class", return_value=SitemapSpider):
-            with patch("turbo_search.crawler.build_link_spider_class", return_value=LinkSpider):
-                with patch("turbo_search.crawler.run_scrapling_spider", side_effect=fake_run):
+        with patch("buoy_search.crawler.build_sitemap_spider_class", return_value=SitemapSpider):
+            with patch("buoy_search.crawler.build_link_spider_class", return_value=LinkSpider):
+                with patch("buoy_search.crawler.run_scrapling_spider", side_effect=fake_run):
                     pages, stats, strategy = crawl_pages(options)
 
         self.assertEqual(strategy, "link_fallback")
@@ -711,9 +711,9 @@ class CrawlerHelperTests(unittest.TestCase):
             max_pages=10,
             crawl_strategy="link",
         )
-        with patch("turbo_search.crawler.build_sitemap_spider_class", return_value=SitemapSpider) as sitemap_mock:
-            with patch("turbo_search.crawler.build_link_spider_class", return_value=LinkSpider):
-                with patch("turbo_search.crawler.run_scrapling_spider", return_value=([link_page], {"requests_count": 1})):
+        with patch("buoy_search.crawler.build_sitemap_spider_class", return_value=SitemapSpider) as sitemap_mock:
+            with patch("buoy_search.crawler.build_link_spider_class", return_value=LinkSpider):
+                with patch("buoy_search.crawler.run_scrapling_spider", return_value=([link_page], {"requests_count": 1})):
                     pages, stats, strategy = crawl_pages(options)
 
         self.assertEqual(strategy, "link")
@@ -746,9 +746,9 @@ class CrawlerHelperTests(unittest.TestCase):
             crawl_strategy="hybrid",
             progress_callback=events.append,
         )
-        with patch("turbo_search.crawler.build_sitemap_spider_class", return_value=SitemapSpider):
-            with patch("turbo_search.crawler.build_link_spider_class", return_value=LinkSpider):
-                with patch("turbo_search.crawler.run_scrapling_spider", side_effect=fake_run):
+        with patch("buoy_search.crawler.build_sitemap_spider_class", return_value=SitemapSpider):
+            with patch("buoy_search.crawler.build_link_spider_class", return_value=LinkSpider):
+                with patch("buoy_search.crawler.run_scrapling_spider", side_effect=fake_run):
                     pages, _stats, strategy = crawl_pages(options)
 
         self.assertEqual(strategy, "hybrid")

@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-06-28
-Updated: 2026-06-28
+Updated: 2026-07-14
 
 # Repo Search Composite Eval and Config Autoresearch
 
@@ -8,7 +8,7 @@ Updated: 2026-06-28
 
 Define a deterministic retrieval-quality evaluation surface for GitHub repository search and a first-pass autoresearch loop that can compare retrieval configurations without mutating indexing code or live turbopuffer state.
 
-The first target corpus is this repository, `turbo-search`, indexed through the GitHub repository ingestion path. The first dataset will be drafted from repository inspection and use graded source labels. Live validation may run retrieval/eval commands against an already-applied turbopuffer namespace, but MUST NOT run live writes, deletes, namespace creation, namespace deletion, or state mutation.
+The first target corpus was this repository under its pre-rebrand `turbo-search` identity. Current fixture/data paths use the Buoy technical identity `buoy-search`; already-applied remote namespaces retain their original semantic names. The dataset uses graded source labels drafted from repository inspection. Live validation may run retrieval/eval commands against an already-applied turbopuffer namespace, but MUST NOT run live writes, deletes, namespace creation, namespace deletion, or state mutation.
 
 ## Behavior
 
@@ -98,7 +98,7 @@ The Python runner owns one trial only. The human/LLM research program owns hypot
 ## Acceptance criteria
 
 - The existing smoke eval dataset remains loadable and backward compatible.
-- A graded eval dataset for `turbo-search` can be loaded and scored deterministically from mocked hits.
+- The graded Buoy repository eval dataset can be loaded and scored deterministically from mocked hits.
 - The composite score reports NDCG@10, Recall@10, MRR@10, Precision@5, and `repo_search_score`.
 - The CLI or runner can execute a dry-run/list mode without credentials.
 - The config-only autoresearch one-shot runner can execute one registered experiment and write result artifacts without modifying source code.

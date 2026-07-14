@@ -1,9 +1,9 @@
 {
   "experiment_id": "repo-search-live-baseline",
-  "question": "How does the applied turbo-search GitHub repository namespace score against the seed graded repo-search eval dataset?",
-  "hypothesis": "The applied github-doctacon-turbo-search-v1 namespace should retrieve grade-3 implementation files in the top results for most seed cases.",
+  "question": "How does the preserved pre-rebrand GitHub repository namespace score against the seed graded repo-search eval dataset?",
+  "hypothesis": "The preserved github-doctacon-turbo-search-v1 namespace should retrieve grade-3 implementation files in the top results for most seed cases.",
   "mode": "live",
-  "dataset_path": "src/turbo_search/data/turbo_search_repo_search_seed_evals.json",
+  "dataset_path": "src/buoy_search/data/buoy_search_repo_search_seed_evals.json",
   "config": {
     "namespace": "github-doctacon-turbo-search-v1",
     "region": "gcp-us-central1",
@@ -14,5 +14,5 @@
     "candidates": 100,
     "doc_kind": null
   },
-  "notes": "Live retrieval-only baseline after approved apply of https://github.com/Doctacon/turbo-search. No apply, delete, or namespace-management action is part of this experiment."
+  "notes": "Live retrieval-only baseline targets the existing semantic namespace originally applied from https://github.com/Doctacon/turbo-search. The Buoy rebrand does not rename or recreate it. Re-run only after separately confirming that namespace contains corpus paths compatible with the selected dataset. No apply, delete, or namespace-management action is part of this experiment."
 }

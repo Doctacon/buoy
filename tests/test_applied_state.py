@@ -10,7 +10,7 @@ import unittest
 
 import duckdb
 
-from turbo_search.applied_state import (
+from buoy_search.applied_state import (
     APPLIED_STATE_SCHEMA_VERSION,
     DUCKDB_STATE_SCHEMA_VERSION,
     ROW_STATUS_ACTIVE,
@@ -25,6 +25,7 @@ from turbo_search.applied_state import (
     build_applied_state,
     load_applied_state,
     load_apply_run_summaries,
+    resolve_state_root,
     save_applied_state,
 )
 
@@ -58,12 +59,90 @@ class AppliedStateStoreTests(unittest.TestCase):
     def test_default_paths_are_per_namespace_duckdb_and_legacy_cleanup(self) -> None:
         paths = applied_state_paths(site_id="example-com", namespace="site-example-com-v1")
 
-        self.assertEqual(paths.database_path, Path(".turbo-search/state/example-com/site-example-com-v1/state.duckdb"))
-        self.assertEqual(paths.legacy_state_path, Path(".turbo-search/state/example-com/site-example-com-v1/last-applied.json"))
+        self.assertEqual(paths.database_path, Path(".buoy/state/example-com/site-example-com-v1/state.duckdb"))
+        self.assertEqual(paths.legacy_state_path, Path(".buoy/state/example-com/site-example-com-v1/last-applied.json"))
         self.assertEqual(
             paths.legacy_archive_path,
-            Path(".turbo-search/state/example-com/site-example-com-v1/legacy-json/last-applied.json"),
+            Path(".buoy/state/example-com/site-example-com-v1/legacy-json/last-applied.json"),
         )
+
+    def test_implicit_state_root_defaults_to_buoy_without_creating_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            current = Path(tmp) / ".buoy"
+            legacy = Path(tmp) / ".turbo-search"
+            with mock.patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), mock.patch(
+                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
+            ):
+                resolved, warning = resolve_state_root(None)
+
+            self.assertEqual(resolved, current)
+            self.assertIsNone(warning)
+            self.assertFalse(current.exists())
+            self.assertFalse(legacy.exists())
+
+    def test_implicit_state_root_uses_existing_buoy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            current = Path(tmp) / ".buoy"
+            legacy = Path(tmp) / ".turbo-search"
+            current.mkdir()
+            with mock.patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), mock.patch(
+                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
+            ):
+                resolved, warning = resolve_state_root(None)
+
+            self.assertEqual(resolved, current)
+            self.assertIsNone(warning)
+
+    def test_implicit_state_root_uses_legacy_in_place_without_copying(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            current = Path(tmp) / ".buoy"
+            legacy = Path(tmp) / ".turbo-search"
+            legacy.mkdir()
+            marker = legacy / "marker"
+            marker.write_text("preserve", encoding="utf-8")
+            before = sorted(path.relative_to(Path(tmp)) for path in Path(tmp).rglob("*"))
+            with mock.patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), mock.patch(
+                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
+            ):
+                resolved, warning = resolve_state_root(None)
+            after = sorted(path.relative_to(Path(tmp)) for path in Path(tmp).rglob("*"))
+
+            self.assertEqual(resolved, legacy)
+            self.assertIn("using legacy state root", warning or "")
+            self.assertEqual(after, before)
+            self.assertEqual(marker.read_text(encoding="utf-8"), "preserve")
+            self.assertFalse(current.exists())
+
+    def test_implicit_state_root_refuses_dual_roots_without_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            current = Path(tmp) / ".buoy"
+            legacy = Path(tmp) / ".turbo-search"
+            current.mkdir()
+            legacy.mkdir()
+            before = sorted(path.relative_to(Path(tmp)) for path in Path(tmp).rglob("*"))
+            with mock.patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), mock.patch(
+                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
+            ):
+                with self.assertRaisesRegex(AppliedStateError, "both implicit state roots exist"):
+                    resolve_state_root(None)
+            after = sorted(path.relative_to(Path(tmp)) for path in Path(tmp).rglob("*"))
+            self.assertEqual(after, before)
+
+    def test_explicit_state_root_bypasses_dual_root_detection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            current = Path(tmp) / ".buoy"
+            legacy = Path(tmp) / ".turbo-search"
+            explicit = Path(tmp) / "chosen"
+            current.mkdir()
+            legacy.mkdir()
+            with mock.patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), mock.patch(
+                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
+            ):
+                resolved, warning = resolve_state_root(explicit)
+
+            self.assertEqual(resolved, explicit)
+            self.assertIsNone(warning)
+            self.assertFalse(explicit.exists())
 
     def test_missing_state_loads_as_first_apply_without_creating_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -184,7 +263,7 @@ class AppliedStateStoreTests(unittest.TestCase):
             paths.legacy_state_path.write_text(legacy_payload, encoding="utf-8")
 
             with mock.patch(
-                "turbo_search.applied_state._initialize_schema",
+                "buoy_search.applied_state._initialize_schema",
                 side_effect=duckdb.Error("simulated initialization failure"),
             ):
                 with self.assertRaisesRegex(AppliedStateError, "could not initialize DuckDB applied state"):
@@ -291,7 +370,7 @@ class AppliedStateStoreTests(unittest.TestCase):
 from pathlib import Path
 import sys
 import time
-from turbo_search.applied_state import acquire_namespace_apply_lock
+from buoy_search.applied_state import acquire_namespace_apply_lock
 with acquire_namespace_apply_lock(site_id='example-com', namespace='site-example-com-v1', state_root=Path(sys.argv[1])):
     print('locked', flush=True)
     time.sleep(10)

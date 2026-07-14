@@ -6,7 +6,7 @@ Updated: 2026-07-03
 
 ## Purpose and scope
 
-`turbo-search crawl` and `turbo-search plan` SHOULD help users avoid indexing duplicated non-English localized pages when the intended website RAG corpus is English.
+`buoy crawl` and `buoy plan` SHOULD help users avoid indexing duplicated non-English localized pages when the intended website RAG corpus is English.
 
 This specification governs ordinary website sources only. GitHub repository ingestion is out of scope.
 
@@ -49,7 +49,7 @@ Text summaries SHOULD report applied language filtering and the excluded locale 
 ### Default English policy filters duplicated localized pages
 
 Given a website sitemap contains unprefixed English pages and repeated locale-prefixed pages such as `/de/samples/`, `/fr/samples/`, and `/zh-cn/samples/`
-When the user runs `turbo-search plan https://example.com/` with the default policy
+When the user runs `buoy plan https://example.com/` with the default policy
 Then non-English locale prefixes are added as effective exclude-path filters
 And unprefixed pages remain eligible.
 
