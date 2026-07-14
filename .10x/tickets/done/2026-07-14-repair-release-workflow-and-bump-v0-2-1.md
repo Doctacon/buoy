@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-07-14
 Updated: 2026-07-14
 Parent: .10x/tickets/2026-07-14-buoy-public-ci-release-plan.md
@@ -28,6 +28,7 @@ Repair annotated-tag validation to use authoritative remote GitHub metadata, bum
 ## Progress and notes
 
 - 2026-07-14: Replaced checkout-local tag validation with authoritative GitHub tag-ref metadata, bumped project/module/lock/changelog/release docs to 0.2.1, preserved v0.2.0 failed-attempt history, and passed 9 focused plus 235 full tests and exact build checks. Evidence: `.10x/evidence/2026-07-14-buoy-v0-2-1-workflow-repair.md`.
+- 2026-07-14: Pushed commit `0afde6643162fdedc00810152e226701aa1d38b1` normally to canonical main; hosted CI run `29362284969` passed for the exact commit. Awaiting independent review.
 
 ## Blockers
 

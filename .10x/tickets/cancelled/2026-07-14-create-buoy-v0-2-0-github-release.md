@@ -45,4 +45,4 @@ Preflight, environment configuration, CI/deployment/run IDs, tag object/commit, 
 
 ## Blockers
 
-- Superseded by `.10x/tickets/2026-07-14-create-buoy-v0-2-1-github-release.md`.
+- Superseded by `.10x/tickets/done/2026-07-14-create-buoy-v0-2-1-github-release.md`.

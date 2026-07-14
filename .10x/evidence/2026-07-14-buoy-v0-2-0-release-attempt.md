@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-14
 Updated: 2026-07-14
-Relates-To: .10x/tickets/2026-07-14-create-buoy-v0-2-0-github-release.md, .10x/tickets/2026-07-14-buoy-public-ci-release-plan.md
+Relates-To: .10x/tickets/cancelled/2026-07-14-create-buoy-v0-2-0-github-release.md, .10x/tickets/2026-07-14-buoy-public-ci-release-plan.md
 
 # Buoy v0.2.0 GitHub Release Attempt
 

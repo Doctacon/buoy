@@ -148,12 +148,12 @@ class ReleaseAutomationTests(unittest.TestCase):
             build_system = tomllib.load(handle)["build-system"]
         self.assertEqual(build_system["requires"], ["hatchling==1.31.0"])
 
-    def test_changelog_keeps_unreleased_version_pending(self) -> None:
+    def test_changelog_records_verified_release(self) -> None:
         changelog = (ROOT / "CHANGELOG.md").read_text()
-        self.assertIn("## 0.2.1 (pending GitHub release)", changelog)
+        self.assertIn("## [0.2.1] - 2026-07-14", changelog)
         self.assertIn("`v0.2.0` tag was preserved without a GitHub Release", changelog)
-        self.assertNotIn("releases/tag/v0.2.1", changelog)
-        self.assertNotIn("compare/v0.2.1...HEAD", changelog)
+        self.assertIn("[0.2.1]: https://github.com/Doctacon/buoy-search/releases/tag/v0.2.1", changelog)
+        self.assertIn("[Unreleased]: https://github.com/Doctacon/buoy-search/compare/v0.2.1...HEAD", changelog)
 
     def test_release_check_cli_rejects_mismatch_without_git_side_effects(self) -> None:
         before = subprocess.run(

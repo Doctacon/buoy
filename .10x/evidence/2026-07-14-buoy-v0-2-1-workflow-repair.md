@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-14
 Updated: 2026-07-14
-Relates-To: .10x/tickets/2026-07-14-repair-release-workflow-and-bump-v0-2-1.md
+Relates-To: .10x/tickets/done/2026-07-14-repair-release-workflow-and-bump-v0-2-1.md
 
 # Buoy v0.2.1 Workflow Repair Validation
 
@@ -20,6 +20,10 @@ Remote preflight confirmed v0.2.0 still resolves to Git object type `tag`, faile
 - `uv lock --check` and `git diff --check` passed.
 - No tag, release, PyPI, branch-protection, or Turbopuffer mutation occurred during repair validation.
 
+## Commit and hosted validation
+
+Commit `0afde6643162fdedc00810152e226701aa1d38b1` (`fix(release): recover with v0.2.1`) was pushed normally to canonical `main`. Hosted CI run `29362284969` completed successfully for that exact commit.
+
 ## Limits
 
-Hosted behavior requires the repaired commit to be pushed and canonical main CI to pass. No v0.2.1 tag was created.
+No v0.2.1 tag or Release was created. Independent review remains required before ticket closure.

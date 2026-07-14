@@ -1,0 +1,148 @@
+{
+  "approval": {
+    "current_user_could_approve": true,
+    "deployment_id": 5446773429,
+    "environment": "release",
+    "environment_id": 18151168858,
+    "observed_status_before_approval": "waiting",
+    "run_id": 29362749172
+  },
+  "assets": [
+    {
+      "download_sha256": "9c49b9eb699e66e26455a20b7c529557811d6c259de55706d25e415c7f117183",
+      "github_digest": "sha256:9c49b9eb699e66e26455a20b7c529557811d6c259de55706d25e415c7f117183",
+      "name": "buoy_search-0.2.1-py3-none-any.whl",
+      "size": 126174,
+      "url": "https://github.com/Doctacon/buoy-search/releases/download/v0.2.1/buoy_search-0.2.1-py3-none-any.whl"
+    },
+    {
+      "download_sha256": "d830a6fe620a6e7d1462f050c695502fb68a42523700ef8481e935e8517a90d7",
+      "github_digest": "sha256:d830a6fe620a6e7d1462f050c695502fb68a42523700ef8481e935e8517a90d7",
+      "name": "buoy_search-0.2.1.tar.gz",
+      "size": 581867,
+      "url": "https://github.com/Doctacon/buoy-search/releases/download/v0.2.1/buoy_search-0.2.1.tar.gz"
+    }
+  ],
+  "attestation_verifications": [
+    {
+      "subject": [
+        {
+          "digest": {
+            "sha256": "9c49b9eb699e66e26455a20b7c529557811d6c259de55706d25e415c7f117183"
+          },
+          "name": "buoy_search-0.2.1-py3-none-any.whl"
+        },
+        {
+          "digest": {
+            "sha256": "d830a6fe620a6e7d1462f050c695502fb68a42523700ef8481e935e8517a90d7"
+          },
+          "name": "buoy_search-0.2.1.tar.gz"
+        }
+      ],
+      "verified_identity": {
+        "issuer": {
+          "issuer": "",
+          "regexp": ".*"
+        },
+        "subjectAlternativeName": {
+          "regexp": "^https://github.com/Doctacon/buoy-search/.github/workflows/release.yml",
+          "subjectAlternativeName": ""
+        }
+      },
+      "verified_timestamps": [
+        {
+          "timestamp": "2026-07-14T12:42:07-07:00",
+          "type": "Tlog",
+          "uri": "https://rekor.sigstore.dev"
+        }
+      ]
+    },
+    {
+      "subject": [
+        {
+          "digest": {
+            "sha256": "9c49b9eb699e66e26455a20b7c529557811d6c259de55706d25e415c7f117183"
+          },
+          "name": "buoy_search-0.2.1-py3-none-any.whl"
+        },
+        {
+          "digest": {
+            "sha256": "d830a6fe620a6e7d1462f050c695502fb68a42523700ef8481e935e8517a90d7"
+          },
+          "name": "buoy_search-0.2.1.tar.gz"
+        }
+      ],
+      "verified_identity": {
+        "issuer": {
+          "issuer": "",
+          "regexp": ".*"
+        },
+        "subjectAlternativeName": {
+          "regexp": "^https://github.com/Doctacon/buoy-search/.github/workflows/release.yml",
+          "subjectAlternativeName": ""
+        }
+      },
+      "verified_timestamps": [
+        {
+          "timestamp": "2026-07-14T12:42:07-07:00",
+          "type": "Tlog",
+          "uri": "https://rekor.sigstore.dev"
+        }
+      ]
+    }
+  ],
+  "captured_at": "2026-07-14",
+  "jobs": [
+    {
+      "conclusion": "success",
+      "name": "Validate and build"
+    },
+    {
+      "conclusion": "success",
+      "name": "Publish GitHub release"
+    }
+  ],
+  "postflight": {
+    "main_unprotected": true,
+    "pypi_status": 404,
+    "v0.2.0_release_absent": true
+  },
+  "preflight": {
+    "main_ci_conclusion": "success",
+    "main_ci_run": 29362284969,
+    "main_commit": "0afde6643162fdedc00810152e226701aa1d38b1",
+    "main_unprotected": true,
+    "prevent_self_review": false,
+    "pypi_status": 404,
+    "release_environment_required_review": true,
+    "v0.2.0_release_absent": true,
+    "v0.2.0_remote_type": "tag",
+    "v0.2.1_preexisting_release": false,
+    "v0.2.1_preexisting_tag": false
+  },
+  "release": {
+    "isDraft": false,
+    "isPrerelease": false,
+    "name": "Buoy v0.2.1",
+    "publishedAt": "2026-07-14T19:42:09Z",
+    "tagName": "v0.2.1",
+    "targetCommitish": "main",
+    "url": "https://github.com/Doctacon/buoy-search/releases/tag/v0.2.1"
+  },
+  "release_body_chars": 83,
+  "repository": "Doctacon/buoy-search",
+  "tag": {
+    "commit": "0afde6643162fdedc00810152e226701aa1d38b1",
+    "name": "v0.2.1",
+    "remote_object_type": "tag",
+    "tag_object_sha": "959a1d814af8a71260bc1e7b84a0b332a3883725"
+  },
+  "workflow": {
+    "conclusion": "success",
+    "event": "push",
+    "headSha": "0afde6643162fdedc00810152e226701aa1d38b1",
+    "status": "completed",
+    "url": "https://github.com/Doctacon/buoy-search/actions/runs/29362749172",
+    "workflowName": "Release"
+  }
+}

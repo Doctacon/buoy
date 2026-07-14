@@ -4,7 +4,7 @@ Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
-## 0.2.1 (pending GitHub release)
+## [0.2.1] - 2026-07-14
 
 ### Added
 
@@ -28,3 +28,6 @@ Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 ## 0.2.0 (not released)
 
 - The annotated `v0.2.0` tag was preserved without a GitHub Release after its hosted validation failed before artifact construction or publication.
+
+[Unreleased]: https://github.com/Doctacon/buoy-search/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Doctacon/buoy-search/releases/tag/v0.2.1
