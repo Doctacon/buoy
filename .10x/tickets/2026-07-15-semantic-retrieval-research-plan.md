@@ -4,11 +4,11 @@ Updated: 2026-07-15
 Parent: None
 Depends-On: None
 
-# Data Vault Semantic Retrieval Research Plan
+# Semantic Retrieval Research Plan
 
 ## Plan outcome
 
-Produce four focused, evidence-backed investigations for a Data Vault 2.0-informed semantic retrieval architecture over many Buoy/Turbopuffer namespaces:
+Produce four focused, evidence-backed investigations for semantic organization and retrieval over many Buoy/Turbopuffer namespaces:
 
 1. namespace catalog and routing;
 2. governed tagging and metadata filtering;
@@ -20,9 +20,10 @@ This is a parent plan, not an executable ticket. It does not authorize product i
 ## Ratified context
 
 - “Chief AI” means Chief at `chief.bot`.
-- “Data Vault” means formal Data Vault 2.0: hubs, links, satellites, business keys, lineage, and historical modeling.
+- Data Vault was an analogy for stable concepts and relationships, not an architecture requirement. Buoy MUST NOT build or require Data Vault 2.0 for this workstream; `.10x/decisions/data-vault-is-analogy-not-architecture.md` governs.
+- The intended surfaces are semantic catalog, taxonomy, ontology, concepts, typed relationships, provenance, and retrieval.
 - All four capability families matter and must be investigated independently rather than collapsed into one broad implementation.
-- The broad preliminary investigation is `.10x/research/2026-07-15-metadata-tagging-graphs-and-data-vault.md`.
+- The broad preliminary investigation is `.10x/research/2026-07-15-metadata-tagging-graphs-and-data-vault.md`; its Data Vault-specific interpretation is superseded by the active decision above.
 
 ## Child investigations
 
@@ -37,7 +38,7 @@ The investigations may run in parallel because each owns a separate worktree and
 
 Every child must:
 
-- distinguish Data Vault 2.0 warehouse authority from derived vector/graph indexes;
+- treat Data Vault hub/link/satellite language only as historical analogy and introduce no warehouse requirements;
 - preserve source provenance to namespace and chunk identity;
 - cover ACL/isolation implications rather than assuming all namespaces may be joined;
 - prefer open-source/self-hostable components and name licensing or operational caveats;
@@ -62,13 +63,13 @@ Every child must:
 
 - Current namespace discovery and explicit multi-namespace retrieval contracts.
 - Turbopuffer document attributes, namespace isolation, and filtering.
-- Data Vault 2.0 hub/link/satellite authority and historical lineage.
+- taxonomy/ontology identity, typed relationships, provenance, and historical observations without Data Vault machinery.
 - Buoy plan artifacts, source hashes, row IDs, embedding contracts, applied state, and retrieval evals.
 - Chief Labels/Collections/Concepts as a product comparison, not implementation authority.
 
 ## Blockers
 
-None for the four research investigations. Implementation remains blocked on completed research, synthesis, and user ratification.
+None for the four completed research investigations. Architecture synthesis remains blocked on reconciling the findings under `.10x/decisions/data-vault-is-analogy-not-architecture.md`; implementation remains blocked on focused specifications, user ratification, and executable tickets.
 
 ## Progress and notes
 
@@ -77,3 +78,4 @@ None for the four research investigations. Implementation remains blocked on com
 - 2026-07-15: Concept-graph child research completed and passed independent re-review; closed child: `.10x/tickets/done/2026-07-15-research-data-vault-concept-graph.md`. Architecture synthesis and implementation remain blocked on completion/reconciliation of all four tracks and user ratification.
 - 2026-07-15: Governed tagging/filtering research passed re-review and closed at `.10x/tickets/done/2026-07-15-research-data-vault-governed-tagging-filtering.md`. Its implementation semantics remain unratified and the public tag-output/filtering drift remains blocked in its existing owner.
 - 2026-07-15: The multi-hop/global retrieval child research completed after a final pass review; its ticket is `.10x/tickets/done/2026-07-15-research-data-vault-multi-hop-global-retrieval.md` and its research record is `.10x/research/2026-07-15-data-vault-multi-hop-global-retrieval.md`. Aggregate architecture synthesis and implementation remain blocked until all four findings are available, reconciled, and user-ratified.
+- 2026-07-15: User corrected the workstream premise: Data Vault was only an analogy for concepts and relationships. Renamed this active parent plan, repaired graph references, and adopted `.10x/decisions/data-vault-is-analogy-not-architecture.md`. No Data Vault implementation, schema, warehouse, or loading process is in scope.

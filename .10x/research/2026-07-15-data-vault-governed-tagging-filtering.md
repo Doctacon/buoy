@@ -4,6 +4,12 @@ Updated: 2026-07-15
 
 # Data Vault Governed Tagging and Filtering
 
+## Scope correction — no Data Vault architecture
+
+The user clarified after this research closed that Data Vault was only an analogy for stable concepts and relationships. `.10x/decisions/data-vault-is-analogy-not-architecture.md` governs: Buoy will not build or require hubs, links, satellites, warehouse authority, or Data Vault loading.
+
+Retain this record's findings on structural versus governed versus inferred tags, stable taxonomy IDs, temporal assignment provenance, fail-closed ACLs, Turbopuffer projections, lifecycle reconciliation, and controlled-tag evals. Use an ordinary project-governed relational authority unless a later decision selects something else; recommendations requiring an existing Data Vault are withdrawn.
+
 ## Question
 
 How should Buoy classify, govern, project, filter, and optionally boost tags over namespaces, sources, documents, and chunks while preserving Data Vault 2.0 authority and history, source provenance, deletion semantics, and authorization boundaries?
@@ -17,7 +23,7 @@ Research was performed on 2026-07-15. Official documentation and current local s
 ### Local authority inspected completely
 
 - `.10x/tickets/done/2026-07-15-research-data-vault-governed-tagging-filtering.md`
-- `.10x/tickets/2026-07-15-data-vault-semantic-retrieval-research-plan.md`
+- `.10x/tickets/2026-07-15-semantic-retrieval-research-plan.md`
 - `.10x/tickets/2026-07-15-reconcile-retrieval-tag-output.md`
 - `.10x/research/2026-07-15-metadata-tagging-graphs-and-data-vault.md`
 - `.10x/specs/explicit-multi-namespace-retrieval.md`

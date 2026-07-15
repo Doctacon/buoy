@@ -4,6 +4,12 @@ Updated: 2026-07-15
 
 # Data Vault Cross-Namespace Concept Graph
 
+## Scope correction — no Data Vault architecture
+
+The user clarified after this research closed that Data Vault was only an analogy for stable concepts and relationships. `.10x/decisions/data-vault-is-analogy-not-architecture.md` governs: Buoy will not build or require hubs, links, satellites, business-key mappings, warehouse authority, or Data Vault loading.
+
+Retain this record's findings on concept cards, entity resolution, reified source-supported assertions, typed relationships, provenance, temporal validity, ACLs, correction/deletion, relational adjacency, graph alternatives, and evals. Replace “approved Hub/Link mapping” in future synthesis with optional mapping to project-governed concept identities; no warehouse identity is assumed.
+
 ## Question
 
 What is the smallest provenance-preserving concept/entity layer that could improve retrieval across many Buoy namespaces while keeping formal Data Vault 2.0 hubs, links, business keys, satellites, lineage, and history authoritative?
@@ -19,7 +25,7 @@ The task named `context.md` and `plan.md` at the worktree root, but neither file
 ### Local authority inspected
 
 - `.10x/tickets/done/2026-07-15-research-data-vault-concept-graph.md`
-- `.10x/tickets/2026-07-15-data-vault-semantic-retrieval-research-plan.md`
+- `.10x/tickets/2026-07-15-semantic-retrieval-research-plan.md`
 - `.10x/research/2026-07-15-metadata-tagging-graphs-and-data-vault.md`
 - `.10x/specs/explicit-multi-namespace-retrieval.md`
 - `.10x/specs/buoy-local-compatibility.md`

@@ -11,7 +11,7 @@ Verdict: pass
 Independent re-review of repair commit `a4bfce8125aadf589e0373d2a75a8e82d630e47e` against:
 
 - owning ticket `.10x/tickets/done/2026-07-15-research-data-vault-namespace-catalog-routing.md`;
-- parent plan `.10x/tickets/2026-07-15-data-vault-semantic-retrieval-research-plan.md`;
+- parent plan `.10x/tickets/2026-07-15-semantic-retrieval-research-plan.md`;
 - research `.10x/research/2026-07-15-data-vault-namespace-catalog-routing.md`;
 - prior review `.10x/reviews/2026-07-15-data-vault-namespace-catalog-routing-review.md`; and
 - the exact repair diff from `a4bfce8^` to `a4bfce8`.

@@ -4,14 +4,20 @@ Updated: 2026-07-15
 
 # Metadata, Tagging, Knowledge Graphs, and a Cross-Namespace Data Vault
 
+## Scope correction — Data Vault is analogy only
+
+On 2026-07-15 the user clarified that Data Vault was mentioned only because hubs and links resemble stable concepts and relationships. Buoy will not build or require Data Vault 2.0. The current authority is `.10x/decisions/data-vault-is-analogy-not-architecture.md`.
+
+This record preserves the earlier investigation and its useful findings about identity, relationships, provenance, history, ACLs, and lifecycle. Any recommendation that assumes an actual Raw Vault, Business Vault, hubs, links, satellites, business keys, warehouse authority, or Data Vault loading process is withdrawn. Read “hub-like,” “link-like,” and “satellite-like” only as analogy for concept identity, typed relationships, and versioned/provenance-bearing observations.
+
 ## Question
 
 Can Turbopuffer store metadata per indexed chunk, how do products and open-source tools use “tagging,” and how could many Buoy namespaces contribute to a larger data-vault or knowledge-graph layer that improves retrieval for LLMs?
 
-The user confirmed two terms after the initial investigation:
+The user confirmed and later corrected the investigation terms:
 
 1. **“Chief AI” means Chief at `chief.bot`**, the knowledge product whose Labels, Collections, Concepts, and concept graph are analyzed below. `chief.ai` is a different model marketplace/platform.
-2. **“Data Vault” means formal Data Vault 2.0**, including hubs, links, satellites, business keys, lineage, and historical modeling. A product-level knowledge vault remains a useful comparison but is not the intended definition.
+2. **“Data Vault” was an analogy, not the intended architecture.** The initial formal Data Vault 2.0 interpretation motivated comparative research but was superseded before architecture shaping. The intended subject is taxonomy, ontology, concepts, relationships, provenance, and semantic retrieval across namespaces.
 
 ## Sources and methods
 
@@ -228,18 +234,18 @@ This sequence is cheaper, reversible, and testable. It also distinguishes exact 
 
 ## Ratified research direction
 
-On 2026-07-15 the user confirmed Chief at `chief.bot`, formal Data Vault 2.0, and that all four capability families matter independently:
+On 2026-07-15 the user confirmed Chief at `chief.bot` and that all four capability families matter independently. The user subsequently clarified that Data Vault was only an analogy; `.10x/decisions/data-vault-is-analogy-not-architecture.md` supersedes the earlier formal Data Vault interpretation:
 
 1. namespace catalog and routing;
 2. governed tag filtering;
 3. cross-namespace concept graphs;
 4. multi-hop and global retrieval.
 
-Each capability will receive a focused investigation in its own `work/*` branch and worktree based on current `develop`. The governing parent plan is `.10x/tickets/2026-07-15-data-vault-semantic-retrieval-research-plan.md`. Research remains non-implementing until the focused findings are synthesized and the user ratifies a behavioral architecture.
+Each capability will receive a focused investigation in its own `work/*` branch and worktree based on current `develop`. The governing parent plan is `.10x/tickets/2026-07-15-semantic-retrieval-research-plan.md`. Research remains non-implementing until the focused findings are synthesized and the user ratifies a behavioral architecture.
 
 ## Unresolved decisions
 
-- How Data Vault 2.0 business keys, links, satellites, and history should map to namespace catalog, chunk evidence, concepts, and relationships without treating inferred LLM output as warehouse authority.
+- How stable concept identity, typed relationships, provenance, temporal observations, and correction/deletion should be modeled without importing Data Vault schemas or warehouse authority.
 - Whether tags are human-authored, rule-derived, closed-set similarity assignments, LLM-extracted open-set terms, or a combination with explicit provenance.
 - The authority, ACL, history, correction, and deletion model for concepts/entities that span namespaces.
 - Which measured evals are sufficient to justify each layer over the current explicit multi-namespace RRF baseline.

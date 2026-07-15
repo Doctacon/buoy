@@ -11,7 +11,7 @@ Verdict: concerns
 Independently reviewed commit `34cab2f716d9ec13192928ce24fe335d884dd586` against:
 
 - `.10x/tickets/done/2026-07-15-research-data-vault-multi-hop-global-retrieval.md`;
-- `.10x/tickets/2026-07-15-data-vault-semantic-retrieval-research-plan.md`;
+- `.10x/tickets/2026-07-15-semantic-retrieval-research-plan.md`;
 - current retrieval/eval specifications, decisions, evidence, docs, implementation, and focused tests named by the research record;
 - primary-paper pages, ACL Anthology entries, official project repositories, and current Microsoft GraphRAG query documentation.
 
