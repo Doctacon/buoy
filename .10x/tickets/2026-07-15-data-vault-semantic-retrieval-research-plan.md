@@ -28,7 +28,7 @@ This is a parent plan, not an executable ticket. It does not authorize product i
 
 1. `.10x/tickets/done/2026-07-15-research-data-vault-namespace-catalog-routing.md`
 2. `.10x/tickets/2026-07-15-research-data-vault-governed-tagging-filtering.md`
-3. `.10x/tickets/2026-07-15-research-data-vault-concept-graph.md`
+3. `.10x/tickets/done/2026-07-15-research-data-vault-concept-graph.md`
 4. `.10x/tickets/2026-07-15-research-data-vault-multi-hop-global-retrieval.md`
 
 The investigations may run in parallel because each owns a separate worktree and research question. Their findings must remain independently reviewable. Architecture synthesis happens only after all four findings are available and reconciled against shared invariants.
@@ -74,3 +74,4 @@ None for the four research investigations. Implementation remains blocked on com
 
 - 2026-07-15: Preliminary internet and codebase research confirmed per-chunk Turbopuffer attributes and separated structural metadata, controlled tags, concepts, and first-class graphs.
 - 2026-07-15: User confirmed Chief at `chief.bot`, formal Data Vault 2.0, and all four investigation tracks, each in its own worktree based on `develop`.
+- 2026-07-15: Concept-graph child research completed and passed independent re-review; closed child: `.10x/tickets/done/2026-07-15-research-data-vault-concept-graph.md`. Architecture synthesis and implementation remain blocked on completion/reconciliation of all four tracks and user ratification.
