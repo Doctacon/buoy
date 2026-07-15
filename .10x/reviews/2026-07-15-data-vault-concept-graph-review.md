@@ -11,7 +11,7 @@ Verdict: concerns
 Independently reviewed commit `9fcb3e811297f80db61711dbe9e743017c04af5a` against:
 
 - `.10x/tickets/done/2026-07-15-research-data-vault-concept-graph.md`
-- `.10x/tickets/2026-07-15-data-vault-semantic-retrieval-research-plan.md`
+- `.10x/tickets/2026-07-15-semantic-retrieval-research-plan.md`
 - `.10x/research/2026-07-15-metadata-tagging-graphs-and-data-vault.md`
 - `.10x/specs/explicit-multi-namespace-retrieval.md`
 - the cited Buoy identity/provenance source

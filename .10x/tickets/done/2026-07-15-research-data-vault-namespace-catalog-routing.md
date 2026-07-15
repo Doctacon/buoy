@@ -1,7 +1,7 @@
 Status: done
 Created: 2026-07-15
 Updated: 2026-07-15
-Parent: .10x/tickets/2026-07-15-data-vault-semantic-retrieval-research-plan.md
+Parent: .10x/tickets/2026-07-15-semantic-retrieval-research-plan.md
 Depends-On: None
 
 # Research Data Vault Namespace Catalog and Routing

@@ -4,6 +4,12 @@ Updated: 2026-07-15
 
 # Data Vault Multi-Hop and Global Retrieval
 
+## Scope correction — no Data Vault architecture
+
+The user clarified after this research closed that Data Vault was only an analogy for stable concepts and relationships. `.10x/decisions/data-vault-is-analogy-not-architecture.md` governs: Buoy will not build or require hubs, links, satellites, warehouse authority, or Data Vault loading.
+
+Retain this record's query taxonomy, current-RRF baseline, metadata/decomposition/iteration/hierarchy/graph experiment order, citation and ACL gates, source-ledger findings, and bounded pilot design. Reinterpret Data Vault temporal-authority examples as generic versioned concept/relationship truth fixtures; recommendations requiring an actual Data Vault are withdrawn.
+
 ## Question
 
 Which retrieval and evaluation strategies are justified for Buoy questions that require evidence across namespaces, multiple hops, entity relationships, historical state, or corpus-wide synthesis, and what evidence should be required before adding graph or hierarchical indexing beyond current explicit multi-namespace reciprocal-rank fusion (RRF)?
@@ -31,7 +37,7 @@ Research was performed 2026-07-15 from the current Buoy source and durable proje
 
 ### Local authority inspected
 
-- `.10x/tickets/2026-07-15-data-vault-semantic-retrieval-research-plan.md`
+- `.10x/tickets/2026-07-15-semantic-retrieval-research-plan.md`
 - `.10x/tickets/done/2026-07-15-research-data-vault-multi-hop-global-retrieval.md`
 - `.10x/research/2026-07-15-metadata-tagging-graphs-and-data-vault.md`
 - `.10x/specs/explicit-multi-namespace-retrieval.md`

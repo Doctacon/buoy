@@ -11,7 +11,7 @@ Verdict: concerns
 Re-reviewed repair commit `f2538f001820bd3cf9c4596ab54092e3094844de` against:
 
 - `.10x/tickets/done/2026-07-15-research-data-vault-multi-hop-global-retrieval.md`;
-- `.10x/tickets/2026-07-15-data-vault-semantic-retrieval-research-plan.md`;
+- `.10x/tickets/2026-07-15-semantic-retrieval-research-plan.md`;
 - `.10x/research/2026-07-15-data-vault-multi-hop-global-retrieval.md`;
 - `.10x/reviews/2026-07-15-data-vault-multi-hop-global-retrieval-review.md`; and
 - the exact repair diff from `e5538ec` to `f2538f0`.

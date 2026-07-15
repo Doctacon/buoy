@@ -11,7 +11,7 @@ Verdict: concerns
 Independent adversarial review of commit `763107cab7165174e220b69c6ed1d88d69ee78c0` against:
 
 - `.10x/tickets/done/2026-07-15-research-data-vault-namespace-catalog-routing.md`;
-- parent `.10x/tickets/2026-07-15-data-vault-semantic-retrieval-research-plan.md`;
+- parent `.10x/tickets/2026-07-15-semantic-retrieval-research-plan.md`;
 - the active specifications, decisions, preliminary research, completed tickets, source, and documentation named by the research record; and
 - spot checks of official Turbopuffer documentation and primary open-source repository metadata.
 

@@ -4,6 +4,12 @@ Updated: 2026-07-15
 
 # Data Vault Namespace Catalog and Semantic Routing
 
+## Scope correction — no Data Vault architecture
+
+The user clarified after this research closed that Data Vault was only an analogy for stable concepts and relationships. `.10x/decisions/data-vault-is-analogy-not-architecture.md` governs: Buoy will not build or require hubs, links, satellites, business-key governance, warehouse authority, or Data Vault loading.
+
+Retain this record's findings on separate namespace/source/revision identities, relational catalog authority, semantic namespace cards, compatibility, ACL gating, lifecycle, and routing evals. Reinterpret proposed “Hub” or vault mappings as ordinary project-governed catalog/concept identifiers; recommendations requiring an actual Data Vault are withdrawn.
+
 ## Question
 
 What is the smallest governed catalog and query-routing layer that can select a bounded, authorized, embedding-compatible set from many Buoy/Turbopuffer namespaces, while using Data Vault 2.0 identity, history, and lineage correctly and without treating a namespace, vector index, or inferred concept as Raw Vault authority?
@@ -19,7 +25,7 @@ The requested root `context.md` and `plan.md` were absent from this worktree. Th
 ### Local authority inspected completely
 
 - `.10x/tickets/done/2026-07-15-research-data-vault-namespace-catalog-routing.md`
-- `.10x/tickets/2026-07-15-data-vault-semantic-retrieval-research-plan.md`
+- `.10x/tickets/2026-07-15-semantic-retrieval-research-plan.md`
 - `.10x/research/2026-07-15-metadata-tagging-graphs-and-data-vault.md`
 - `.10x/specs/turbopuffer-namespace-discovery.md`
 - `.10x/specs/explicit-multi-namespace-retrieval.md`

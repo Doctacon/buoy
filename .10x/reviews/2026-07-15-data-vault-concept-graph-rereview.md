@@ -11,7 +11,7 @@ Verdict: pass
 Re-reviewed repair commit `06ba7779b4b768f03ee82adc6d990dff335a4536` against:
 
 - `.10x/tickets/done/2026-07-15-research-data-vault-concept-graph.md`
-- `.10x/tickets/2026-07-15-data-vault-semantic-retrieval-research-plan.md`
+- `.10x/tickets/2026-07-15-semantic-retrieval-research-plan.md`
 - `.10x/research/2026-07-15-data-vault-concept-graph.md`
 - `.10x/research/2026-07-15-metadata-tagging-graphs-and-data-vault.md`
 - `.10x/reviews/2026-07-15-data-vault-concept-graph-review.md`
