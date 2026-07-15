@@ -48,7 +48,7 @@ class ReleaseAutomationTests(unittest.TestCase):
         payload = load_workflow("ci.yml")
         triggers = workflow_triggers(payload)
         self.assertEqual(set(triggers), {"pull_request", "push"})
-        self.assertEqual(triggers["push"], {"branches": ["main"]})
+        self.assertEqual(triggers["push"], {"branches": ["main", "develop"]})
         self.assertEqual(payload["permissions"], {"contents": "read"})
         jobs = payload["jobs"]
         self.assertEqual(jobs["test"]["strategy"]["matrix"]["python-version"], ["3.11", "3.13"])

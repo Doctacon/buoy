@@ -23,9 +23,11 @@ The workflow never creates the tag, publishes to a package registry, modifies a 
    uv run --no-project python scripts/release_checks.py assets --dist /tmp/buoy-release-dist
    ```
 
-4. Commit and push the reviewed tree to canonical `main`.
-5. Confirm the main CI workflow succeeds.
-6. Confirm the GitHub `release` environment exists with the intended approval rule.
+4. Land release preparation in `develop` through a passing task pull request.
+5. Confirm the `develop` CI workflow succeeds.
+6. Open a release pull request from `develop` to `main`, incorporate current `main`, and merge it with a merge commit after all required checks pass.
+7. Confirm the `main` CI workflow succeeds on the reviewed release commit.
+8. Confirm the GitHub `release` environment exists with the intended approval rule.
 
 ## Create v0.2.1
 

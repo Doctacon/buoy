@@ -31,6 +31,8 @@ Keep changes narrow, update tests for behavior changes, and update the focused d
 
 ## Pull requests
 
-Explain the user-visible outcome, list validation performed, and call out compatibility or external-side-effect risks. CI is advisory rather than a protected-branch requirement, but pull requests should pass it before merge.
+Open ordinary change pull requests against `develop`; maintainers squash-merge them after all required CI checks pass. `main` accepts reviewed release pull requests from `develop`, merged with a merge commit so release ancestry remains coherent. Both long-lived branches are protected from direct pushes.
+
+Explain the user-visible outcome, list validation performed, and call out compatibility or external-side-effect risks.
 
 By contributing, you agree that your contribution is licensed under Apache-2.0.

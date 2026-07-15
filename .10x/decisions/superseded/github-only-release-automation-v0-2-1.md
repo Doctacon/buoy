@@ -1,6 +1,6 @@
-Status: active
+Status: superseded
 Created: 2026-07-14
-Updated: 2026-07-14
+Updated: 2026-07-15
 
 # GitHub-Only Release Automation with v0.2.1 Recovery
 
@@ -27,3 +27,7 @@ Moving or deleting the public tag would weaken tag immutability. The user select
 ## Consequences
 
 Version 0.2.0 remains an annotated tag without a Release. Version 0.2.1 becomes the first GitHub Release. Release docs/changelog must explain the skipped release. The original decision is superseded by this complete recovery contract.
+
+## Supersession
+
+Superseded by `.10x/decisions/protected-development-and-github-release-governance.md`, which retains the release contract but replaces the no-branch-protection choice with the ratified protected `develop`/`main` workflow.
