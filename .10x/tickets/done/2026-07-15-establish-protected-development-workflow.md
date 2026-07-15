@@ -1,4 +1,4 @@
-Status: open
+Status: done
 Created: 2026-07-15
 Updated: 2026-07-15
 Parent: None
@@ -27,7 +27,7 @@ This is a parent plan, not an executable ticket.
 2. `.10x/tickets/done/2026-07-15-add-pi-worktree-governance.md`
    - On a bounded `work/*` branch, add root Pi instructions and make CI validate pushes to both long-lived branches.
    - Open a pull request to `develop`; do not self-merge.
-3. `.10x/tickets/2026-07-15-integrate-pi-worktree-governance.md`
+3. `.10x/tickets/done/2026-07-15-integrate-pi-worktree-governance.md`
    - Independently review the pull request and remote protection, observe required CI, and squash-merge into `develop` when supported.
 
 Children are sequential because the protected integration target must exist before the first ordinary task pull request demonstrates the intended workflow.
@@ -58,4 +58,10 @@ None. The maintainer ratified branch scope, status checks, zero approvals, stric
 - 2026-07-15: User authorized implementation of root Pi instructions and mechanical enforcement, explicitly excluding a standard launcher.
 - 2026-07-15: User selected protection for both branches with PR plus all CI checks, zero approvals, no administrator bypass, GitHub-only enforcement, immediate `develop` creation, strict base freshness, task squash merges, and release merge commits.
 - 2026-07-15: Shaping records created. Implementation intentionally deferred to child tickets under the specification-first execution gate.
-- 2026-07-15: Bootstrap and implementation children completed with evidence and pass reviews. PR #1 passed required CI on final record-complete head and was squash-merged into `develop` as `27e3fdff62c75ef7766bceea21f8aeb2ac9d94dd`; `main` remained unchanged and both protections remained conformant. Post-merge evidence is `.10x/evidence/2026-07-15-integrate-pi-worktree-governance.md`. Parent remains open pending independent integration/aggregate closure review.
+- 2026-07-15: Bootstrap and implementation children completed with evidence and pass reviews. PR #1 passed required CI on final record-complete head and was squash-merged into `develop` as `27e3fdff62c75ef7766bceea21f8aeb2ac9d94dd`; `main` remained unchanged and both protections remained conformant. Post-merge evidence is `.10x/evidence/2026-07-15-integrate-pi-worktree-governance.md`.
+- 2026-07-15: Fresh-context aggregate closure review passed the integration child and found one mechanical parent blocker: six live references still pointed to the pre-move release decision path. The exact six references were repaired to `.10x/decisions/superseded/github-only-release-automation-v0-2-1.md` while historical digest-output paths were preserved. Review: `.10x/reviews/2026-07-15-protected-development-workflow-closure-review.md`.
+- 2026-07-15: All three children are done. Aggregate acceptance maps to the child evidence/reviews, active decision/specifications, protected PR #1 integration, root `AGENTS.md`, exact CI triggers, and GitHub protection readback. No excluded launcher, hook, Pi extension, release/tag, publication, environment/secret, product, or Turbopuffer mutation occurred. Parent closed.
+
+## Retrospective
+
+The durable model is intentionally layered: `AGENTS.md` gives every Pi session local branch-role guidance, while GitHub protection supplies the hard merge boundary. Strict current-base CI trades some integration friction for reliable concurrency across task worktrees. The closure review also demonstrated why decision moves require graph-wide live-reference repair while historical command-output paths must remain untouched. That lesson is already embodied by the repository's always-on record-reference rules and this evidence trail; no additional knowledge or skill record is needed.

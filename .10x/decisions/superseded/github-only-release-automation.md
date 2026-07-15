@@ -1,7 +1,7 @@
 Status: superseded
 Created: 2026-07-14
 Updated: 2026-07-14
-Superseded-By: .10x/decisions/github-only-release-automation-v0-2-1.md
+Superseded-By: .10x/decisions/superseded/github-only-release-automation-v0-2-1.md
 
 # GitHub-Only Release Automation
 

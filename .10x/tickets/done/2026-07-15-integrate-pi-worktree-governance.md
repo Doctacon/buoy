@@ -1,7 +1,7 @@
-Status: active
+Status: done
 Created: 2026-07-15
 Updated: 2026-07-15
-Parent: .10x/tickets/2026-07-15-establish-protected-development-workflow.md
+Parent: .10x/tickets/done/2026-07-15-establish-protected-development-workflow.md
 Depends-On: .10x/tickets/done/2026-07-15-add-pi-worktree-governance.md
 
 # Integrate Pi Worktree Governance
@@ -40,7 +40,7 @@ After merge, update the local integration checkout safely to the resulting `deve
 - `.10x/decisions/protected-development-and-github-release-governance.md`
 - `.10x/specs/pi-worktree-development-flow.md`
 - `.10x/specs/protected-github-branches.md`
-- `.10x/tickets/2026-07-15-establish-protected-development-workflow.md`
+- `.10x/tickets/done/2026-07-15-establish-protected-development-workflow.md`
 - `.10x/tickets/done/2026-07-15-add-pi-worktree-governance.md`
 - Evidence produced by both dependency tickets.
 
@@ -50,10 +50,15 @@ Record the reviewed pull-request URL and head, required check runs and conclusio
 
 ## Blockers
 
-Depends on a complete, passing governance pull request.
+None. The governance pull request passed independent review and required CI, then was squash-merged into protected `develop`.
 
 ## Progress and notes
 
 - 2026-07-15: Ticket opened. Integration has not begun.
 - 2026-07-15: Fresh-context independent review passed PR #1 head `9520b4170c53d41606bedb1ee8f7dd27a30497ca` with no findings. The complete 16-file diff, focused 9 tests, full 274 tests, diff hygiene, exact protection, current-base eligibility, and hosted run `29439997131` were supported. Review: `.10x/reviews/2026-07-15-add-pi-worktree-governance-review.md`. Integration activated for record-only final-head validation and squash merge.
-- 2026-07-15: Added only reviewer-provenance, implementation closure, ticket move/reference repair, and integration progress records in final PR #1 head `8e602444a8f721cdbcd32c8f5bec8747e3555008`. Hosted run `29441861220` passed all three exact checks; protection remained conformant and GitHub reported current-base `CLEAN`/`MERGEABLE`. Squash-merged PR #1 as `27e3fdff62c75ef7766bceea21f8aeb2ac9d94dd` on `develop`; `main` remained `78d255b6e54567018e4ea7ad565a67224ee9c4bf`. Evidence: `.10x/evidence/2026-07-15-integrate-pi-worktree-governance.md`. Ticket remains active pending independent post-merge record/closure review.
+- 2026-07-15: Added only reviewer-provenance, implementation closure, ticket move/reference repair, and integration progress records in final PR #1 head `8e602444a8f721cdbcd32c8f5bec8747e3555008`. Hosted run `29441861220` passed all three exact checks; protection remained conformant and GitHub reported current-base `CLEAN`/`MERGEABLE`. Squash-merged PR #1 as `27e3fdff62c75ef7766bceea21f8aeb2ac9d94dd` on `develop`; `main` remained `78d255b6e54567018e4ea7ad565a67224ee9c4bf`. Evidence: `.10x/evidence/2026-07-15-integrate-pi-worktree-governance.md`.
+- 2026-07-15: Fresh-context aggregate closure review passed this integration child and found no implementation or PR-state defect. Every acceptance criterion maps to the integration evidence, PR #1 state, exact required checks, and retained protection. Review: `.10x/reviews/2026-07-15-protected-development-workflow-closure-review.md`. Ticket closed.
+
+## Retrospective
+
+Separating task implementation, fresh review, and authorized integration prevented the task session from merging its own work and made the first protected workflow exercise auditable. Because durable post-merge evidence cannot exist before the merge it observes, a bounded record-only follow-up pull request was necessary. That is inherent to keeping `develop` protected, not a new launcher or automation requirement. No additional knowledge or skill record is needed.

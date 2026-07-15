@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-14
 Updated: 2026-07-14
-Relates-To: .10x/tickets/done/2026-07-14-create-buoy-v0-2-1-github-release.md, .10x/decisions/github-only-release-automation-v0-2-1.md
+Relates-To: .10x/tickets/done/2026-07-14-create-buoy-v0-2-1-github-release.md, .10x/decisions/superseded/github-only-release-automation-v0-2-1.md
 
 # Buoy v0.2.1 GitHub Release
 

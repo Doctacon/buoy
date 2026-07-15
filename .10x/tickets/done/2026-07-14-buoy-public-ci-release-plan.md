@@ -12,7 +12,7 @@ Ship truthful public-project badges/governance, reproducible CI, and an approval
 
 ## Governing records
 
-- `.10x/decisions/github-only-release-automation-v0-2-1.md`
+- `.10x/decisions/superseded/github-only-release-automation-v0-2-1.md`
 - `.10x/specs/buoy-ci-and-github-releases.md`
 - `.10x/specs/buoy-public-project-surface.md`
 - `.10x/knowledge/documentation-details-on-demand.md`

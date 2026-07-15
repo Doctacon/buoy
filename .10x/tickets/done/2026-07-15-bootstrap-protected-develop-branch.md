@@ -1,7 +1,7 @@
 Status: done
 Created: 2026-07-15
 Updated: 2026-07-15
-Parent: .10x/tickets/2026-07-15-establish-protected-development-workflow.md
+Parent: .10x/tickets/done/2026-07-15-establish-protected-development-workflow.md
 Depends-On: None
 
 # Bootstrap Protected Develop Branch
@@ -38,7 +38,7 @@ This ticket owns only branch bootstrap and GitHub configuration. It MUST preserv
 
 - `.10x/decisions/protected-development-and-github-release-governance.md`
 - `.10x/specs/protected-github-branches.md`
-- `.10x/tickets/2026-07-15-establish-protected-development-workflow.md`
+- `.10x/tickets/done/2026-07-15-establish-protected-development-workflow.md`
 
 ## Evidence expectations
 
