@@ -26,7 +26,7 @@ This is a parent plan, not an executable ticket. It does not authorize product i
 
 ## Child investigations
 
-1. `.10x/tickets/2026-07-15-research-data-vault-namespace-catalog-routing.md`
+1. `.10x/tickets/done/2026-07-15-research-data-vault-namespace-catalog-routing.md`
 2. `.10x/tickets/2026-07-15-research-data-vault-governed-tagging-filtering.md`
 3. `.10x/tickets/2026-07-15-research-data-vault-concept-graph.md`
 4. `.10x/tickets/2026-07-15-research-data-vault-multi-hop-global-retrieval.md`
