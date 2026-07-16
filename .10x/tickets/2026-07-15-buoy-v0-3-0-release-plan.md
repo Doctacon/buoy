@@ -49,3 +49,5 @@ Children are strictly sequential. The parent is not executable.
 - 2026-07-15: Main promotion completed through protected ancestry-sync PR #23 and merge-commit release PR #22. Main is `595d157`; release publication child is unblocked.
 
 - 2026-07-16: Annotated v0.3.0 and GitHub Release completed with verified assets/provenance and passing independent review. Changelog finalization child is unblocked.
+
+- 2026-07-16: Final changelog PR #26 passed review/checks and integrated to develop as `ef7b554`. All four children and aggregate acceptance criteria are technically satisfied; parent remains open pending final graph review and closure reconciliation.
