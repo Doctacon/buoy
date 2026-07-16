@@ -1,0 +1,212 @@
+{
+  "cards": [
+    {
+      "repo_key": "black",
+      "namespace": "github-psf-black-v1",
+      "title": "Black",
+      "summary": "An uncompromising Python code formatter that applies a consistent style to Python source code.",
+      "aliases": ["Black Python formatter", "psf Black"],
+      "tags": ["Python", "code formatting", "developer tools"],
+      "public": true,
+      "embedding_contract": {
+        "model_id": "BAAI/bge-small-en-v1.5",
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "precision": "float32",
+        "normalized": true,
+        "dimensions": 384
+      }
+    },
+    {
+      "repo_key": "buoy",
+      "namespace": "github-doctacon-buoy-search-v1",
+      "title": "Buoy Search",
+      "summary": "A command-line system for planning, indexing, and searching public knowledge sources with anchored citations.",
+      "aliases": ["Buoy", "buoy-search", "turbo-search"],
+      "tags": ["search", "retrieval", "knowledge sources", "citations"],
+      "public": true,
+      "embedding_contract": {
+        "model_id": "BAAI/bge-small-en-v1.5",
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "precision": "float32",
+        "normalized": true,
+        "dimensions": 384
+      }
+    },
+    {
+      "repo_key": "click",
+      "namespace": "github-pallets-click-v1",
+      "title": "Click",
+      "summary": "A Python package for creating composable command-line interfaces with decorators, parameters, and terminal utilities.",
+      "aliases": ["Pallets Click", "Click CLI"],
+      "tags": ["Python", "command line", "CLI framework"],
+      "public": true,
+      "embedding_contract": {
+        "model_id": "BAAI/bge-small-en-v1.5",
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "precision": "float32",
+        "normalized": true,
+        "dimensions": 384
+      }
+    },
+    {
+      "repo_key": "django",
+      "namespace": "github-django-django-v1",
+      "title": "Django",
+      "summary": "A full-featured Python web framework for building database-backed applications, sites, and services.",
+      "aliases": ["Django web framework"],
+      "tags": ["Python", "web framework", "ORM", "web applications"],
+      "public": true,
+      "embedding_contract": {
+        "model_id": "BAAI/bge-small-en-v1.5",
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "precision": "float32",
+        "normalized": true,
+        "dimensions": 384
+      }
+    },
+    {
+      "repo_key": "flask",
+      "namespace": "github-pallets-flask-v1",
+      "title": "Flask",
+      "summary": "A lightweight Python web application framework built on Werkzeug, Jinja, and the Pallets ecosystem.",
+      "aliases": ["Pallets Flask", "Flask web framework"],
+      "tags": ["Python", "web framework", "WSGI", "web applications"],
+      "public": true,
+      "embedding_contract": {
+        "model_id": "BAAI/bge-small-en-v1.5",
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "precision": "float32",
+        "normalized": true,
+        "dimensions": 384
+      }
+    },
+    {
+      "repo_key": "httpx",
+      "namespace": "github-encode-httpx-v1",
+      "title": "HTTPX",
+      "summary": "A Python HTTP client supporting synchronous and asynchronous requests with a requests-like interface.",
+      "aliases": ["Encode HTTPX", "HTTPX client"],
+      "tags": ["Python", "HTTP client", "async networking"],
+      "public": true,
+      "embedding_contract": {
+        "model_id": "BAAI/bge-small-en-v1.5",
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "precision": "float32",
+        "normalized": true,
+        "dimensions": 384
+      }
+    },
+    {
+      "repo_key": "mkdocs",
+      "namespace": "github-mkdocs-mkdocs-v1",
+      "title": "MkDocs",
+      "summary": "A static site generator designed for building project documentation from Markdown and configuration files.",
+      "aliases": ["MkDocs documentation generator"],
+      "tags": ["Python", "documentation", "static site generator", "Markdown"],
+      "public": true,
+      "embedding_contract": {
+        "model_id": "BAAI/bge-small-en-v1.5",
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "precision": "float32",
+        "normalized": true,
+        "dimensions": 384
+      }
+    },
+    {
+      "repo_key": "pydantic",
+      "namespace": "github-pydantic-pydantic-v1",
+      "title": "Pydantic",
+      "summary": "A Python data validation and serialization library driven by type annotations and structured models.",
+      "aliases": ["Pydantic data validation"],
+      "tags": ["Python", "data validation", "serialization", "type annotations"],
+      "public": true,
+      "embedding_contract": {
+        "model_id": "BAAI/bge-small-en-v1.5",
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "precision": "float32",
+        "normalized": true,
+        "dimensions": 384
+      }
+    },
+    {
+      "repo_key": "pytest",
+      "namespace": "github-pytest-dev-pytest-v1",
+      "title": "pytest",
+      "summary": "A Python testing framework with concise tests, fixtures, assertions, plugins, and test discovery.",
+      "aliases": ["pytest testing framework", "pytest-dev"],
+      "tags": ["Python", "testing", "fixtures", "test runner"],
+      "public": true,
+      "embedding_contract": {
+        "model_id": "BAAI/bge-small-en-v1.5",
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "precision": "float32",
+        "normalized": true,
+        "dimensions": 384
+      }
+    },
+    {
+      "repo_key": "requests",
+      "namespace": "github-psf-requests-v1",
+      "title": "Requests",
+      "summary": "A human-friendly Python library for sending HTTP requests, managing sessions, and handling responses.",
+      "aliases": ["Python Requests", "psf Requests"],
+      "tags": ["Python", "HTTP client", "web requests"],
+      "public": true,
+      "embedding_contract": {
+        "model_id": "BAAI/bge-small-en-v1.5",
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "precision": "float32",
+        "normalized": true,
+        "dimensions": 384
+      }
+    },
+    {
+      "repo_key": "rich",
+      "namespace": "github-textualize-rich-v1",
+      "title": "Rich",
+      "summary": "A Python library for styled terminal output, rich text, tables, progress displays, logging, and console rendering.",
+      "aliases": ["Textualize Rich", "Rich terminal library"],
+      "tags": ["Python", "terminal", "console rendering", "text styling"],
+      "public": true,
+      "embedding_contract": {
+        "model_id": "BAAI/bge-small-en-v1.5",
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "precision": "float32",
+        "normalized": true,
+        "dimensions": 384
+      }
+    },
+    {
+      "repo_key": "ruff",
+      "namespace": "github-astral-sh-ruff-v1",
+      "title": "Ruff",
+      "summary": "A fast Rust-based Python linter and code formatter with broad rule and tooling support.",
+      "aliases": ["Astral Ruff", "Ruff Python linter"],
+      "tags": ["Python", "linter", "code formatting", "developer tools", "Rust"],
+      "public": true,
+      "embedding_contract": {
+        "model_id": "BAAI/bge-small-en-v1.5",
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "precision": "float32",
+        "normalized": true,
+        "dimensions": 384
+      }
+    },
+    {
+      "repo_key": "typer",
+      "namespace": "github-fastapi-typer-v1",
+      "title": "Typer",
+      "summary": "A Python library for building command-line applications from type hints, powered by Click.",
+      "aliases": ["FastAPI Typer", "Typer CLI"],
+      "tags": ["Python", "command line", "CLI framework", "type hints"],
+      "public": true,
+      "embedding_contract": {
+        "model_id": "BAAI/bge-small-en-v1.5",
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "precision": "float32",
+        "normalized": true,
+        "dimensions": 384
+      }
+    }
+  ]
+}

@@ -21,6 +21,15 @@ from buoy_search.apply import (
     load_verified_apply_plan,
     run_approved_apply,
 )
+from buoy_search.catalog import (
+    CatalogError,
+    generated_semantics,
+    load_catalog,
+    load_routing_embedder,
+    resolve_catalog_path,
+)
+from buoy_search.catalog_pending import CatalogCommitPartialSuccess
+from buoy_search.catalog_cli import configure_catalog_parser
 from buoy_search.config import (
     DEFAULT_EMBEDDING_PRECISION,
     DEFAULT_REGION,
@@ -89,6 +98,16 @@ from buoy_search.retriever import (
     multi_namespace_retrieval_plan,
     ranking_defaults_for_namespace,
     retrieval_plan,
+)
+from buoy_search.routing import (
+    DEFAULT_ROUTE_TOP_K,
+    MAX_ROUTE_TOP_K,
+    AutomaticRoutingError,
+    RoutedRetrievalPlan,
+    RoutedRetrievalResult,
+    eligible_catalog_cards,
+    hybrid_route,
+    require_eligible_cards,
 )
 
 
@@ -533,6 +552,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Local applied-state root. Defaults to .buoy, with in-place .turbo-search fallback for existing projects.",
     )
     apply_parser.add_argument(
+        "--region",
+        default=None,
+        help="Override TURBOPUFFER_REGION for apply and the registered retrieval contract.",
+    )
+    apply_parser.add_argument(
+        "--catalog",
+        default=None,
+        help="Override BUOY_CATALOG_PATH and the catalog under the resolved state root.",
+    )
+    apply_parser.add_argument(
         "--batch-size",
         type=positive_int,
         default=64,
@@ -592,14 +621,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     namespaces_parser.set_defaults(func=_run_namespaces)
 
+    configure_catalog_parser(subparsers)
+
     retrieve_parser = subparsers.add_parser(
         "retrieve",
         help="retrieve relevant chunks; dry-run plan by default unless --live is passed",
         description=(
-            "Plan or execute hybrid retrieval against one or more explicitly selected turbopuffer namespaces. "
-            "Default mode is safe: it prints the multi-query plan without loading embeddings, "
-            "reading credentials, or contacting turbopuffer. Pass --live to embed the query once "
-            "and query each selected namespace."
+            "Plan or execute hybrid retrieval against explicitly selected namespaces, or opt into "
+            "local catalog routing with --auto-route. Default mode is safe: explicit previews do not "
+            "load embeddings, while routed previews use only the pinned local routing model; neither "
+            "reads credentials nor contacts turbopuffer. Pass --live to query selected namespaces."
         ),
     )
     retrieve_parser.add_argument(
@@ -616,7 +647,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--plan",
         dest="dry_run",
         action="store_true",
-        help="Print the retrieval plan without credentials, embeddings, or turbopuffer API calls (default).",
+        help="Print the local retrieval plan without credentials or turbopuffer API calls (default).",
+    )
+    retrieve_parser.add_argument(
+        "--auto-route",
+        action="store_true",
+        help="Select enabled compatible namespaces from the canonical local catalog.",
+    )
+    retrieve_parser.add_argument(
+        "--route-top-k",
+        type=bounded_route_top_k,
+        default=None,
+        metavar="N",
+        help=f"Maximum routed namespaces (default {DEFAULT_ROUTE_TOP_K}, maximum {MAX_ROUTE_TOP_K}); requires --auto-route.",
+    )
+    retrieve_parser.add_argument(
+        "--catalog",
+        default=None,
+        help="Override BUOY_CATALOG_PATH and the resolved state-root catalog; requires --auto-route.",
     )
     retrieve_parser.add_argument(
         "--top-k",
@@ -845,6 +893,13 @@ def positive_int(value: str) -> int:
     return parsed
 
 
+def bounded_route_top_k(value: str) -> int:
+    parsed = positive_int(value)
+    if parsed > MAX_ROUTE_TOP_K:
+        raise argparse.ArgumentTypeError(f"must be no greater than {MAX_ROUTE_TOP_K}")
+    return parsed
+
+
 def nonnegative_int(value: str) -> int:
     parsed = int(value)
     if parsed < 0:
@@ -884,6 +939,28 @@ def retrieval_options_from_args(
         ranking_profile=ranking_profile_from_cli(ranking_profile),
         ranking_pool=args.ranking_pool or int(defaults["ranking_pool"]),
         ranking_aggregation=ranking_aggregation_from_cli(ranking_aggregation),
+    )
+
+
+def routed_retrieval_options_from_args(args: argparse.Namespace, *, card) -> RetrievalOptions:
+    """Apply each supplied ranking override independently over one card contract."""
+
+    return RetrievalOptions(
+        top_k=args.top_k,
+        candidates=args.candidates,
+        doc_kind=args.doc_kind,
+        ranking_mode=args.ranking_mode or card.ranking_mode,
+        ranking_profile=(
+            ranking_profile_from_cli(args.ranking_profile)
+            if args.ranking_profile is not None
+            else card.ranking_profile
+        ),
+        ranking_pool=args.ranking_pool if args.ranking_pool is not None else card.ranking_pool,
+        ranking_aggregation=(
+            ranking_aggregation_from_cli(args.ranking_aggregation)
+            if args.ranking_aggregation is not None
+            else card.ranking_aggregation
+        ),
     )
 
 
@@ -967,6 +1044,14 @@ def _run_crawl(args: argparse.Namespace) -> int:
 def _run_plan(args: argparse.Namespace) -> int:
     if not resolve_cli_state_root(args):
         return 2
+    try:
+        plan_catalog_path, catalog_warning = resolve_catalog_path(None, state_root=args.state_root)
+        plan_catalog = load_catalog(plan_catalog_path)
+    except CatalogError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if catalog_warning:
+        print(catalog_warning, file=sys.stderr)
     if args.url and args.base_url and args.url != args.base_url:
         print("Provide either positional URL or --base-url, not conflicting values.", file=sys.stderr)
         return 2
@@ -1045,6 +1130,12 @@ def _run_plan(args: argparse.Namespace) -> int:
             manifest=initial_artifacts.manifest,
             chunks_jsonl=initial_artifacts.chunks_jsonl,
         )
+        catalog_preview = plan_catalog_registration_preview(
+            artifacts,
+            catalog=plan_catalog,
+            catalog_path=plan_catalog_path,
+            region=os.environ.get("TURBOPUFFER_REGION", DEFAULT_REGION),
+        )
         progress.update("plan: writing review artifacts", force=True)
         publication_started_at = observe_monotonic()
         write_plan_artifacts(artifacts, out_dir)
@@ -1073,6 +1164,7 @@ def _run_plan(args: argparse.Namespace) -> int:
         artifacts=artifacts,
         diff=diff,
         state_first_apply=state.first_apply,
+        catalog_registration=catalog_preview,
     )
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
     for warning in cleanup_superseded_plan_directories(
@@ -1122,6 +1214,7 @@ def plan_summary(
     artifacts: PlanArtifacts,
     diff: IncrementalPlanDiff,
     state_first_apply: bool,
+    catalog_registration: dict[str, object] | None = None,
 ) -> dict[str, object]:
     plan_dict = artifacts.plan_dict()
     diff_summary = diff.summary_dict()
@@ -1151,7 +1244,46 @@ def plan_summary(
             **diff_summary,
         }
     )
+    if catalog_registration is not None:
+        summary["catalog_registration"] = catalog_registration
     return summary
+
+
+def plan_catalog_registration_preview(
+    artifacts: PlanArtifacts,
+    *,
+    catalog,
+    catalog_path: Path,
+    region: str,
+) -> dict[str, object]:
+    manifest = artifacts.manifest
+    existing = next((card for card in catalog.cards if card.namespace == manifest.namespace), None)
+    metadata = [
+        dict(record.source_metadata)
+        for record in [*manifest.pages, *manifest.chunks]
+        if record.source_metadata
+    ]
+    semantics = generated_semantics(
+        base_url=manifest.base_url,
+        site_id=manifest.site_id,
+        plan_schema_version=artifacts.plan.schema_version,
+        source_metadata=metadata,
+    )
+    ranking = ranking_defaults_for_namespace(manifest.namespace)
+    return {
+        "catalog_path": str(catalog_path),
+        "namespace": manifest.namespace,
+        "action": (
+            "new" if existing is None else
+            "manual-preserving-update" if existing.semantic_origin == "manual" else
+            "generated-update"
+        ),
+        "semantic_origin": "manual" if existing and existing.semantic_origin == "manual" else "generated",
+        "source_kind": semantics.source_kind,
+        "region": region,
+        "vector_dimensions": 384,
+        **ranking,
+    }
 
 
 def _run_apply(args: argparse.Namespace) -> int:
@@ -1172,15 +1304,31 @@ def _run_apply(args: argparse.Namespace) -> int:
         return 2
 
     namespace = args.namespace or verified.manifest.namespace
-    region = os.environ.get("TURBOPUFFER_REGION", DEFAULT_REGION)
-    if not args.approve:
-        summary = apply_preflight_summary(
-            verified,
-            namespace=namespace,
-            region=region,
-            approved=False,
-            delete_stale=args.delete_stale,
+    region = args.region or os.environ.get("TURBOPUFFER_REGION", DEFAULT_REGION)
+    try:
+        catalog_path, catalog_warning = resolve_catalog_path(
+            args.catalog, state_root=args.state_root
         )
+    except CatalogError as exc:
+        progress.finish()
+        print(str(exc), file=sys.stderr)
+        return 2
+    if catalog_warning:
+        print(catalog_warning, file=sys.stderr)
+    if not args.approve:
+        try:
+            summary = apply_preflight_summary(
+                verified,
+                namespace=namespace,
+                catalog_path=catalog_path,
+                region=region,
+                approved=False,
+                delete_stale=args.delete_stale,
+            )
+        except CatalogError as exc:
+            progress.finish()
+            print(str(exc), file=sys.stderr)
+            return 2
         progress.finish()
         if args.json:
             _print_json(summary)
@@ -1191,6 +1339,7 @@ def _run_apply(args: argparse.Namespace) -> int:
     config = replace(
         load_config(),
         namespace=namespace,
+        region=region,
         embedding_model=str(verified.plan["embedding_model"]),
         embedding_precision=str(verified.plan.get("embedding_precision", "float32")),
     )
@@ -1199,11 +1348,20 @@ def _run_apply(args: argparse.Namespace) -> int:
             verified,
             config=config,
             namespace=namespace,
+            catalog_path=catalog_path,
             batch_size=args.batch_size,
             embedding_batch_size=args.embedding_batch_size,
             delete_stale=args.delete_stale,
             progress_callback=lambda message: progress.update(message, force=True) if progress.enabled else None,
         )
+    except CatalogCommitPartialSuccess as exc:
+        progress.finish()
+        if args.json:
+            _print_json(exc.summary)
+        else:
+            print_apply_text(exc.summary)
+            print(f"  partial_success: {exc}", file=sys.stderr)
+        return 2
     except (RuntimeError, AppliedStateError, OSError, ValueError) as exc:
         progress.finish()
         try:
@@ -1258,6 +1416,20 @@ def _run_retrieve(args: argparse.Namespace) -> int:
     if args.dry_run and args.live:
         print("Choose either --live or --dry-run/--plan, not both.", file=sys.stderr)
         return 2
+    cli_namespaces = args.namespace if isinstance(args.namespace, list) else []
+    if args.auto_route and cli_namespaces:
+        print("--auto-route and --namespace are mutually exclusive.", file=sys.stderr)
+        return 2
+    if not args.auto_route and (args.route_top_k is not None or args.catalog is not None):
+        print("--route-top-k and --catalog are valid only with --auto-route.", file=sys.stderr)
+        return 2
+    if args.auto_route:
+        query = args.query.strip()
+        if not query:
+            print("A non-empty query is required for retrieval.", file=sys.stderr)
+            return 2
+        return _run_auto_routed_retrieve(args, query=query)
+
     try:
         namespaces = resolve_retrieval_namespaces(args)
     except ValueError as exc:
@@ -1299,6 +1471,106 @@ def _run_retrieve(args: argparse.Namespace) -> int:
             result = MultiNamespaceRetriever.from_configs(configs).retrieve(query, options)
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
+        return 2
+    if args.json:
+        _print_json(result.to_dict())
+    else:
+        print_retrieval_text(result)
+    return 0
+
+
+def _run_auto_routed_retrieve(args: argparse.Namespace, *, query: str) -> int:
+    environment_namespace = os.environ.get("TURBOPUFFER_NAMESPACE", "").strip()
+    if environment_namespace:
+        print(
+            "Warning: --auto-route replaces TURBOPUFFER_NAMESPACE for this retrieval.",
+            file=sys.stderr,
+        )
+    base_config = config_from_args(args)
+    try:
+        catalog_path, catalog_warning = resolve_catalog_path(args.catalog)
+    except CatalogError as exc:
+        print(f"Catalog path resolution failed: {exc}", file=sys.stderr)
+        return 2
+    if catalog_warning:
+        print(catalog_warning, file=sys.stderr)
+    try:
+        catalog = load_catalog(catalog_path)
+    except CatalogError as exc:
+        print(f"Catalog load failed: {exc}", file=sys.stderr)
+        return 2
+
+    eligibility = eligible_catalog_cards(catalog, config=base_config)
+    try:
+        eligible_cards = require_eligible_cards(eligibility, catalog_path=catalog_path)
+    except CatalogError as exc:
+        print(f"Catalog eligibility failed: {exc}", file=sys.stderr)
+        return 2
+    try:
+        route_embedder = load_routing_embedder()
+    except (CatalogError, RuntimeError) as exc:
+        print(f"Route model load failed: {exc}", file=sys.stderr)
+        return 2
+    try:
+        routing = hybrid_route(
+            query,
+            eligible_cards,
+            embedder=route_embedder,
+            route_top_k=args.route_top_k or DEFAULT_ROUTE_TOP_K,
+            catalog_path=catalog_path,
+            catalog_revision=catalog.catalog_revision,
+            exclusion_counts=eligibility.exclusion_counts,
+        )
+    except (AutomaticRoutingError, CatalogError, RuntimeError) as exc:
+        print(f"Route scoring failed: {exc}", file=sys.stderr)
+        return 2
+
+    configs = [
+        replace(
+            base_config,
+            namespace=card.namespace,
+            region=card.region,
+            embedding_model=card.embedding_model,
+            embedding_precision=card.embedding_precision,
+        )
+        for card in routing.selected_cards
+    ]
+    try:
+        options = [
+            routed_retrieval_options_from_args(args, card=card)
+            for card in routing.selected_cards
+        ]
+    except ValueError as exc:
+        print(f"Selected namespace preparation failed: {exc}", file=sys.stderr)
+        return 2
+
+    if not args.live:
+        plan = RoutedRetrievalPlan(
+            plan=multi_namespace_retrieval_plan(
+                query,
+                configs=configs,
+                options=options,
+            ),
+            routing=routing,
+        )
+        if args.json:
+            _print_json(plan.to_dict())
+        else:
+            print_retrieval_text(plan)
+        return 0
+
+    try:
+        retriever = MultiNamespaceRetriever.from_configs(configs)
+    except (RuntimeError, ValueError) as exc:
+        print(f"Selected namespace preparation failed: {exc}", file=sys.stderr)
+        return 2
+    try:
+        result = RoutedRetrievalResult(
+            result=retriever.retrieve(query, options),
+            routing=routing,
+        )
+    except (RuntimeError, ValueError) as exc:
+        print(f"Namespace retrieval failed: {exc}", file=sys.stderr)
         return 2
     if args.json:
         _print_json(result.to_dict())
@@ -1428,6 +1700,13 @@ def print_plan_text(payload: dict[str, object]) -> None:
         )
     print(f"  plan_path: {payload['plan_path']}")
     print(f"  state_path: {payload['state_path']}")
+    registration = payload.get("catalog_registration")
+    if isinstance(registration, dict):
+        print(
+            "  catalog_registration: "
+            f"{registration['action']} ({registration['semantic_origin']}); "
+            f"{registration['catalog_path']}"
+        )
     print("  live writes: not supported by this command; future apply must be explicit")
 
 
@@ -1547,6 +1826,18 @@ def print_apply_text(payload: dict[str, object]) -> None:
     else:
         print(f"  stale_intent: retain {payload['stale_rows_retained']} stale rows")
     print(f"  state_path: {payload['state_path']}")
+    registration = payload.get("catalog_registration")
+    if isinstance(registration, dict):
+        print(
+            "  catalog_registration: "
+            f"{registration['action']} ({registration['semantic_origin']}); "
+            f"{registration['catalog_path']}"
+        )
+    if "catalog_updated" in payload:
+        print(f"  catalog_updated: {payload['catalog_updated']}; catalog: {payload['catalog_path']}")
+        if payload.get("pending_cleanup") is False:
+            print(f"  pending_cleanup: False; pending_path: {payload['pending_path']}")
+            print(f"  repair: {payload['catalog_repair_command']}")
     timing = payload.get("timing")
     if isinstance(timing, dict):
         print(
@@ -1569,11 +1860,52 @@ def print_apply_text(payload: dict[str, object]) -> None:
 
 
 def print_retrieval_text(
-    output: RetrievalPlan | MultiNamespaceRetrievalPlan | RetrievalResult | MultiNamespaceRetrievalResult,
+    output: (
+        RetrievalPlan
+        | MultiNamespaceRetrievalPlan
+        | RetrievalResult
+        | MultiNamespaceRetrievalResult
+        | RoutedRetrievalPlan
+        | RoutedRetrievalResult
+    ),
 ) -> None:
     payload = output.to_dict()
+    routing = payload.get("routing")
+    if isinstance(routing, dict):
+        exclusions = routing.get("exclusion_counts")
+        exclusion_text = (
+            ", ".join(f"{key}={value}" for key, value in exclusions.items())
+            if isinstance(exclusions, dict) and exclusions
+            else "none"
+        )
+        print("Automatic namespace route (hybrid_rrf):")
+        print(
+            f"  catalog: {routing.get('catalog_path')} "
+            f"(revision {routing.get('catalog_revision')})"
+        )
+        print(
+            f"  routing_model: {routing.get('routing_model')}@"
+            f"{routing.get('routing_model_revision')}"
+        )
+        print(
+            f"  eligible: {routing.get('eligible_count')}; excluded: {exclusion_text}; "
+            f"requested_limit: {routing.get('requested_limit')}"
+        )
+        selected = routing.get("selected_cards")
+        if isinstance(selected, list):
+            for entry in selected:
+                if isinstance(entry, dict):
+                    print(
+                        f"  route {entry.get('route_rank')}: {entry.get('namespace')} "
+                        f"hybrid={float(entry.get('hybrid_score', 0.0)):.8f} "
+                        f"lexical_rank={entry.get('lexical_rank')} "
+                        f"semantic_rank={entry.get('semantic_rank')}"
+                    )
     if payload.get("dry_run"):
-        print("Retrieval plan (dry-run; no credentials, embeddings, or turbopuffer API calls):")
+        if isinstance(routing, dict):
+            print("Retrieval plan (dry-run; local route model only; no credentials or turbopuffer API calls):")
+        else:
+            print("Retrieval plan (dry-run; no credentials, embeddings, or turbopuffer API calls):")
         print(f"  query: {payload['query']}")
         if "namespaces" in payload:
             print(f"  namespaces: {', '.join(payload['namespaces'])} ({payload['region']})")
@@ -1698,9 +2030,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def legacy_main(argv: Sequence[str] | None = None) -> int:
-    """Run the 0.2 compatibility alias with a bounded deprecation warning."""
+    """Run the compatibility alias retained through 0.3 with a bounded warning."""
 
-    print("Warning: `turbo-search` is deprecated; use `buoy` instead. It will be removed in 0.3.", file=sys.stderr)
+    print("Warning: `turbo-search` is deprecated; use `buoy` instead. It will be removed in 0.4.", file=sys.stderr)
     return main(argv)
 
 

@@ -26,7 +26,7 @@ uv run buoy plan https://example.com/
 # 2. Verify the plan and preview its diff. Still local-only.
 uv run buoy apply
 
-# 3. Approve the reviewed diff and write it to turbopuffer.
+# 3. Approve the reviewed diff, write it to turbopuffer, and register its local catalog card.
 export TURBOPUFFER_API_KEY="..."
 uv run buoy apply --approve
 
@@ -69,6 +69,7 @@ Plans live under `artifacts/`; new applied state lives under `.buoy/`. Both are 
 
 - [Index sources safely](docs/indexing.md) — source support, crawl controls, plan artifacts, incremental state, approved apply, and stale deletion.
 - [Retrieve and rank results](docs/retrieval.md) — dry runs, live search, citations, and namespace-aware ranking.
+- [Manage the local namespace catalog](docs/catalog.md) — manual cards, local vectors, lifecycle commands, and path precedence.
 - [Evaluate search quality](docs/evaluation.md) — smoke datasets, repository metrics, and one-shot autoresearch.
 - [Migrate to Buoy 0.2](docs/migrating-to-buoy.md) — command, import, environment, state, and plan compatibility.
 - [Contribute](CONTRIBUTING.md) or [prepare a GitHub release](docs/releasing.md).

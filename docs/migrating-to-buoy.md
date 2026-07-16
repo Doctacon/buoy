@@ -10,7 +10,7 @@ Use `buoy` for new commands:
 uv run buoy --help
 ```
 
-The deprecated `turbo-search` console alias remains available in 0.2 and prints a warning to stderr. It will be removed in 0.3.
+The deprecated `turbo-search` console alias remains available through 0.3 and prints a warning to stderr. It is scheduled for removal in 0.4.
 
 Python imports make a clean break: replace `turbo_search` with `buoy_search`. There is no old import shim.
 
@@ -21,7 +21,7 @@ uv run python -m buoy_search.autoresearch --help
 
 ## Environment variables
 
-Use `BUOY_EMBEDDING_MODEL` instead of `TURBO_SEARCH_EMBEDDING_MODEL`. In 0.2, the old variable is accepted with a warning only when the new variable is absent. If both are set differently, Buoy stops rather than guessing.
+Use `BUOY_EMBEDDING_MODEL` instead of `TURBO_SEARCH_EMBEDDING_MODEL`. Through 0.3, the old model and precision variables are accepted with warnings only when their corresponding `BUOY_*` variables are absent; they are scheduled for removal in 0.4. If an old and new variable are both set differently, Buoy stops rather than guessing.
 
 Turbopuffer-owned variables are unchanged:
 

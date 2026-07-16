@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-14
-Updated: 2026-07-14
+Updated: 2026-07-15
 
 # Buoy Brand Assets and Documentation
 
@@ -17,7 +17,7 @@ Apply the Buoy identity consistently to the showcase landing page, focused docs,
 ## Documentation
 
 - README MUST retain the details-on-demand structure governed by `.10x/knowledge/documentation-details-on-demand.md` while changing the product name, tagline, commands, paths, and install examples to Buoy.
-- Current docs and in-repository operational skills MUST use `buoy`, `buoy-search`, `buoy_search`, `.buoy`, and `BUOY_*` where applicable, while clearly documenting 0.2 compatibility aliases and legacy state fallback in one migration section rather than repeating it everywhere.
+- Current docs and in-repository operational skills MUST use `buoy`, `buoy-search`, `buoy_search`, `.buoy`, and `BUOY_*` where applicable, while clearly documenting compatibility aliases retained through 0.3 and legacy state fallback in one migration section rather than repeating it everywhere.
 - Add a concise migration guide covering CLI alias lifetime, Python import clean break, environment-variable fallback, state-root resolution, old plan compatibility, and unchanged remote namespaces/row IDs.
 - Active specifications, knowledge, and open tickets MUST be repaired when paths or current identity references change. Done/cancelled tickets, evidence, reviews, research, accepted decision rationale, and other historical records MUST retain old names when they describe historical facts.
 - Bundled self-search eval data MUST be updated for the new repository/module paths and product questions; relevance labels affected by path changes MUST be reviewed rather than blindly replaced.

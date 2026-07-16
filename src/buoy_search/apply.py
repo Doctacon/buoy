@@ -26,12 +26,35 @@ from buoy_search.applied_state import (
     AppliedStateError,
     AppliedStateRow,
     acquire_namespace_apply_lock,
+    applied_state_paths,
     build_applied_state,
     load_applied_state,
     save_applied_state,
 )
 from buoy_search.config import DEFAULT_REGION, EMBEDDING_PRECISIONS, RuntimeConfig
 from buoy_search.chunker import SentenceTransformerEmbedder, TurbopufferWriter, batched
+from buoy_search.catalog import (
+    CardFields,
+    CatalogError,
+    NamespaceCard,
+    commit_system_card,
+    generated_semantics,
+    load_catalog,
+    parse_card,
+    prepare_prospective_card,
+)
+from buoy_search.catalog_pending import (
+    CatalogCommitPartialSuccess,
+    build_pending_payload,
+    confirm_pending,
+    create_pending,
+    inspect_apply_collision,
+    load_pending_snapshot,
+    pending_path_for_plan,
+    reconcile_command,
+    remove_expected_pending,
+)
+from buoy_search.retriever import ranking_defaults_for_namespace
 from buoy_search.plan_artifacts import (
     GENERIC_SITE_TURBOPUFFER_SCHEMA,
     PLAN_SCHEMA_VERSION,
@@ -168,6 +191,7 @@ def apply_preflight_summary(
     verified: VerifiedApplyPlan,
     *,
     namespace: str,
+    catalog_path: Path | None = None,
     region: str = DEFAULT_REGION,
     approved: bool = False,
     delete_stale: bool = False,
@@ -185,7 +209,104 @@ def apply_preflight_summary(
         rows_deleted=0,
         state_updated=False,
         api_calls_occurred=False,
+        catalog_registration=catalog_registration_preview(
+            verified,
+            namespace=namespace,
+            region=region,
+            catalog_path=catalog_path or (verified.state_root / "catalog.json"),
+        ),
     )
+
+
+def verified_source_metadata(verified: VerifiedApplyPlan) -> list[dict[str, str]]:
+    """Return only integrity-verified page/chunk source metadata."""
+
+    return [
+        dict(record.source_metadata)
+        for record in [*verified.manifest.pages, *verified.manifest.chunks]
+        if record.source_metadata
+    ]
+
+
+def catalog_registration_preview(
+    verified: VerifiedApplyPlan,
+    *,
+    namespace: str,
+    region: str,
+    catalog_path: Path,
+) -> JsonObject:
+    """Build a model-free, non-mutating catalog registration preview."""
+
+    document = load_catalog(catalog_path)
+    existing = next((card for card in document.cards if card.namespace == namespace), None)
+    semantics = generated_semantics(
+        base_url=verified.manifest.base_url,
+        site_id=verified.manifest.site_id,
+        plan_schema_version=int(verified.plan["schema_version"]),
+        source_metadata=verified_source_metadata(verified),
+    )
+    if existing is None:
+        action = "new"
+        origin = "generated"
+    elif existing.semantic_origin == "manual":
+        action = "manual-preserving-update"
+        origin = "manual"
+    else:
+        action = "generated-update"
+        origin = "generated"
+    ranking = ranking_defaults_for_namespace(namespace)
+    return {
+        "catalog_path": str(catalog_path),
+        "namespace": namespace,
+        "action": action,
+        "semantic_origin": origin,
+        "source_kind": semantics.source_kind,
+        "region": region,
+        "vector_dimensions": 384,
+        **ranking,
+    }
+
+
+def prospective_card_for_apply(
+    verified: VerifiedApplyPlan,
+    *,
+    namespace: str,
+    region: str,
+    existing: NamespaceCard | None,
+) -> NamespaceCard:
+    """Validate and embed the complete pre-remote catalog card."""
+
+    semantics = generated_semantics(
+        base_url=verified.manifest.base_url,
+        site_id=verified.manifest.site_id,
+        plan_schema_version=int(verified.plan["schema_version"]),
+        source_metadata=verified_source_metadata(verified),
+    )
+    manual = existing is not None and existing.semantic_origin == "manual"
+    ranking = ranking_defaults_for_namespace(namespace)
+    fields = CardFields(
+        namespace=namespace,
+        enabled=existing.enabled if existing is not None else True,
+        source_kind=semantics.source_kind,
+        source_uri=semantics.source_uri,
+        site_id=verified.manifest.site_id,
+        title=existing.title if manual else semantics.title,
+        summary=existing.summary if manual else semantics.summary,
+        aliases=list(existing.aliases if manual else semantics.aliases),
+        tags=list(existing.tags if manual else semantics.tags),
+        semantic_origin="manual" if manual else "generated",
+        region=region,
+        embedding_model=str(verified.plan["embedding_model"]),
+        embedding_precision=str(verified.plan.get("embedding_precision", "float32")),
+        plan_schema_version=int(verified.plan["schema_version"]),
+        ranking_mode=str(ranking["ranking_mode"]),
+        ranking_profile=str(ranking["ranking_profile"]),
+        ranking_pool=int(ranking["ranking_pool"]),
+        ranking_aggregation=str(ranking["ranking_aggregation"]),
+        last_plan_id=str(verified.plan["plan_id"]),
+        last_apply_id=None,
+    )
+    return prepare_prospective_card(fields, existing=existing)
 
 
 def run_approved_apply(
@@ -194,12 +315,13 @@ def run_approved_apply(
     config: RuntimeConfig,
     namespace: str,
     batch_size: int,
+    catalog_path: Path | None = None,
     embedding_batch_size: int = 32,
     delete_stale: bool = False,
     progress_callback: Callable[[str], None] | None = None,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> JsonObject:
-    """Embed/upsert only diff rows, optionally delete stale rows, then update state."""
+    """Run one locked remote apply and its precomputed local catalog commit."""
 
     def emit_progress(message: str) -> None:
         if progress_callback is None:
@@ -207,14 +329,12 @@ def run_approved_apply(
         try:
             progress_callback(message)
         except Exception:
-            # Progress is advisory; it must not interrupt a live apply.
             return
 
     def observe_monotonic() -> float | None:
         try:
             return monotonic()
         except Exception:
-            # Timing is diagnostic; it must not interrupt a live apply.
             return None
 
     def elapsed_since(started_at: float | None) -> float:
@@ -230,17 +350,77 @@ def run_approved_apply(
     if delete_stale and not stale_row_ids:
         raise ApplyPlanError("Cannot run --delete-stale because the recomputed diff has no stale rows.")
 
-    api_key = os.environ.get("TURBOPUFFER_API_KEY")
-    if not api_key:
-        raise RuntimeError("TURBOPUFFER_API_KEY must be set in the environment for approved apply.")
-
     emit_progress("apply: acquiring namespace lock")
     with acquire_namespace_apply_lock(
         site_id=verified.manifest.site_id,
         namespace=namespace,
         state_root=verified.state_root,
     ):
+        # Re-read state and recompute the diff under the lock so a process that
+        # verified concurrently cannot repeat writes after another apply wins.
+        verified = load_verified_apply_plan(
+            plan_path=verified.plan_path,
+            namespace=namespace,
+            state_root=verified.state_root,
+        )
+        stale_row_ids = stale_row_ids_for_delete(verified)
+        if delete_stale and not stale_row_ids:
+            raise ApplyPlanError("Cannot run --delete-stale because the recomputed diff has no stale rows.")
+        plan_id = str(verified.plan["plan_id"])
+        pending_path = pending_path_for_plan(verified.state_root, plan_id)
+        resolved_catalog = (catalog_path or (verified.state_root / "catalog.json")).expanduser().resolve(strict=False)
+        resolved_state_root = verified.state_root.expanduser().resolve(strict=False)
+        state_path = applied_state_paths(
+            site_id=verified.manifest.site_id,
+            namespace=namespace,
+            state_root=verified.state_root,
+        ).database_path.resolve(strict=False)
+        inspect_apply_collision(
+            pending_path,
+            expected={
+                "state_root": str(resolved_state_root),
+                "catalog_path": str(resolved_catalog),
+                "applied_state_path": str(state_path),
+                "site_id": verified.manifest.site_id,
+                "namespace": namespace,
+                "plan_id": plan_id,
+                "base_url": verified.manifest.base_url,
+            },
+        )
+
+        catalog = load_catalog(resolved_catalog)
+        existing_card = next((card for card in catalog.cards if card.namespace == namespace), None)
         applied_at = datetime.now(timezone.utc).isoformat()
+        apply_id = make_apply_id(plan_id, applied_at)
+        prospective = prospective_card_for_apply(
+            verified,
+            namespace=namespace,
+            region=config.region,
+            existing=existing_card,
+        )
+        ranking = ranking_defaults_for_namespace(namespace)
+        pending = build_pending_payload(
+            state_root=resolved_state_root,
+            catalog_path=resolved_catalog,
+            applied_state_path=state_path,
+            site_id=verified.manifest.site_id,
+            namespace=namespace,
+            plan_id=plan_id,
+            base_url=verified.manifest.base_url,
+            prospective_card=prospective,
+            catalog=catalog,
+            existing_card=existing_card,
+            prior_applied_plan_id=(None if verified.state.first_apply else verified.state.last_plan_id),
+            prior_applied_apply_id=(None if verified.state.first_apply else verified.state.last_apply_id),
+            region=config.region,
+            ranking_contract=ranking,
+        )
+        create_pending(pending_path, pending)
+
+        api_key = os.environ.get("TURBOPUFFER_API_KEY")
+        if not api_key:
+            raise RuntimeError("TURBOPUFFER_API_KEY must be set in the environment for approved apply.")
+
         rows_to_upsert = [verified.chunks_by_row_id[record.row_id] for record in verified.diff.rows_to_upsert_records]
         rows_written = 0
         rows_deleted = 0
@@ -302,14 +482,11 @@ def run_approved_apply(
                             build_generic_site_row(
                                 chunk,
                                 vector,
-                                plan_id=str(verified.plan["plan_id"]),
+                                plan_id=plan_id,
                                 applied_at=applied_at,
                             )
                             for chunk, vector in zip(batch, vectors, strict=True)
                         ]
-                        # The current batch was prepared while the previous upsert ran.
-                        # Confirm that write before submitting another one; failed writes
-                        # therefore discard these vectors without starting later work.
                         finish_in_flight()
                         in_flight_batch_index = batch_index
                         in_flight_row_count = len(rows)
@@ -330,15 +507,16 @@ def run_approved_apply(
             writer.delete_rows(stale_row_ids)
             write_seconds += elapsed_since(delete_started_at)
             rows_deleted = len(stale_row_ids)
-            elapsed_seconds = elapsed_since(apply_started_at)
             emit_progress(
                 "apply: deleted stale rows="
-                f"{rows_deleted}; elapsed={elapsed_seconds:.1f}s; "
+                f"{rows_deleted}; elapsed={elapsed_since(apply_started_at):.1f}s; "
                 f"embedding={embedding_seconds:.1f}s; write={write_seconds:.1f}s"
             )
 
         emit_progress("apply: committing local state")
         next_state = build_state_after_apply(verified, applied_at=applied_at, delete_stale=delete_stale)
+        if next_state.last_apply_id != apply_id:
+            raise ApplyPlanError("precomputed apply identity changed before state commit")
         save_applied_state(
             next_state,
             state_root=verified.state_root,
@@ -351,27 +529,81 @@ def run_approved_apply(
                 retained_stale_rows=sum(row.status == ROW_STATUS_RETAINED_STALE for row in next_state.rows),
             ),
         )
-    return build_apply_summary(
-        verified=verified,
-        namespace=namespace,
-        region=config.region,
-        approved=True,
-        delete_stale=delete_stale,
-        rows_upserted=rows_written,
-        embeddings_generated=embeddings_generated,
-        rows_deleted=rows_deleted,
-        state_updated=True,
-        api_calls_occurred=rows_written > 0 or rows_deleted > 0,
-        timing={
-            "elapsed_seconds": elapsed_since(apply_started_at),
-            "embedding_seconds": embedding_seconds,
-            "write_seconds": write_seconds,
-            "embedding_batch_size": embedding_batch_size,
-            "write_batch_size": batch_size,
-            "embedding_precision": config.embedding_precision,
-            "pipeline_mode": "depth_one",
-        },
-    )
+
+        base_summary = build_apply_summary(
+            verified=verified,
+            namespace=namespace,
+            region=config.region,
+            approved=True,
+            delete_stale=delete_stale,
+            rows_upserted=rows_written,
+            embeddings_generated=embeddings_generated,
+            rows_deleted=rows_deleted,
+            state_updated=True,
+            api_calls_occurred=rows_written > 0 or rows_deleted > 0,
+            timing={
+                "elapsed_seconds": elapsed_since(apply_started_at),
+                "embedding_seconds": embedding_seconds,
+                "write_seconds": write_seconds,
+                "embedding_batch_size": embedding_batch_size,
+                "write_batch_size": batch_size,
+                "embedding_precision": config.embedding_precision,
+                "pipeline_mode": "depth_one",
+            },
+        )
+        try:
+            confirmed = confirm_pending(pending_path, pending, apply_id=apply_id)
+            confirmed_snapshot = load_pending_snapshot(pending_path)
+            if confirmed_snapshot.payload != confirmed:
+                raise ValueError("confirmed pending catalog registration changed unexpectedly")
+            document, card, _changed = commit_system_card(
+                resolved_catalog,
+                parse_card(confirmed["prospective_card"]),
+            )
+        except (CatalogError, OSError, ValueError) as exc:
+            partial = {
+                **base_summary,
+                "remote_apply_succeeded": True,
+                "catalog_updated": False,
+                "pending_cleanup": False,
+                "catalog_path": str(resolved_catalog),
+                "pending_path": str(pending_path),
+                "catalog_repair_command": reconcile_command(pending_path, resolved_catalog),
+            }
+            raise CatalogCommitPartialSuccess(str(exc), partial) from exc
+
+        try:
+            remove_expected_pending(
+                pending_path,
+                confirmed,
+                expected_device=confirmed_snapshot.device,
+                expected_inode=confirmed_snapshot.inode,
+            )
+        except (OSError, ValueError) as exc:
+            partial = {
+                **base_summary,
+                "remote_apply_succeeded": True,
+                "catalog_updated": True,
+                "pending_cleanup": False,
+                "catalog_path": str(resolved_catalog),
+                "catalog_revision": document.catalog_revision,
+                "card_revision": card.card_revision,
+                "catalog_namespace": card.namespace,
+                "pending_path": str(pending_path),
+                "catalog_repair_command": reconcile_command(pending_path, resolved_catalog),
+            }
+            raise CatalogCommitPartialSuccess(str(exc), partial) from exc
+
+        return {
+            **base_summary,
+            "remote_apply_succeeded": True,
+            "catalog_updated": True,
+            "pending_cleanup": True,
+            "catalog_path": str(resolved_catalog),
+            "catalog_revision": document.catalog_revision,
+            "card_revision": card.card_revision,
+            "catalog_namespace": card.namespace,
+        }
 
 
 def build_state_after_apply(
@@ -439,6 +671,7 @@ def build_apply_summary(
     state_updated: bool,
     api_calls_occurred: bool,
     timing: JsonObject | None = None,
+    catalog_registration: JsonObject | None = None,
 ) -> JsonObject:
     diff_summary = verified.diff.summary_dict()
     row_ids_to_delete = stale_row_ids_for_delete(verified) if delete_stale else []
@@ -488,6 +721,8 @@ def build_apply_summary(
     }
     if timing is not None:
         summary["timing"] = timing
+    if catalog_registration is not None:
+        summary["catalog_registration"] = catalog_registration
     return summary
 
 

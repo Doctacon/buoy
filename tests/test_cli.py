@@ -220,7 +220,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(json.loads(stdout.getvalue())["command"], "retrieve")
         self.assertEqual(
             stderr.getvalue(),
-            "Warning: `turbo-search` is deprecated; use `buoy` instead. It will be removed in 0.3.\n",
+            "Warning: `turbo-search` is deprecated; use `buoy` instead. It will be removed in 0.4.\n",
         )
 
     def test_legacy_embedding_environment_warning_keeps_json_stdout_clean(self) -> None:
@@ -236,6 +236,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(json.loads(stdout.getvalue())["embedding_model"], "legacy/model")
         self.assertIn("TURBO_SEARCH_EMBEDDING_MODEL is deprecated", stderr.getvalue())
+        self.assertIn("It will be removed in 0.4.", stderr.getvalue())
         self.assertNotIn("Warning", stdout.getvalue())
 
     def test_conflicting_embedding_environment_returns_two_with_clean_stdout(self) -> None:

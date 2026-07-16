@@ -1,6 +1,6 @@
 Status: done
 Created: 2026-07-14
-Updated: 2026-07-14
+Updated: 2026-07-15
 Parent: None
 Depends-On: None
 
@@ -14,7 +14,7 @@ This is a parent plan and is not executable.
 
 ## Governing records
 
-- `.10x/decisions/buoy-product-identity-and-compatibility.md`
+- `.10x/decisions/superseded/buoy-product-identity-and-compatibility.md`
 - `.10x/specs/buoy-package-and-cli-identity.md`
 - `.10x/specs/buoy-local-compatibility.md`
 - `.10x/specs/buoy-brand-assets-and-documentation.md`

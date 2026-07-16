@@ -1,0 +1,184 @@
+{
+  "catalog_path": "/Users/crlough/Code/personal/turbo-search/.turbo-search/catalog.json",
+  "entries": [
+    {
+      "aliases": [
+        "dagster.io",
+        "data orchestrator"
+      ],
+      "classification": "register",
+      "contract": {
+        "embedding_model": "BAAI/bge-small-en-v1.5",
+        "embedding_precision": "float32",
+        "plan_schema_version": 1,
+        "ranking_aggregation": "max",
+        "ranking_mode": "page",
+        "ranking_pool": 20,
+        "ranking_profile": "none",
+        "region": "gcp-us-central1"
+      },
+      "local_state": {
+        "active_rows": 25322,
+        "base_url": "https://dagster.io/",
+        "last_apply_id": "apply_20260713T200524.518551Z0000_plan_b3782a00f5047694",
+        "last_plan_id": "plan_b3782a00f5047694",
+        "site_id": "dagster-io",
+        "state_kind": "duckdb",
+        "state_path": ".turbo-search/state/dagster-io/site-dagster-io-benchmark-v1/state.duckdb"
+      },
+      "namespace": "site-dagster-io-benchmark-v1",
+      "provenance": [
+        ".turbo-search/state/dagster-io/site-dagster-io-benchmark-v1/state.duckdb",
+        ".10x/evidence/.storage/2026-07-13-live-dagster-throughput-benchmark-command-output.json"
+      ],
+      "site_id": "dagster-io",
+      "source_kind": "website",
+      "source_uri": "https://dagster.io/",
+      "summary": "Official Dagster website covering its modern data orchestrator platform.",
+      "tags": [
+        "data orchestration",
+        "website"
+      ],
+      "title": "Dagster"
+    },
+    {
+      "classification": "exclude_incomplete_contract_provenance",
+      "local_state": {
+        "active_rows": 25322,
+        "base_url": "https://dagster.io/",
+        "last_apply_id": "apply_20260713T174910.750735Z0000_plan_eba7e91edf5056f6",
+        "last_plan_id": "plan_eba7e91edf5056f6",
+        "site_id": "dagster-io",
+        "state_kind": "duckdb",
+        "state_path": ".turbo-search/state/dagster-io/site-dagster-io-v1/state.duckdb"
+      },
+      "namespace": "site-dagster-io-v1",
+      "reason": "No retained authoritative plan/evidence in the canonical checkout proves the embedding precision and full schema-v1 retrieval contract; namespace ID and state metadata alone are insufficient."
+    },
+    {
+      "aliases": [
+        "oscilar.com",
+        "AI risk decisioning"
+      ],
+      "classification": "register",
+      "contract": {
+        "embedding_model": "BAAI/bge-small-en-v1.5",
+        "embedding_precision": "float32",
+        "plan_schema_version": 1,
+        "ranking_aggregation": "max",
+        "ranking_mode": "page",
+        "ranking_pool": 20,
+        "ranking_profile": "none",
+        "region": "gcp-us-central1"
+      },
+      "local_state": {
+        "active_rows": 6763,
+        "base_url": "https://oscilar.com/",
+        "last_apply_id": "apply_20260713T163335.692987Z0000_plan_cf309400646eac2c",
+        "last_plan_id": "plan_cf309400646eac2c",
+        "site_id": "oscilar-com",
+        "state_kind": "duckdb",
+        "state_path": ".turbo-search/state/oscilar-com/site-oscilar-com-v1/state.duckdb"
+      },
+      "namespace": "site-oscilar-com-v1",
+      "provenance": [
+        ".turbo-search/state/oscilar-com/site-oscilar-com-v1/state.duckdb",
+        "artifacts/site-crawls/oscilar-com-conditional-baseline-20260715-a010c673/plan.json",
+        ".10x/evidence/2026-07-14-oscilar-site-index-and-recruiter-brief.md"
+      ],
+      "site_id": "oscilar-com",
+      "source_kind": "website",
+      "source_uri": "https://oscilar.com/",
+      "summary": "Official Oscilar website covering its AI risk decisioning platform.",
+      "tags": [
+        "risk decisioning",
+        "website"
+      ],
+      "title": "Oscilar"
+    },
+    {
+      "classification": "exclude_incomplete_contract_provenance",
+      "local_state": {
+        "active_rows": 15499,
+        "base_url": "https://www.thistle.co/",
+        "last_apply_id": "apply_20260713T181302.674608Z0000_plan_c081a602a7e095e9",
+        "last_plan_id": "plan_c081a602a7e095e9",
+        "site_id": "www-thistle-co",
+        "state_kind": "duckdb",
+        "state_path": ".turbo-search/state/www-thistle-co/site-www-thistle-co-v1/state.duckdb"
+      },
+      "namespace": "site-www-thistle-co-v1",
+      "reason": "No retained authoritative plan/evidence in the canonical checkout proves the embedding precision and full schema-v1 retrieval contract; namespace ID and state metadata alone are insufficient."
+    }
+  ],
+  "excluded_live_count": 2,
+  "historical_local_only_count": 58,
+  "historical_local_only_namespaces": [
+    "github-astral-sh-ruff-v1",
+    "github-astral-sh-ruff-v2-file-cards",
+    "github-astral-sh-ruff-v3-oversize",
+    "github-django-django-v1",
+    "github-django-django-v2-file-cards",
+    "github-dlt-hub-dlthub-ai-workbench-v1",
+    "github-doctacon-turbo-search-v1",
+    "github-doctacon-turbo-search-v1-no-process",
+    "github-doctacon-turbo-search-v1-src-tests",
+    "github-doctacon-turbo-search-v2-clean",
+    "github-doctacon-turbo-search-v3-metadata",
+    "github-doctacon-turbo-search-v4-file-cards",
+    "github-doctacon-turbo-search-v5-oversize-cards",
+    "github-duckdb-duckdb-v1",
+    "github-encode-httpx-v1",
+    "github-encode-httpx-v2-file-cards",
+    "github-fastapi-typer-v1",
+    "github-fastapi-typer-v2-metadata",
+    "github-fastapi-typer-v2-oversize",
+    "github-fastapi-typer-v2-oversize-metadata",
+    "github-fastapi-typer-v3-file-cards",
+    "github-fastapi-typer-v4-oversize-cards",
+    "github-mkdocs-mkdocs-v1",
+    "github-mkdocs-mkdocs-v2-file-cards",
+    "github-pallets-click-v1",
+    "github-pallets-click-v2-metadata",
+    "github-pallets-click-v3-file-cards",
+    "github-pallets-click-v4-oversize-cards",
+    "github-pallets-click-v5-oversize",
+    "github-pallets-flask-v1",
+    "github-pallets-flask-v2-file-cards",
+    "github-psf-black-v1",
+    "github-psf-black-v2-file-cards",
+    "github-psf-requests-v1",
+    "github-psf-requests-v2-metadata",
+    "github-psf-requests-v3-file-cards",
+    "github-psf-requests-v4-oversize-cards",
+    "github-pydantic-pydantic-v1",
+    "github-pydantic-pydantic-v2-file-cards",
+    "github-pytest-dev-pytest-v1",
+    "github-pytest-dev-pytest-v2-metadata",
+    "github-pytest-dev-pytest-v2-oversize",
+    "github-pytest-dev-pytest-v2-oversize-metadata",
+    "github-pytest-dev-pytest-v3-file-cards",
+    "github-pytest-dev-pytest-v4-oversize-cards",
+    "github-textualize-rich-v1",
+    "github-textualize-rich-v2-file-cards",
+    "pdf-the-elephant-in-the-fridge-john-giles-b462995982f07534-v1",
+    "site-adk-dev-v1",
+    "site-blowfish-page-v1",
+    "site-deepeval-com-v1",
+    "site-duckdb-org-v1",
+    "site-gohugo-io-v1",
+    "site-pi-dev-v1",
+    "site-ruff-docs-v1",
+    "site-sqlmesh-readthedocs-io-v1",
+    "site-turbopuffer-com-v1",
+    "site-typer-docs-v1"
+  ],
+  "live_count": 4,
+  "local_applied_count": 62,
+  "operation": "read-only live inventory plus local catalog backfill preview",
+  "region": "gcp-us-central1",
+  "register_count": 2,
+  "remote_mutation_authorized": false,
+  "schema_version": 1,
+  "unmatched_live_count": 0
+}

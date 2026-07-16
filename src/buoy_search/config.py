@@ -48,8 +48,9 @@ def load_config(*, warning_callback: Callable[[str], None] | None = None) -> Run
     """Load non-secret runtime configuration from environment defaults.
 
     Deliberately excludes TURBOPUFFER_API_KEY so help and dry-run commands can be
-    used safely without credentials. Buoy 0.2 accepts the old branded embedding
-    variable only as a bounded compatibility fallback.
+    used safely without credentials. Buoy retains the old branded embedding
+    variables through 0.3 as bounded compatibility fallbacks scheduled for
+    removal in 0.4.
     """
 
     current_model = os.environ.get(EMBEDDING_MODEL_ENV)
@@ -65,7 +66,7 @@ def load_config(*, warning_callback: Callable[[str], None] | None = None) -> Run
         embedding_model = legacy_model
         (warning_callback or _stderr_warning)(
             f"Warning: {LEGACY_EMBEDDING_MODEL_ENV} is deprecated; use {EMBEDDING_MODEL_ENV}. "
-            "It will be removed in 0.3."
+            "It will be removed in 0.4."
         )
     else:
         embedding_model = DEFAULT_EMBEDDING_MODEL
@@ -83,7 +84,7 @@ def load_config(*, warning_callback: Callable[[str], None] | None = None) -> Run
         embedding_precision = legacy_precision
         (warning_callback or _stderr_warning)(
             f"Warning: {LEGACY_EMBEDDING_PRECISION_ENV} is deprecated; use {EMBEDDING_PRECISION_ENV}. "
-            "It will be removed in 0.3."
+            "It will be removed in 0.4."
         )
     else:
         embedding_precision = DEFAULT_EMBEDDING_PRECISION

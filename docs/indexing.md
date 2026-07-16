@@ -113,9 +113,11 @@ uv run buoy apply
 
 By default, apply selects the newest plan under `artifacts/site-crawls/`. Use `--plan <path>` when multiple plans exist.
 
-Preflight verifies schema, namespace, manifest/chunk agreement, embedding-text hashes, artifact integrity, and compatibility with local state. Its text identifies the automatically selected plan path and source, artifact hash, namespace and region, verified embedding model and precision, first-apply state, upsert/embedding/unchanged/stale counts, and an explicit `retain N` or `delete N` stale-row intent.
+Preflight verifies schema, namespace, manifest/chunk agreement, embedding-text hashes, artifact integrity, compatibility with local state, and the target local catalog. Its text identifies the automatically selected plan path and source, artifact hash, namespace and region, verified embedding model and precision, first-apply state, upsert/embedding/unchanged/stale counts, an explicit `retain N` or `delete N` stale-row intent, and whether catalog registration will create, refresh, or preserve a manual card.
 
-It does not read `TURBOPUFFER_API_KEY` or contact turbopuffer. It also prints shell-safe preview and live retrieval commands labeled for use after a successful apply; the approved apply repeats them as the next step. Replace the quoted `<query>` placeholder with the question to search while preserving the recorded namespace, region, model, and precision.
+Use `--region REGION` to override `TURBOPUFFER_REGION` and bind that region into the registered retrieval contract. Catalog path precedence is `--catalog PATH`, `BUOY_CATALOG_PATH`, then `catalog.json` under the resolved state root.
+
+Preflight does not read `TURBOPUFFER_API_KEY`, load an embedding model, mutate the catalog, or contact turbopuffer. It also prints shell-safe preview and live retrieval commands labeled for use after a successful apply; the approved apply repeats them as the next step. Replace the quoted `<query>` placeholder with the question to search while preserving the recorded namespace, region, model, and precision.
 
 ## Approved apply
 
@@ -137,7 +139,9 @@ If credentials live in this repository's `.env`, load them only into the command
 )
 ```
 
-Approved apply acquires a fail-fast lock for the target namespace and overlaps one local embedding batch with one ordered remote upsert. It never runs concurrent embeddings or concurrent writes, and commits local state only after all remote work succeeds. Interactive runs show confirmed batches/rows on one stderr line; the final summary separates elapsed, embedding, and write time, whose stage totals may exceed wall time because they overlap. Tune the two independent batch controls only after measuring the workload:
+Approved apply acquires a fail-fast lock for the target namespace before catalog-card embedding, pending-state creation, credential lookup, or remote work, and retains it through applied-state and catalog commit. It validates and persists a secret-free pending card before remote writes, overlaps one local content-embedding batch with one ordered remote upsert, and commits applied state only after all remote work succeeds. Successful apply then commits one local catalog card; manual semantic fields and disabled state are preserved.
+
+It never runs concurrent embeddings or concurrent writes. Interactive runs show confirmed batches/rows on one stderr line; the final summary separates elapsed, embedding, and write time, whose stage totals may exceed wall time because they overlap. Tune the two independent batch controls only after measuring the workload:
 
 ```bash
 uv run buoy apply --approve \
@@ -167,7 +171,9 @@ It stores current row identity/status plus compact apply summaries, not full sna
 
 A same-namespace approved apply fails fast if another apply holds its lock. Different namespaces have independent ledgers and may apply concurrently. State is local to this machine; it is not a shared service.
 
-Pending, preflighted, and failed plans remain available. A successful approved apply removes its exact plan directory after remote work and state commit. A newly written verified plan removes older sibling plans for the same namespace. Copy a plan elsewhere before approval if it must be retained for audit.
+Pending, preflighted, and failed plans remain available. Catalog registration pending files live under `<state-root>/catalog-pending/`. Any pending file blocks automatic apply reruns so Buoy cannot unknowingly repeat remote writes after a crash. A successful approved apply removes its pending file and exact plan directory after remote work, state commit, and catalog commit. A newly written verified plan removes older sibling plans for the same namespace. Copy a plan elsewhere before approval if it must be retained for audit.
+
+If remote work and applied state succeed but pending confirmation, local catalog commit, or pending cleanup fails, apply exits 2 with `remote_apply_succeeded=true`, a retained recoverable pending path, and an exact local `buoy catalog reconcile` command. Output reports the phase truthfully: a cleanup-only failure keeps `catalog_updated=true`, includes catalog/card revisions, and sets `pending_cleanup=false`; earlier local failures report `catalog_updated=false`. Do not rerun apply; run the repair command instead. Reconcile can recover an interrupted confirmation only when the exact bound applied-state ledger proves a new matching success. Otherwise an unconfirmed pending file represents indeterminate remote state and can be removed only with the separately reviewed `buoy catalog abandon-pending ... --approve` flow described in the catalog guide.
 
 A legacy `last-applied.json` is removed when the DuckDB ledger is first used; the ledger starts empty so the next approved apply re-upserts reviewed rows rather than trusting legacy local state.
 

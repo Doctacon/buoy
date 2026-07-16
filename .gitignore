@@ -33,7 +33,9 @@ sentence_transformers/
 outputs/
 generated/
 artifacts/
-autoresearch/runs/
+autoresearch/runs/*
+!autoresearch/runs/semantic-routing-representative-20260715/
+!autoresearch/runs/semantic-routing-representative-20260715/**
 *.log
 
 # Local/private Loom binary evidence captures

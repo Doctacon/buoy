@@ -25,6 +25,7 @@ from buoy_search.applied_state import (
     save_applied_state,
 )
 from buoy_search.cli import build_parser, main
+from buoy_search.catalog import ROUTING_DIMENSIONS
 from buoy_search.chunker import process_corpus
 from buoy_search.config import RuntimeConfig
 from buoy_search.plan_artifacts import build_plan_artifacts, write_plan_artifacts
@@ -54,6 +55,11 @@ class FakeEmbedder:
         FakeEmbedder.texts.extend(list(texts))
         FakeEmbedder.batch_sizes.append(batch_size)
         return [[float(index), 0.0, 1.0] for index, _ in enumerate(texts, start=1)]
+
+
+class FixedRoutingEmbedder:
+    def encode(self, texts):
+        return [[1.0] + [0.0] * (ROUTING_DIMENSIONS - 1) for _ in texts]
 
 
 class FakeWriter:
@@ -210,6 +216,11 @@ def build_one_page_plan_with_stale_state(root: Path, state_root: Path):
 class ApplyCliTests(unittest.TestCase):
     def setUp(self) -> None:
         reset_fakes()
+        routing_patcher = patch(
+            "buoy_search.catalog.load_routing_embedder", return_value=FixedRoutingEmbedder()
+        )
+        routing_patcher.start()
+        self.addCleanup(routing_patcher.stop)
 
     def test_apply_batch_size_defaults_and_embedding_batch_validation(self) -> None:
         parser = build_parser()

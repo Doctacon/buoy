@@ -1,0 +1,329 @@
+{
+  "benchmark_bias_analysis": {
+    "descriptor_fields": [
+      "home card title",
+      "home card aliases"
+    ],
+    "match": "complete normalized token phrase",
+    "purpose": "Quantify how often source identity is explicit in the question."
+  },
+  "card_count": 13,
+  "controls": {
+    "blocked_api_coverage": {
+      "path_mutation_apis": [
+        "builtins.open(write modes)",
+        "io.open(write modes)",
+        "os.open(write flags)",
+        "os.ftruncate",
+        "os.symlink",
+        "os.remove",
+        "os.unlink",
+        "os.rmdir",
+        "os.mkdir",
+        "os.mkfifo",
+        "os.mknod",
+        "os.truncate",
+        "os.chmod",
+        "os.chown",
+        "os.lchown",
+        "os.utime",
+        "os.replace",
+        "os.rename",
+        "os.link"
+      ],
+      "process_apis": [
+        "subprocess.Popen",
+        "os.system",
+        "os.spawnl",
+        "os.spawnle",
+        "os.spawnlp",
+        "os.spawnlpe",
+        "os.spawnv",
+        "os.spawnve",
+        "os.spawnvp",
+        "os.spawnvpe",
+        "os.posix_spawn",
+        "os.posix_spawnp",
+        "os.fork",
+        "os.forkpty"
+      ],
+      "socket_apis": [
+        "socket.create_connection",
+        "socket.getaddrinfo",
+        "socket.socket.connect",
+        "socket.socket.connect_ex",
+        "socket.socket.send",
+        "socket.socket.sendall",
+        "socket.socket.sendto",
+        "socket.socket.sendmsg"
+      ]
+    },
+    "credential_environment_removed": [
+      "ANTHROPIC_API_KEY",
+      "COHERE_API_KEY",
+      "HF_TOKEN",
+      "HUGGING_FACE_HUB_TOKEN",
+      "OPENAI_API_KEY",
+      "TURBOPUFFER_API_KEY"
+    ],
+    "external_processes_allowed": false,
+    "forbidden_client_modules": [
+      "turbopuffer",
+      "openai",
+      "anthropic",
+      "cohere"
+    ],
+    "hosted_api_allowed": false,
+    "model_cache_writable": false,
+    "model_snapshot_manifest_equality_required": true,
+    "network_allowed": false,
+    "offline_environment": {
+      "HF_DATASETS_OFFLINE": "1",
+      "HF_HUB_DISABLE_IMPLICIT_TOKEN": "1",
+      "HF_HUB_DISABLE_TELEMETRY": "1",
+      "HF_HUB_OFFLINE": "1",
+      "TRANSFORMERS_OFFLINE": "1"
+    },
+    "result_overwrite_requires_flag": "--replace-result",
+    "temporary_directory": {
+      "ephemeral": true,
+      "path": ".semantic-routing-tmp",
+      "removed_after_run": true
+    },
+    "turbopuffer_allowed": false,
+    "write_roots": [
+      "experiment directory",
+      "process-owned ephemeral temporary directory"
+    ]
+  },
+  "dataset_mapping": {
+    "black": {
+      "cases": 5,
+      "namespace": "github-psf-black-v1",
+      "path": "src/buoy_search/data/black_repo_search_seed_evals.json"
+    },
+    "buoy": {
+      "cases": 10,
+      "namespace": "github-doctacon-buoy-search-v1",
+      "path": "src/buoy_search/data/buoy_search_repo_search_seed_evals.json"
+    },
+    "click": {
+      "cases": 10,
+      "namespace": "github-pallets-click-v1",
+      "path": "src/buoy_search/data/click_repo_search_seed_evals.json"
+    },
+    "django": {
+      "cases": 5,
+      "namespace": "github-django-django-v1",
+      "path": "src/buoy_search/data/django_repo_search_seed_evals.json"
+    },
+    "flask": {
+      "cases": 5,
+      "namespace": "github-pallets-flask-v1",
+      "path": "src/buoy_search/data/flask_repo_search_seed_evals.json"
+    },
+    "httpx": {
+      "cases": 5,
+      "namespace": "github-encode-httpx-v1",
+      "path": "src/buoy_search/data/httpx_repo_search_seed_evals.json"
+    },
+    "mkdocs": {
+      "cases": 5,
+      "namespace": "github-mkdocs-mkdocs-v1",
+      "path": "src/buoy_search/data/mkdocs_repo_search_seed_evals.json"
+    },
+    "pydantic": {
+      "cases": 5,
+      "namespace": "github-pydantic-pydantic-v1",
+      "path": "src/buoy_search/data/pydantic_repo_search_seed_evals.json"
+    },
+    "pytest": {
+      "cases": 10,
+      "namespace": "github-pytest-dev-pytest-v1",
+      "path": "src/buoy_search/data/pytest_repo_search_seed_evals.json"
+    },
+    "requests": {
+      "cases": 10,
+      "namespace": "github-psf-requests-v1",
+      "path": "src/buoy_search/data/requests_repo_search_seed_evals.json"
+    },
+    "rich": {
+      "cases": 5,
+      "namespace": "github-textualize-rich-v1",
+      "path": "src/buoy_search/data/rich_repo_search_seed_evals.json"
+    },
+    "ruff": {
+      "cases": 5,
+      "namespace": "github-astral-sh-ruff-v1",
+      "path": "src/buoy_search/data/ruff_repo_search_seed_evals.json"
+    },
+    "typer": {
+      "cases": 10,
+      "namespace": "github-fastapi-typer-v1",
+      "path": "src/buoy_search/data/typer_repo_search_seed_evals.json"
+    }
+  },
+  "experiment_id": "semantic-routing-representative-20260715",
+  "inputs": [
+    {
+      "path": "autoresearch/runs/semantic-routing-representative-20260715/namespace_cards.json",
+      "sha256": "bb8ce57c9dda51c4f8c5fcf82dde84b606e269ecff46d65bf2f3413a1f3bede7",
+      "size_bytes": 8009
+    },
+    {
+      "path": "src/buoy_search/data/black_repo_search_seed_evals.json",
+      "sha256": "79606bd520ee0b5dac5bc323ea2f0d2891c9929f45bde266ba4e29cd3efcd7ef",
+      "size_bytes": 5207
+    },
+    {
+      "path": "src/buoy_search/data/buoy_search_repo_search_seed_evals.json",
+      "sha256": "605ac5b775a0b9ce2fc6adb78c4de9ee98a597ec9c8b4cd91e0712b2ed6e8eaf",
+      "size_bytes": 10855
+    },
+    {
+      "path": "src/buoy_search/data/click_repo_search_seed_evals.json",
+      "sha256": "10f5b7fad2542b9fc30bda307787626f5d3de30060b78f0983aeb7727f377b8b",
+      "size_bytes": 10164
+    },
+    {
+      "path": "src/buoy_search/data/django_repo_search_seed_evals.json",
+      "sha256": "852856a5cba5c00914be43bcd12b62b5a574c740542f167f9b7588cb7d8dd13e",
+      "size_bytes": 5405
+    },
+    {
+      "path": "src/buoy_search/data/flask_repo_search_seed_evals.json",
+      "sha256": "9f2dbb6ca3d131c68ee04d9cea3ac614ebb329a49d7c076de1f30a2c35a5194f",
+      "size_bytes": 5135
+    },
+    {
+      "path": "src/buoy_search/data/httpx_repo_search_seed_evals.json",
+      "sha256": "c9b224b88ca619aced7a027697bd4b761b614b9f8660fdafbd0009a9ac9b6f0d",
+      "size_bytes": 4905
+    },
+    {
+      "path": "src/buoy_search/data/mkdocs_repo_search_seed_evals.json",
+      "sha256": "cd32c7f1e119b8b0fbbb30ceed06b40e3c20d9b4d1de4dd8b6888390429286e5",
+      "size_bytes": 5213
+    },
+    {
+      "path": "src/buoy_search/data/pydantic_repo_search_seed_evals.json",
+      "sha256": "8ecc2c54a7a5e63ff424a67cdf357833dbc933b05147c4f4f5d59d9984fd3255",
+      "size_bytes": 4885
+    },
+    {
+      "path": "src/buoy_search/data/pytest_repo_search_seed_evals.json",
+      "sha256": "9d0640002bde44ba0cc1645b85de03ccd833a7a4f3b6387a3ef6d4a8aad24674",
+      "size_bytes": 12363
+    },
+    {
+      "path": "src/buoy_search/data/requests_repo_search_seed_evals.json",
+      "sha256": "34b83e35b3fbe5c222a7ec75826a1476223597496ea006ddc0025034308a64ca",
+      "size_bytes": 8314
+    },
+    {
+      "path": "src/buoy_search/data/rich_repo_search_seed_evals.json",
+      "sha256": "2f46d8a768cc50741905a31433f4e79d27c4a472a63b4cd2feb7d47fbedbbf2d",
+      "size_bytes": 5647
+    },
+    {
+      "path": "src/buoy_search/data/ruff_repo_search_seed_evals.json",
+      "sha256": "2e4e96a66890a57d363da885fb7a3ada3ef5ed86f96df4094298ccfd44aa8bc1",
+      "size_bytes": 5272
+    },
+    {
+      "path": "src/buoy_search/data/typer_repo_search_seed_evals.json",
+      "sha256": "4aafafbd0a4c4c427b680e53fbce93d5f1f9154b7762f0eb59c1e8a832165947",
+      "size_bytes": 12481
+    }
+  ],
+  "limits": {
+    "cross_namespace_hits_fabricated": false,
+    "downstream_retrieval_run": false,
+    "file_judgments_used": false,
+    "labels": "home source only; alternative namespaces are unlabeled",
+    "precision_reported": false,
+    "production_readiness_claimed": false
+  },
+  "model": {
+    "id": "BAAI/bge-small-en-v1.5",
+    "local_files_only": true,
+    "normalized": true,
+    "passage_format": "Title, Summary, Aliases, and Tags labeled on separate deterministic lines.",
+    "precision": "float32",
+    "query_prefix": "Represent this sentence for searching relevant passages: ",
+    "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+    "snapshot_files": [
+      {
+        "path": "1_Pooling/config.json",
+        "sha256": "d1caf60c96f5fba2157c0c26b76d80818fad6cf0b8eb5e73ec372ff9818eba5c",
+        "size_bytes": 190
+      },
+      {
+        "path": "README.md",
+        "sha256": "ddb964361a55c6e5dfca6361615854b260c9c960205d04c7520151aaa1d75837",
+        "size_bytes": 94783
+      },
+      {
+        "path": "config.json",
+        "sha256": "094f8e891b932f2000c92cfc663bac4c62069f5d8af5b5278c4306aef3084750",
+        "size_bytes": 743
+      },
+      {
+        "path": "config_sentence_transformers.json",
+        "sha256": "940d5f50db195fa6e5e6a4f122c095f77880de259d74b14a65779ed48bdd7c56",
+        "size_bytes": 124
+      },
+      {
+        "path": "model.safetensors",
+        "sha256": "3c9f31665447c8911517620762200d2245a2518d6e7208acc78cd9db317e21ad",
+        "size_bytes": 133466304
+      },
+      {
+        "path": "modules.json",
+        "sha256": "84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf",
+        "size_bytes": 349
+      },
+      {
+        "path": "onnx/model.onnx",
+        "sha256": "828e1496d7fabb79cfa4dcd84fa38625c0d3d21da474a00f08db0f559940cf35",
+        "size_bytes": 133093490
+      },
+      {
+        "path": "sentence_bert_config.json",
+        "sha256": "84e39fda68ccbff05bfa723ae9c0e70e23e2ec373b76e0f8c6e71af72a693cbf",
+        "size_bytes": 52
+      },
+      {
+        "path": "special_tokens_map.json",
+        "sha256": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
+        "size_bytes": 125
+      },
+      {
+        "path": "tokenizer.json",
+        "sha256": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+        "size_bytes": 711396
+      },
+      {
+        "path": "tokenizer_config.json",
+        "sha256": "9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3",
+        "size_bytes": 366
+      },
+      {
+        "path": "vocab.txt",
+        "sha256": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
+        "size_bytes": 231508
+      }
+    ]
+  },
+  "one_shot": true,
+  "purpose": "Descriptive home-namespace source-attribution over 13 public repository seed datasets.",
+  "question_count": 90,
+  "route_fan_out": 5,
+  "rrf_k": 60,
+  "strategies": [
+    "oracle",
+    "lexical",
+    "semantic",
+    "hybrid_rrf"
+  ]
+}
