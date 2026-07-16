@@ -150,8 +150,11 @@ class ReleaseAutomationTests(unittest.TestCase):
 
     def test_changelog_records_pending_and_verified_releases(self) -> None:
         changelog = (ROOT / "CHANGELOG.md").read_text()
-        self.assertIn("## [0.3.0] - pending", changelog)
-        self.assertNotIn("[0.3.0]:", changelog)
+        self.assertIn("## [0.3.0] - 2026-07-16", changelog)
+        self.assertIn(
+            "[0.3.0]: https://github.com/Doctacon/buoy-search/releases/tag/v0.3.0",
+            changelog,
+        )
         self.assertIn("scheduled for removal in 0.4", changelog)
         for release_note in (
             "Opt-in float16 corpus and query embedding inference",
@@ -164,7 +167,7 @@ class ReleaseAutomationTests(unittest.TestCase):
         self.assertIn("## [0.2.1] - 2026-07-14", changelog)
         self.assertIn("`v0.2.0` tag was preserved without a GitHub Release", changelog)
         self.assertIn("[0.2.1]: https://github.com/Doctacon/buoy-search/releases/tag/v0.2.1", changelog)
-        self.assertIn("[Unreleased]: https://github.com/Doctacon/buoy-search/compare/v0.2.1...HEAD", changelog)
+        self.assertIn("[Unreleased]: https://github.com/Doctacon/buoy-search/compare/v0.3.0...HEAD", changelog)
 
     def test_legacy_alias_deprecation_consistently_targets_0_4(self) -> None:
         cli_source = (ROOT / "src" / "buoy_search" / "cli.py").read_text()
