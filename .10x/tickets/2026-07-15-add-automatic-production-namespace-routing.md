@@ -1,4 +1,4 @@
-Status: blocked
+Status: active
 Created: 2026-07-15
 Updated: 2026-07-15
 Parent: .10x/tickets/2026-07-15-production-semantic-routing-plan.md
@@ -56,8 +56,10 @@ Evidence must prove argument and fail-closed boundaries, eligibility-before-scor
 
 ## Blockers
 
-Blocked until `.10x/tickets/done/2026-07-15-integrate-approved-apply-catalog-registration.md` is reviewed, closed, and integrated into `develop`.
+None. Dependency `.10x/tickets/done/2026-07-15-integrate-approved-apply-catalog-registration.md` is reviewed, closed, and integrated at develop commit `ac6a3ca`.
 
 ## Progress and notes
 
 - 2026-07-15: Opened as the final sequential child; no implementation occurred.
+- 2026-07-15: Marked active after dependency integration at develop commit `ac6a3ca`; implementation started on `work/add-automatic-production-namespace-routing`.
+- 2026-07-15: Implemented opt-in automatic routing with bounded CLI/catalog-path semantics, enabled/runtime compatibility gating before exact lexical and persisted-vector semantic scoring, equal `RRF_K=60` hybrid fusion, local-only routed preview, route-ordered existing multi-namespace live handoff, per-card ranking plus field/global overrides, routed output metadata/redaction, and fail-closed stage attribution. Added focused fake/sentinel coverage and retrieval documentation. Focused tests passed (124), full suite passed (362), compilation and `git diff --check` passed. Evidence: `.10x/evidence/2026-07-15-automatic-production-namespace-routing-implementation.md`. Ticket remains active pending independent review.

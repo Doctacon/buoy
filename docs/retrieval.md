@@ -1,6 +1,6 @@
 # Retrieve and rank results
 
-Retrieval is a safe dry run by default. Every preview/live query requires an explicit `--namespace` or `TURBOPUFFER_NAMESPACE`; Buoy never falls back to a demo namespace. Live search additionally requires `--live` and `TURBOPUFFER_API_KEY`.
+Retrieval is a safe dry run by default. Choose namespaces explicitly with `--namespace`/`TURBOPUFFER_NAMESPACE`, or opt into the canonical local catalog with `--auto-route`; Buoy never falls back to a demo namespace or silently searches every remote namespace. Live search additionally requires `--live` and `TURBOPUFFER_API_KEY`.
 
 ## Discover namespace IDs
 
@@ -69,7 +69,29 @@ uv run buoy retrieve \
 
 CLI namespace selections replace `TURBOPUFFER_NAMESPACE` and retain their supplied order. Buoy normalizes and embeds the query once, queries each namespace sequentially with the same region/model/precision, then merges the namespace-local rankings using equal-weight reciprocal-rank fusion. `--top-k` limits the final merged list, and every result identifies its source namespace.
 
-If any selected namespace fails, the command fails without printing a partial result set. This first version does not automatically search every visible namespace, infer per-namespace model settings, or mix different model/precision settings in one command.
+If any selected namespace fails, the command fails without printing a partial result set. Explicit retrieval does not load or validate the local catalog. This first version does not automatically search every visible namespace, infer per-namespace model settings, or mix different model/precision settings in one command.
+
+## Route from the local catalog
+
+Automatic routing is explicit and local-first:
+
+```bash
+# Preview the default top-three route locally.
+uv run buoy retrieve "How is this feature implemented?" --auto-route
+
+# Query at most two selected namespaces after the local route succeeds.
+export TURBOPUFFER_API_KEY="..."
+uv run buoy retrieve "How is this feature implemented?" \
+  --auto-route --route-top-k 2 --live
+```
+
+The router fully validates the canonical local catalog, excludes disabled cards and cards incompatible with the resolved region/model/precision, then combines exact normalized title/alias/tag phrase matches with cosine similarity over persisted card vectors using equal-weight RRF. It uses the pinned `BAAI/bge-small-en-v1.5` routing model revision with local files only; retrieval never repairs cards, re-embeds them, downloads a model, discovers remote namespaces, or substitutes lexical-only routing.
+
+A routed dry preview loads that pinned local model but reads no Turbopuffer credential, constructs no SDK client, makes no remote call, and mutates no catalog/state. Output includes the catalog revision, eligibility counts, ordered selected cards, route ranks/scores, and each namespace's retrieval plan without card vectors. A missing model or no enabled compatible card fails closed with an explicit manual-retrieval/catalog-repair path.
+
+Catalog path precedence is `--catalog PATH`, then non-empty `BUOY_CATALOG_PATH`, then the catalog under Buoy's resolved state root. `--catalog` and `--route-top-k` require `--auto-route`; `--auto-route` is mutually exclusive with CLI `--namespace`. If `TURBOPUFFER_NAMESPACE` is set, `--auto-route` replaces it and warns on stderr so JSON stdout remains valid.
+
+Each routed card supplies its own ranking mode/profile/pool/aggregation. Any explicitly supplied `--ranking-mode`, `--ranking-profile`, `--ranking-pool`, or `--ranking-aggregation` overrides only that field across selected cards. `--candidates` and `--doc-kind` apply to every selected namespace; `--top-k` limits the final namespace-qualified cross-namespace RRF result. Routed output keeps an explicit multi-namespace shape even when one card is selected, and any selected namespace failure emits no partial result payload.
 
 ## Hybrid retrieval
 
