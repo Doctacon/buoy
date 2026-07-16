@@ -2,7 +2,7 @@ Status: blocked
 Created: 2026-07-15
 Updated: 2026-07-15
 Parent: .10x/tickets/2026-07-15-production-semantic-routing-plan.md
-Depends-On: .10x/tickets/2026-07-15-build-production-local-namespace-catalog.md
+Depends-On: .10x/tickets/done/2026-07-15-build-production-local-namespace-catalog.md
 
 # Integrate Approved Apply Catalog Registration
 
@@ -55,7 +55,7 @@ Evidence must map each phase and failure scenario to tests, show credential/remo
 
 ## Blockers
 
-Blocked until `.10x/tickets/2026-07-15-build-production-local-namespace-catalog.md` is reviewed, closed, and integrated into `develop`.
+Blocked until `.10x/tickets/done/2026-07-15-build-production-local-namespace-catalog.md` is reviewed, closed, and integrated into `develop`.
 
 ## Progress and notes
 

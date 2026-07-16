@@ -1,4 +1,4 @@
-Status: open
+Status: done
 Created: 2026-07-15
 Updated: 2026-07-15
 Parent: .10x/tickets/2026-07-15-production-semantic-routing-plan.md
@@ -59,3 +59,19 @@ None after shaping review/integration.
 ## Progress and notes
 
 - 2026-07-15: Opened as the first executable child. No implementation occurred in the specification-authoring turn.
+- 2026-07-15: Implementation active on `work/build-production-local-namespace-catalog`. Added the strict canonical catalog model/store, pinned local-only routing projection, deterministic generated-semantic and manual-preserving merge helpers, local catalog CLI lifecycle, documentation, and focused tests. Apply/pending reconciliation and automatic routing remain explicitly excluded.
+- 2026-07-15: Focused catalog tests passed (32), the full suite passed (324), Python compilation and `git diff --check` passed, and the exact cached model produced a finite normalized 384-dimensional vector under forced offline mode. Evidence: `.10x/evidence/2026-07-15-production-local-namespace-catalog-implementation.md`. Ticket remains active pending independent review.
+- 2026-07-15: Repaired independent-review blockers without widening scope: strict persisted lineage with separate prospective preparation, exact JSON integers, strict metadata and source-kind URI validation, direct file/directory fsync and credential-read sentinel coverage, catalog-specific both-root guidance, and explicit retrieval environment documentation. Focused tests passed (37), full suite passed (329), compilation and diff check passed. Ticket remains active for rereview.
+
+- 2026-07-15: Two independent re-reviewers passed corrective commit `e13d3e1`; durable review: `.10x/reviews/2026-07-15-production-local-namespace-catalog-review.md`.
+
+## Closure mapping
+
+- Catalog schema, exact hashes, persisted vectors, atomic locking/persistence, local-only model loading, source generation, manual merge API, and CLI lifecycle map to focused tests and recorded evidence.
+- Initial lineage/type/URI/sentinel findings were corrected and independently re-reviewed.
+- Thirty-seven focused and 329 full-suite tests, compilation, and `git diff --check` passed.
+- No excluded apply/routing/remote behavior or dependency was added.
+
+## Retrospective
+
+Persisted control-plane JSON requires exact type checks rather than equality-coercible numbers, and source identity validation must be source-kind-aware. These invariants now live in the strict catalog loader/tests and active specification. No separate follow-up is needed; apply registration remains owned by the next child.

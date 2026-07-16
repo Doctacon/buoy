@@ -21,6 +21,7 @@ from buoy_search.apply import (
     load_verified_apply_plan,
     run_approved_apply,
 )
+from buoy_search.catalog_cli import configure_catalog_parser
 from buoy_search.config import (
     DEFAULT_EMBEDDING_PRECISION,
     DEFAULT_REGION,
@@ -591,6 +592,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print JSON output. Text output lists one namespace ID per line.",
     )
     namespaces_parser.set_defaults(func=_run_namespaces)
+
+    configure_catalog_parser(subparsers)
 
     retrieve_parser = subparsers.add_parser(
         "retrieve",

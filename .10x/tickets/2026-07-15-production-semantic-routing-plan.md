@@ -48,7 +48,7 @@ The user intends to judge quality through frequent live personal use. This autho
 
 ## Child sequence
 
-1. `.10x/tickets/2026-07-15-build-production-local-namespace-catalog.md`
+1. `.10x/tickets/done/2026-07-15-build-production-local-namespace-catalog.md`
 2. `.10x/tickets/2026-07-15-integrate-approved-apply-catalog-registration.md`
 3. `.10x/tickets/2026-07-15-add-automatic-production-namespace-routing.md`
 
@@ -80,3 +80,5 @@ None for the first child after this specification set passes independent shaping
 ## Progress and notes
 
 - 2026-07-15: User explicitly authorized production implementation and ratified activation, authority, eligibility, fan-out, card ownership, apply failure/reconciliation, preview, and vector persistence semantics. Created focused production specifications and three sequential bounded child tickets. Implementation is intentionally deferred from this specification/ticket-authoring turn.
+
+- 2026-07-15: Local catalog child completed with passing independent review; implementation commits `f8a89dd` and `e13d3e1`. Apply registration remains blocked until this branch integrates into `develop`.
