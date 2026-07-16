@@ -25,7 +25,7 @@ Automatic state migration, DuckDB semantic redesign, remote changes, docs/logo/e
 
 ## References
 
-- `.10x/decisions/buoy-product-identity-and-compatibility.md`
+- `.10x/decisions/superseded/buoy-product-identity-and-compatibility.md`
 - `.10x/specs/buoy-local-compatibility.md`
 - `.10x/tickets/done/2026-07-14-buoy-core-package-rename.md`
 

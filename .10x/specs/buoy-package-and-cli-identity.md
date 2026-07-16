@@ -21,7 +21,7 @@ Define the code and distribution identity for the Buoy 0.2.0 rebrand.
 
 ## Compatibility
 
-- The `turbo-search` console alias is supported only for 0.2 and marked for removal in 0.3.
+- The deprecated `turbo-search` console alias remains supported through 0.3 and is marked for removal in 0.4.
 - No Python import shim is provided.
 - Existing plan and state compatibility is governed separately by `.10x/specs/buoy-local-compatibility.md`.
 

@@ -28,7 +28,7 @@ PyPI publication, GitHub release creation, domain/social-handle changes, organiz
 
 ## References
 
-- `.10x/decisions/buoy-product-identity-and-compatibility.md`
+- `.10x/decisions/superseded/buoy-product-identity-and-compatibility.md`
 - `.10x/tickets/done/2026-07-14-buoy-release-integration-validation.md`
 
 ## Evidence expectations

@@ -15,6 +15,7 @@ Release the integrated production semantic-routing work as GitHub-only Buoy v0.3
 1. `.10x/tickets/2026-07-15-prepare-buoy-v0-3-0.md`
 2. `.10x/tickets/2026-07-15-promote-develop-to-main-for-v0-3-0.md`
 3. `.10x/tickets/2026-07-15-create-buoy-v0-3-0-github-release.md`
+4. `.10x/tickets/2026-07-15-finalize-buoy-v0-3-0-changelog.md`
 
 Children are strictly sequential. The parent is not executable.
 
@@ -27,6 +28,7 @@ Children are strictly sequential. The parent is not executable.
 - Annotated `v0.3.0` points to the reviewed main commit and authoritative remote metadata reports a tag object.
 - The approval-gated GitHub workflow publishes wheel/sdist, generated notes, and provenance successfully.
 - No PyPI, branch-protection change, tag overwrite, force push, or Turbopuffer operation occurs.
+- The post-release changelog finalization lands through a separately reviewed task PR after hosted release verification.
 - Evidence and independent reviews support every child before closure.
 
 ## Explicit exclusions

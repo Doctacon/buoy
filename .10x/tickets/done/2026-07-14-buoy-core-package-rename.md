@@ -24,7 +24,7 @@ State-root/env fallback implementation, README/logo/migration docs, GitHub mutat
 
 ## References
 
-- `.10x/decisions/buoy-product-identity-and-compatibility.md`
+- `.10x/decisions/superseded/buoy-product-identity-and-compatibility.md`
 - `.10x/specs/buoy-package-and-cli-identity.md`
 - `.10x/tickets/done/2026-07-14-buoy-rebrand-plan.md`
 

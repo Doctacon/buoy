@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-14
 Updated: 2026-07-14
-Relates-To: .10x/tickets/done/2026-07-14-buoy-github-repository-rename.md, .10x/decisions/buoy-product-identity-and-compatibility.md
+Relates-To: .10x/tickets/done/2026-07-14-buoy-github-repository-rename.md, .10x/decisions/superseded/buoy-product-identity-and-compatibility.md
 
 # Buoy GitHub Repository Rename
 
