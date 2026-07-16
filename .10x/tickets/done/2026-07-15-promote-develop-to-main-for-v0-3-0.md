@@ -42,7 +42,7 @@ Pre/post commit graph, PR/check URLs, merge method/parents, main push CI, diff s
 
 ## Blockers
 
-None technical. Protected sync PR #23 and release PR #22 were merged with verified merge commits and main push CI passed. The ticket intentionally remains active pending parent-owned durable review, closure mapping, and dependent-child unblocking. The prior failed update-branch evidence remains authoritative history.
+None. Protected sync PR #23 and release PR #22 were merged with verified merge commits; main push CI, durable independent review, closure mapping, and dependent-child unblocking are complete. The prior failed update-branch evidence remains authoritative history.
 
 ## Progress and notes
 
