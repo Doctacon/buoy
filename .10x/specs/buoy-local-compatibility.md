@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-14
-Updated: 2026-07-15
+Updated: 2026-07-16
 
 # Buoy Local Compatibility
 
@@ -30,7 +30,7 @@ No command may automatically copy, move, merge, or delete either root. JSON stdo
 
 ## Environment configuration
 
-- New branded variables use `BUOY_*`; current vendor variables `TURBOPUFFER_API_KEY`, `TURBOPUFFER_REGION`, and `TURBOPUFFER_NAMESPACE` remain unchanged.
+- New branded variables use `BUOY_*`; vendor variables `TURBOPUFFER_API_KEY` and `TURBOPUFFER_REGION` retain their existing contracts. `TURBOPUFFER_NAMESPACE` no longer influences `buoy retrieve`; only a CLI `--namespace` selects explicit retrieval.
 - `BUOY_EMBEDDING_MODEL` replaces `TURBO_SEARCH_EMBEDDING_MODEL`.
 - Through 0.3, an old branded variable is accepted only when the corresponding new variable is absent and emits a deprecation warning.
 - If old and new variables are both set to different values, configuration MUST fail with a user-friendly conflict error rather than silently choosing an embedding profile.

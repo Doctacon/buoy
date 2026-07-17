@@ -1,6 +1,6 @@
-Status: active
+Status: superseded
 Created: 2026-07-15
-Updated: 2026-07-15
+Updated: 2026-07-16
 
 # Automatic Production Namespace Routing
 

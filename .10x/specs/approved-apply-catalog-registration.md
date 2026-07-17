@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-15
-Updated: 2026-07-15
+Updated: 2026-07-16
 
 # Approved Apply Catalog Registration
 
@@ -8,7 +8,7 @@ Updated: 2026-07-15
 
 Register or refresh one local production namespace card as part of successful approved apply while preventing remote writes from beginning when card generation/vector preparation is already known to fail.
 
-This specification extends the current plan/apply workflow and is governed by `.10x/specs/production-local-namespace-catalog.md` and `.10x/decisions/production-routing-local-catalog.md`.
+This specification extends the current plan/apply workflow and is governed by `.10x/specs/production-local-namespace-catalog.md` plus the catalog/apply choices preserved in `.10x/decisions/production-routing-default-local-catalog.md`.
 
 ## Plan metadata
 

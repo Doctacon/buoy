@@ -8,7 +8,7 @@ Depends-On: .10x/tickets/done/2026-07-15-integrate-approved-apply-catalog-regist
 
 ## Outcome
 
-Implement opt-in `retrieve --auto-route`, local dry route preview, and live catalog-routed multi-namespace retrieval under `.10x/specs/automatic-production-namespace-routing.md`.
+Implement opt-in `retrieve --auto-route`, local dry route preview, and live catalog-routed multi-namespace retrieval under `.10x/specs/superseded/automatic-production-namespace-routing.md`.
 
 ## Branch and worktree
 

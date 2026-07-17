@@ -18,10 +18,10 @@ This is a parent plan, not an executable ticket.
 
 ## Governing records
 
-- `.10x/decisions/production-routing-local-catalog.md`
+- `.10x/decisions/superseded/production-routing-local-catalog.md`
 - `.10x/specs/production-local-namespace-catalog.md`
 - `.10x/specs/approved-apply-catalog-registration.md`
-- `.10x/specs/automatic-production-namespace-routing.md`
+- `.10x/specs/superseded/automatic-production-namespace-routing.md`
 - `.10x/specs/explicit-multi-namespace-retrieval.md`
 - `.10x/specs/turbopuffer-namespace-discovery.md`
 - `.10x/specs/compact-duckdb-applied-state.md`

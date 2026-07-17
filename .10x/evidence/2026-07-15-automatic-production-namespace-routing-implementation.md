@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-15
 Updated: 2026-07-15
-Relates-To: .10x/tickets/done/2026-07-15-add-automatic-production-namespace-routing.md, .10x/specs/automatic-production-namespace-routing.md
+Relates-To: .10x/tickets/done/2026-07-15-add-automatic-production-namespace-routing.md, .10x/specs/superseded/automatic-production-namespace-routing.md
 
 # Automatic Production Namespace Routing Implementation Evidence
 

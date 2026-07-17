@@ -10,10 +10,10 @@ Verdict: pass
 
 Independent adversarial review of:
 
-- `.10x/decisions/production-routing-local-catalog.md`;
+- `.10x/decisions/superseded/production-routing-local-catalog.md`;
 - `.10x/specs/production-local-namespace-catalog.md`;
 - `.10x/specs/approved-apply-catalog-registration.md`;
-- `.10x/specs/automatic-production-namespace-routing.md`;
+- `.10x/specs/superseded/automatic-production-namespace-routing.md`;
 - the production parent plan and three sequential executable children.
 
 The reviewer compared the records to current plan/apply locking, old-plan compatibility, source metadata, catalog experiment evidence, explicit multi-namespace retrieval, and CLI/source behavior.

@@ -1,6 +1,6 @@
-Status: active
+Status: superseded
 Created: 2026-07-15
-Updated: 2026-07-15
+Updated: 2026-07-16
 
 # Production Routing Uses an Opt-In Local Catalog
 
