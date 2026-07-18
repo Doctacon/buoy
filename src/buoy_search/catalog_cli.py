@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 import json
 import os
 from pathlib import Path
@@ -17,8 +17,8 @@ from buoy_search.catalog import (
     canonical_text,
     card_revision,
     card_to_dict,
-    load_catalog,
     load_routing_embedder,
+    parse_catalog,
     prepare_card,
     utc_now,
 )
@@ -31,14 +31,18 @@ from buoy_search.config import DEFAULT_REGION, load_config
 from buoy_search.remote_catalog import (
     REMOTE_CATALOG_NAMESPACE,
     CompatibilityContract,
+    MutationResult,
+    ReadMetrics,
     RemoteCatalogError,
     RemoteCatalogSnapshot,
     classify_migration_state,
+    classify_remote_catalog,
     create_client,
     create_remote_cards,
     delete_remote_card,
     read_remote_catalog,
     read_remote_migration_snapshot,
+    remote_card_id,
     update_remote_card,
 )
 
@@ -162,23 +166,53 @@ def _read(args: argparse.Namespace) -> tuple[object, RemoteCatalogSnapshot]:
     return client, read_remote_catalog(client, region=region, compatibility=_compatibility(region))
 
 
-def _metrics(snapshot: RemoteCatalogSnapshot) -> dict[str, object]:
+def _request_summary(
+    reads: tuple[ReadMetrics, ...],
+    mutations: tuple[MutationResult, ...] = (),
+) -> dict[str, object]:
+    namespace_pages = sum(item.namespace_list_pages for item in reads)
+    metadata_requests = sum(item.metadata_requests for item in reads)
+    card_pages = sum(item.card_query_pages for item in reads)
+    verification_queries = sum(item.metrics.verification_query_requests for item in mutations)
+    write_requests = sum(item.metrics.write_requests for item in mutations)
+    billing = [bill for item in reads for bill in item.billing]
+    billing.extend(bill for item in mutations for bill in item.metrics.billing)
     return {
-        "namespace_list_pages": snapshot.metrics.namespace_list_pages,
-        "metadata_requests": snapshot.metrics.metadata_requests,
-        "card_query_pages": snapshot.metrics.card_query_pages,
-        "billing": list(snapshot.metrics.billing),
+        "namespace_list_requests": namespace_pages,
+        "metadata_requests": metadata_requests,
+        "catalog_page_query_requests": card_pages,
+        "mutation_verification_query_requests": verification_queries,
+        "write_requests": write_requests,
+        "total_requests": (
+            namespace_pages + metadata_requests + card_pages
+            + verification_queries + write_requests
+        ),
+        "billing": billing,
     }
 
 
-def _base_payload(command: str, region: str, snapshot: RemoteCatalogSnapshot) -> dict[str, object]:
+def _base_payload(
+    command: str,
+    region: str,
+    snapshot: RemoteCatalogSnapshot,
+    *,
+    reads: tuple[ReadMetrics, ...] | None = None,
+    mutations: tuple[MutationResult, ...] = (),
+) -> dict[str, object]:
+    accounted_reads = reads or (snapshot.metrics,)
     return {
         "command": command,
         "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
         "region": region,
         "snapshot_revision": snapshot.snapshot_revision,
         "counts": asdict(snapshot.counts),
-        "read_metrics": _metrics(snapshot),
+        "read_metrics": {
+            "namespace_list_pages": sum(item.namespace_list_pages for item in accounted_reads),
+            "metadata_requests": sum(item.metadata_requests for item in accounted_reads),
+            "card_query_pages": sum(item.card_query_pages for item in accounted_reads),
+            "billing": [bill for item in accounted_reads for bill in item.billing],
+        },
+        "request_summary": _request_summary(accounted_reads, mutations),
     }
 
 
@@ -302,7 +336,10 @@ def _run_upsert(args: argparse.Namespace) -> int:
     except (RemoteCatalogError, CatalogError, RuntimeError, OSError) as exc:
         return _remote_failure(exc)
     payload = {
-        **_base_payload("catalog upsert", region, final),
+        **_base_payload(
+            "catalog upsert", region, final,
+            reads=(snapshot.metrics, final.metrics), mutations=(result,),
+        ),
         "namespace": card.namespace,
         "mutation_status": "created" if existing is None else ("updated" if result.changed else "unchanged"),
         "affected_ids": list(result.affected_ids),
@@ -317,25 +354,30 @@ def _run_toggle(args: argparse.Namespace) -> int:
     try:
         client, snapshot = _read(args)
         current = _find(snapshot, args.namespace)
+        mutation: MutationResult | None = None
         if current.enabled == args.requested_enabled:
             changed = False
             affected_ids: list[str] = []
         else:
             card = replace(current, enabled=args.requested_enabled, updated_at=utc_now(), card_revision="pending")
             card = replace(card, card_revision=card_revision(card))
-            result = update_remote_card(
+            mutation = update_remote_card(
                 client.namespace(REMOTE_CATALOG_NAMESPACE), card,
                 expected_revision=current.card_revision, region=region,
             )
-            changed = result.changed
-            affected_ids = list(result.affected_ids)
+            changed = mutation.changed
+            affected_ids = list(mutation.affected_ids)
         final = read_remote_catalog(client, region=region, compatibility=_compatibility(region))
         card = _find(final, args.namespace)
     except (RemoteCatalogError, CatalogError, OSError) as exc:
         return _remote_failure(exc)
     operation = "enable" if args.requested_enabled else "disable"
     payload = {
-        **_base_payload(f"catalog {operation}", region, final),
+        **_base_payload(
+            f"catalog {operation}", region, final,
+            reads=(snapshot.metrics, final.metrics),
+            mutations=(mutation,) if mutation else (),
+        ),
         "namespace": card.namespace,
         "mutation_status": "updated" if changed else "unchanged",
         "affected_ids": affected_ids,
@@ -355,12 +397,22 @@ def _run_remove(args: argparse.Namespace) -> int:
                 client.namespace(REMOTE_CATALOG_NAMESPACE), namespace=card.namespace,
                 expected_revision=card.card_revision, region=region,
             )
+            final = read_remote_catalog(
+                client, region=region, compatibility=_compatibility(region)
+            )
+            if any(item.namespace == card.namespace for item in final.cards):
+                raise RemoteCatalogError("final remote catalog snapshot still contains the removed card")
         else:
             result = None
+            final = snapshot
     except (RemoteCatalogError, CatalogError, OSError) as exc:
         return _remote_failure(exc)
     payload = {
-        **_base_payload("catalog remove", region, snapshot),
+        **_base_payload(
+            "catalog remove", region, final,
+            reads=(snapshot.metrics, final.metrics) if args.approve else (snapshot.metrics,),
+            mutations=(result,) if result else (),
+        ),
         "namespace": card.namespace,
         "expected_revision": card.card_revision,
         "approved": args.approve,
@@ -376,29 +428,103 @@ def _run_remove(args: argparse.Namespace) -> int:
     return 0
 
 
-def _validated_source(path: Path) -> Path:
+@dataclass
+class _BoundMigrationSource:
+    path: Path
+    fd: int
+    initial_stat: os.stat_result
+    data: bytes
+
+    def revalidate(self) -> None:
+        try:
+            current_fd = os.fstat(self.fd)
+            current_path = self.path.stat(follow_symlinks=False)
+        except OSError as exc:
+            raise CatalogError(f"migration source changed before remote write: {self.path}: {exc}") from exc
+        identity = lambda value: (  # noqa: E731 - compact immutable identity projection.
+            value.st_dev, value.st_ino, value.st_size,
+            value.st_mtime_ns, value.st_ctime_ns,
+        )
+        if (
+            not stat.S_ISREG(current_path.st_mode)
+            or identity(current_fd) != identity(self.initial_stat)
+            or (current_path.st_dev, current_path.st_ino) != (current_fd.st_dev, current_fd.st_ino)
+        ):
+            raise CatalogError(f"migration source changed before remote write: {self.path}")
+        os.lseek(self.fd, 0, os.SEEK_SET)
+        if _read_all(self.fd) != self.data:
+            raise CatalogError(f"migration source contents changed before remote write: {self.path}")
+
+    def close(self) -> None:
+        os.close(self.fd)
+
+
+def _read_all(fd: int) -> bytes:
+    chunks: list[bytes] = []
+    while chunk := os.read(fd, 1024 * 1024):
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _open_migration_source(path: Path) -> _BoundMigrationSource:
     try:
-        metadata = path.lstat()
+        original = path.lstat()
+        if stat.S_ISLNK(original.st_mode) or not stat.S_ISREG(original.st_mode):
+            raise CatalogError(f"migration source must be a regular non-symlink file: {path}")
+        resolved = path.resolve(strict=True)
+        no_follow = getattr(os, "O_NOFOLLOW", None)
+        if no_follow is None:
+            raise CatalogError("migration source cannot be opened safely on this platform")
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | no_follow
+        fd = os.open(resolved, flags)
+    except CatalogError:
+        raise
     except OSError as exc:
         raise CatalogError(f"migration source is not readable: {path}: {exc}") from exc
-    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
-        raise CatalogError(f"migration source must be a regular non-symlink file: {path}")
-    resolved = path.resolve(strict=True)
-    current = resolved.stat()
-    if (current.st_dev, current.st_ino) != (metadata.st_dev, metadata.st_ino):
-        raise CatalogError(f"migration source changed while being validated: {path}")
-    return resolved
+    try:
+        bound = os.fstat(fd)
+        current = resolved.stat(follow_symlinks=False)
+        if (
+            not stat.S_ISREG(bound.st_mode)
+            or not stat.S_ISREG(current.st_mode)
+            or (bound.st_dev, bound.st_ino) != (current.st_dev, current.st_ino)
+            or (original.st_dev, original.st_ino) != (bound.st_dev, bound.st_ino)
+        ):
+            raise CatalogError(f"migration source changed while being validated: {path}")
+        data = _read_all(fd)
+        return _BoundMigrationSource(resolved, fd, bound, data)
+    except Exception:
+        os.close(fd)
+        raise
+
+
+def _parse_bound_catalog(source: _BoundMigrationSource):  # noqa: ANN202 - CatalogDocument is internal.
+    try:
+        payload = json.loads(
+            source.data.decode("utf-8"),
+            parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)),
+        )
+        return parse_catalog(payload)
+    except (UnicodeError, json.JSONDecodeError, ValueError, CatalogError) as exc:
+        raise CatalogError(
+            f"catalog {source.path}: invalid local state ({exc}); repair or restore the file before retrying"
+        ) from exc
 
 
 def _run_migrate_local(args: argparse.Namespace) -> int:
     region = _resolved_region(args)
+    source: _BoundMigrationSource | None = None
     try:
-        source = _validated_source(args.source)
-        document = load_catalog(source)
+        source = _open_migration_source(args.source)
+        document = _parse_bound_catalog(source)
+        source.revalidate()
         if any(card.region != region for card in document.cards):
             raise CatalogError("every migration card region must equal the resolved region")
         client = REMOTE_CATALOG_CLIENT_FACTORY(api_key=_credentials(), region=region)
-        observed = read_remote_migration_snapshot(client, region=region, compatibility=_compatibility(region))
+        compatibility = _compatibility(region)
+        observed = read_remote_migration_snapshot(
+            client, region=region, compatibility=compatibility
+        )
         live_targets = set(observed.live_namespace_ids) - {REMOTE_CATALOG_NAMESPACE}
         missing_live = sorted(card.namespace for card in document.cards if card.namespace not in live_targets)
         if missing_live:
@@ -410,15 +536,32 @@ def _run_migrate_local(args: argparse.Namespace) -> int:
         )
         if state.state == "conflict":
             raise RemoteCatalogError(state.reason or "remote migration state conflicts")
-        intended_ids = [card.namespace for card in state.missing_cards]
+        intended_missing_targets = [card.namespace for card in state.missing_cards]
+        intended_cards = [
+            {
+                "namespace": card.namespace,
+                "remote_card_id": remote_card_id(card.namespace),
+                "card_revision": card.card_revision,
+            }
+            for card in document.cards
+        ]
+        observed_classification = classify_remote_catalog(
+            live_namespace_ids=observed.live_namespace_ids,
+            cards=observed.cards,
+            compatibility=compatibility,
+            metrics=observed.metrics,
+        )
         affected_ids: list[str] = []
-        if args.approve and state.missing_cards:
-            result = create_remote_cards(
-                client.namespace(REMOTE_CATALOG_NAMESPACE), state.missing_cards, region=region
-            )
-            affected_ids = list(result.affected_ids)
+        mutation: MutationResult | None = None
+        if args.approve:
+            source.revalidate()
+            if state.missing_cards:
+                mutation = create_remote_cards(
+                    client.namespace(REMOTE_CATALOG_NAMESPACE), state.missing_cards, region=region
+                )
+                affected_ids = list(mutation.affected_ids)
         final = (
-            read_remote_catalog(client, region=region, compatibility=_compatibility(region))
+            read_remote_catalog(client, region=region, compatibility=compatibility)
             if args.approve
             else None
         )
@@ -428,27 +571,55 @@ def _run_migrate_local(args: argparse.Namespace) -> int:
             )
             if final_state.state != "exact":
                 raise RemoteCatalogError("approved migration did not produce the exact intended remote card set")
+        reads = (observed.metrics, final.metrics) if final else (observed.metrics,)
+        request_summary = _request_summary(reads, (mutation,) if mutation else ())
+        payload = {
+            "command": "catalog migrate-local",
+            "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
+            "region": region,
+            "source": str(source.path),
+            "source_catalog_revision": document.catalog_revision,
+            "approved": args.approve,
+            "initial_migration_state": state.state,
+            "migration_state": "exact" if final else state.state,
+            "intended_cards": intended_cards,
+            "intended_targets": [card.namespace for card in document.cards],
+            "intended_missing_targets": intended_missing_targets,
+            "affected_ids": affected_ids,
+            "source_untouched": True,
+            "snapshot_revision": final.snapshot_revision if final else observed.snapshot_revision,
+            "counts": asdict(final.counts if final else observed_classification.counts),
+            "classifications": {
+                "missing_card_ids": list((final or observed_classification).missing_card_ids),
+                "stale_target_ids": list((final or observed_classification).stale_target_ids),
+                "disabled_ids": list((final or observed_classification).disabled_ids),
+                "incompatible_ids": list((final or observed_classification).incompatible_ids),
+                "eligible_ids": [card.namespace for card in (final or observed_classification).eligible_cards],
+            },
+            "final_cards": [
+                {
+                    "namespace": card.namespace,
+                    "remote_card_id": remote_card_id(card.namespace),
+                    "card_revision": card.card_revision,
+                }
+                for card in final.cards
+            ] if final else [],
+            "read_metrics": {
+                "namespace_list_pages": sum(item.namespace_list_pages for item in reads),
+                "metadata_requests": sum(item.metadata_requests for item in reads),
+                "card_query_pages": sum(item.card_query_pages for item in reads),
+                "billing": [bill for item in reads for bill in item.billing],
+            },
+            "request_summary": request_summary,
+        }
     except (RemoteCatalogError, CatalogError, OSError) as exc:
         return _remote_failure(exc)
-    payload = {
-        "command": "catalog migrate-local",
-        "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
-        "region": region,
-        "source": str(source),
-        "source_catalog_revision": document.catalog_revision,
-        "approved": args.approve,
-        "migration_state": state.state,
-        "intended_targets": [card.namespace for card in document.cards],
-        "intended_missing_targets": intended_ids,
-        "affected_ids": affected_ids,
-        "source_untouched": True,
-        "snapshot_revision": (final.snapshot_revision if final else observed.snapshot_revision),
-        "counts": asdict(final.counts) if final else None,
-        "read_metrics": _metrics(final) if final else asdict(observed.metrics),
-    }
+    finally:
+        if source is not None:
+            source.close()
     _emit(payload, json_output=args.json, text_lines=[
-        f"Remote migration {state.state}: {len(document.cards)} intended card(s).",
-        f"{'Approved write complete' if args.approve else 'Preview only; zero writes'}; source remains untouched: {source}",
+        f"Remote migration {payload['migration_state']}: {len(document.cards)} intended card(s).",
+        f"{'Approved write complete' if args.approve else 'Preview only; zero writes'}; source remains untouched: {payload['source']}",
     ])
     return 0
 

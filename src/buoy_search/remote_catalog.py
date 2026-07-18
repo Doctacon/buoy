@@ -7,7 +7,7 @@ credentials, local catalog files, or other state.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, field, fields, replace
 import hashlib
 import math
 import re
@@ -160,11 +160,19 @@ class RemoteCatalogSnapshot:
 
 
 @dataclass(frozen=True)
+class MutationMetrics:
+    write_requests: int = 0
+    verification_query_requests: int = 0
+    billing: tuple[dict[str, object], ...] = ()
+
+
+@dataclass(frozen=True)
 class MutationResult:
     changed: bool
     card: NamespaceCard | None
     rows_affected: int
     affected_ids: tuple[str, ...]
+    metrics: MutationMetrics = field(default_factory=MutationMetrics)
 
 
 @dataclass(frozen=True)
@@ -368,9 +376,14 @@ def read_remote_migration_snapshot(
     return RemoteMigrationSnapshot(
         catalog_exists=True,
         cards=snapshot.cards,
-        live_namespace_ids=snapshot.live_namespace_ids,
+        live_namespace_ids=(REMOTE_CATALOG_NAMESPACE, *snapshot.live_namespace_ids),
         snapshot_revision=snapshot.snapshot_revision,
-        metrics=snapshot.metrics,
+        metrics=ReadMetrics(
+            namespace_list_pages=first_pages + second_pages + snapshot.metrics.namespace_list_pages,
+            metadata_requests=snapshot.metrics.metadata_requests,
+            card_query_pages=snapshot.metrics.card_query_pages,
+            billing=snapshot.metrics.billing,
+        ),
     )
 
 
@@ -483,21 +496,36 @@ def create_remote_cards(
     )
     affected, affected_ids = _write_result(response, kind="upserted")
     expected_ids = tuple(row["id"] for row in rows)
+    billing = _response_billing(response)
+    verification_billing: list[dict[str, object]] = []
+    metrics = MutationMetrics(1, len(expected_ids) * 2, ())
     if affected == 0:
-        current = _read_exact_cards_twice(resource, expected_ids, region=region)
+        current = _read_exact_cards_twice(
+            resource, expected_ids, region=region, billing=verification_billing
+        )
+        metrics = replace(metrics, billing=tuple([*billing, *verification_billing]))
         if _same_cards(current, ordered):
-            return MutationResult(False, ordered[0] if len(ordered) == 1 else None, 0, ())
+            return MutationResult(False, ordered[0] if len(ordered) == 1 else None, 0, (), metrics)
         raise RemoteCatalogError("conditional card create conflicted with existing remote state")
     if affected != len(expected_ids) or tuple(sorted(affected_ids)) != tuple(sorted(expected_ids)):
         # Strong read makes any partial race observable for the next migration attempt.
-        _read_exact_cards_twice(resource, expected_ids, region=region, allow_missing=True)
+        _read_exact_cards_twice(
+            resource, expected_ids, region=region, allow_missing=True,
+            billing=verification_billing,
+        )
         raise RemoteCatalogError(
             f"conditional card create affected unexpected IDs: expected {sorted(expected_ids)}, got {sorted(affected_ids)}"
         )
-    current = _read_exact_cards_twice(resource, expected_ids, region=region)
+    current = _read_exact_cards_twice(
+        resource, expected_ids, region=region, billing=verification_billing
+    )
     if not _same_cards(current, ordered):
         raise RemoteCatalogError("remote card create verification did not match intended cards")
-    return MutationResult(True, ordered[0] if len(ordered) == 1 else None, affected, tuple(affected_ids))
+    metrics = replace(metrics, billing=tuple([*billing, *verification_billing]))
+    return MutationResult(
+        True, ordered[0] if len(ordered) == 1 else None, affected,
+        tuple(affected_ids), metrics,
+    )
 
 
 def update_remote_card(
@@ -522,14 +550,21 @@ def update_remote_card(
         return_affected_ids=True,
     )
     affected, ids = _write_result(response, kind="upserted")
-    current = _read_exact_cards_twice(resource, [expected_id], region=region, allow_missing=True)
+    verification_billing: list[dict[str, object]] = []
+    current = _read_exact_cards_twice(
+        resource, [expected_id], region=region, allow_missing=True,
+        billing=verification_billing,
+    )
+    metrics = MutationMetrics(
+        1, 2, tuple([*_response_billing(response), *verification_billing])
+    )
     if affected == 0:
         if len(current) == 1 and current[0].card_revision == parsed.card_revision:
-            return MutationResult(False, current[0], 0, ())
+            return MutationResult(False, current[0], 0, (), metrics)
         raise RemoteCatalogError("conditional card update conflicted with a newer remote revision")
     if affected != 1 or ids != [expected_id] or len(current) != 1 or current[0].card_revision != parsed.card_revision:
         raise RemoteCatalogError("remote card update affected or verified an unexpected row")
-    return MutationResult(True, current[0], 1, (expected_id,))
+    return MutationResult(True, current[0], 1, (expected_id,), metrics)
 
 
 def delete_remote_card(
@@ -554,13 +589,20 @@ def delete_remote_card(
         return_affected_ids=True,
     )
     affected, ids = _write_result(response, kind="deleted")
-    current = _read_exact_cards_twice(resource, [expected_id], region=region, allow_missing=True)
+    verification_billing: list[dict[str, object]] = []
+    current = _read_exact_cards_twice(
+        resource, [expected_id], region=region, allow_missing=True,
+        billing=verification_billing,
+    )
+    metrics = MutationMetrics(
+        1, 2, tuple([*_response_billing(response), *verification_billing])
+    )
     if affected == 0:
         state = "card is absent" if not current else "a newer remote revision exists"
         raise RemoteCatalogError(f"conditional card delete conflicted: {state}")
     if affected != 1 or ids != [expected_id] or current:
         raise RemoteCatalogError("remote card delete affected or verified an unexpected row")
-    return MutationResult(True, None, 1, (expected_id,))
+    return MutationResult(True, None, 1, (expected_id,), metrics)
 
 
 def classify_migration_state(
@@ -864,6 +906,7 @@ def _read_exact_cards_twice(
     region: str,
     allow_missing: bool = False,
     preserve_single_reads: bool = False,
+    billing: list[dict[str, object]] | None = None,
 ) -> tuple[NamespaceCard, ...]:
     expected = tuple(sorted(row_ids))
     passes: list[tuple[NamespaceCard, ...]] = []
@@ -881,6 +924,10 @@ def _read_exact_cards_twice(
                 consistency=dict(STRONG_CONSISTENCY),
             )
             plain = _plain(response)
+            if billing is not None:
+                bill = plain.get("billing") if isinstance(plain, dict) else None
+                if bill is not None:
+                    billing.append(_safe_billing(bill))
             raw_rows = plain.get("rows") if isinstance(plain, dict) else None
             values = [] if raw_rows is None else list(raw_rows)
             if len(values) > 1:
@@ -997,6 +1044,12 @@ def _write_result(response: object, *, kind: str) -> tuple[int, list[str]]:
     if any(not isinstance(value, str) for value in ids):
         raise RemoteCatalogError(f"remote write returned invalid {key}")
     return affected, ids
+
+
+def _response_billing(response: object) -> tuple[dict[str, object], ...]:
+    plain = _plain(response)
+    bill = plain.get("billing") if isinstance(plain, dict) else None
+    return (_safe_billing(bill),) if bill is not None else ()
 
 
 def _safe_billing(value: object) -> dict[str, object]:

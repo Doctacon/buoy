@@ -10,12 +10,20 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from buoy_search.catalog import CardFields, ROUTING_DIMENSIONS, prepare_card
+from buoy_search.catalog import (
+    CATALOG_SCHEMA_VERSION,
+    CardFields,
+    ROUTING_DIMENSIONS,
+    card_to_dict,
+    catalog_revision,
+    prepare_card,
+)
 from buoy_search.cli import main
 from buoy_search.remote_catalog import (
     REMOTE_CATALOG_NAMESPACE,
     CompatibilityContract,
     MigrationState,
+    MutationMetrics,
     MutationResult,
     ReadMetrics,
     RemoteCatalogError,
@@ -91,6 +99,15 @@ def make_card(
         embedder=FixedEmbedder(),
         now="2026-07-18T00:00:00Z",
     )
+
+
+def write_source(path: Path, cards: tuple[object, ...]) -> None:
+    path.write_text(json.dumps({
+        "schema_version": CATALOG_SCHEMA_VERSION,
+        "catalog_revision": catalog_revision(cards),
+        "updated_at": "2026-07-18T00:00:00Z",
+        "cards": [card_to_dict(card, include_vector=True) for card in cards],
+    }), encoding="utf-8")
 
 
 def make_snapshot(*cards, live: tuple[str, ...] | None = None):  # noqa: ANN002
@@ -267,7 +284,10 @@ class CatalogCliTests(unittest.TestCase):
         final_card = make_card()
         empty = make_snapshot(live=(final_card.namespace,))
         final = make_snapshot(final_card)
-        create = Mock(return_value=MutationResult(True, final_card, 1, (remote_card_id(final_card.namespace),)))
+        create = Mock(return_value=MutationResult(
+            True, final_card, 1, (remote_card_id(final_card.namespace),),
+            MutationMetrics(1, 2, ({"write_units": 1}, {"query_units": 1}, {"query_units": 1})),
+        ))
         embedder = FixedEmbedder()
         result, stdout, stderr = run_cli(upsert_args(), patches=(
             patch("buoy_search.catalog_cli.read_remote_catalog", side_effect=[empty, final]),
@@ -277,6 +297,8 @@ class CatalogCliTests(unittest.TestCase):
         self.assertEqual((result, stderr), (0, ""))
         payload = json.loads(stdout)
         self.assertEqual(payload["mutation_status"], "created")
+        self.assertEqual(payload["request_summary"]["total_requests"], 13)
+        self.assertEqual(payload["request_summary"]["write_requests"], 1)
         self.assertNotIn("vector", payload["card"])
         created = create.call_args.args[1][0]
         self.assertEqual(created.semantic_origin, "manual")
@@ -327,13 +349,19 @@ class CatalogCliTests(unittest.TestCase):
     def test_enable_disable_idempotence_and_conditional_conflict(self) -> None:
         enabled = make_card(enabled=True)
         disabled = make_card(enabled=False)
-        update = Mock(return_value=MutationResult(True, disabled, 1, (remote_card_id(enabled.namespace),)))
+        update = Mock(return_value=MutationResult(
+            True, disabled, 1, (remote_card_id(enabled.namespace),),
+            MutationMetrics(1, 2, ({"write_units": 1}, {"query_units": 1}, {"query_units": 1})),
+        ))
         result, stdout, stderr = run_cli(["catalog", "disable", enabled.namespace, "--json"], patches=(
             patch("buoy_search.catalog_cli.read_remote_catalog", side_effect=[make_snapshot(enabled), make_snapshot(disabled)]),
             patch("buoy_search.catalog_cli.update_remote_card", update),
         ))
         self.assertEqual((result, stderr), (0, ""))
-        self.assertEqual(json.loads(stdout)["mutation_status"], "updated")
+        updated = json.loads(stdout)
+        self.assertEqual(updated["mutation_status"], "updated")
+        self.assertEqual(updated["request_summary"]["total_requests"], 13)
+        self.assertEqual(updated["request_summary"]["write_requests"], 1)
         sent = update.call_args.args[1]
         self.assertFalse(sent.enabled)
         self.assertEqual(sent.vector, enabled.vector)
@@ -344,7 +372,10 @@ class CatalogCliTests(unittest.TestCase):
             patch("buoy_search.catalog_cli.update_remote_card", side_effect=AssertionError("idempotent toggle wrote")),
         ))
         self.assertEqual((result, stderr), (0, ""))
-        self.assertEqual(json.loads(stdout)["mutation_status"], "unchanged")
+        unchanged = json.loads(stdout)
+        self.assertEqual(unchanged["mutation_status"], "unchanged")
+        self.assertEqual(unchanged["request_summary"]["total_requests"], 10)
+        self.assertEqual(unchanged["request_summary"]["write_requests"], 0)
 
         result, stdout, stderr = run_cli(["catalog", "enable", disabled.namespace, "--json"], patches=(
             patch("buoy_search.catalog_cli.read_remote_catalog", return_value=make_snapshot(disabled)),
@@ -358,7 +389,10 @@ class CatalogCliTests(unittest.TestCase):
     def test_remove_preview_approval_and_condition_conflict(self) -> None:
         card = make_card()
         snapshot = make_snapshot(card)
-        delete = Mock(return_value=MutationResult(True, None, 1, (remote_card_id(card.namespace),)))
+        delete = Mock(return_value=MutationResult(
+            True, None, 1, (remote_card_id(card.namespace),),
+            MutationMetrics(1, 2, ({"write_units": 1}, {"query_units": 1}, {"query_units": 1})),
+        ))
         result, stdout, stderr = run_cli(["catalog", "remove", card.namespace, "--json"], patches=(
             patch("buoy_search.catalog_cli.read_remote_catalog", return_value=snapshot),
             patch("buoy_search.catalog_cli.delete_remote_card", delete),
@@ -373,12 +407,21 @@ class CatalogCliTests(unittest.TestCase):
         result, stdout, stderr = run_cli(
             ["catalog", "remove", card.namespace, "--approve", "--json"],
             patches=(
-                patch("buoy_search.catalog_cli.read_remote_catalog", return_value=snapshot),
+                patch("buoy_search.catalog_cli.read_remote_catalog", side_effect=[
+                    snapshot, make_snapshot(live=(card.namespace,)),
+                ]),
                 patch("buoy_search.catalog_cli.delete_remote_card", delete),
             ),
         )
         self.assertEqual((result, stderr), (0, ""))
-        self.assertEqual(json.loads(stdout)["mutation_status"], "removed")
+        approved = json.loads(stdout)
+        self.assertEqual(approved["mutation_status"], "removed")
+        self.assertNotEqual(approved["snapshot_revision"], snapshot.snapshot_revision)
+        self.assertEqual(approved["counts"]["card_count"], 0)
+        self.assertEqual(approved["request_summary"]["total_requests"], 13)
+        self.assertEqual(approved["request_summary"]["write_requests"], 1)
+        self.assertEqual(approved["request_summary"]["mutation_verification_query_requests"], 2)
+        self.assertEqual(len(approved["request_summary"]["billing"]), 5)
         self.assertEqual(delete.call_args.kwargs["expected_revision"], card.card_revision)
 
         result, stdout, stderr = run_cli(
@@ -404,7 +447,7 @@ class CatalogCliTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "catalog.json"
-            source.write_text("source-bytes", encoding="utf-8")
+            write_source(source, cards)
             lock = Path(f"{source}.lock")
             pending = Path(f"{source}.pending")
             lock.write_bytes(b"adjacent-lock")
@@ -413,9 +456,6 @@ class CatalogCliTests(unittest.TestCase):
             result, stdout, stderr = run_cli(
                 ["catalog", "migrate-local", "--source", str(source), "--json"],
                 patches=(
-                    patch("buoy_search.catalog_cli.load_catalog", return_value=SimpleNamespace(
-                        cards=cards, catalog_revision="source-revision"
-                    )),
                     patch("buoy_search.catalog_cli.read_remote_migration_snapshot", return_value=observed),
                     patch("buoy_search.catalog_cli.create_remote_cards", side_effect=AssertionError("preview wrote")),
                 ),
@@ -424,8 +464,15 @@ class CatalogCliTests(unittest.TestCase):
             payload = json.loads(stdout)
             self.assertEqual(payload["migration_state"], "absent")
             self.assertEqual(payload["intended_missing_targets"], ["one", "two"])
+            self.assertEqual(
+                [item["remote_card_id"] for item in payload["intended_cards"]],
+                [remote_card_id("one"), remote_card_id("two")],
+            )
+            self.assertEqual(payload["counts"]["listed_total"], 2)
+            self.assertEqual(payload["classifications"]["missing_card_ids"], ["one", "two"])
             self.assertFalse(payload["approved"])
             self.assertEqual(payload["affected_ids"], [])
+            self.assertEqual(payload["request_summary"]["write_requests"], 0)
             self.assertTrue(payload["source_untouched"])
             self.assertEqual({path: path.read_bytes() for path in (source, lock, pending)}, before)
 
@@ -439,14 +486,14 @@ class CatalogCliTests(unittest.TestCase):
             metrics=ReadMetrics(4, 1, 2, ()),
         )
         final = make_snapshot(one, two)
-        create = Mock(return_value=MutationResult(True, two, 1, (remote_card_id("two"),)))
+        create = Mock(return_value=MutationResult(
+            True, two, 1, (remote_card_id("two"),),
+            MutationMetrics(1, 2, ({"write_units": 1}, {"query_units": 1}, {"query_units": 1})),
+        ))
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "catalog.json"
-            source.write_text("source-bytes", encoding="utf-8")
+            write_source(source, (one, two))
             common = (
-                patch("buoy_search.catalog_cli.load_catalog", return_value=SimpleNamespace(
-                    cards=(one, two), catalog_revision="source-revision"
-                )),
                 patch("buoy_search.catalog_cli.read_remote_migration_snapshot", return_value=observed),
                 patch("buoy_search.catalog_cli.read_remote_catalog", return_value=final),
                 patch("buoy_search.catalog_cli.create_remote_cards", create),
@@ -457,33 +504,35 @@ class CatalogCliTests(unittest.TestCase):
             )
             self.assertEqual((result, stderr), (0, ""))
             payload = json.loads(stdout)
-            self.assertEqual(payload["migration_state"], "partial")
+            self.assertEqual(payload["initial_migration_state"], "partial")
+            self.assertEqual(payload["migration_state"], "exact")
             self.assertEqual(payload["intended_missing_targets"], ["two"])
             self.assertEqual(payload["affected_ids"], [remote_card_id("two")])
+            self.assertEqual(payload["counts"]["card_count"], 2)
+            self.assertEqual(len(payload["final_cards"]), 2)
+            self.assertEqual(payload["request_summary"]["total_requests"], 15)
+            self.assertEqual(payload["request_summary"]["write_requests"], 1)
             self.assertEqual(create.call_args.args[1], (two,))
 
             exact = RemoteMigrationSnapshot(True, (one, two), ("one", "two"), "exact", ReadMetrics(4, 1, 2, ()))
             result, stdout, stderr = run_cli(
                 ["catalog", "migrate-local", "--source", str(source), "--approve", "--json"],
                 patches=(
-                    patch("buoy_search.catalog_cli.load_catalog", return_value=SimpleNamespace(
-                        cards=(one, two), catalog_revision="source-revision"
-                    )),
                     patch("buoy_search.catalog_cli.read_remote_migration_snapshot", return_value=exact),
                     patch("buoy_search.catalog_cli.read_remote_catalog", return_value=final),
                     patch("buoy_search.catalog_cli.create_remote_cards", side_effect=AssertionError("exact state wrote")),
                 ),
             )
             self.assertEqual((result, stderr), (0, ""))
-            self.assertEqual(json.loads(stdout)["migration_state"], "exact")
-            self.assertEqual(json.loads(stdout)["affected_ids"], [])
+            exact_payload = json.loads(stdout)
+            self.assertEqual(exact_payload["initial_migration_state"], "exact")
+            self.assertEqual(exact_payload["migration_state"], "exact")
+            self.assertEqual(exact_payload["affected_ids"], [])
+            self.assertEqual(exact_payload["request_summary"]["write_requests"], 0)
 
             result, stdout, stderr = run_cli(
                 ["catalog", "migrate-local", "--source", str(source), "--json"],
                 patches=(
-                    patch("buoy_search.catalog_cli.load_catalog", return_value=SimpleNamespace(
-                        cards=(one, two), catalog_revision="source-revision"
-                    )),
                     patch("buoy_search.catalog_cli.read_remote_migration_snapshot", return_value=observed),
                     patch("buoy_search.catalog_cli.classify_migration_state", return_value=MigrationState(
                         "conflict", (), (one,), "remote card differs from intended card"
@@ -493,16 +542,41 @@ class CatalogCliTests(unittest.TestCase):
             self.assertEqual((result, stdout), (2, ""))
             self.assertIn("differs from intended", stderr)
 
+    def test_migrate_local_inode_replacement_blocks_before_first_write(self) -> None:
+        one, two = make_card("one"), make_card("two")
+        observed = RemoteMigrationSnapshot(
+            True, (one,), (REMOTE_CATALOG_NAMESPACE, "one", "two"), "partial",
+            ReadMetrics(4, 1, 2, ()),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "catalog.json"
+            replacement = Path(tmp) / "replacement.json"
+            write_source(source, (one, two))
+            write_source(replacement, (one, two))
+
+            def swap_source(*_args: object, **_kwargs: object) -> RemoteMigrationSnapshot:
+                os.replace(replacement, source)
+                return observed
+
+            create = Mock(side_effect=AssertionError("replaced source wrote remotely"))
+            result, stdout, stderr = run_cli(
+                ["catalog", "migrate-local", "--source", str(source), "--approve", "--json"],
+                patches=(
+                    patch("buoy_search.catalog_cli.read_remote_migration_snapshot", side_effect=swap_source),
+                    patch("buoy_search.catalog_cli.create_remote_cards", create),
+                ),
+            )
+            self.assertEqual((result, stdout), (2, ""))
+            self.assertIn("migration source changed before remote write", stderr)
+            create.assert_not_called()
+
     def test_migrate_local_requires_credentials_and_regular_non_symlink_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "catalog.json"
-            source.write_text("source", encoding="utf-8")
+            write_source(source, (make_card(),))
             result, stdout, stderr = run_cli(
                 ["catalog", "migrate-local", "--source", str(source), "--json"],
                 env={},
-                patches=(patch("buoy_search.catalog_cli.load_catalog", return_value=SimpleNamespace(
-                    cards=(make_card(),), catalog_revision="source"
-                )),),
             )
             self.assertEqual((result, stdout), (2, ""))
             self.assertIn("TURBOPUFFER_API_KEY must be set", stderr)
@@ -513,7 +587,6 @@ class CatalogCliTests(unittest.TestCase):
             link.symlink_to(target)
             result, stdout, stderr = run_cli(
                 ["catalog", "migrate-local", "--source", str(link), "--json"],
-                patches=(patch("buoy_search.catalog_cli.load_catalog", side_effect=AssertionError("symlink loaded")),),
             )
             self.assertEqual((result, stdout), (2, ""))
             self.assertIn("regular non-symlink file", stderr)
