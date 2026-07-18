@@ -1,7 +1,7 @@
-Status: active
+Status: done
 Created: 2026-07-18
 Updated: 2026-07-18
-Parent: .10x/tickets/2026-07-18-remote-semantic-routing-plan.md
+Parent: .10x/tickets/done/2026-07-18-remote-semantic-routing-plan.md
 Depends-On: .10x/tickets/done/2026-07-18-build-remote-routing-backend.md
 
 # Atomic Remote Catalog Cutover
@@ -72,4 +72,7 @@ None. The reviewed backend was integrated through PR #31 as `bc8bdc30555e6683728
 - 2026-07-18: Public catalog/apply/retrieval authority integration completed after replacing every temporary skipped suite with remote-contract fakes. Adversarial findings on preview/live truthfulness, post-mutation proof, migration inode binding, request accounting, pending recovery, and test isolation were repaired. Final independent reviews passed; Python 3.11 and 3.13 each passed 392 tests and wheel/sdist built. Evidence: `.10x/evidence/2026-07-18-atomic-remote-catalog-cutover-implementation.md`; review: `.10x/reviews/2026-07-18-atomic-remote-catalog-cutover-implementation-review.md`.
 - 2026-07-18: After initial PR #32 hosted checks passed, mutation freeze began. Read-only preflight found absent catalog/four content namespaces. Approved migration created exact schema/two intended rows but verification failed on provider omission of null lineage fields. Raw catalog-only inspection confirmed exactly both intended rows and no content operation. Commit `e83fe90` added strict nullable-omission normalization.
 - 2026-07-18: A controlled idempotent verification retry then failed before writes because provider metadata omits `filterable:false` for the exact vector attribute. Raw catalog metadata showed exact `[384]f32`/cosine ANN. Commits `27b36db` and `48b4021` narrowly normalize only that representation.
-- 2026-07-18: The next read-only preview reached vector integrity and found provider decimal rendering drift up to `1.47e-8`; f32 byte/hash comparison proved exact stored vectors. Commit `647e65f` canonicalizes incoming remote values to IEEE-754 f32 before strict hashes. Forty-seven focused unittests and independent review passed. Freeze remains active; next preview awaits hosted checks.
+- 2026-07-18: The next read-only preview reached vector integrity and found provider decimal rendering drift up to `1.47e-8`; f32 byte/hash comparison proved exact stored vectors. Commit `647e65f` canonicalizes incoming remote values to IEEE-754 f32 before strict hashes. Forty-seven focused unittests and independent review passed.
+- 2026-07-18: Final read-only and approved idempotent migration checks classified exact with zero affected IDs/writes. Branch, integrated `eba8145bb12eb7a0749a96ee4088938060a9fb12`, and post-deletion previews matched from canonical and unrelated directories. Explicit preview remained API-free; apply preflight remained local/API-free. Exact inode/hash/revisions were rebound and only `.buoy/catalog.json` was deleted. Post-delete remote proof passed and the mutation freeze was explicitly released. Evidence: `.10x/evidence/2026-07-18-remote-routing-catalog-live-cutover.md`.
+- 2026-07-18 retrospective: Live friction revealed three narrow provider equivalences now captured in `.10x/knowledge/turbopuffer-routing-catalog-normalization.md`. No new operational skill is warranted because the migration CLI and tests encode the repeatable procedure. No provider-audit or live-apply follow-up is opened for the explicit reasons recorded in live evidence. Final merged-head review found no product defect.
+- 2026-07-18: Closure review passed with no blockers: `.10x/reviews/2026-07-18-remote-routing-catalog-closure-review.md`. All acceptance criteria map to implementation/live evidence; ticket closed.

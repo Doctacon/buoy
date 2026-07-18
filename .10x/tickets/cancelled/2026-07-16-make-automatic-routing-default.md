@@ -54,4 +54,4 @@ None. The user ratified default automatic routing, no retrieval namespace enviro
 
 ## Cancellation
 
-Cancelled on 2026-07-18 before implementation. The user superseded the working-directory local-catalog architecture with live Turbopuffer namespace discovery plus a dedicated remote card namespace. No runtime code or tests were produced under this ticket. Replacement owner: `.10x/tickets/2026-07-18-remote-semantic-routing-plan.md`.
+Cancelled on 2026-07-18 before implementation. The user superseded the working-directory local-catalog architecture with live Turbopuffer namespace discovery plus a dedicated remote card namespace. No runtime code or tests were produced under this ticket. Replacement owner: `.10x/tickets/done/2026-07-18-remote-semantic-routing-plan.md`.

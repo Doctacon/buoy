@@ -1,7 +1,7 @@
 Status: done
 Created: 2026-07-18
 Updated: 2026-07-18
-Parent: .10x/tickets/2026-07-18-remote-semantic-routing-plan.md
+Parent: .10x/tickets/done/2026-07-18-remote-semantic-routing-plan.md
 Depends-On: None
 
 # Build Remote Routing Backend

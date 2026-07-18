@@ -1,4 +1,4 @@
-Status: open
+Status: done
 Created: 2026-07-18
 Updated: 2026-07-18
 Parent: None
@@ -13,7 +13,7 @@ Replace working-directory routing-card authority with actual Turbopuffer namespa
 ## Child sequence
 
 1. `.10x/tickets/done/2026-07-18-build-remote-routing-backend.md` — done
-2. `.10x/tickets/2026-07-18-atomic-remote-catalog-cutover.md` — active
+2. `.10x/tickets/done/2026-07-18-atomic-remote-catalog-cutover.md` — done
 
 The backend child is intentionally inert. The cutover child is one cohesive authority transition because splitting public catalog/apply/retrieval changes would create a forbidden split-brain window. The parent is not executable.
 
@@ -49,3 +49,5 @@ ID-only routing; per-content-namespace card rows; local/disk cache; cross-region
 - 2026-07-18: User rejected working-directory authority, approved dedicated remote catalog plus live-list intersection/authenticated preview, chose missing-card exclusion, authorized two-card migration/local deletion, and accepted safe-rebase/accept-remote recovery plus list/query versus write permission exposure.
 - 2026-07-18: The unimplemented local-default ticket was cancelled. Initial four-child rollout was reshaped to inert backend plus atomic cutover after review identified split-brain risk.
 - 2026-07-18: Inert backend passed independent review and hosted checks and was integrated through PR #31 as `bc8bdc30555e66837288d049c3c4885e3cf1df71`; atomic cutover dependency is satisfied.
+- 2026-07-18: Atomic cutover merged through PR #32 as `eba8145bb12eb7a0749a96ee4088938060a9fb12`. Exact remote migration, two-directory branch/integrated/post-deletion proof, explicit bypass, local apply preflight, exact local deletion, freeze release, and retrospective evidence are recorded in `.10x/evidence/2026-07-18-remote-routing-catalog-live-cutover.md`.
+- 2026-07-18: Child closure and aggregate closure review passed. Both children are done, all aggregate criteria are evidenced, residual risks have no-action rationale, and the parent plan is closed.

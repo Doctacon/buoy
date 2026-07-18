@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-18
 Updated: 2026-07-18
-Relates-To: .10x/tickets/2026-07-18-atomic-remote-catalog-cutover.md
+Relates-To: .10x/tickets/done/2026-07-18-atomic-remote-catalog-cutover.md
 
 # Atomic Remote Catalog Cutover Implementation
 
