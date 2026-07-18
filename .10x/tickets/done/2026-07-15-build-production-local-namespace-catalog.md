@@ -8,7 +8,7 @@ Depends-On: None
 
 ## Outcome
 
-Implement the canonical local catalog model, persistence, pinned card-vector projection, and complete local catalog management CLI governed by `.10x/specs/production-local-namespace-catalog.md`.
+Implement the canonical local catalog model, persistence, pinned card-vector projection, and complete local catalog management CLI governed by `.10x/specs/superseded/production-local-namespace-catalog.md`.
 
 ## Branch and worktree
 

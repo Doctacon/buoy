@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-15
 Updated: 2026-07-15
-Relates-To: .10x/tickets/done/2026-07-15-integrate-approved-apply-catalog-registration.md, .10x/specs/approved-apply-catalog-registration.md, .10x/specs/production-local-namespace-catalog.md
+Relates-To: .10x/tickets/done/2026-07-15-integrate-approved-apply-catalog-registration.md, .10x/specs/superseded/approved-apply-catalog-registration.md, .10x/specs/superseded/production-local-namespace-catalog.md
 
 # Approved Apply Catalog Registration Implementation Evidence
 

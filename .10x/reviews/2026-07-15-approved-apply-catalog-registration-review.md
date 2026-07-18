@@ -8,7 +8,7 @@ Verdict: pass
 
 ## Target
 
-Independent lifecycle/safety and compatibility review of approved apply catalog registration, pending recovery, CLI/docs/tests, evidence, and ticket against `.10x/specs/approved-apply-catalog-registration.md`.
+Independent lifecycle/safety and compatibility review of approved apply catalog registration, pending recovery, CLI/docs/tests, evidence, and ticket against `.10x/specs/superseded/approved-apply-catalog-registration.md`.
 
 ## Findings and resolution
 

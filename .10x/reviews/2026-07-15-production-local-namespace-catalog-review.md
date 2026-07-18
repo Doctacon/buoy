@@ -8,7 +8,7 @@ Verdict: pass
 
 ## Target
 
-Independent review of the production catalog core, CLI, tests, documentation, evidence, and active ticket against `.10x/specs/production-local-namespace-catalog.md`.
+Independent review of the production catalog core, CLI, tests, documentation, evidence, and active ticket against `.10x/specs/superseded/production-local-namespace-catalog.md`.
 
 ## Findings and resolution
 

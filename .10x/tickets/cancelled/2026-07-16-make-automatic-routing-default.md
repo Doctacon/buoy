@@ -1,6 +1,6 @@
-Status: open
+Status: cancelled
 Created: 2026-07-16
-Updated: 2026-07-16
+Updated: 2026-07-18
 Parent: None
 Depends-On: .10x/tickets/done/2026-07-15-production-semantic-routing-plan.md
 
@@ -8,7 +8,7 @@ Depends-On: .10x/tickets/done/2026-07-15-production-semantic-routing-plan.md
 
 ## Scope
 
-Implement `.10x/specs/default-production-namespace-routing.md`:
+Implement `.10x/specs/superseded/default-production-namespace-routing.md`:
 
 - route automatically whenever retrieve has no CLI `--namespace`;
 - preserve explicit repeatable CLI namespaces as the sole manual override;
@@ -36,10 +36,10 @@ Removing `--namespace`; removing `--auto-route`; adding `--no-auto-route`; chang
 
 ## References
 
-- `.10x/decisions/production-routing-default-local-catalog.md`
-- `.10x/specs/default-production-namespace-routing.md`
+- `.10x/decisions/superseded/production-routing-default-local-catalog.md`
+- `.10x/specs/superseded/default-production-namespace-routing.md`
 - `.10x/specs/explicit-multi-namespace-retrieval.md`
-- `.10x/specs/production-local-namespace-catalog.md`
+- `.10x/specs/superseded/production-local-namespace-catalog.md`
 
 ## Evidence expectations
 
@@ -50,3 +50,8 @@ Argument/precedence matrix including live/dry, contradictory modes, duplicate/em
 None. The user ratified default automatic routing, no retrieval namespace environment behavior, and retained explicit CLI namespace override on 2026-07-16.
 
 ## Progress and notes
+
+
+## Cancellation
+
+Cancelled on 2026-07-18 before implementation. The user superseded the working-directory local-catalog architecture with live Turbopuffer namespace discovery plus a dedicated remote card namespace. No runtime code or tests were produced under this ticket. Replacement owner: `.10x/tickets/2026-07-18-remote-semantic-routing-plan.md`.

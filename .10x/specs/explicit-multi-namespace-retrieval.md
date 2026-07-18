@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-14
-Updated: 2026-07-16
+Updated: 2026-07-18
 
 # Explicit Multi-Namespace Retrieval
 
@@ -13,8 +13,8 @@ Remove the silent demo-namespace retrieval fallback and allow an operator to sea
 - `buoy retrieve` MUST accept repeatable `--namespace ID` arguments as the sole manual namespace-selection override.
 - One or more CLI namespaces MUST bypass default catalog routing and retain their supplied order.
 - `TURBOPUFFER_NAMESPACE` MUST NOT supply a retrieval namespace; retrieve must not read or warn about it.
-- When no CLI namespace is supplied, selection is governed by `.10x/specs/default-production-namespace-routing.md` rather than this explicit mode.
-- Explicit namespaces combined with automatic-only `--auto-route`, `--route-top-k`, or retrieve `--catalog` options MUST fail before credential, model, catalog, or Turbopuffer work.
+- When no CLI namespace is supplied, selection is governed by `.10x/specs/default-remote-namespace-routing.md` rather than this explicit mode.
+- Explicit namespaces combined with automatic-only `--auto-route` or `--route-top-k` options MUST fail before credential, model, catalog, or Turbopuffer work. Retrieve `--catalog` no longer exists.
 - The hard-coded demo namespace MUST NOT be used by live or dry-run retrieval.
 
 ## Query execution
@@ -45,7 +45,7 @@ Remove the silent demo-namespace retrieval fallback and allow an operator to sea
 
 ### Missing selection
 
-Given no CLI namespace, when dry-run or live retrieval starts, then default catalog routing selects namespaces and never uses a demo or environment namespace.
+Given no CLI namespace, when dry-run or live retrieval starts, then default remote catalog routing discovers/selects namespaces and never uses a demo or environment namespace.
 
 ### One namespace
 

@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-15
 Updated: 2026-07-15
-Relates-To: .10x/tickets/done/2026-07-15-build-production-local-namespace-catalog.md, .10x/specs/production-local-namespace-catalog.md
+Relates-To: .10x/tickets/done/2026-07-15-build-production-local-namespace-catalog.md, .10x/specs/superseded/production-local-namespace-catalog.md
 
 # Production Local Namespace Catalog Implementation Evidence
 

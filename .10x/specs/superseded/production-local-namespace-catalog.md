@@ -1,6 +1,6 @@
-Status: active
+Status: superseded
 Created: 2026-07-15
-Updated: 2026-07-16
+Updated: 2026-07-18
 
 # Production Local Namespace Catalog
 
@@ -8,7 +8,7 @@ Updated: 2026-07-16
 
 Define the canonical local catalog that production automatic routing reads and approved apply updates. The catalog owns namespace-card semantics, enabled state, retrieval compatibility, persisted routing vectors, revisions, and local lifecycle commands.
 
-This specification implements the catalog/apply choices preserved by `.10x/decisions/production-routing-default-local-catalog.md`. It does not make the catalog an authorization system, remote namespace registry, taxonomy, graph, or source of truth for Turbopuffer contents.
+This specification implements the catalog/apply choices preserved by `.10x/decisions/superseded/production-routing-default-local-catalog.md`. It does not make the catalog an authorization system, remote namespace registry, taxonomy, graph, or source of truth for Turbopuffer contents.
 
 ## Authority and location
 

@@ -8,7 +8,7 @@ Depends-On: .10x/tickets/done/2026-07-15-build-production-local-namespace-catalo
 
 ## Outcome
 
-Extend plan/apply with catalog preview, precomputed pending registration, post-success local commit, partial-success reporting, and idempotent reconciliation under `.10x/specs/approved-apply-catalog-registration.md`.
+Extend plan/apply with catalog preview, precomputed pending registration, post-success local commit, partial-success reporting, and idempotent reconciliation under `.10x/specs/superseded/approved-apply-catalog-registration.md`.
 
 ## Branch and worktree
 

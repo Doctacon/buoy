@@ -30,7 +30,7 @@ Activation rules:
 
 ## Catalog load and eligibility
 
-Before scoring, load and fully validate the catalog under `.10x/specs/production-local-namespace-catalog.md`.
+Before scoring, load and fully validate the catalog under `.10x/specs/superseded/production-local-namespace-catalog.md`.
 
 A card is eligible only when:
 

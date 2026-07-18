@@ -1,6 +1,6 @@
-Status: active
+Status: superseded
 Created: 2026-07-16
-Updated: 2026-07-16
+Updated: 2026-07-18
 
 # Default Production Namespace Routing
 
@@ -8,7 +8,7 @@ Updated: 2026-07-16
 
 Make catalog routing the default namespace-selection mode for `buoy retrieve` when no CLI namespace is supplied, while retaining explicit CLI namespace retrieval as the sole manual override and reusing existing multi-namespace retrieval and cross-namespace RRF.
 
-This specification implements `.10x/decisions/production-routing-default-local-catalog.md`. It supersedes `.10x/specs/superseded/automatic-production-namespace-routing.md`.
+This specification implements `.10x/decisions/superseded/production-routing-default-local-catalog.md`. It supersedes `.10x/specs/superseded/automatic-production-namespace-routing.md`.
 
 ## CLI activation
 
@@ -39,7 +39,7 @@ Validation and error precedence MUST be deterministic:
 
 ## Catalog load and eligibility
 
-Before scoring, load and fully validate the catalog under `.10x/specs/production-local-namespace-catalog.md`.
+Before scoring, load and fully validate the catalog under `.10x/specs/superseded/production-local-namespace-catalog.md`.
 
 A card is eligible only when:
 
