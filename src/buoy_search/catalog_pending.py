@@ -569,7 +569,10 @@ def reconcile_pending(
             locked = load_pending_snapshot(path)
             desired = parse_card(payload["prospective_card"])
         resource = client.namespace(REMOTE_CATALOG_NAMESPACE)
-        current_values = read_remote_card_twice(resource, namespace=desired.namespace, region=region)
+        current_values = read_remote_card_twice(
+            resource, namespace=desired.namespace, region=region,
+            preserve_reads=action == "accept_remote",
+        )
         current = current_values[0] if current_values else None
         affected_ids: list[str] = []
         accepted: NamespaceCard | None = None
@@ -578,9 +581,8 @@ def reconcile_pending(
                 raise PendingCatalogError("accept-remote requires an exact expected remote revision")
             if current is None:
                 raise RemoteCatalogError("accept-remote requires an existing stable remote card")
-            # The helper already compared exactly two strong reads; do not issue a second pair.
             accepted = validate_accept_remote(
-                current_reads=[current, current], pending=desired,
+                current_reads=current_values, pending=desired,
                 expected_remote_revision=expected_remote_revision,
             )
             result_action = "accepted_remote"

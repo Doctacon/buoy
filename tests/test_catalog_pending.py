@@ -106,6 +106,7 @@ class FakeRemoteCatalog:
         self.create_calls: list[NamespaceCard] = []
         self.update_calls: list[tuple[NamespaceCard, str]] = []
         self.strong_reads = 0
+        self.strong_read_cards: tuple[NamespaceCard | None, NamespaceCard | None] | None = None
 
     def namespace(self, name: str) -> object:
         if name != REMOTE_CATALOG_NAMESPACE:
@@ -160,12 +161,17 @@ class FakeRemoteCatalog:
         self.cards = [item for item in self.cards if item.namespace != card.namespace] + [card]
         return MutationResult(True, card, 1, (remote_card_id(card.namespace),))
 
-    def read_twice(self, resource, *, namespace: str, region: str) -> tuple[NamespaceCard, ...]:  # noqa: ANN001
+    def read_twice(
+        self, resource, *, namespace: str, region: str, preserve_reads: bool = False,
+    ) -> tuple[NamespaceCard, ...]:  # noqa: ANN001
         if resource is not self.resource or region != REGION:
             raise AssertionError("unexpected fake read binding")
         self.strong_reads += 2
         card = next((item for item in self.cards if item.namespace == namespace), None)
-        return (card,) if card else ()
+        reads = self.strong_read_cards or (card, card)
+        if preserve_reads:
+            return tuple(value for value in reads if value is not None)
+        return (reads[0],) if reads[0] is not None else ()
 
 
 class CatalogPendingIntegrationTests(unittest.TestCase):
@@ -462,6 +468,25 @@ class CatalogPendingIntegrationTests(unittest.TestCase):
         self.assertEqual(output["operator_accepted_exact_revision"], remote.card_revision)
         self.assertFalse(output["content_replayed"])
         self.assertTrue(pending_cleaned)
+
+    def test_accept_remote_rejects_a_different_second_strong_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path, payload = self.make_confirmed_pending(Path(tmp))
+            desired = parse_card(payload["prospective_card"])
+            first = revised_card(desired, last_plan_id="other-plan", last_apply_id="other-apply")
+            second = revised_card(first, title="Concurrent operator edit")
+            self.remote.cards = [first]
+            self.remote.strong_read_cards = (first, second)
+            result, stdout, stderr = self.reconcile(
+                path, "--accept-remote", "--approve",
+                "--expected-remote-revision", first.card_revision,
+            )
+            pending_retained = path.exists()
+
+        self.assertEqual((result, stdout), (2, ""))
+        self.assertIn("accept-remote remote card changed between strong reads", stderr)
+        self.assertEqual(self.remote.strong_reads, 2)
+        self.assertTrue(pending_retained)
 
     def test_recovery_modes_require_approval_expected_revision_and_mutual_exclusion(self) -> None:
         cases = [

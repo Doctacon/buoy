@@ -379,8 +379,9 @@ def read_remote_card_twice(
     *,
     namespace: str,
     region: str,
+    preserve_reads: bool = False,
 ) -> tuple[NamespaceCard, ...]:
-    """Strongly read one exact remote card twice, returning zero or one stable card."""
+    """Strongly read one exact remote card twice, optionally preserving both reads."""
 
     _validate_target_namespace(namespace, allow_reserved=False)
     return _read_exact_cards_twice(
@@ -388,6 +389,7 @@ def read_remote_card_twice(
         [remote_card_id(namespace)],
         region=region,
         allow_missing=True,
+        preserve_single_reads=preserve_reads,
     )
 
 
@@ -861,6 +863,7 @@ def _read_exact_cards_twice(
     *,
     region: str,
     allow_missing: bool = False,
+    preserve_single_reads: bool = False,
 ) -> tuple[NamespaceCard, ...]:
     expected = tuple(sorted(row_ids))
     passes: list[tuple[NamespaceCard, ...]] = []
@@ -890,10 +893,14 @@ def _read_exact_cards_twice(
             elif not allow_missing:
                 raise RemoteCatalogError(f"card verification did not find expected row {row_id!r}")
         passes.append(tuple(sorted(rows, key=lambda card: card.namespace)))
-    if [card_to_dict(card, include_vector=True) for card in passes[0]] != [
-        card_to_dict(card, include_vector=True) for card in passes[1]
-    ]:
+    if not preserve_single_reads and [
+        card_to_dict(card, include_vector=True) for card in passes[0]
+    ] != [card_to_dict(card, include_vector=True) for card in passes[1]]:
         raise RemoteCatalogError("card verification changed between strong read passes")
+    if preserve_single_reads:
+        if any(len(current_pass) > 1 for current_pass in passes):
+            raise RemoteCatalogError("single-card verification returned multiple cards")
+        return tuple(current_pass[0] for current_pass in passes if current_pass)
     return passes[0]
 
 
