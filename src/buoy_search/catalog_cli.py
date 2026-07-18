@@ -23,6 +23,7 @@ from buoy_search.catalog import (
     utc_now,
 )
 from buoy_search.catalog_pending import (
+    CatalogCommitPartialSuccess,
     PendingCatalogError,
     abandon_pending,
     reconcile_pending,
@@ -642,13 +643,30 @@ def _run_reconcile(args: argparse.Namespace) -> int:
             args.pending,
             client=client,
             region=region,
+            compatibility=_compatibility(region),
             action=action,
             expected_remote_revision=args.expected_remote_revision,
             embedder=load_routing_embedder() if args.rebase else None,
         )
+    except CatalogCommitPartialSuccess as exc:
+        payload = exc.summary
+        _emit(payload, json_output=args.json, text_lines=[
+            f"Pending remote catalog action: {payload['action']} for {payload['namespace']}.",
+            f"Verified card revision: {payload['card_revision']}.",
+            "Full catalog snapshot or pending cleanup is incomplete; pending state was retained.",
+            f"Recovery: {payload['catalog_repair_command']}",
+        ])
+        if not args.json:
+            print(str(exc), file=sys.stderr)
+        return 2
     except (PendingCatalogError, RemoteCatalogError, CatalogError, RuntimeError, OSError) as exc:
         return _remote_failure(exc)
-    _emit(payload, json_output=args.json, text_lines=[f"Pending remote catalog action: {payload['action']} for {payload['namespace']}."])
+    _emit(payload, json_output=args.json, text_lines=[
+        f"Pending remote catalog action: {payload['action']} for {payload['namespace']}.",
+        f"Verified card revision: {payload['card_revision']}.",
+        f"Post-operation remote snapshot: {payload['snapshot_revision']}.",
+        "Pending registration cleanup complete; content was not replayed.",
+    ])
     return 0
 
 
@@ -660,6 +678,7 @@ def _run_abandon_pending(args: argparse.Namespace) -> int:
     _emit(payload, json_output=args.json, text_lines=[
         f"{'Abandoned' if args.approve else 'Preview: abandon'} unconfirmed pending registration {args.pending}.",
         str(payload["warning"]),
+        "Remote state: not read; no stable snapshot is claimed.",
         "No credentials were read and no remote service was contacted.",
     ])
     return 0

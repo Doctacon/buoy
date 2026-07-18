@@ -573,20 +573,16 @@ def run_approved_apply(
                     region=config.region,
                 )
             )
-            final_snapshot = read_remote_catalog(
-                remote_client, region=config.region, compatibility=compatibility
-            )
-            committed = next(
-                (item for item in final_snapshot.cards if item.namespace == namespace), None
-            )
+            committed = mutation.card
             if committed is None or committed.card_revision != card.card_revision:
-                raise RemoteCatalogError("final remote catalog snapshot does not contain committed card")
+                raise RemoteCatalogError("verified remote card mutation returned an unexpected card")
         except (RemoteCatalogError, CatalogError, OSError, ValueError) as exc:
             partial = {
                 **base_summary,
                 "content_applied": True,
                 "remote_apply_succeeded": True,
                 "catalog_updated": False,
+                "catalog_snapshot_complete": False,
                 "pending_cleanup": False,
                 "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
                 "pending_path": str(pending_path),
@@ -594,6 +590,38 @@ def run_approved_apply(
             }
             raise CatalogCommitPartialSuccess(str(exc), partial) from exc
 
+        committed_summary = {
+            **base_summary,
+            "content_applied": True,
+            "remote_apply_succeeded": True,
+            "catalog_updated": True,
+            "pending_cleanup": False,
+            "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
+            "snapshot_revision": None,
+            "card_revision": committed.card_revision,
+            "target_namespace": committed.namespace,
+            "affected_ids": list(mutation.affected_ids),
+            "pending_path": str(pending_path),
+            "catalog_repair_command": reconcile_command(pending_path),
+        }
+        try:
+            final_snapshot = read_remote_catalog(
+                remote_client, region=config.region, compatibility=compatibility
+            )
+            final_card = next(
+                (item for item in final_snapshot.cards if item.namespace == namespace), None
+            )
+            if final_card is None or final_card.card_revision != committed.card_revision:
+                raise RemoteCatalogError("final remote catalog snapshot does not contain committed card")
+        except (RemoteCatalogError, CatalogError, OSError, ValueError) as exc:
+            raise CatalogCommitPartialSuccess(
+                str(exc), {**committed_summary, "catalog_snapshot_complete": False}
+            ) from exc
+
+        committed_summary.update({
+            "catalog_snapshot_complete": True,
+            "snapshot_revision": final_snapshot.snapshot_revision,
+        })
         try:
             remove_expected_pending(
                 pending_path,
@@ -602,33 +630,11 @@ def run_approved_apply(
                 expected_inode=confirmed_snapshot.inode,
             )
         except (OSError, ValueError) as exc:
-            partial = {
-                **base_summary,
-                "content_applied": True,
-                "remote_apply_succeeded": True,
-                "catalog_updated": True,
-                "pending_cleanup": False,
-                "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
-                "snapshot_revision": final_snapshot.snapshot_revision,
-                "card_revision": committed.card_revision,
-                "target_namespace": committed.namespace,
-                "affected_ids": list(mutation.affected_ids),
-                "pending_path": str(pending_path),
-                "catalog_repair_command": reconcile_command(pending_path),
-            }
-            raise CatalogCommitPartialSuccess(str(exc), partial) from exc
+            raise CatalogCommitPartialSuccess(str(exc), committed_summary) from exc
 
         return {
-            **base_summary,
-            "content_applied": True,
-            "remote_apply_succeeded": True,
-            "catalog_updated": True,
+            **committed_summary,
             "pending_cleanup": True,
-            "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
-            "snapshot_revision": final_snapshot.snapshot_revision,
-            "card_revision": committed.card_revision,
-            "target_namespace": committed.namespace,
-            "affected_ids": list(mutation.affected_ids),
         }
 
 

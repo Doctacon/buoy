@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 import json
 import os
 from pathlib import Path
@@ -27,10 +27,14 @@ from buoy_search.catalog import (
 )
 from buoy_search.remote_catalog import (
     REMOTE_CATALOG_NAMESPACE,
+    CompatibilityContract,
+    MutationResult,
     RemoteCatalogError,
+    RemoteCatalogSnapshot,
     RemoteClient,
     create_remote_cards,
     read_remote_card_twice,
+    read_remote_catalog,
     rebase_remote_card,
     update_remote_card,
     validate_accept_remote,
@@ -538,11 +542,78 @@ def _confirmed_card(payload: dict[str, Any], state: Any) -> NamespaceCard:
     )
 
 
+def _reconcile_output(
+    *,
+    path: Path,
+    region: str,
+    desired: NamespaceCard,
+    accepted: NamespaceCard,
+    action: str,
+    affected_ids: list[str],
+    mutation: MutationResult | None,
+    snapshot: RemoteCatalogSnapshot | None,
+    expected_remote_revision: str | None,
+) -> dict[str, Any]:
+    read = snapshot.metrics if snapshot else None
+    mutation_metrics = mutation.metrics if mutation else None
+    namespace_pages = read.namespace_list_pages if read else 0
+    metadata_requests = read.metadata_requests if read else 0
+    card_pages = read.card_query_pages if read else 0
+    verification_requests = mutation_metrics.verification_query_requests if mutation_metrics else 0
+    write_requests = mutation_metrics.write_requests if mutation_metrics else 0
+    billing = list(read.billing if read else ())
+    billing.extend(mutation_metrics.billing if mutation_metrics else ())
+    return {
+        "command": "catalog reconcile",
+        "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
+        "region": region,
+        "snapshot_revision": snapshot.snapshot_revision if snapshot else None,
+        "catalog_snapshot_complete": snapshot is not None,
+        "counts": asdict(snapshot.counts) if snapshot else None,
+        "read_metrics": {
+            "namespace_list_pages": namespace_pages,
+            "metadata_requests": metadata_requests,
+            "card_query_pages": card_pages,
+            "billing": list(read.billing if read else ()),
+        },
+        "request_summary": {
+            "namespace_list_requests": namespace_pages,
+            "metadata_requests": metadata_requests,
+            "catalog_page_query_requests": card_pages,
+            "precondition_verification_query_requests": 2,
+            "mutation_verification_query_requests": verification_requests,
+            "write_requests": write_requests,
+            "total_requests": (
+                namespace_pages + metadata_requests + card_pages
+                + 2 + verification_requests + write_requests
+            ),
+            "billing": billing,
+            "billing_complete": False,
+        },
+        "namespace": desired.namespace,
+        "pending_path": str(path),
+        "pending_cleanup": False,
+        "action": action,
+        "catalog_updated": action != "accepted_remote",
+        "affected_ids": affected_ids,
+        "card_revision": accepted.card_revision,
+        "pending_plan_id": desired.last_plan_id,
+        "pending_apply_id": desired.last_apply_id,
+        "remote_plan_id": accepted.last_plan_id,
+        "remote_apply_id": accepted.last_apply_id,
+        "remote_revision": accepted.card_revision,
+        "operator_accepted_exact_revision": expected_remote_revision if action == "accepted_remote" else None,
+        "content_replayed": False,
+        "catalog_repair_command": reconcile_command(path),
+    }
+
+
 def reconcile_pending(
     path: Path,
     *,
     client: RemoteClient,
     region: str,
+    compatibility: CompatibilityContract,
     action: str = "ordinary",
     expected_remote_revision: str | None = None,
     embedder: RoutingEmbedder | None = None,
@@ -576,6 +647,7 @@ def reconcile_pending(
         current = current_values[0] if current_values else None
         affected_ids: list[str] = []
         accepted: NamespaceCard | None = None
+        mutation: MutationResult | None = None
         if action == "accept_remote":
             if not expected_remote_revision:
                 raise PendingCatalogError("accept-remote requires an exact expected remote revision")
@@ -591,11 +663,11 @@ def reconcile_pending(
                 raise RemoteCatalogError("safe rebase requires a current remote card")
             base = parse_card(payload["base_card"]) if payload["base_card"] else None
             rebased = rebase_remote_card(base=base, current=current, pending=desired, embedder=embedder)
-            result = update_remote_card(
+            mutation = update_remote_card(
                 resource, rebased, expected_revision=current.card_revision, region=region
             )
-            affected_ids = list(result.affected_ids)
-            accepted = result.card
+            affected_ids = list(mutation.affected_ids)
+            accepted = mutation.card
             result_action = "rebased"
         else:
             if current is not None and card_to_dict(current, include_vector=True) == card_to_dict(desired, include_vector=True):
@@ -604,39 +676,49 @@ def reconcile_pending(
             elif payload["expected_card_revision"] is None:
                 if current is not None:
                     raise RemoteCatalogError("conditional card create conflicted with current remote state")
-                result = create_remote_cards(resource, [desired], region=region)
-                affected_ids = list(result.affected_ids)
-                accepted = result.card
+                mutation = create_remote_cards(resource, [desired], region=region)
+                affected_ids = list(mutation.affected_ids)
+                accepted = mutation.card
                 result_action = "committed"
             else:
                 if current is None or current.card_revision != payload["expected_card_revision"]:
                     raise RemoteCatalogError("conditional card update conflicted with current remote revision")
-                result = update_remote_card(
+                mutation = update_remote_card(
                     resource, desired,
                     expected_revision=str(payload["expected_card_revision"]), region=region,
                 )
-                affected_ids = list(result.affected_ids)
-                accepted = result.card
+                affected_ids = list(mutation.affected_ids)
+                accepted = mutation.card
                 result_action = "committed"
-        remove_expected_pending(
-            path, payload, expected_device=locked.device, expected_inode=locked.inode
+        if accepted is None:
+            raise RemoteCatalogError("verified reconcile action returned no remote card")
+        try:
+            snapshot = read_remote_catalog(client, region=region, compatibility=compatibility)
+            snapshot_card = next(
+                (card for card in snapshot.cards if card.namespace == accepted.namespace), None
+            )
+            if snapshot_card is None or snapshot_card.card_revision != accepted.card_revision:
+                raise RemoteCatalogError("post-reconcile remote catalog snapshot does not contain verified card")
+        except (RemoteCatalogError, CatalogError, OSError, ValueError) as exc:
+            partial = _reconcile_output(
+                path=path, region=region, desired=desired, accepted=accepted,
+                action=result_action, affected_ids=affected_ids, mutation=mutation,
+                snapshot=None, expected_remote_revision=expected_remote_revision,
+            )
+            raise CatalogCommitPartialSuccess(str(exc), partial) from exc
+        output = _reconcile_output(
+            path=path, region=region, desired=desired, accepted=accepted,
+            action=result_action, affected_ids=affected_ids, mutation=mutation,
+            snapshot=snapshot, expected_remote_revision=expected_remote_revision,
         )
-        return {
-            "command": "catalog reconcile",
-            "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
-            "region": region,
-            "namespace": desired.namespace,
-            "pending_path": str(path),
-            "action": result_action,
-            "affected_ids": affected_ids,
-            "pending_plan_id": desired.last_plan_id,
-            "pending_apply_id": desired.last_apply_id,
-            "remote_plan_id": accepted.last_plan_id if accepted else None,
-            "remote_apply_id": accepted.last_apply_id if accepted else None,
-            "remote_revision": accepted.card_revision if accepted else None,
-            "operator_accepted_exact_revision": expected_remote_revision if action == "accept_remote" else None,
-            "content_replayed": False,
-        }
+        try:
+            remove_expected_pending(
+                path, payload, expected_device=locked.device, expected_inode=locked.inode
+            )
+        except (OSError, ValueError) as exc:
+            raise CatalogCommitPartialSuccess(str(exc), output) from exc
+        output["pending_cleanup"] = True
+        return output
 
 
 def abandon_pending(path: Path, *, approve: bool) -> dict[str, Any]:
@@ -660,6 +742,26 @@ def abandon_pending(path: Path, *, approve: bool) -> dict[str, Any]:
             "command": "catalog abandon-pending",
             "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
             "region": payload["region"],
+            "snapshot_revision": None,
+            "counts": None,
+            "read_metrics": {
+                "namespace_list_pages": 0,
+                "metadata_requests": 0,
+                "card_query_pages": 0,
+                "billing": [],
+            },
+            "request_summary": {
+                "namespace_list_requests": 0,
+                "metadata_requests": 0,
+                "catalog_page_query_requests": 0,
+                "precondition_verification_query_requests": 0,
+                "mutation_verification_query_requests": 0,
+                "write_requests": 0,
+                "total_requests": 0,
+                "billing": [],
+                "billing_complete": True,
+            },
+            "remote_state": "not_read",
             "namespace": payload["namespace"],
             "pending_path": str(path),
             "approved": approve,

@@ -17,12 +17,13 @@ from buoy_search.catalog import (
     NamespaceCard,
     card_revision,
     card_to_dict,
+    catalog_revision,
     parse_card,
     prepare_card,
 )
 import buoy_search.catalog_pending as pending_module
 from buoy_search.catalog_pending import load_pending
-from buoy_search.cli import main
+from buoy_search.cli import main, print_apply_text
 from buoy_search.remote_catalog import (
     REMOTE_CATALOG_NAMESPACE,
     CatalogCounts,
@@ -107,6 +108,8 @@ class FakeRemoteCatalog:
         self.update_calls: list[tuple[NamespaceCard, str]] = []
         self.strong_reads = 0
         self.strong_read_cards: tuple[NamespaceCard | None, NamespaceCard | None] | None = None
+        self.snapshot_calls = 0
+        self.snapshot_error_on_call: int | None = None
 
     def namespace(self, name: str) -> object:
         if name != REMOTE_CATALOG_NAMESPACE:
@@ -117,6 +120,9 @@ class FakeRemoteCatalog:
         if client is not self.client or region != REGION:
             raise AssertionError("unexpected fake remote binding")
         del compatibility
+        self.snapshot_calls += 1
+        if self.snapshot_error_on_call == self.snapshot_calls:
+            raise RemoteCatalogError("simulated full catalog snapshot failure")
         live = tuple(sorted(card.namespace for card in self.cards))
         return RemoteCatalogSnapshot(
             cards=tuple(self.cards),
@@ -126,7 +132,7 @@ class FakeRemoteCatalog:
             stale_target_ids=(),
             disabled_ids=tuple(card.namespace for card in self.cards if not card.enabled),
             incompatible_ids=(),
-            snapshot_revision="fake-snapshot",
+            snapshot_revision=catalog_revision(self.cards),
             counts=CatalogCounts(
                 listed_total=1 + len(live), control_plane_count=1,
                 content_live_count=len(live), card_count=len(self.cards),
@@ -187,6 +193,7 @@ class CatalogPendingIntegrationTests(unittest.TestCase):
             patch("buoy_search.apply.update_remote_card", side_effect=self.remote.update),
             patch("buoy_search.catalog_cli.REMOTE_CATALOG_CLIENT_FACTORY", return_value=self.remote.client),
             patch("buoy_search.catalog_pending.read_remote_card_twice", side_effect=self.remote.read_twice),
+            patch("buoy_search.catalog_pending.read_remote_catalog", side_effect=self.remote.snapshot),
             patch("buoy_search.catalog_pending.create_remote_cards", side_effect=self.remote.create),
             patch("buoy_search.catalog_pending.update_remote_card", side_effect=self.remote.update),
             patch("buoy_search.remote_catalog.create_client", side_effect=AssertionError("real SDK factory used")),
@@ -220,6 +227,7 @@ class CatalogPendingIntegrationTests(unittest.TestCase):
         result, stdout, stderr = self.apply(plan_path, state_root)
         self.assertEqual(result, 2, (stdout, stderr))
         output = json.loads(stdout)
+        self.assertFalse(output["catalog_updated"])
         path = Path(output["pending_path"])
         payload = load_pending(path)
         state = load_applied_state(
@@ -288,6 +296,57 @@ class CatalogPendingIntegrationTests(unittest.TestCase):
         self.assertEqual(len(self.remote.create_calls), 1)
         self.assertTrue(pending_cleaned)
 
+    def test_verified_apply_mutation_snapshot_failure_reports_committed_revision_and_retains_pending(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            artifacts, plan_path = build_saved_plan(root, state_root=state_root)
+            self.remote.snapshot_error_on_call = 2
+            result, stdout, stderr = self.apply(plan_path, state_root)
+            output = json.loads(stdout)
+            pending_path = Path(output["pending_path"])
+            pending = load_pending(pending_path)
+            pending_retained = pending_path.exists()
+            text = StringIO()
+            with redirect_stdout(text):
+                print_apply_text(output)
+
+        self.assertEqual((result, stderr), (2, ""))
+        self.assertTrue(output["catalog_updated"])
+        self.assertFalse(output["catalog_snapshot_complete"])
+        self.assertFalse(output["pending_cleanup"])
+        self.assertIsNone(output["snapshot_revision"])
+        self.assertEqual(output["card_revision"], self.remote.cards[0].card_revision)
+        self.assertEqual(output["catalog_repair_command"], f"buoy catalog reconcile --pending {pending_path}")
+        self.assertTrue(pending["remote_apply_confirmed"])
+        self.assertTrue(pending_retained)
+        self.assertEqual(len(FakeWriter.rows), output["rows_upserted"])
+        self.assertNotIn("fake-secret", stdout)
+        self.assertNotIn(artifacts.manifest.chunks[0].content, stdout)
+        self.assertNotIn('"vector"', stdout)
+        self.assertIn(f"committed_card_revision: {output['card_revision']}", text.getvalue())
+        self.assertIn("catalog_snapshot: incomplete", text.getvalue())
+        self.assertIn(output["catalog_repair_command"], text.getvalue())
+
+    def test_verified_apply_mutation_cleanup_failure_reports_stable_snapshot_and_retains_pending(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            _artifacts, plan_path = build_saved_plan(root, state_root=state_root)
+            with patch("buoy_search.apply.remove_expected_pending", side_effect=OSError("cleanup denied")):
+                result, stdout, stderr = self.apply(plan_path, state_root)
+            output = json.loads(stdout)
+            pending_path = Path(output["pending_path"])
+            pending_retained = pending_path.exists()
+
+        self.assertEqual((result, stderr), (2, ""))
+        self.assertTrue(output["catalog_updated"])
+        self.assertTrue(output["catalog_snapshot_complete"])
+        self.assertFalse(output["pending_cleanup"])
+        self.assertEqual(output["snapshot_revision"], catalog_revision(self.remote.cards))
+        self.assertEqual(output["card_revision"], self.remote.cards[0].card_revision)
+        self.assertTrue(pending_retained)
+
     def test_approved_update_preserves_manual_semantics_and_disabled_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -341,11 +400,75 @@ class CatalogPendingIntegrationTests(unittest.TestCase):
         self.assertIn("indeterminate", rerun_stderr)
         self.assertEqual(FakeWriter.rows, [])
 
+    def test_abandon_preview_and_approval_are_api_free_with_null_zero_common_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            artifacts, plan_path = build_saved_plan(root, state_root=state_root)
+            FakeWriter.should_fail = True
+            failed, _stdout, _stderr = self.apply(plan_path, state_root)
+            pending_path = next((state_root.resolve() / "catalog-pending").glob("*.json"))
+            reset_fakes()
+            with patch(
+                "buoy_search.catalog_cli.REMOTE_CATALOG_CLIENT_FACTORY",
+                side_effect=AssertionError("abandon contacted remote"),
+            ):
+                preview_result, preview_stdout, preview_stderr = run_cli([
+                    "catalog", "abandon-pending", "--pending", str(pending_path),
+                    "--region", REGION, "--json",
+                ])
+                approved_result, approved_stdout, approved_stderr = run_cli([
+                    "catalog", "abandon-pending", "--pending", str(pending_path),
+                    "--approve", "--region", REGION, "--json",
+                ])
+            preview = json.loads(preview_stdout)
+            approved = json.loads(approved_stdout)
+            pending_removed = not pending_path.exists()
+
+        self.assertEqual(failed, 2)
+        self.assertEqual((preview_result, preview_stderr), (0, ""))
+        self.assertEqual((approved_result, approved_stderr), (0, ""))
+        for output in (preview, approved):
+            self.assertEqual(output["catalog_namespace"], REMOTE_CATALOG_NAMESPACE)
+            self.assertEqual(output["region"], REGION)
+            self.assertIsNone(output["snapshot_revision"])
+            self.assertIsNone(output["counts"])
+            self.assertEqual(output["remote_state"], "not_read")
+            self.assertEqual(output["read_metrics"], {
+                "namespace_list_pages": 0, "metadata_requests": 0,
+                "card_query_pages": 0, "billing": [],
+            })
+            self.assertEqual(output["request_summary"]["total_requests"], 0)
+            self.assertEqual(output["request_summary"]["billing"], [])
+            self.assertNotIn("fake-secret", json.dumps(output))
+            self.assertNotIn(artifacts.manifest.chunks[0].content, json.dumps(output))
+        self.assertFalse(preview["approved"])
+        self.assertTrue(approved["approved"])
+        self.assertTrue(pending_removed)
+
+    def test_confirmed_pending_cannot_be_abandoned_without_remote_access(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path, _payload = self.make_confirmed_pending(Path(tmp))
+            with patch(
+                "buoy_search.catalog_cli.REMOTE_CATALOG_CLIENT_FACTORY",
+                side_effect=AssertionError("abandon contacted remote"),
+            ):
+                result, stdout, stderr = run_cli([
+                    "catalog", "abandon-pending", "--pending", str(path),
+                    "--approve", "--region", REGION, "--json",
+                ])
+            pending_retained = path.exists()
+
+        self.assertEqual((result, stdout), (2, ""))
+        self.assertIn("must be reconciled", stderr)
+        self.assertTrue(pending_retained)
+
     def test_catalog_failure_retains_confirmed_pending_and_ordinary_recovery_replays_no_content(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             path, payload = self.make_confirmed_pending(root)
             writes = len(FakeWriter.rows)
+            pre_operation_revision = catalog_revision(self.remote.cards)
             result, stdout, stderr = self.reconcile(path)
             output = json.loads(stdout)
             pending_cleaned = not path.exists()
@@ -355,7 +478,42 @@ class CatalogPendingIntegrationTests(unittest.TestCase):
         self.assertFalse(output["content_replayed"])
         self.assertEqual(len(FakeWriter.rows), writes)
         self.assertTrue(pending_cleaned)
+        self.assertTrue(output["pending_cleanup"])
+        self.assertTrue(output["catalog_snapshot_complete"])
+        self.assertNotEqual(output["snapshot_revision"], pre_operation_revision)
+        self.assertEqual(output["snapshot_revision"], catalog_revision(self.remote.cards))
+        self.assertEqual(output["card_revision"], self.remote.cards[0].card_revision)
+        self.assertEqual(output["affected_ids"], [remote_card_id(self.remote.cards[0].namespace)])
+        self.assertEqual(output["read_metrics"]["namespace_list_pages"], 2)
+        self.assertEqual(output["request_summary"]["precondition_verification_query_requests"], 2)
+        self.assertEqual(output["request_summary"]["total_requests"], 7)
+        self.assertEqual(output["request_summary"]["billing"], [])
+        self.assertFalse(output["request_summary"]["billing_complete"])
         self.assertEqual(self.remote.cards[0].last_apply_id, payload["apply_id"])
+
+    def test_reconcile_snapshot_failure_after_verified_mutation_is_truthful_and_replay_free(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path, _payload = self.make_confirmed_pending(root)
+            writes = len(FakeWriter.rows)
+            self.remote.snapshot_error_on_call = self.remote.snapshot_calls + 1
+            result, stdout, stderr = self.reconcile(path)
+            output = json.loads(stdout)
+            pending_retained = path.exists()
+
+        self.assertEqual((result, stderr), (2, ""))
+        self.assertEqual(output["action"], "committed")
+        self.assertTrue(output["catalog_updated"])
+        self.assertFalse(output["catalog_snapshot_complete"])
+        self.assertIsNone(output["snapshot_revision"])
+        self.assertFalse(output["pending_cleanup"])
+        self.assertEqual(output["card_revision"], self.remote.cards[0].card_revision)
+        self.assertEqual(output["catalog_repair_command"], f"buoy catalog reconcile --pending {path}")
+        self.assertFalse(output["content_replayed"])
+        self.assertEqual(len(FakeWriter.rows), writes)
+        self.assertTrue(pending_retained)
+        self.assertNotIn("fake-secret", stdout)
+        self.assertNotIn('"vector"', stdout)
 
     def test_safe_rebase_preserves_concurrent_manual_edit_and_disable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

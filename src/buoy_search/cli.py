@@ -1803,6 +1803,12 @@ def print_apply_text(payload: dict[str, object]) -> None:
             f"  catalog_updated: {payload['catalog_updated']}; "
             f"catalog: {payload['catalog_namespace']}"
         )
+        if payload.get("card_revision"):
+            print(f"  committed_card_revision: {payload['card_revision']}")
+        if payload.get("catalog_snapshot_complete") is False:
+            print("  catalog_snapshot: incomplete; no final stable snapshot is claimed")
+        elif payload.get("snapshot_revision"):
+            print(f"  catalog_snapshot_revision: {payload['snapshot_revision']}")
         if payload.get("pending_cleanup") is False:
             print(f"  pending_cleanup: False; pending_path: {payload['pending_path']}")
             print(f"  repair: {payload['catalog_repair_command']}")
