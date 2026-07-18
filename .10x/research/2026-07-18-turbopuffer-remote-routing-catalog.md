@@ -43,6 +43,8 @@ Namespace names allow up to 128 characters, but string document IDs allow only 6
 
 The reserved catalog namespace itself appears in listing and must be excluded from candidates. It needs a fixed 384-dimensional float32 routing vector schema matching the pinned BGE routing projection, not each content namespace's storage precision.
 
+Installed SDK 2.4.0 exposes `consistency={"level":"strong"}`, `vector_encoding="float"`, ordered `rank_by=("id","asc")`, ID filters, selected attributes, conditional upsert/delete, `return_affected_ids`, and write responses with exact affected-ID lists. SDK defaults are four bounded retries with 5-second connect and 60-second read/write/pool timeouts.
+
 ### Consistency is intersection-based, not transactional
 
 Namespace listing and catalog-card query are separate snapshots. Safe behavior is:
@@ -69,3 +71,5 @@ Use one reserved namespace per region named `buoy-routing-catalog-v1`. Store one
 Migrate the two validated Oscilar/Dagster cards into the remote catalog, leave the other two live namespaces excluded as missing-card diagnostics, verify remote routing, and delete `.buoy/catalog.json` only during the final cutover. Do not cache cards to disk or fall back to IDs.
 
 This architecture introduces authenticated read-only network work for every automatic preview and remote card writes for catalog/apply operations. It removes working-directory authority and makes routing consistent across directories and machines using the same region/account credentials.
+
+The user explicitly accepted that preview keys need list/query permission and can read complete cards, while mutation/apply keys additionally need write permission. The existing proprietary Turbopuffer dependency is extended by explicit user requirement; provider-neutral canonical serialization/export and local embeddings remain portability boundaries.

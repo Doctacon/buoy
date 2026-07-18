@@ -8,32 +8,30 @@ Depends-On: None
 
 ## Outcome
 
-Replace working-directory local routing-card authority with live Turbopuffer namespace discovery intersected against cards in `buoy-routing-catalog-v1`, migrate the two validated cards, update apply recovery, cut retrieval over, and delete `.buoy/catalog.json`.
+Replace working-directory routing-card authority with actual Turbopuffer namespace discovery intersected against cards in `buoy-routing-catalog-v1`; migrate the two validated cards; atomically switch catalog CLI, apply, and retrieval; then delete the exact local catalog.
 
 ## Child sequence
 
-1. `.10x/tickets/2026-07-18-build-remote-routing-catalog.md`
-2. `.10x/tickets/2026-07-18-seed-remote-routing-catalog.md`
-3. `.10x/tickets/2026-07-18-integrate-apply-remote-catalog.md`
-4. `.10x/tickets/2026-07-18-cut-over-remote-routing.md`
+1. `.10x/tickets/2026-07-18-build-remote-routing-backend.md`
+2. `.10x/tickets/2026-07-18-atomic-remote-catalog-cutover.md`
 
-Children are strictly sequential. The parent is not executable.
+The backend child is intentionally inert. The cutover child is one cohesive authority transition because splitting public catalog/apply/retrieval changes would create a forbidden split-brain window. The parent is not executable.
 
 ## Aggregate acceptance criteria
 
-- Remote catalog schema/conditional card lifecycle and authenticated CLI are production-tested without local catalog authority.
-- Actual paginated Turbopuffer namespace listing is intersected with valid remote cards; missing/stale targets are excluded/counted and IDs never become semantics.
-- Oscilar and Dagster Benchmark cards are migrated to the reserved namespace; uncarded live Dagster/Thistle remain excluded.
-- Approved apply registers/reconciles remote cards without duplicate content writes or concurrent overwrite.
-- Default automatic retrieval works from unrelated directories using only credentials/region and remote authority; explicit CLI namespace remains the manual bypass.
-- Automatic preview truthfully reports credential/read-only remote activity.
-- `.buoy/catalog.json`, lock, local path flags/environment, and obsolete local catalog implementation are removed after cutover verification.
-- No content namespace mutation occurs except the already authorized card migration in the reserved catalog namespace; no deletion of content namespaces/rows.
-- Focused/full/hosted validation, evidence, and independent reviews pass for every child.
+- Exact remote schema/serializer, strong stable pagination, intersection counts, optimistic create/update/delete, permission/cost boundaries, and safe recovery primitives are tested without changing public authority.
+- One reviewed cutover switches catalog CLI, approved apply, and default routing together.
+- A mutation freeze prevents divergence from seed through post-integration verification.
+- Exactly two validated cards are seeded; five listed IDs classify as one control plane, four content-live, two eligible carded targets, and two missing-card exclusions.
+- Automatic preview works from unrelated directories using credentials/region and remote authority; explicit CLI namespace remains the local dry-preview/manual bypass.
+- Confirmed apply conflicts have approved safe-rebase and strictly-newer accept-remote recovery without content replay.
+- Exact bound `.buoy/catalog.json` is deleted only after integrated remote verification; no other local state changes.
+- No content namespace query/write/delete occurs during migration/cutover verification.
+- Focused/full/hosted validation, durable evidence, and independent reviews pass.
 
 ## Explicit exclusions
 
-ID-only routing; per-content-namespace card rows; local/disk card cache; cross-region fan-out; remote distributed locks; content-namespace deletion; ACL/taxonomy/graph/telemetry/online learning; concurrency changes to content retrieval.
+ID-only routing; per-content-namespace card rows; local/disk cache; cross-region fan-out; remote distributed locks; content deletion/live retrieval/evals; ACL/taxonomy/graph/telemetry/online learning; protection changes.
 
 ## References
 
@@ -42,8 +40,9 @@ ID-only routing; per-content-namespace card rows; local/disk card cache; cross-r
 - `.10x/specs/remote-turbopuffer-routing-catalog.md`
 - `.10x/specs/approved-apply-remote-catalog-registration.md`
 - `.10x/specs/default-remote-namespace-routing.md`
+- `.10x/specs/atomic-remote-catalog-cutover.md`
 
 ## Progress and notes
 
-- 2026-07-18: User rejected working-directory catalog authority, approved the dedicated remote catalog plus live-list intersection and authenticated remote preview, selected exclusion for live namespaces lacking cards, and explicitly approved migrating Oscilar/Dagster cards then deleting the local catalog.
-- 2026-07-18: The unimplemented local-default ticket was cancelled and its authorities superseded before runtime changes.
+- 2026-07-18: User rejected working-directory authority, approved dedicated remote catalog plus live-list intersection/authenticated preview, chose missing-card exclusion, authorized two-card migration/local deletion, and accepted safe-rebase/accept-remote recovery plus list/query versus write permission exposure.
+- 2026-07-18: The unimplemented local-default ticket was cancelled. Initial four-child rollout was reshaped to inert backend plus atomic cutover after review identified split-brain risk.
