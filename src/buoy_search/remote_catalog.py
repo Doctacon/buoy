@@ -276,7 +276,9 @@ def normalize_remote_schema(metadata: object) -> dict[str, dict[str, object]]:
         type_name = config.get("type")
         if not isinstance(type_name, str):
             raise RemoteCatalogError(f"remote catalog schema attribute {name!r} has no valid type")
-        default_filterable = False if re.fullmatch(r"\[\d+\]f32", type_name) else True
+        default_filterable = not (
+            name == "vector" and type_name == f"[{ROUTING_DIMENSIONS}]f32"
+        )
         normalized: dict[str, object] = {
             "type": type_name,
             "filterable": config.get("filterable", default_filterable),

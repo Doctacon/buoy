@@ -378,6 +378,15 @@ class RemoteSchemaAndCardTests(unittest.TestCase):
         self.assertEqual(validate_remote_schema(provider_metadata), REMOTE_CATALOG_SCHEMA)
 
     def test_vector_filterable_omission_does_not_weaken_strict_schema_validation(self) -> None:
+        other_vector = normalize_remote_schema(
+            {"schema": {"other": {"type": "[384]f32"}}}
+        )
+        self.assertIs(other_vector["other"]["filterable"], True)
+        wrong_dimension = normalize_remote_schema(
+            {"schema": {"vector": {"type": "[383]f32"}}}
+        )
+        self.assertIs(wrong_dimension["vector"]["filterable"], True)
+
         bad_cases: list[tuple[str, dict[str, object]]] = []
         vector_filterable = metadata_schema()
         vector_filterable["schema"]["vector"]["filterable"] = True  # type: ignore[index]
