@@ -315,7 +315,9 @@ class CliTests(unittest.TestCase):
             self.assertFalse((legacy / "state").exists())
 
     def test_help_mentions_current_safe_workflow_commands(self) -> None:
-        help_text = build_parser().format_help()
+        parser = build_parser()
+        help_text = parser.format_help()
+        retrieve_help = parser._subparsers._group_actions[0].choices["retrieve"].format_help()
 
         self.assertIn("local-only", help_text)
         self.assertNotIn("index", help_text)
@@ -324,6 +326,11 @@ class CliTests(unittest.TestCase):
         self.assertIn("apply", help_text)
         self.assertIn("retrieve", help_text)
         self.assertIn("evals", help_text)
+        self.assertIn("authenticated remote preview", help_text)
+        self.assertIn("Compatibility no-op; automatic remote routing is", retrieve_help)
+        self.assertIn("remains local and credential-free", retrieve_help)
+        self.assertIn("TURBOPUFFER_NAMESPACE is ignored", retrieve_help)
+        self.assertNotIn("--catalog", retrieve_help)
 
     def test_one_line_progress_reuses_current_terminal_line(self) -> None:
         stream = TtyStringIO()

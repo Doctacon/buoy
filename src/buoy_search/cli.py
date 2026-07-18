@@ -627,7 +627,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     retrieve_parser = subparsers.add_parser(
         "retrieve",
-        help="retrieve relevant chunks; dry-run plan by default unless --live is passed",
+        help="retrieve relevant chunks; authenticated remote preview by default unless --namespace is explicit",
         description=(
             "Plan or execute hybrid retrieval. Without --namespace, Buoy discovers live namespaces "
             "and routes through the authenticated remote catalog. Explicit repeatable --namespace "
@@ -648,7 +648,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--plan",
         dest="dry_run",
         action="store_true",
-        help="Print the local retrieval plan without credentials or turbopuffer API calls (default).",
+        help="Require preview mode (default); automatic preview reads remote routing state, while explicit --namespace remains local and credential-free.",
     )
     retrieve_parser.add_argument(
         "--auto-route",
@@ -803,8 +803,8 @@ def add_runtime_config_arguments(
         action="append" if repeatable_namespace else "store",
         default=None,
         help=(
-            "Select a namespace; repeat to retrieve across multiple namespaces. CLI selections replace "
-            "TURBOPUFFER_NAMESPACE."
+            "Select a namespace; repeat to retrieve across multiple namespaces. This is the sole "
+            "routing bypass; TURBOPUFFER_NAMESPACE is ignored."
             if repeatable_namespace
             else "Override TURBOPUFFER_NAMESPACE for this command without changing the environment."
         ),

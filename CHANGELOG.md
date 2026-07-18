@@ -4,6 +4,13 @@ Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+### Changed
+
+- Retrieval without CLI `--namespace` now defaults to authenticated live-namespace discovery intersected with fixed remote `buoy-routing-catalog-v1`; repeatable CLI `--namespace` is the sole bypass, `TURBOPUFFER_NAMESPACE` is ignored, and `--auto-route` remains a compatibility no-op.
+- Catalog lifecycle, approved-apply registration, and recovery now use conditional remote cards with explicit permissions, stable reads, preview-first removal, safe rebase, and operator-approved exact-revision acceptance.
+- Local catalog path options and `BUOY_CATALOG_PATH` were removed. `catalog migrate-local` imports a validated legacy schema-v1 file without modifying it; the bound local cutover catalog is deleted only after post-integration verification.
+
+
 ## [0.3.0] - 2026-07-16
 
 ### Added
