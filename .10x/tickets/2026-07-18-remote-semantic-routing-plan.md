@@ -12,8 +12,8 @@ Replace working-directory routing-card authority with actual Turbopuffer namespa
 
 ## Child sequence
 
-1. `.10x/tickets/2026-07-18-build-remote-routing-backend.md`
-2. `.10x/tickets/2026-07-18-atomic-remote-catalog-cutover.md`
+1. `.10x/tickets/done/2026-07-18-build-remote-routing-backend.md` — done
+2. `.10x/tickets/2026-07-18-atomic-remote-catalog-cutover.md` — active
 
 The backend child is intentionally inert. The cutover child is one cohesive authority transition because splitting public catalog/apply/retrieval changes would create a forbidden split-brain window. The parent is not executable.
 
@@ -48,3 +48,4 @@ ID-only routing; per-content-namespace card rows; local/disk cache; cross-region
 
 - 2026-07-18: User rejected working-directory authority, approved dedicated remote catalog plus live-list intersection/authenticated preview, chose missing-card exclusion, authorized two-card migration/local deletion, and accepted safe-rebase/accept-remote recovery plus list/query versus write permission exposure.
 - 2026-07-18: The unimplemented local-default ticket was cancelled. Initial four-child rollout was reshaped to inert backend plus atomic cutover after review identified split-brain risk.
+- 2026-07-18: Inert backend passed independent review and hosted checks and was integrated through PR #31 as `bc8bdc30555e66837288d049c3c4885e3cf1df71`; atomic cutover dependency is satisfied.

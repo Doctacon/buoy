@@ -130,11 +130,11 @@ class MultiNamespaceRetrieverTests(unittest.TestCase):
 
 
 class MultiNamespaceCliTests(unittest.TestCase):
-    def test_missing_namespace_fails_before_config_for_dry_run_and_live(self) -> None:
+    def test_missing_cli_namespace_enters_auto_mode_and_key_failure_precedes_client(self) -> None:
         for extra in ([], ["--live"]):
             with self.subTest(extra=extra), patch.dict(os.environ, {}, clear=True), patch(
-                "buoy_search.cli.config_from_args",
-                side_effect=AssertionError("config loaded"),
+                "buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY",
+                side_effect=AssertionError("client constructed without key"),
             ):
                 stdout = StringIO()
                 stderr = StringIO()
@@ -142,8 +142,7 @@ class MultiNamespaceCliTests(unittest.TestCase):
                     result = main(["retrieve", "query", *extra, "--json"])
             self.assertEqual(result, 2)
             self.assertEqual(stdout.getvalue(), "")
-            self.assertIn("--namespace or TURBOPUFFER_NAMESPACE", stderr.getvalue())
-            self.assertIn("buoy namespaces", stderr.getvalue())
+            self.assertIn("TURBOPUFFER_API_KEY", stderr.getvalue())
 
     def test_duplicate_cli_namespace_fails_before_config(self) -> None:
         with patch("buoy_search.cli.config_from_args", side_effect=AssertionError("config loaded")):
@@ -166,17 +165,19 @@ class MultiNamespaceCliTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
         self.assertIn("must not repeat namespace ID 'site-repeat-v1'", stderr.getvalue())
 
-    def test_environment_namespace_supplies_one_actionable_dry_run(self) -> None:
-        with patch.dict(os.environ, {"TURBOPUFFER_NAMESPACE": "site-env-v1"}, clear=True):
-            stdout = StringIO()
-            with redirect_stdout(stdout):
+    def test_environment_namespace_is_ignored_and_does_not_bypass_auto_credentials(self) -> None:
+        with patch.dict(os.environ, {"TURBOPUFFER_NAMESPACE": "site-env-v1"}, clear=True), patch(
+            "buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY",
+            side_effect=AssertionError("client constructed without key"),
+        ):
+            stdout, stderr = StringIO(), StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
                 result = main(["retrieve", " query ", "--dry-run", "--json"])
 
-        payload = json.loads(stdout.getvalue())
-        self.assertEqual(result, 0)
-        self.assertEqual(payload["query"], "query")
-        self.assertEqual(payload["namespace"], "site-env-v1")
-        self.assertNotIn("namespaces", payload)
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("TURBOPUFFER_API_KEY", stderr.getvalue())
+        self.assertNotIn("site-env-v1", stderr.getvalue())
 
     def test_repeated_cli_namespaces_replace_environment_and_preserve_order(self) -> None:
         with patch.dict(os.environ, {"TURBOPUFFER_NAMESPACE": "site-env-v1"}, clear=True):

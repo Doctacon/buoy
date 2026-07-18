@@ -24,7 +24,7 @@ Final independent review passed with no blocker. The parent has exactly two sequ
 
 ## Verdict
 
-Pass. `.10x/tickets/2026-07-18-build-remote-routing-backend.md` is executable. No runtime or remote mutation occurred during shaping.
+Pass. `.10x/tickets/done/2026-07-18-build-remote-routing-backend.md` is executable. No runtime or remote mutation occurred during shaping.
 
 ## Residual risk
 

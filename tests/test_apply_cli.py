@@ -7,6 +7,7 @@ import os
 import shlex
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 import threading
 import unittest
 from unittest.mock import patch
@@ -25,7 +26,14 @@ from buoy_search.applied_state import (
     save_applied_state,
 )
 from buoy_search.cli import build_parser, main
-from buoy_search.catalog import ROUTING_DIMENSIONS
+from buoy_search.catalog import ROUTING_DIMENSIONS, catalog_revision
+from buoy_search.remote_catalog import (
+    CatalogCounts,
+    MutationResult,
+    ReadMetrics,
+    RemoteCatalogSnapshot,
+    remote_card_id,
+)
 from buoy_search.chunker import process_corpus
 from buoy_search.config import RuntimeConfig
 from buoy_search.plan_artifacts import build_plan_artifacts, write_plan_artifacts
@@ -60,6 +68,40 @@ class FakeEmbedder:
 class FixedRoutingEmbedder:
     def encode(self, texts):
         return [[1.0] + [0.0] * (ROUTING_DIMENSIONS - 1) for _ in texts]
+
+
+class FakeRemoteCatalog:
+    def __init__(self) -> None:
+        self.cards = []
+        self.client = SimpleNamespace(namespace=lambda _name: object())
+
+    def snapshot(self, _client, *, region, compatibility):  # noqa: ANN001
+        del compatibility
+        live = tuple(sorted({card.namespace for card in self.cards}))
+        counts = CatalogCounts(
+            listed_total=1 + len(live), control_plane_count=1,
+            content_live_count=len(live), card_count=len(self.cards),
+            stale_target_count=0, missing_card_count=0, disabled_count=0,
+            incompatible_count=0, eligible_count=len(self.cards),
+        )
+        return RemoteCatalogSnapshot(
+            cards=tuple(self.cards), eligible_cards=tuple(self.cards),
+            live_namespace_ids=live, missing_card_ids=(), stale_target_ids=(),
+            disabled_ids=(), incompatible_ids=(),
+            snapshot_revision=catalog_revision(self.cards), counts=counts,
+            metrics=ReadMetrics(2, 1, 2, ()),
+        )
+
+    def create(self, _resource, cards, *, region):  # noqa: ANN001
+        del region
+        self.cards.extend(cards)
+        card = cards[0]
+        return MutationResult(True, card, 1, (remote_card_id(card.namespace),))
+
+    def update(self, _resource, card, *, expected_revision, region):  # noqa: ANN001
+        del expected_revision, region
+        self.cards = [item for item in self.cards if item.namespace != card.namespace] + [card]
+        return MutationResult(True, card, 1, (remote_card_id(card.namespace),))
 
 
 class FakeWriter:
@@ -216,11 +258,18 @@ def build_one_page_plan_with_stale_state(root: Path, state_root: Path):
 class ApplyCliTests(unittest.TestCase):
     def setUp(self) -> None:
         reset_fakes()
-        routing_patcher = patch(
-            "buoy_search.catalog.load_routing_embedder", return_value=FixedRoutingEmbedder()
-        )
-        routing_patcher.start()
-        self.addCleanup(routing_patcher.stop)
+        self.remote_catalog = FakeRemoteCatalog()
+        patchers = [
+            patch("buoy_search.catalog.load_routing_embedder", return_value=FixedRoutingEmbedder()),
+            patch("buoy_search.apply.REMOTE_CATALOG_CLIENT_FACTORY", return_value=self.remote_catalog.client),
+            patch("buoy_search.apply.read_remote_catalog", side_effect=self.remote_catalog.snapshot),
+            patch("buoy_search.apply.create_remote_cards", side_effect=self.remote_catalog.create),
+            patch("buoy_search.apply.update_remote_card", side_effect=self.remote_catalog.update),
+            patch("buoy_search.remote_catalog.create_client", side_effect=AssertionError("real SDK factory used")),
+        ]
+        for patcher in patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def test_apply_batch_size_defaults_and_embedding_batch_validation(self) -> None:
         parser = build_parser()

@@ -296,6 +296,17 @@ class StatefulResource(QueryResource):
         raise AssertionError("unexpected write shape")
 
 
+class ProviderRow:
+    """Provider-shaped row object whose serialization omits null attributes."""
+
+    def __init__(self, row: dict[str, object], *, omit: set[str] | None = None) -> None:
+        self.row = row
+        self.omit = omit or set()
+
+    def model_dump(self) -> dict[str, object]:
+        return {key: value for key, value in self.row.items() if key not in self.omit}
+
+
 class RemoteSchemaAndCardTests(unittest.TestCase):
     def test_schema_golden_is_complete_independent_and_normalizes_server_defaults(self) -> None:
         self.assertEqual(len(EXPECTED_REMOTE_SCHEMA), 29)
@@ -330,6 +341,82 @@ class RemoteSchemaAndCardTests(unittest.TestCase):
             with self.subTest(message=message), self.assertRaisesRegex(RemoteCatalogError, message):
                 validate_remote_schema(payload)
 
+    def test_provider_shaped_full_schema_omits_only_vector_filterable(self) -> None:
+        provider_metadata = SimpleNamespace(schema={
+            "id": {"type": "string", "filterable": True},
+            "vector": {"type": "[384]f32", "ann": {"distance_metric": "cosine_distance"}},
+            "namespace": {"type": "string", "filterable": True},
+            "enabled": {"type": "bool", "filterable": True},
+            "created_at": {"type": "string", "filterable": False},
+            "updated_at": {"type": "string", "filterable": False},
+            "card_revision": {"type": "string", "filterable": True},
+            "last_plan_id": {"type": "string", "filterable": False},
+            "last_apply_id": {"type": "string", "filterable": False},
+            "source_kind": {"type": "string", "filterable": False},
+            "source_uri": {"type": "string", "filterable": False},
+            "site_id": {"type": "string", "filterable": False},
+            "title": {"type": "string", "filterable": False},
+            "summary": {"type": "string", "filterable": False},
+            "aliases": {"type": "[]string", "filterable": False},
+            "tags": {"type": "[]string", "filterable": False},
+            "semantic_origin": {"type": "string", "filterable": False},
+            "region": {"type": "string", "filterable": True},
+            "embedding_model": {"type": "string", "filterable": False},
+            "embedding_precision": {"type": "string", "filterable": True},
+            "vector_dimensions": {"type": "uint", "filterable": False},
+            "plan_schema_version": {"type": "uint", "filterable": False},
+            "ranking_mode": {"type": "string", "filterable": False},
+            "ranking_profile": {"type": "string", "filterable": False},
+            "ranking_pool": {"type": "uint", "filterable": False},
+            "ranking_aggregation": {"type": "string", "filterable": False},
+            "routing_model": {"type": "string", "filterable": False},
+            "routing_model_revision": {"type": "string", "filterable": False},
+            "semantic_hash": {"type": "string", "filterable": False},
+            "vector_hash": {"type": "string", "filterable": False},
+        })
+
+        self.assertEqual(validate_remote_schema(provider_metadata), REMOTE_CATALOG_SCHEMA)
+
+    def test_vector_filterable_omission_does_not_weaken_strict_schema_validation(self) -> None:
+        other_vector = normalize_remote_schema(
+            {"schema": {"other": {"type": "[384]f32"}}}
+        )
+        self.assertIs(other_vector["other"]["filterable"], True)
+        wrong_dimension = normalize_remote_schema(
+            {"schema": {"vector": {"type": "[383]f32"}}}
+        )
+        self.assertIs(wrong_dimension["vector"]["filterable"], True)
+
+        bad_cases: list[tuple[str, dict[str, object]]] = []
+        vector_filterable = metadata_schema()
+        vector_filterable["schema"]["vector"]["filterable"] = True  # type: ignore[index]
+        bad_cases.append(("vector filterable true", vector_filterable))
+        wrong_vector_type = metadata_schema()
+        wrong_vector_type["schema"]["vector"] = {  # type: ignore[index]
+            "type": "[383]f32",
+            "ann": {"distance_metric": "cosine_distance"},
+        }
+        bad_cases.append(("wrong vector type", wrong_vector_type))
+        wrong_ann = metadata_schema()
+        wrong_ann["schema"]["vector"] = {  # type: ignore[index]
+            "type": "[384]f32",
+            "ann": {"distance_metric": "euclidean_squared"},
+        }
+        bad_cases.append(("wrong vector ANN", wrong_ann))
+        missing_scalar_flag = metadata_schema()
+        missing_scalar_flag["schema"]["summary"].pop("filterable")  # type: ignore[index]
+        bad_cases.append(("missing nonfilterable scalar flag", missing_scalar_flag))
+        true_scalar_flag = metadata_schema()
+        true_scalar_flag["schema"]["summary"]["filterable"] = True  # type: ignore[index]
+        bad_cases.append(("true nonfilterable scalar flag", true_scalar_flag))
+        wrong_filterable_scalar_flag = metadata_schema()
+        wrong_filterable_scalar_flag["schema"]["namespace"]["filterable"] = False  # type: ignore[index]
+        bad_cases.append(("false filterable scalar flag", wrong_filterable_scalar_flag))
+
+        for case, payload in bad_cases:
+            with self.subTest(case=case), self.assertRaisesRegex(RemoteCatalogError, "changed"):
+                validate_remote_schema(payload)
+
     def test_remote_row_enforces_application_nullability_independently_of_schema(self) -> None:
         card = make_card("site-oscilar-com-v1")
         row = card_to_remote_row(card)
@@ -347,6 +434,102 @@ class RemoteSchemaAndCardTests(unittest.TestCase):
         half_lineage["last_plan_id"] = "plan-only"
         with self.assertRaisesRegex(RemoteCatalogError, "both IDs null or both non-empty"):
             card_from_remote_row(half_lineage, region=REGION)
+
+    def test_provider_row_with_both_nullable_nulls_omitted_is_normalized(self) -> None:
+        card = make_card("site-oscilar-com-v1")
+        provider_row = ProviderRow(
+            card_to_remote_row(card),
+            omit={"last_plan_id", "last_apply_id"},
+        )
+        self.assertEqual(card_from_remote_row(provider_row, region=REGION), card)
+
+    def test_provider_row_with_explicit_nullable_nulls_is_accepted(self) -> None:
+        card = make_card("site-oscilar-com-v1")
+        self.assertEqual(
+            card_from_remote_row(ProviderRow(card_to_remote_row(card)), region=REGION),
+            card,
+        )
+
+    def test_provider_row_with_one_nullable_null_omitted_is_normalized(self) -> None:
+        card = make_card("site-oscilar-com-v1")
+        provider_row = ProviderRow(card_to_remote_row(card), omit={"last_apply_id"})
+        self.assertEqual(card_from_remote_row(provider_row, region=REGION), card)
+
+    def test_provider_row_with_non_nullable_attribute_omitted_is_rejected(self) -> None:
+        card = make_card("site-oscilar-com-v1")
+        provider_row = ProviderRow(card_to_remote_row(card), omit={"title"})
+        with self.assertRaisesRegex(RemoteCatalogError, "missing=\\['title'\\]"):
+            card_from_remote_row(provider_row, region=REGION)
+
+    def test_provider_float_decimal_in_same_float32_bucket_restores_exact_card(self) -> None:
+        card = make_card("site-oscilar-com-v1")
+        row = card_to_remote_row(card)
+        provider_vector = list(card.vector)
+        provider_vector[0] = 1.00000001
+        row["vector"] = provider_vector
+
+        restored = card_from_remote_row(ProviderRow(row), region=REGION)
+
+        self.assertEqual(restored.vector, card.vector)
+        self.assertEqual(restored.vector_hash, vector_hash(card.vector))
+        self.assertEqual(restored.card_revision, card_revision(card))
+        self.assertEqual(restored, card)
+
+    def test_provider_float_decimal_in_adjacent_float32_bucket_rejects_stale_hash(self) -> None:
+        card = make_card("site-oscilar-com-v1")
+        row = card_to_remote_row(card)
+        provider_vector = list(card.vector)
+        provider_vector[0] = 0.99999994
+        row["vector"] = provider_vector
+
+        with self.assertRaisesRegex(RemoteCatalogError, "vector_hash is stale or invalid"):
+            card_from_remote_row(ProviderRow(row), region=REGION)
+
+    def test_provider_vector_rejects_nonfinite_overflow_and_type_errors(self) -> None:
+        card = make_card("site-oscilar-com-v1")
+        for value in (float("nan"), float("inf"), float("-inf"), 3.5e38, "1.0", True):
+            row = card_to_remote_row(card)
+            provider_vector = list(card.vector)
+            provider_vector[0] = value  # type: ignore[assignment]
+            row["vector"] = provider_vector
+            with self.subTest(value=value), self.assertRaisesRegex(
+                RemoteCatalogError, "vector\\[0\\] must be a finite float32 number"
+            ):
+                card_from_remote_row(ProviderRow(row), region=REGION)
+
+    def test_provider_exact_float32_vector_is_unchanged(self) -> None:
+        card = make_card("site-oscilar-com-v1")
+
+        restored = card_from_remote_row(ProviderRow(card_to_remote_row(card)), region=REGION)
+
+        self.assertEqual(restored.vector, card.vector)
+        self.assertEqual(restored, card)
+
+    def test_verification_retry_reads_provider_rows_with_omitted_nulls(self) -> None:
+        first = make_card("site-oscilar-com-v1")
+        second = make_card("site-turbopuffer-com-v1")
+
+        class OmittedNullQueryResource(QueryResource):
+            def query(self, **kwargs: object) -> object:
+                response = super().query(**kwargs)
+                response["rows"] = [
+                    ProviderRow(row, omit={"last_plan_id", "last_apply_id"})
+                    for row in response["rows"]
+                ]
+                return response
+
+        ids = [REMOTE_CATALOG_NAMESPACE, first.namespace, second.namespace]
+        client = FakeClient(
+            [NamespacePage(ids), NamespacePage(ids)],
+            OmittedNullQueryResource([first, second]),
+        )
+        snapshot = read_remote_catalog(
+            client,
+            region=REGION,
+            compatibility=CompatibilityContract(REGION, MODEL, "float32"),
+        )
+        self.assertEqual(snapshot.cards, (first, second))
+        self.assertEqual(snapshot.counts.card_count, 2)
 
     def test_remote_id_and_card_row_round_trip_are_provider_neutral(self) -> None:
         card = make_card("site-oscilar-com-v1")

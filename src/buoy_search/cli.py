@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import replace
+from dataclasses import asdict, replace
 import json
 import os
 from pathlib import Path
@@ -24,9 +24,7 @@ from buoy_search.apply import (
 from buoy_search.catalog import (
     CatalogError,
     generated_semantics,
-    load_catalog,
     load_routing_embedder,
-    resolve_catalog_path,
 )
 from buoy_search.catalog_pending import CatalogCommitPartialSuccess
 from buoy_search.catalog_cli import configure_catalog_parser
@@ -85,6 +83,14 @@ from buoy_search.plan_artifacts import (
 from buoy_search.plan_cleanup import cleanup_applied_plan_directory, cleanup_superseded_plan_directories
 from buoy_search.plan_diff import IncrementalPlanDiff, PlanDiffError, diff_manifest_against_state
 from buoy_search.namespaces import list_namespace_ids
+from buoy_search.remote_catalog import (
+    REMOTE_CATALOG_NAMESPACE,
+    CompatibilityContract,
+    RemoteCatalogError,
+    create_client,
+    read_remote_catalog,
+    require_eligible,
+)
 from buoy_search.retriever import (
     DEFAULT_CANDIDATES,
     DEFAULT_TOP_K,
@@ -105,10 +111,11 @@ from buoy_search.routing import (
     AutomaticRoutingError,
     RoutedRetrievalPlan,
     RoutedRetrievalResult,
-    eligible_catalog_cards,
     hybrid_route,
-    require_eligible_cards,
 )
+
+
+REMOTE_CATALOG_CLIENT_FACTORY = create_client
 
 
 class OneLineProgress:
@@ -557,11 +564,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override TURBOPUFFER_REGION for apply and the registered retrieval contract.",
     )
     apply_parser.add_argument(
-        "--catalog",
-        default=None,
-        help="Override BUOY_CATALOG_PATH and the catalog under the resolved state root.",
-    )
-    apply_parser.add_argument(
         "--batch-size",
         type=positive_int,
         default=64,
@@ -625,12 +627,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     retrieve_parser = subparsers.add_parser(
         "retrieve",
-        help="retrieve relevant chunks; dry-run plan by default unless --live is passed",
+        help="retrieve relevant chunks; authenticated remote preview by default unless --namespace is explicit",
         description=(
-            "Plan or execute hybrid retrieval against explicitly selected namespaces, or opt into "
-            "local catalog routing with --auto-route. Default mode is safe: explicit previews do not "
-            "load embeddings, while routed previews use only the pinned local routing model; neither "
-            "reads credentials nor contacts turbopuffer. Pass --live to query selected namespaces."
+            "Plan or execute hybrid retrieval. Without --namespace, Buoy discovers live namespaces "
+            "and routes through the authenticated remote catalog. Explicit repeatable --namespace "
+            "is the credential-free local preview bypass. Pass --live to query selected content namespaces."
         ),
     )
     retrieve_parser.add_argument(
@@ -647,24 +648,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--plan",
         dest="dry_run",
         action="store_true",
-        help="Print the local retrieval plan without credentials or turbopuffer API calls (default).",
+        help="Require preview mode (default); automatic preview reads remote routing state, while explicit --namespace remains local and credential-free.",
     )
     retrieve_parser.add_argument(
         "--auto-route",
         action="store_true",
-        help="Select enabled compatible namespaces from the canonical local catalog.",
+        help="Compatibility no-op; automatic remote routing is already the default without --namespace.",
     )
     retrieve_parser.add_argument(
         "--route-top-k",
         type=bounded_route_top_k,
         default=None,
         metavar="N",
-        help=f"Maximum routed namespaces (default {DEFAULT_ROUTE_TOP_K}, maximum {MAX_ROUTE_TOP_K}); requires --auto-route.",
-    )
-    retrieve_parser.add_argument(
-        "--catalog",
-        default=None,
-        help="Override BUOY_CATALOG_PATH and the resolved state-root catalog; requires --auto-route.",
+        help=f"Maximum automatically routed namespaces (default {DEFAULT_ROUTE_TOP_K}, maximum {MAX_ROUTE_TOP_K}).",
     )
     retrieve_parser.add_argument(
         "--top-k",
@@ -807,8 +803,8 @@ def add_runtime_config_arguments(
         action="append" if repeatable_namespace else "store",
         default=None,
         help=(
-            "Select a namespace; repeat to retrieve across multiple namespaces. CLI selections replace "
-            "TURBOPUFFER_NAMESPACE."
+            "Select a namespace; repeat to retrieve across multiple namespaces. This is the sole "
+            "routing bypass; TURBOPUFFER_NAMESPACE is ignored."
             if repeatable_namespace
             else "Override TURBOPUFFER_NAMESPACE for this command without changing the environment."
         ),
@@ -826,10 +822,14 @@ def add_runtime_config_arguments(
     )
 
 
-def config_from_args(args: argparse.Namespace):
+def config_from_args(
+    args: argparse.Namespace,
+    *,
+    ignore_environment_namespace: bool = False,
+):
     """Load non-secret runtime config, applying CLI overrides when supplied."""
 
-    config = load_config()
+    config = load_config(ignore_environment_namespace=ignore_environment_namespace)
     namespace_override = args.namespace
     if isinstance(namespace_override, list):
         namespace_override = namespace_override[0] if namespace_override else None
@@ -843,27 +843,19 @@ def config_from_args(args: argparse.Namespace):
 
 
 def resolve_retrieval_namespaces(args: argparse.Namespace) -> list[str]:
-    """Resolve explicit CLI namespaces or one environment namespace without demo fallback."""
+    """Validate explicit CLI namespaces; environment namespace is never retrieval authority."""
 
     cli_namespaces = args.namespace if isinstance(args.namespace, list) else []
-    if cli_namespaces:
-        namespaces = [namespace.strip() for namespace in cli_namespaces]
-        if any(not namespace for namespace in namespaces):
-            raise ValueError("--namespace must contain a non-empty namespace ID.")
-        duplicate = next(
-            (namespace for index, namespace in enumerate(namespaces) if namespace in namespaces[:index]),
-            None,
-        )
-        if duplicate is not None:
-            raise ValueError(f"--namespace must not repeat namespace ID {duplicate!r}.")
-        return namespaces
-    environment_namespace = os.environ.get("TURBOPUFFER_NAMESPACE", "").strip()
-    if environment_namespace:
-        return [environment_namespace]
-    raise ValueError(
-        "Retrieval requires --namespace or TURBOPUFFER_NAMESPACE; "
-        "run `buoy namespaces [search]` to discover available namespace IDs."
+    namespaces = [namespace.strip() for namespace in cli_namespaces]
+    if any(not namespace for namespace in namespaces):
+        raise ValueError("--namespace must contain a non-empty namespace ID.")
+    duplicate = next(
+        (namespace for index, namespace in enumerate(namespaces) if namespace in namespaces[:index]),
+        None,
     )
+    if duplicate is not None:
+        raise ValueError(f"--namespace must not repeat namespace ID {duplicate!r}.")
+    return namespaces
 
 
 def resolve_cli_state_root(args: argparse.Namespace) -> bool:
@@ -1044,14 +1036,6 @@ def _run_crawl(args: argparse.Namespace) -> int:
 def _run_plan(args: argparse.Namespace) -> int:
     if not resolve_cli_state_root(args):
         return 2
-    try:
-        plan_catalog_path, catalog_warning = resolve_catalog_path(None, state_root=args.state_root)
-        plan_catalog = load_catalog(plan_catalog_path)
-    except CatalogError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    if catalog_warning:
-        print(catalog_warning, file=sys.stderr)
     if args.url and args.base_url and args.url != args.base_url:
         print("Provide either positional URL or --base-url, not conflicting values.", file=sys.stderr)
         return 2
@@ -1132,8 +1116,6 @@ def _run_plan(args: argparse.Namespace) -> int:
         )
         catalog_preview = plan_catalog_registration_preview(
             artifacts,
-            catalog=plan_catalog,
-            catalog_path=plan_catalog_path,
             region=os.environ.get("TURBOPUFFER_REGION", DEFAULT_REGION),
         )
         progress.update("plan: writing review artifacts", force=True)
@@ -1252,12 +1234,9 @@ def plan_summary(
 def plan_catalog_registration_preview(
     artifacts: PlanArtifacts,
     *,
-    catalog,
-    catalog_path: Path,
     region: str,
 ) -> dict[str, object]:
     manifest = artifacts.manifest
-    existing = next((card for card in catalog.cards if card.namespace == manifest.namespace), None)
     metadata = [
         dict(record.source_metadata)
         for record in [*manifest.pages, *manifest.chunks]
@@ -1271,14 +1250,11 @@ def plan_catalog_registration_preview(
     )
     ranking = ranking_defaults_for_namespace(manifest.namespace)
     return {
-        "catalog_path": str(catalog_path),
+        "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
         "namespace": manifest.namespace,
-        "action": (
-            "new" if existing is None else
-            "manual-preserving-update" if existing.semantic_origin == "manual" else
-            "generated-update"
-        ),
-        "semantic_origin": "manual" if existing and existing.semantic_origin == "manual" else "generated",
+        "action": "unknown_until_approved",
+        "remote_catalog_state": "unknown_until_approved",
+        "manual_semantics_preservation": "unknown_until_approved",
         "source_kind": semantics.source_kind,
         "region": region,
         "vector_dimensions": 384,
@@ -1305,22 +1281,11 @@ def _run_apply(args: argparse.Namespace) -> int:
 
     namespace = args.namespace or verified.manifest.namespace
     region = args.region or os.environ.get("TURBOPUFFER_REGION", DEFAULT_REGION)
-    try:
-        catalog_path, catalog_warning = resolve_catalog_path(
-            args.catalog, state_root=args.state_root
-        )
-    except CatalogError as exc:
-        progress.finish()
-        print(str(exc), file=sys.stderr)
-        return 2
-    if catalog_warning:
-        print(catalog_warning, file=sys.stderr)
     if not args.approve:
         try:
             summary = apply_preflight_summary(
                 verified,
                 namespace=namespace,
-                catalog_path=catalog_path,
                 region=region,
                 approved=False,
                 delete_stale=args.delete_stale,
@@ -1348,7 +1313,6 @@ def _run_apply(args: argparse.Namespace) -> int:
             verified,
             config=config,
             namespace=namespace,
-            catalog_path=catalog_path,
             batch_size=args.batch_size,
             embedding_batch_size=args.embedding_batch_size,
             delete_stale=args.delete_stale,
@@ -1420,16 +1384,9 @@ def _run_retrieve(args: argparse.Namespace) -> int:
     if args.auto_route and cli_namespaces:
         print("--auto-route and --namespace are mutually exclusive.", file=sys.stderr)
         return 2
-    if not args.auto_route and (args.route_top_k is not None or args.catalog is not None):
-        print("--route-top-k and --catalog are valid only with --auto-route.", file=sys.stderr)
+    if cli_namespaces and args.route_top_k is not None:
+        print("--route-top-k is valid only for automatic retrieval without --namespace.", file=sys.stderr)
         return 2
-    if args.auto_route:
-        query = args.query.strip()
-        if not query:
-            print("A non-empty query is required for retrieval.", file=sys.stderr)
-            return 2
-        return _run_auto_routed_retrieve(args, query=query)
-
     try:
         namespaces = resolve_retrieval_namespaces(args)
     except ValueError as exc:
@@ -1439,8 +1396,10 @@ def _run_retrieve(args: argparse.Namespace) -> int:
     if not query:
         print("A non-empty query is required for retrieval.", file=sys.stderr)
         return 2
+    if not namespaces:
+        return _run_auto_routed_retrieve(args, query=query)
 
-    base_config = config_from_args(args)
+    base_config = config_from_args(args, ignore_environment_namespace=True)
     configs = [replace(base_config, namespace=namespace) for namespace in namespaces]
     options = [
         retrieval_options_from_args(args, config=config, doc_kind=args.doc_kind)
@@ -1480,46 +1439,52 @@ def _run_retrieve(args: argparse.Namespace) -> int:
 
 
 def _run_auto_routed_retrieve(args: argparse.Namespace, *, query: str) -> int:
-    environment_namespace = os.environ.get("TURBOPUFFER_NAMESPACE", "").strip()
-    if environment_namespace:
-        print(
-            "Warning: --auto-route replaces TURBOPUFFER_NAMESPACE for this retrieval.",
-            file=sys.stderr,
+    base_config = config_from_args(args, ignore_environment_namespace=True)
+    api_key = os.environ.get("TURBOPUFFER_API_KEY")
+    if not api_key:
+        print("TURBOPUFFER_API_KEY must be set for automatic remote routing.", file=sys.stderr)
+        return 2
+    compatibility = CompatibilityContract(
+        region=base_config.region,
+        embedding_model=base_config.embedding_model,
+        embedding_precision=base_config.embedding_precision,
+    )
+    try:
+        client = REMOTE_CATALOG_CLIENT_FACTORY(api_key=api_key, region=base_config.region)
+        snapshot = require_eligible(
+            read_remote_catalog(client, region=base_config.region, compatibility=compatibility)
         )
-    base_config = config_from_args(args)
-    try:
-        catalog_path, catalog_warning = resolve_catalog_path(args.catalog)
-    except CatalogError as exc:
-        print(f"Catalog path resolution failed: {exc}", file=sys.stderr)
-        return 2
-    if catalog_warning:
-        print(catalog_warning, file=sys.stderr)
-    try:
-        catalog = load_catalog(catalog_path)
-    except CatalogError as exc:
-        print(f"Catalog load failed: {exc}", file=sys.stderr)
-        return 2
-
-    eligibility = eligible_catalog_cards(catalog, config=base_config)
-    try:
-        eligible_cards = require_eligible_cards(eligibility, catalog_path=catalog_path)
-    except CatalogError as exc:
-        print(f"Catalog eligibility failed: {exc}", file=sys.stderr)
+    except (RemoteCatalogError, CatalogError, RuntimeError) as exc:
+        print(f"Remote catalog read failed: {exc}", file=sys.stderr)
         return 2
     try:
         route_embedder = load_routing_embedder()
     except (CatalogError, RuntimeError) as exc:
         print(f"Route model load failed: {exc}", file=sys.stderr)
         return 2
+    exclusions = {
+        "missing_card": snapshot.counts.missing_card_count,
+        "stale_target": snapshot.counts.stale_target_count,
+        "disabled": snapshot.counts.disabled_count,
+        "incompatible": snapshot.counts.incompatible_count,
+    }
     try:
         routing = hybrid_route(
             query,
-            eligible_cards,
+            snapshot.eligible_cards,
             embedder=route_embedder,
             route_top_k=args.route_top_k or DEFAULT_ROUTE_TOP_K,
-            catalog_path=catalog_path,
-            catalog_revision=catalog.catalog_revision,
-            exclusion_counts=eligibility.exclusion_counts,
+            catalog_namespace=REMOTE_CATALOG_NAMESPACE,
+            region=base_config.region,
+            snapshot_revision=snapshot.snapshot_revision,
+            exclusion_counts={key: value for key, value in exclusions.items() if value},
+            remote_counts=asdict(snapshot.counts),
+            read_metrics={
+                "namespace_list_pages": snapshot.metrics.namespace_list_pages,
+                "metadata_requests": snapshot.metrics.metadata_requests,
+                "card_query_pages": snapshot.metrics.card_query_pages,
+                "billing": list(snapshot.metrics.billing),
+            },
         )
     except (AutomaticRoutingError, CatalogError, RuntimeError) as exc:
         print(f"Route scoring failed: {exc}", file=sys.stderr)
@@ -1704,8 +1669,8 @@ def print_plan_text(payload: dict[str, object]) -> None:
     if isinstance(registration, dict):
         print(
             "  catalog_registration: "
-            f"{registration['action']} ({registration['semantic_origin']}); "
-            f"{registration['catalog_path']}"
+            f"{registration['action']}; {registration['catalog_namespace']} "
+            f"(remote_state={registration.get('remote_catalog_state', 'resolved')})"
         )
     print("  live writes: not supported by this command; future apply must be explicit")
 
@@ -1830,11 +1795,20 @@ def print_apply_text(payload: dict[str, object]) -> None:
     if isinstance(registration, dict):
         print(
             "  catalog_registration: "
-            f"{registration['action']} ({registration['semantic_origin']}); "
-            f"{registration['catalog_path']}"
+            f"{registration['action']}; {registration['catalog_namespace']} "
+            f"(remote_state={registration.get('remote_catalog_state', 'resolved')})"
         )
     if "catalog_updated" in payload:
-        print(f"  catalog_updated: {payload['catalog_updated']}; catalog: {payload['catalog_path']}")
+        print(
+            f"  catalog_updated: {payload['catalog_updated']}; "
+            f"catalog: {payload['catalog_namespace']}"
+        )
+        if payload.get("card_revision"):
+            print(f"  committed_card_revision: {payload['card_revision']}")
+        if payload.get("catalog_snapshot_complete") is False:
+            print("  catalog_snapshot: incomplete; no final stable snapshot is claimed")
+        elif payload.get("snapshot_revision"):
+            print(f"  catalog_snapshot_revision: {payload['snapshot_revision']}")
         if payload.get("pending_cleanup") is False:
             print(f"  pending_cleanup: False; pending_path: {payload['pending_path']}")
             print(f"  repair: {payload['catalog_repair_command']}")
@@ -1880,8 +1854,8 @@ def print_retrieval_text(
         )
         print("Automatic namespace route (hybrid_rrf):")
         print(
-            f"  catalog: {routing.get('catalog_path')} "
-            f"(revision {routing.get('catalog_revision')})"
+            f"  catalog: {routing.get('catalog_namespace')} "
+            f"(snapshot {routing.get('snapshot_revision')}; region {routing.get('region')})"
         )
         print(
             f"  routing_model: {routing.get('routing_model')}@"
@@ -1903,7 +1877,10 @@ def print_retrieval_text(
                     )
     if payload.get("dry_run"):
         if isinstance(routing, dict):
-            print("Retrieval plan (dry-run; local route model only; no credentials or turbopuffer API calls):")
+            print(
+                "Retrieval plan (authenticated remote preview; credentials required; "
+                "read-only namespace-list/catalog-query API calls occurred; no content retrieval):"
+            )
         else:
             print("Retrieval plan (dry-run; no credentials, embeddings, or turbopuffer API calls):")
         print(f"  query: {payload['query']}")

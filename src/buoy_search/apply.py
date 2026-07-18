@@ -37,14 +37,13 @@ from buoy_search.catalog import (
     CardFields,
     CatalogError,
     NamespaceCard,
-    commit_system_card,
     generated_semantics,
-    load_catalog,
     parse_card,
     prepare_prospective_card,
 )
 from buoy_search.catalog_pending import (
     CatalogCommitPartialSuccess,
+    applied_state_hash,
     build_pending_payload,
     confirm_pending,
     create_pending,
@@ -53,6 +52,15 @@ from buoy_search.catalog_pending import (
     pending_path_for_plan,
     reconcile_command,
     remove_expected_pending,
+)
+from buoy_search.remote_catalog import (
+    REMOTE_CATALOG_NAMESPACE,
+    CompatibilityContract,
+    RemoteCatalogError,
+    create_client,
+    create_remote_cards,
+    read_remote_catalog,
+    update_remote_card,
 )
 from buoy_search.retriever import ranking_defaults_for_namespace
 from buoy_search.plan_artifacts import (
@@ -71,6 +79,7 @@ from buoy_search.plan_diff import IncrementalPlanDiff, PlanDiffError, diff_manif
 
 JsonObject = dict[str, Any]
 DEFAULT_APPLY_PLAN_SEARCH_ROOT = Path("artifacts/site-crawls")
+REMOTE_CATALOG_CLIENT_FACTORY = create_client
 
 
 class ApplyPlanError(ValueError):
@@ -191,7 +200,6 @@ def apply_preflight_summary(
     verified: VerifiedApplyPlan,
     *,
     namespace: str,
-    catalog_path: Path | None = None,
     region: str = DEFAULT_REGION,
     approved: bool = False,
     delete_stale: bool = False,
@@ -213,7 +221,6 @@ def apply_preflight_summary(
             verified,
             namespace=namespace,
             region=region,
-            catalog_path=catalog_path or (verified.state_root / "catalog.json"),
         ),
     )
 
@@ -233,33 +240,21 @@ def catalog_registration_preview(
     *,
     namespace: str,
     region: str,
-    catalog_path: Path,
 ) -> JsonObject:
-    """Build a model-free, non-mutating catalog registration preview."""
-
-    document = load_catalog(catalog_path)
-    existing = next((card for card in document.cards if card.namespace == namespace), None)
+    """Build a credential/API/model-free remote registration preview."""
     semantics = generated_semantics(
         base_url=verified.manifest.base_url,
         site_id=verified.manifest.site_id,
         plan_schema_version=int(verified.plan["schema_version"]),
         source_metadata=verified_source_metadata(verified),
     )
-    if existing is None:
-        action = "new"
-        origin = "generated"
-    elif existing.semantic_origin == "manual":
-        action = "manual-preserving-update"
-        origin = "manual"
-    else:
-        action = "generated-update"
-        origin = "generated"
     ranking = ranking_defaults_for_namespace(namespace)
     return {
-        "catalog_path": str(catalog_path),
+        "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
         "namespace": namespace,
-        "action": action,
-        "semantic_origin": origin,
+        "action": "unknown_until_approved",
+        "remote_catalog_state": "unknown_until_approved",
+        "manual_semantics_preservation": "unknown_until_approved",
         "source_kind": semantics.source_kind,
         "region": region,
         "vector_dimensions": 384,
@@ -315,13 +310,12 @@ def run_approved_apply(
     config: RuntimeConfig,
     namespace: str,
     batch_size: int,
-    catalog_path: Path | None = None,
     embedding_batch_size: int = 32,
     delete_stale: bool = False,
     progress_callback: Callable[[str], None] | None = None,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> JsonObject:
-    """Run one locked remote apply and its precomputed local catalog commit."""
+    """Run one locked content apply and revision-bound remote card commit."""
 
     def emit_progress(message: str) -> None:
         if progress_callback is None:
@@ -368,7 +362,6 @@ def run_approved_apply(
             raise ApplyPlanError("Cannot run --delete-stale because the recomputed diff has no stale rows.")
         plan_id = str(verified.plan["plan_id"])
         pending_path = pending_path_for_plan(verified.state_root, plan_id)
-        resolved_catalog = (catalog_path or (verified.state_root / "catalog.json")).expanduser().resolve(strict=False)
         resolved_state_root = verified.state_root.expanduser().resolve(strict=False)
         state_path = applied_state_paths(
             site_id=verified.manifest.site_id,
@@ -379,7 +372,7 @@ def run_approved_apply(
             pending_path,
             expected={
                 "state_root": str(resolved_state_root),
-                "catalog_path": str(resolved_catalog),
+                "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
                 "applied_state_path": str(state_path),
                 "site_id": verified.manifest.site_id,
                 "namespace": namespace,
@@ -388,38 +381,52 @@ def run_approved_apply(
             },
         )
 
-        catalog = load_catalog(resolved_catalog)
-        existing_card = next((card for card in catalog.cards if card.namespace == namespace), None)
+        # Validate and project the generated candidate before credentials or API work.
+        prospective_card_for_apply(
+            verified, namespace=namespace, region=config.region, existing=None
+        )
+        api_key = os.environ.get("TURBOPUFFER_API_KEY")
+        if not api_key:
+            raise RuntimeError("TURBOPUFFER_API_KEY must be set in the environment for approved apply.")
+        remote_client = REMOTE_CATALOG_CLIENT_FACTORY(api_key=api_key, region=config.region)
+        compatibility = CompatibilityContract(
+            region=config.region,
+            embedding_model=config.embedding_model,
+            embedding_precision=config.embedding_precision,
+        )
+        remote_snapshot = read_remote_catalog(
+            remote_client, region=config.region, compatibility=compatibility
+        )
+        existing_card = next(
+            (card for card in remote_snapshot.cards if card.namespace == namespace), None
+        )
+        prospective = prospective_card_for_apply(
+            verified, namespace=namespace, region=config.region, existing=existing_card
+        )
         applied_at = datetime.now(timezone.utc).isoformat()
         apply_id = make_apply_id(plan_id, applied_at)
-        prospective = prospective_card_for_apply(
-            verified,
-            namespace=namespace,
-            region=config.region,
-            existing=existing_card,
+        next_state = build_state_after_apply(
+            verified, applied_at=applied_at, delete_stale=delete_stale
         )
+        if next_state.last_apply_id != apply_id:
+            raise ApplyPlanError("precomputed apply identity changed before pending creation")
         ranking = ranking_defaults_for_namespace(namespace)
         pending = build_pending_payload(
             state_root=resolved_state_root,
-            catalog_path=resolved_catalog,
             applied_state_path=state_path,
             site_id=verified.manifest.site_id,
             namespace=namespace,
             plan_id=plan_id,
             base_url=verified.manifest.base_url,
             prospective_card=prospective,
-            catalog=catalog,
             existing_card=existing_card,
             prior_applied_plan_id=(None if verified.state.first_apply else verified.state.last_plan_id),
             prior_applied_apply_id=(None if verified.state.first_apply else verified.state.last_apply_id),
+            intended_state_hash=applied_state_hash(next_state),
             region=config.region,
             ranking_contract=ranking,
         )
         create_pending(pending_path, pending)
-
-        api_key = os.environ.get("TURBOPUFFER_API_KEY")
-        if not api_key:
-            raise RuntimeError("TURBOPUFFER_API_KEY must be set in the environment for approved apply.")
 
         rows_to_upsert = [verified.chunks_by_row_id[record.row_id] for record in verified.diff.rows_to_upsert_records]
         rows_written = 0
@@ -514,9 +521,8 @@ def run_approved_apply(
             )
 
         emit_progress("apply: committing local state")
-        next_state = build_state_after_apply(verified, applied_at=applied_at, delete_stale=delete_stale)
-        if next_state.last_apply_id != apply_id:
-            raise ApplyPlanError("precomputed apply identity changed before state commit")
+        if applied_state_hash(next_state) != pending["intended_state_hash"]:
+            raise ApplyPlanError("precomputed applied-state identity changed before state commit")
         save_applied_state(
             next_state,
             state_root=verified.state_root,
@@ -540,7 +546,7 @@ def run_approved_apply(
             embeddings_generated=embeddings_generated,
             rows_deleted=rows_deleted,
             state_updated=True,
-            api_calls_occurred=rows_written > 0 or rows_deleted > 0,
+            api_calls_occurred=True,
             timing={
                 "elapsed_seconds": elapsed_since(apply_started_at),
                 "embedding_seconds": embedding_seconds,
@@ -556,22 +562,66 @@ def run_approved_apply(
             confirmed_snapshot = load_pending_snapshot(pending_path)
             if confirmed_snapshot.payload != confirmed:
                 raise ValueError("confirmed pending catalog registration changed unexpectedly")
-            document, card, _changed = commit_system_card(
-                resolved_catalog,
-                parse_card(confirmed["prospective_card"]),
+            card = parse_card(confirmed["prospective_card"])
+            resource = remote_client.namespace(REMOTE_CATALOG_NAMESPACE)
+            mutation = (
+                create_remote_cards(resource, [card], region=config.region)
+                if existing_card is None
+                else update_remote_card(
+                    resource, card,
+                    expected_revision=existing_card.card_revision,
+                    region=config.region,
+                )
             )
-        except (CatalogError, OSError, ValueError) as exc:
+            committed = mutation.card
+            if committed is None or committed.card_revision != card.card_revision:
+                raise RemoteCatalogError("verified remote card mutation returned an unexpected card")
+        except (RemoteCatalogError, CatalogError, OSError, ValueError) as exc:
             partial = {
                 **base_summary,
+                "content_applied": True,
                 "remote_apply_succeeded": True,
                 "catalog_updated": False,
+                "catalog_snapshot_complete": False,
                 "pending_cleanup": False,
-                "catalog_path": str(resolved_catalog),
+                "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
                 "pending_path": str(pending_path),
-                "catalog_repair_command": reconcile_command(pending_path, resolved_catalog),
+                "catalog_repair_command": reconcile_command(pending_path),
             }
             raise CatalogCommitPartialSuccess(str(exc), partial) from exc
 
+        committed_summary = {
+            **base_summary,
+            "content_applied": True,
+            "remote_apply_succeeded": True,
+            "catalog_updated": True,
+            "pending_cleanup": False,
+            "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
+            "snapshot_revision": None,
+            "card_revision": committed.card_revision,
+            "target_namespace": committed.namespace,
+            "affected_ids": list(mutation.affected_ids),
+            "pending_path": str(pending_path),
+            "catalog_repair_command": reconcile_command(pending_path),
+        }
+        try:
+            final_snapshot = read_remote_catalog(
+                remote_client, region=config.region, compatibility=compatibility
+            )
+            final_card = next(
+                (item for item in final_snapshot.cards if item.namespace == namespace), None
+            )
+            if final_card is None or final_card.card_revision != committed.card_revision:
+                raise RemoteCatalogError("final remote catalog snapshot does not contain committed card")
+        except (RemoteCatalogError, CatalogError, OSError, ValueError) as exc:
+            raise CatalogCommitPartialSuccess(
+                str(exc), {**committed_summary, "catalog_snapshot_complete": False}
+            ) from exc
+
+        committed_summary.update({
+            "catalog_snapshot_complete": True,
+            "snapshot_revision": final_snapshot.snapshot_revision,
+        })
         try:
             remove_expected_pending(
                 pending_path,
@@ -580,29 +630,11 @@ def run_approved_apply(
                 expected_inode=confirmed_snapshot.inode,
             )
         except (OSError, ValueError) as exc:
-            partial = {
-                **base_summary,
-                "remote_apply_succeeded": True,
-                "catalog_updated": True,
-                "pending_cleanup": False,
-                "catalog_path": str(resolved_catalog),
-                "catalog_revision": document.catalog_revision,
-                "card_revision": card.card_revision,
-                "catalog_namespace": card.namespace,
-                "pending_path": str(pending_path),
-                "catalog_repair_command": reconcile_command(pending_path, resolved_catalog),
-            }
-            raise CatalogCommitPartialSuccess(str(exc), partial) from exc
+            raise CatalogCommitPartialSuccess(str(exc), committed_summary) from exc
 
         return {
-            **base_summary,
-            "remote_apply_succeeded": True,
-            "catalog_updated": True,
+            **committed_summary,
             "pending_cleanup": True,
-            "catalog_path": str(resolved_catalog),
-            "catalog_revision": document.catalog_revision,
-            "card_revision": card.card_revision,
-            "catalog_namespace": card.namespace,
         }
 
 

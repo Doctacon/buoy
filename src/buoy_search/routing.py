@@ -1,15 +1,9 @@
-"""Local catalog-backed namespace routing for opt-in retrieval.
-
-Routing is deliberately local-only. Cards are fully validated by the catalog
-loader, compatibility is applied before either lexical or semantic scoring,
-and persisted card vectors are never returned in ordinary output.
-"""
+"""Deterministic semantic routing over validated remote namespace cards."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from pathlib import Path
 from typing import Sequence
 
 from buoy_search.catalog import (
@@ -73,11 +67,14 @@ class RouteEntry:
 
 @dataclass(frozen=True)
 class RoutingSelection:
-    catalog_path: Path
-    catalog_revision: str
+    catalog_namespace: str
+    region: str
+    snapshot_revision: str
     requested_limit: int
     eligible_count: int
     exclusion_counts: dict[str, int]
+    remote_counts: dict[str, int]
+    read_metrics: dict[str, object]
     selected_cards: list[NamespaceCard]
     entries: list[RouteEntry]
 
@@ -85,13 +82,19 @@ class RoutingSelection:
         return {
             "active": True,
             "strategy": "hybrid_rrf",
-            "catalog_path": str(self.catalog_path),
-            "catalog_revision": self.catalog_revision,
+            "catalog_namespace": self.catalog_namespace,
+            "region": self.region,
+            "snapshot_revision": self.snapshot_revision,
+            "credentials_required": True,
+            "read_only_api_calls_occurred": True,
+            "content_retrieval_occurred": False,
             "routing_model": ROUTING_MODEL,
             "routing_model_revision": ROUTING_MODEL_REVISION,
             "requested_limit": self.requested_limit,
             "eligible_count": self.eligible_count,
             "exclusion_counts": dict(self.exclusion_counts),
+            "remote_counts": dict(self.remote_counts),
+            "read_metrics": dict(self.read_metrics),
             "selected_cards": [entry.to_dict() for entry in self.entries],
         }
 
@@ -111,7 +114,9 @@ class RoutedRetrievalResult:
     routing: RoutingSelection
 
     def to_dict(self) -> dict[str, object]:
-        return {**self.result.to_dict(), "routing": self.routing.to_dict()}
+        routing = self.routing.to_dict()
+        routing["content_retrieval_occurred"] = True
+        return {**self.result.to_dict(), "content_retrieval_occurred": True, "routing": routing}
 
 
 def eligible_catalog_cards(
@@ -142,16 +147,15 @@ def eligible_catalog_cards(
     return EligibilityResult(cards=cards, exclusion_counts=exclusions)
 
 
-def require_eligible_cards(result: EligibilityResult, *, catalog_path: Path) -> list[NamespaceCard]:
+def require_eligible_cards(result: EligibilityResult, *, catalog_path: object = None) -> list[NamespaceCard]:
+    """Compatibility helper retained for provider-neutral unit callers."""
     if result.cards:
         return result.cards
     excluded = ", ".join(
         f"{reason}={count}" for reason, count in sorted(result.exclusion_counts.items())
     ) or "none registered"
     raise CatalogError(
-        f"catalog {catalog_path}: no enabled compatible namespace cards ({excluded}); "
-        "inspect `buoy catalog list --all`, manually upsert or enable a card, and verify "
-        "the region, embedding model, and precision compatibility settings"
+        f"no enabled compatible namespace cards ({excluded}); inspect `buoy catalog list --all`"
     )
 
 
@@ -219,9 +223,15 @@ def hybrid_route(
     *,
     embedder: RoutingEmbedder,
     route_top_k: int,
-    catalog_path: Path,
-    catalog_revision: str,
-    exclusion_counts: dict[str, int],
+    catalog_namespace: str = "buoy-routing-catalog-v1",
+    region: str = "",
+    snapshot_revision: str | None = None,
+    exclusion_counts: dict[str, int] | None = None,
+    remote_counts: dict[str, int] | None = None,
+    read_metrics: dict[str, object] | None = None,
+    # Internal call compatibility for provider-neutral routing tests; never emitted.
+    catalog_path: object = None,
+    catalog_revision: str | None = None,
 ) -> RoutingSelection:
     if route_top_k <= 0 or route_top_k > MAX_ROUTE_TOP_K:
         raise AutomaticRoutingError(
@@ -268,11 +278,14 @@ def hybrid_route(
             )
         )
     return RoutingSelection(
-        catalog_path=catalog_path,
-        catalog_revision=catalog_revision,
+        catalog_namespace=catalog_namespace,
+        region=region,
+        snapshot_revision=snapshot_revision or catalog_revision or "",
         requested_limit=route_top_k,
         eligible_count=len(cards),
-        exclusion_counts=dict(sorted(exclusion_counts.items())),
+        exclusion_counts=dict(sorted((exclusion_counts or {}).items())),
+        remote_counts=dict(remote_counts or {}),
+        read_metrics=dict(read_metrics or {}),
         selected_cards=selected_cards,
         entries=entries,
     )

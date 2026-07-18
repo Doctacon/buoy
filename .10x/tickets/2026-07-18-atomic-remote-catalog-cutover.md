@@ -1,8 +1,8 @@
-Status: blocked
+Status: active
 Created: 2026-07-18
 Updated: 2026-07-18
 Parent: .10x/tickets/2026-07-18-remote-semantic-routing-plan.md
-Depends-On: .10x/tickets/2026-07-18-build-remote-routing-backend.md
+Depends-On: .10x/tickets/done/2026-07-18-build-remote-routing-backend.md
 
 # Atomic Remote Catalog Cutover
 
@@ -64,6 +64,12 @@ Implementation fake/request matrices and full/hosted checks; exact live prefligh
 
 ## Blockers
 
-Remote backend dependency only.
+None. The reviewed backend was integrated through PR #31 as `bc8bdc30555e66837288d049c3c4885e3cf1df71`.
 
 ## Progress and notes
+
+- 2026-07-18: Backend dependency closed after passing independent review, 387 integration tests, and hosted Python 3.11/3.13/build checks. Cutover implementation started on `work/atomic-remote-catalog-cutover`; live operations remain gated behind reviewed implementation and fail-closed preflight.
+- 2026-07-18: Public catalog/apply/retrieval authority integration completed after replacing every temporary skipped suite with remote-contract fakes. Adversarial findings on preview/live truthfulness, post-mutation proof, migration inode binding, request accounting, pending recovery, and test isolation were repaired. Final independent reviews passed; Python 3.11 and 3.13 each passed 392 tests and wheel/sdist built. Evidence: `.10x/evidence/2026-07-18-atomic-remote-catalog-cutover-implementation.md`; review: `.10x/reviews/2026-07-18-atomic-remote-catalog-cutover-implementation-review.md`.
+- 2026-07-18: After initial PR #32 hosted checks passed, mutation freeze began. Read-only preflight found absent catalog/four content namespaces. Approved migration created exact schema/two intended rows but verification failed on provider omission of null lineage fields. Raw catalog-only inspection confirmed exactly both intended rows and no content operation. Commit `e83fe90` added strict nullable-omission normalization.
+- 2026-07-18: A controlled idempotent verification retry then failed before writes because provider metadata omits `filterable:false` for the exact vector attribute. Raw catalog metadata showed exact `[384]f32`/cosine ANN. Commits `27b36db` and `48b4021` narrowly normalize only that representation.
+- 2026-07-18: The next read-only preview reached vector integrity and found provider decimal rendering drift up to `1.47e-8`; f32 byte/hash comparison proved exact stored vectors. Commit `647e65f` canonicalizes incoming remote values to IEEE-754 f32 before strict hashes. Forty-seven focused unittests and independent review passed. Freeze remains active; next preview awaits hosted checks.

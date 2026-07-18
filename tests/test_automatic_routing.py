@@ -6,7 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
-import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -17,10 +17,10 @@ from buoy_search.catalog import (
     CardFields,
     NamespaceCard,
     prepare_card,
-    save_catalog,
 )
 from buoy_search.cli import build_parser, main
 from buoy_search.config import RuntimeConfig
+from buoy_search.remote_catalog import REMOTE_CATALOG_NAMESPACE
 from buoy_search.retriever import RRF_K
 from buoy_search.routing import (
     AutomaticRoutingError,
@@ -29,6 +29,7 @@ from buoy_search.routing import (
     lexical_route,
     semantic_route,
 )
+from tests.test_remote_catalog import FakeClient, NamespacePage, QueryResource
 
 
 def unit_vector(index: int = 0) -> list[float]:
@@ -103,28 +104,20 @@ def make_card(
             ranking_aggregation=ranking_aggregation,
         ),
         embedder=FixedEmbedder(vector),
-        now="2026-07-15T12:00:00+00:00",
+        now="2026-07-18T12:00:00+00:00",
     )
 
 
-def write_catalog(path: Path, cards: list[NamespaceCard]) -> None:
-    save_catalog(path, cards, now="2026-07-15T13:00:00+00:00")
-
-
-def run_cli(args: list[str], *, env: dict[str, str] | None = None) -> tuple[int, str, str]:
-    stdout = StringIO()
-    stderr = StringIO()
-    with patch.dict(os.environ, env or {}, clear=True), redirect_stdout(stdout), redirect_stderr(stderr):
-        result = main(args)
-    return result, stdout.getvalue(), stderr.getvalue()
-
-
-def run_cli_with_environment(
-    args: list[str], environment: dict[str, str]
+def run_cli(
+    args: list[str],
+    *,
+    env: dict[str, str] | None = None,
+    environment: dict[str, str] | None = None,
 ) -> tuple[int, str, str]:
     stdout = StringIO()
     stderr = StringIO()
-    with patch.object(os, "environ", environment), redirect_stdout(stdout), redirect_stderr(stderr):
+    environ = environment if environment is not None else (env or {})
+    with patch.object(os, "environ", environ), redirect_stdout(stdout), redirect_stderr(stderr):
         result = main(args)
     return result, stdout.getvalue(), stderr.getvalue()
 
@@ -233,383 +226,325 @@ class RoutingAlgorithmTests(unittest.TestCase):
 
 
 class AutomaticRoutingCliTests(unittest.TestCase):
-    def test_activation_conflicts_and_route_only_flags_fail_before_config_catalog_or_model(self) -> None:
-        sentinels = {
-            "buoy_search.cli.config_from_args": patch(
-                "buoy_search.cli.config_from_args", side_effect=AssertionError("config loaded")
-            ),
-            "buoy_search.cli.load_catalog": patch(
-                "buoy_search.cli.load_catalog", side_effect=AssertionError("catalog loaded")
-            ),
-            "buoy_search.cli.load_routing_embedder": patch(
-                "buoy_search.cli.load_routing_embedder", side_effect=AssertionError("model loaded")
-            ),
-        }
-        for args, expected in (
-            (["retrieve", "query", "--auto-route", "--namespace", "explicit"], "mutually exclusive"),
-            (["retrieve", "query", "--route-top-k", "2", "--namespace", "explicit"], "valid only"),
-            (["retrieve", "query", "--catalog", "catalog.json", "--namespace", "explicit"], "valid only"),
+    API_KEY = "tpuf_test-routing-secret"
+
+    def automatic_fixture(self) -> tuple[FakeClient, QueryResource, FixedEmbedder]:
+        cards = [
+            make_card("a-semantic", title="alpha", vector=unit_vector()),
+            make_card("b-lexical", title="chosen phrase", vector=unit_vector(1)),
+            make_card("c-semantic", title="charlie", vector=unit_vector()),
+            make_card("d-semantic", title="delta", vector=unit_vector()),
+            make_card("disabled", enabled=False),
+            make_card("incompatible", embedding_precision="float16"),
+            make_card("stale"),
+        ]
+        live = [
+            REMOTE_CATALOG_NAMESPACE,
+            "a-semantic",
+            "b-lexical",
+            "c-semantic",
+            "d-semantic",
+            "disabled",
+            "incompatible",
+            "missing",
+        ]
+        resource = QueryResource(cards)
+        client = FakeClient([NamespacePage(live), NamespacePage(live)], resource)
+        return client, resource, FixedEmbedder(unit_vector())
+
+    def run_automatic(
+        self,
+        args: list[str],
+        *,
+        client: object,
+        embedder: FixedEmbedder | None = None,
+    ) -> tuple[int, str, str]:
+        with patch(
+            "buoy_search.remote_catalog.create_client",
+            side_effect=AssertionError("real SDK/network client used"),
+        ), patch(
+            "buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY", return_value=client
+        ), patch(
+            "buoy_search.cli.load_routing_embedder", return_value=embedder or FixedEmbedder()
         ):
-            with self.subTest(args=args):
-                with sentinels["buoy_search.cli.config_from_args"], sentinels["buoy_search.cli.load_catalog"], sentinels["buoy_search.cli.load_routing_embedder"]:
-                    result, stdout, stderr = run_cli(args)
-                self.assertEqual(result, 2)
-                self.assertEqual(stdout, "")
-                self.assertIn(expected, stderr)
-                sentinels = {
-                    "buoy_search.cli.config_from_args": patch("buoy_search.cli.config_from_args", side_effect=AssertionError("config loaded")),
-                    "buoy_search.cli.load_catalog": patch("buoy_search.cli.load_catalog", side_effect=AssertionError("catalog loaded")),
-                    "buoy_search.cli.load_routing_embedder": patch("buoy_search.cli.load_routing_embedder", side_effect=AssertionError("model loaded")),
-                }
+            return run_cli(args, env={"TURBOPUFFER_API_KEY": self.API_KEY})
 
-    def test_explicit_namespace_error_precedes_empty_query_while_auto_route_validates_query(self) -> None:
-        with patch("buoy_search.cli.config_from_args", side_effect=AssertionError("config loaded")):
-            result, stdout, stderr = run_cli(["retrieve", "   ", "--json"])
-        self.assertEqual(result, 2)
-        self.assertEqual(stdout, "")
-        self.assertIn("--namespace or TURBOPUFFER_NAMESPACE", stderr)
-        self.assertNotIn("non-empty query", stderr)
-
-        with patch("buoy_search.cli.load_catalog", side_effect=AssertionError("catalog loaded")):
-            result, stdout, stderr = run_cli(["retrieve", "   ", "--auto-route", "--json"])
-        self.assertEqual(result, 2)
-        self.assertEqual(stdout, "")
-        self.assertIn("non-empty query", stderr)
-
-    def test_route_top_k_parser_bounds_are_one_through_ten(self) -> None:
-        parser = build_parser()
-        for value in ("0", "11"):
-            with self.subTest(value=value), redirect_stderr(StringIO()), self.assertRaises(SystemExit):
-                parser.parse_args(["retrieve", "query", "--auto-route", "--route-top-k", value])
-        args = parser.parse_args(["retrieve", "query", "--auto-route", "--route-top-k", "10"])
-        self.assertEqual(args.route_top_k, 10)
-
-    def test_catalog_cli_path_overrides_environment_and_empty_values_fail(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            cli_path = root / "cli.json"
-            env_path = root / "env.json"
-            write_catalog(cli_path, [make_card("cli-card", title="route me")])
-            write_catalog(env_path, [make_card("env-card", title="route me")])
-            with patch("buoy_search.cli.load_routing_embedder", return_value=FixedEmbedder()):
+    def test_default_requires_key_before_client_and_environment_namespace_is_ignored(self) -> None:
+        for extra in ([], ["--auto-route"], ["--live"]):
+            with self.subTest(extra=extra), patch(
+                "buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY",
+                side_effect=AssertionError("client constructed without key"),
+            ), patch(
+                "buoy_search.remote_catalog.create_client",
+                side_effect=AssertionError("real SDK/network client used"),
+            ):
                 result, stdout, stderr = run_cli(
-                    ["retrieve", "route me", "--auto-route", "--catalog", str(cli_path), "--json"],
-                    env={"BUOY_CATALOG_PATH": str(env_path)},
+                    ["retrieve", "query", *extra, "--json"],
+                    env={"TURBOPUFFER_NAMESPACE": "must-be-ignored"},
                 )
-            self.assertEqual((result, stderr), (0, ""))
-            payload = json.loads(stdout)
-            self.assertEqual(payload["routing"]["catalog_path"], str(cli_path))
-            self.assertEqual(payload["namespaces"], ["cli-card"])
+            self.assertEqual((result, stdout), (2, ""))
+            self.assertIn("TURBOPUFFER_API_KEY", stderr)
+            self.assertNotIn("must-be-ignored", stderr)
 
-            result, stdout, stderr = run_cli(
-                ["retrieve", "query", "--auto-route", "--catalog", "", "--json"]
-            )
-            self.assertEqual(result, 2)
-            self.assertEqual(stdout, "")
-            self.assertIn("non-whitespace", stderr)
-            result, stdout, stderr = run_cli(
-                ["retrieve", "query", "--auto-route", "--json"],
-                env={"BUOY_CATALOG_PATH": "   "},
-            )
-            self.assertEqual(result, 2)
-            self.assertEqual(stdout, "")
-            self.assertIn("BUOY_CATALOG_PATH", stderr)
-
-    def test_environment_namespace_is_replaced_with_stderr_warning_and_clean_json(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "catalog.json"
-            write_catalog(path, [make_card("routed", title="route me")])
-            with patch("buoy_search.cli.load_routing_embedder", return_value=FixedEmbedder()):
-                result, stdout, stderr = run_cli(
-                    ["retrieve", "route me", "--auto-route", "--catalog", str(path), "--json"],
-                    env={"TURBOPUFFER_NAMESPACE": "ignored-explicit"},
-                )
-            self.assertEqual(result, 0)
-            self.assertEqual(json.loads(stdout)["namespaces"], ["routed"])
-            self.assertIn("replaces TURBOPUFFER_NAMESPACE", stderr)
-            self.assertNotIn("Warning", stdout)
-
-    def test_explicit_retrieval_never_loads_catalog_or_route_model(self) -> None:
-        with patch("buoy_search.cli.load_catalog", side_effect=AssertionError("catalog loaded")), patch(
-            "buoy_search.cli.load_routing_embedder", side_effect=AssertionError("model loaded")
+    def test_explicit_repeatable_namespace_preview_bypasses_key_client_remote_and_route_model(self) -> None:
+        environment = CredentialReadSentinel({"TURBOPUFFER_NAMESPACE": "ignored"})
+        with patch(
+            "buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY",
+            side_effect=AssertionError("remote client constructed"),
+        ), patch(
+            "buoy_search.cli.read_remote_catalog", side_effect=AssertionError("remote catalog read")
+        ), patch(
+            "buoy_search.cli.load_routing_embedder", side_effect=AssertionError("route model loaded")
+        ), patch(
+            "buoy_search.remote_catalog.create_client",
+            side_effect=AssertionError("real SDK/network client used"),
         ):
             result, stdout, stderr = run_cli(
-                ["retrieve", "query", "--namespace", "explicit", "--json"],
-                env={"BUOY_CATALOG_PATH": "corrupt.json"},
+                [
+                    "retrieve", "query", "--namespace", "explicit-one",
+                    "--namespace", "explicit-two", "--json",
+                ],
+                environment=environment,
             )
         self.assertEqual((result, stderr), (0, ""))
         payload = json.loads(stdout)
-        self.assertEqual(payload["namespace"], "explicit")
+        self.assertEqual(payload["namespaces"], ["explicit-one", "explicit-two"])
+        self.assertFalse(payload["credentials_required"])
+        self.assertFalse(payload["turbopuffer_api_calls"])
         self.assertNotIn("routing", payload)
 
-    def test_dry_preview_defaults_top_three_is_local_nonmutating_and_redacted(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "catalog.json"
-            cards = [
-                make_card(f"card-{index}", title=f"topic {index}", vector=unit_vector(index))
-                for index in range(4)
-            ]
-            write_catalog(path, cards)
-            before = path.read_bytes()
-            route_embedder = FixedEmbedder(unit_vector())
-            environment = CredentialReadSentinel({"TURBOPUFFER_API_KEY": "must-not-be-read"})
-            stdout = StringIO()
-            stderr = StringIO()
-            with patch.object(os, "environ", environment), patch(
-                "buoy_search.cli.load_routing_embedder", return_value=route_embedder
-            ), patch(
-                "buoy_search.cli.MultiNamespaceRetriever.from_configs",
-                side_effect=AssertionError("live retriever constructed"),
-            ), patch(
-                "buoy_search.cli.list_namespace_ids", side_effect=AssertionError("remote discovery")
-            ), redirect_stdout(stdout), redirect_stderr(stderr):
-                result = main(
-                    ["retrieve", "topic", "--auto-route", "--catalog", str(path), "--json"]
-                )
-            stdout = stdout.getvalue()
-            stderr = stderr.getvalue()
-            self.assertEqual((result, stderr), (0, ""))
-            payload = json.loads(stdout)
-            self.assertTrue(payload["dry_run"])
-            self.assertFalse(payload["credentials_required"])
-            self.assertFalse(payload["turbopuffer_api_calls"])
-            self.assertEqual(len(payload["namespaces"]), 3)
-            self.assertEqual(payload["routing"]["requested_limit"], 3)
-            self.assertEqual(payload["routing"]["eligible_count"], 4)
-            self.assertEqual(route_embedder.calls, [[f"{ROUTING_QUERY_PREFIX}topic"]])
-            self.assertEqual(path.read_bytes(), before)
-            self.assertNotIn('"vector": [', stdout)
-            self.assertNotIn("vector_hash", stdout)
-            self.assertEqual(
-                [plan["namespace"] for plan in payload["namespace_plans"]],
-                payload["namespaces"],
+    def test_auto_route_is_identical_noop_and_parser_limit_is_bounded(self) -> None:
+        payloads = []
+        for compatibility_flag in ([], ["--auto-route"]):
+            client, _resource, embedder = self.automatic_fixture()
+            result, stdout, stderr = self.run_automatic(
+                ["retrieve", "chosen phrase", *compatibility_flag, "--json"],
+                client=client,
+                embedder=embedder,
             )
-
-    def test_dry_preview_uses_mixed_card_ranking_then_independent_global_overrides(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "catalog.json"
-            cards = [
-                make_card(
-                    "a-card",
-                    title="route",
-                    ranking_mode="page",
-                    ranking_profile="none",
-                    ranking_pool=17,
-                    ranking_aggregation="max",
-                ),
-                make_card(
-                    "b-card",
-                    title="route",
-                    ranking_mode="file",
-                    ranking_profile="repo_code",
-                    ranking_pool=29,
-                    ranking_aggregation="capped_sum_3",
-                ),
-            ]
-            write_catalog(path, cards)
-            with patch("buoy_search.cli.load_routing_embedder", return_value=FixedEmbedder()):
-                result, stdout, stderr = run_cli(
-                    ["retrieve", "route", "--auto-route", "--catalog", str(path), "--json"]
-                )
             self.assertEqual((result, stderr), (0, ""))
-            plans = json.loads(stdout)["namespace_plans"]
-            self.assertEqual(
-                [(plan["ranking_mode"], plan["ranking_profile"], plan["ranking_pool"], plan["ranking_aggregation"]) for plan in plans],
-                [("page", "none", 17, "max"), ("file", "repo_code", 29, "capped_sum_3")],
+            payloads.append(json.loads(stdout))
+        self.assertEqual(payloads[0], payloads[1])
+
+        parser = build_parser()
+        for value in ("0", "11"):
+            with self.subTest(value=value), redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                parser.parse_args(["retrieve", "query", "--route-top-k", value])
+        self.assertEqual(
+            parser.parse_args(["retrieve", "query", "--route-top-k", "10"]).route_top_k,
+            10,
+        )
+
+    def test_default_preview_performs_two_stable_list_and_strong_card_passes_then_routes_top_three(self) -> None:
+        client, resource, embedder = self.automatic_fixture()
+        before_cards = list(resource.cards)
+        with patch(
+            "buoy_search.cli.MultiNamespaceRetriever.from_configs",
+            side_effect=AssertionError("content retriever constructed during preview"),
+        ):
+            result, stdout, stderr = self.run_automatic(
+                ["retrieve", "chosen phrase", "--json"], client=client, embedder=embedder
             )
-
-            with patch("buoy_search.cli.load_routing_embedder", return_value=FixedEmbedder()):
-                result, stdout, stderr = run_cli(
-                    [
-                        "retrieve", "route", "--auto-route", "--catalog", str(path),
-                        "--ranking-mode", "chunk", "--ranking-pool", "7", "--json",
-                    ]
-                )
-            self.assertEqual((result, stderr), (0, ""))
-            overridden = json.loads(stdout)["namespace_plans"]
-            self.assertEqual(
-                [(plan["ranking_mode"], plan["ranking_profile"], plan["ranking_pool"], plan["ranking_aggregation"]) for plan in overridden],
-                [("chunk", "none", 7, "max"), ("chunk", "repo_code", 7, "capped_sum_3")],
-            )
-
-    def test_single_selected_card_keeps_explicit_routed_multi_namespace_shape_and_text(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "catalog.json"
-            write_catalog(path, [make_card("only-card", title="only route")])
-            with patch("buoy_search.cli.load_routing_embedder", return_value=FixedEmbedder()):
-                result, stdout, stderr = run_cli(
-                    ["retrieve", "only route", "--auto-route", "--catalog", str(path)]
-                )
-            self.assertEqual((result, stderr), (0, ""))
-            self.assertIn("Automatic namespace route", stdout)
-            self.assertIn("route 1: only-card", stdout)
-            self.assertIn("namespaces: only-card", stdout)
-
-    def test_live_route_uses_existing_multi_retriever_order_embed_once_global_controls_and_rrf(self) -> None:
-        class RetrievalEmbedder:
-            init_calls: list[tuple[str, str]] = []
-            encode_calls: list[list[str]] = []
-
-            def __init__(self, model: str, *, precision: str) -> None:
-                self.init_calls.append((model, precision))
-
-            def encode(self, texts):  # noqa: ANN001
-                self.encode_calls.append(list(texts))
-                return [unit_vector()]
-
-        class Namespace:
-            def __init__(self, name: str, order: list[str], calls: list[tuple[str, dict[str, object]]]) -> None:
-                self.name = name
-                self.order = order
-                self.calls = calls
-
-            def multi_query(self, **kwargs: object) -> dict[str, object]:
-                self.order.append(self.name)
-                self.calls.append((self.name, kwargs))
-                return {
-                    "rows": [
-                        {
-                            "id": "shared-row",
-                            "attributes": {
-                                "title": self.name,
-                                "url": f"https://{self.name}.example/result",
-                                "content": "result",
-                            },
-                        }
-                    ]
-                }
-
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "catalog.json"
-            write_catalog(
-                path,
-                [
-                    make_card("a-card", title="route", ranking_pool=11),
-                    make_card(
-                        "b-card", title="route", ranking_mode="file", ranking_profile="repo_code",
-                        ranking_pool=23, ranking_aggregation="adaptive_sum_3",
-                    ),
+        self.assertEqual((result, stderr), (0, ""))
+        payload = json.loads(stdout)
+        routing = payload["routing"]
+        self.assertEqual(client.namespaces_calls, [{"page_size": 1000}] * 2)
+        self.assertEqual(client.namespace_calls, [REMOTE_CATALOG_NAMESPACE])
+        self.assertEqual(resource.metadata_calls, 1)
+        self.assertEqual(len(resource.query_calls), 2)
+        for call in resource.query_calls:
+            self.assertEqual(call["consistency"], {"level": "strong"})
+            self.assertEqual(call["rank_by"], ("id", "asc"))
+            self.assertNotIn("filters", call)
+        self.assertEqual(resource.cards, before_cards)
+        self.assertEqual(embedder.calls, [[f"{ROUTING_QUERY_PREFIX}chosen phrase"]])
+        self.assertEqual(payload["namespaces"], ["b-lexical", "a-semantic", "c-semantic"])
+        self.assertEqual(
+            [entry["namespace"] for entry in routing["selected_cards"]],
+            payload["namespaces"],
+        )
+        self.assertEqual(routing["requested_limit"], 3)
+        self.assertEqual(routing["catalog_namespace"], REMOTE_CATALOG_NAMESPACE)
+        self.assertTrue(routing["credentials_required"])
+        self.assertTrue(routing["read_only_api_calls_occurred"])
+        self.assertFalse(payload["content_retrieval_occurred"])
+        self.assertFalse(routing["content_retrieval_occurred"])
+        self.assertEqual(
+            routing["remote_counts"],
+            {
+                "listed_total": 8,
+                "control_plane_count": 1,
+                "content_live_count": 7,
+                "card_count": 7,
+                "stale_target_count": 1,
+                "missing_card_count": 1,
+                "disabled_count": 1,
+                "incompatible_count": 1,
+                "eligible_count": 4,
+            },
+        )
+        self.assertEqual(
+            routing["exclusion_counts"],
+            {"disabled": 1, "incompatible": 1, "missing_card": 1, "stale_target": 1},
+        )
+        self.assertEqual(
+            routing["read_metrics"],
+            {
+                "namespace_list_pages": 2,
+                "metadata_requests": 1,
+                "card_query_pages": 2,
+                "billing": [
+                    {"billable_logical_bytes_queried": 123},
+                    {"billable_logical_bytes_queried": 123},
                 ],
+            },
+        )
+        self.assertEqual(routing["selected_cards"][0]["lexical_rank"], 1)
+        self.assertEqual(routing["selected_cards"][1]["semantic_rank"], 1)
+        self.assertNotIn('"vector": [', stdout)
+        self.assertNotIn("vector_hash", stdout)
+        self.assertNotIn("tpuf_", stdout)
+
+    def test_default_preview_text_reports_authenticated_reads_and_no_content_retrieval(self) -> None:
+        client, _resource, embedder = self.automatic_fixture()
+        result, stdout, stderr = self.run_automatic(
+            ["retrieve", "chosen phrase"], client=client, embedder=embedder
+        )
+
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertIn("credentials required", stdout)
+        self.assertIn("read-only namespace-list/catalog-query API calls occurred", stdout)
+        self.assertIn("no content retrieval", stdout)
+        self.assertNotIn("no credentials or turbopuffer API calls", stdout)
+
+    def test_live_routed_success_marks_content_retrieval_and_failure_emits_no_partial_output(self) -> None:
+        live_payload = {
+            "command": "retrieve",
+            "dry_run": False,
+            "credentials_required": True,
+            "turbopuffer_api_calls": True,
+            "api_calls_occurred": True,
+            "content_retrieval_occurred": True,
+            "query": "chosen phrase",
+            "region": "gcp-us-central1",
+            "namespaces": ["b-lexical", "a-semantic", "c-semantic"],
+            "embedding_model": ROUTING_MODEL,
+            "embedding_precision": "float32",
+            "top_k": 5,
+            "candidates": 200,
+            "fusion": "cross_namespace_rrf",
+            "namespace_results": [],
+            "hits": [],
+        }
+        retriever = SimpleNamespace(
+            retrieve=lambda _query, _options: SimpleNamespace(to_dict=lambda: live_payload)
+        )
+        client, _resource, embedder = self.automatic_fixture()
+        with patch("buoy_search.cli.MultiNamespaceRetriever.from_configs", return_value=retriever):
+            result, stdout, stderr = self.run_automatic(
+                ["retrieve", "chosen phrase", "--live", "--json"],
+                client=client,
+                embedder=embedder,
             )
-            order: list[str] = []
-            calls: list[tuple[str, dict[str, object]]] = []
 
-            def build_namespace(*, config, api_key):  # noqa: ANN001
-                self.assertEqual(api_key, "test-key")
-                return Namespace(config.namespace, order, calls)
+        self.assertEqual((result, stderr), (0, ""))
+        payload = json.loads(stdout)
+        self.assertTrue(payload["content_retrieval_occurred"])
+        self.assertTrue(payload["routing"]["content_retrieval_occurred"])
 
-            route_embedder = FixedEmbedder()
-            with patch("buoy_search.cli.load_routing_embedder", return_value=route_embedder), patch(
-                "buoy_search.retriever.SentenceTransformerEmbedder", RetrievalEmbedder
-            ), patch("buoy_search.retriever.build_namespace", side_effect=build_namespace):
-                result, stdout, stderr = run_cli(
+        failing = SimpleNamespace(
+            retrieve=lambda _query, _options: (_ for _ in ()).throw(RuntimeError("boom"))
+        )
+        client, _resource, embedder = self.automatic_fixture()
+        with patch("buoy_search.cli.MultiNamespaceRetriever.from_configs", return_value=failing):
+            result, stdout, stderr = self.run_automatic(
+                ["retrieve", "chosen phrase", "--live", "--json"],
+                client=client,
+                embedder=embedder,
+            )
+        self.assertEqual((result, stdout), (2, ""))
+        self.assertIn("Namespace retrieval failed", stderr)
+        self.assertNotIn("content_retrieval_occurred", stderr)
+
+    def test_zero_eligible_snapshot_fails_actionably_before_model_or_content(self) -> None:
+        live = [REMOTE_CATALOG_NAMESPACE, "missing"]
+        client = FakeClient([NamespacePage(live), NamespacePage(live)], QueryResource([]))
+        with patch(
+            "buoy_search.cli.load_routing_embedder",
+            side_effect=AssertionError("route model loaded with zero eligible cards"),
+        ), patch(
+            "buoy_search.cli.MultiNamespaceRetriever.from_configs",
+            side_effect=AssertionError("content retriever constructed"),
+        ), patch(
+            "buoy_search.remote_catalog.create_client",
+            side_effect=AssertionError("real SDK/network client used"),
+        ), patch("buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY", return_value=client):
+            result, stdout, stderr = run_cli(
+                ["retrieve", "query", "--json"],
+                env={"TURBOPUFFER_API_KEY": self.API_KEY},
+            )
+        self.assertEqual((result, stdout), (2, ""))
+        self.assertIn("no eligible live remote namespace cards", stderr)
+        self.assertIn("buoy catalog list --all", stderr)
+
+    def test_unstable_lists_unstable_cards_and_provider_failures_are_redacted(self) -> None:
+        card = make_card("stable")
+        cases: list[tuple[object, str]] = [
+            (
+                FakeClient(
                     [
-                        "retrieve", "route", "--auto-route", "--catalog", str(path), "--live",
-                        "--top-k", "1", "--candidates", "9", "--doc-kind", "docs", "--json",
+                        NamespacePage([REMOTE_CATALOG_NAMESPACE, card.namespace]),
+                        NamespacePage([REMOTE_CATALOG_NAMESPACE, card.namespace, "new"]),
                     ],
-                    env={"TURBOPUFFER_API_KEY": "test-key"},
-                )
-            self.assertEqual((result, stderr), (0, ""))
-            payload = json.loads(stdout)
-            self.assertEqual(route_embedder.calls, [[f"{ROUTING_QUERY_PREFIX}route"]])
-            self.assertEqual(RetrievalEmbedder.encode_calls, [["route"]])
-            self.assertEqual(RetrievalEmbedder.init_calls, [(ROUTING_MODEL, "float32")])
-            self.assertEqual(order, ["a-card", "b-card"])
-            self.assertEqual(payload["namespaces"], ["a-card", "b-card"])
-            self.assertEqual(payload["top_k"], 1)
-            self.assertEqual(len(payload["hits"]), 1)
-            self.assertEqual(payload["hits"][0]["namespace"], "a-card")
-            self.assertEqual(payload["hits"][0]["score_info"]["cross_namespace_fusion"], "rrf")
-            self.assertEqual(
-                [(item["ranking_pool"], item["ranking_profile"]) for item in payload["namespace_results"]],
-                [(11, "none"), (23, "repo_code")],
-            )
-            for _namespace, call in calls:
-                queries = call["queries"]
-                self.assertEqual(queries[0]["limit"], 9)
-                self.assertEqual(queries[0]["filters"], ("doc_kind", "Eq", "docs"))
-                self.assertEqual(len(queries[0]["rank_by"][2]), ROUTING_DIMENSIONS)
-            self.assertNotIn('"vector": [', stdout)
-            self.assertNotIn("vector_hash", stdout)
+                    QueryResource([card]),
+                ),
+                "namespace listing changed",
+            ),
+            (
+                FakeClient(
+                    [
+                        NamespacePage([REMOTE_CATALOG_NAMESPACE, card.namespace]),
+                        NamespacePage([REMOTE_CATALOG_NAMESPACE, card.namespace]),
+                    ],
+                    QueryResource([card], second_pass_cards=[make_card("stable", title="changed")]),
+                ),
+                "catalog changed between",
+            ),
+        ]
 
-    def test_live_selected_namespace_failure_emits_no_partial_payload(self) -> None:
-        class RetrievalEmbedder:
-            def __init__(self, _model: str, *, precision: str) -> None:
-                self.precision = precision
+        class ProviderFailureClient:
+            def namespaces(self, **_kwargs: object) -> object:
+                raise RuntimeError(f"429 Authorization=Bearer {self_secret}")
 
-            def encode(self, _texts):  # noqa: ANN001
-                return [unit_vector()]
+        class ProviderCardFailureResource(QueryResource):
+            def query(self, **_kwargs: object) -> object:
+                raise RuntimeError(f"timeout api_key={self_secret}")
 
-        class Namespace:
-            def __init__(self, name: str) -> None:
-                self.name = name
-
-            def multi_query(self, **_kwargs: object) -> dict[str, object]:
-                if self.name == "b-card":
-                    raise RuntimeError("unavailable")
-                return {"rows": [{"id": "first", "attributes": {"title": "first"}}]}
-
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "catalog.json"
-            write_catalog(path, [make_card("a-card", title="route"), make_card("b-card", title="route")])
-            with patch("buoy_search.cli.load_routing_embedder", return_value=FixedEmbedder()), patch(
-                "buoy_search.retriever.SentenceTransformerEmbedder", RetrievalEmbedder
-            ), patch(
-                "buoy_search.retriever.build_namespace",
-                side_effect=lambda *, config, api_key: Namespace(config.namespace),
-            ):
-                result, stdout, stderr = run_cli(
-                    ["retrieve", "route", "--auto-route", "--catalog", str(path), "--live", "--json"],
-                    env={"TURBOPUFFER_API_KEY": "test-key"},
-                )
-            self.assertEqual(result, 2)
-            self.assertEqual(stdout, "")
-            self.assertIn("Retrieval failed for namespace 'b-card'", stderr)
-
-    def test_missing_or_corrupt_catalog_and_missing_model_precede_credential_read(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            missing = root / "missing.json"
-            corrupt = root / "corrupt.json"
-            corrupt.write_text("{", encoding="utf-8")
-            for path, expected in ((missing, "no enabled compatible"), (corrupt, "Catalog load failed")):
-                environment = CredentialReadSentinel(
-                    {"TURBOPUFFER_API_KEY": "must-not-be-read"}
-                )
-                with self.subTest(path=path), patch(
-                    "buoy_search.cli.load_routing_embedder", side_effect=AssertionError("model loaded")
-                ), patch(
-                    "buoy_search.cli.MultiNamespaceRetriever.from_configs",
-                    side_effect=AssertionError("live prepared"),
-                ):
-                    result, stdout, stderr = run_cli_with_environment(
-                        ["retrieve", "query", "--auto-route", "--catalog", str(path), "--live", "--json"],
-                        environment,
-                    )
-                self.assertEqual(result, 2)
-                self.assertEqual(stdout, "")
-                self.assertIn(expected, stderr)
-
-            valid = root / "valid.json"
-            write_catalog(valid, [make_card("card")])
-            environment = CredentialReadSentinel(
-                {"TURBOPUFFER_API_KEY": "must-not-be-read"}
-            )
-            with patch(
+        self_secret = self.API_KEY
+        cases.extend(
+            [
+                (ProviderFailureClient(), "namespace listing failed"),
+                (
+                    FakeClient(
+                        [NamespacePage([REMOTE_CATALOG_NAMESPACE, card.namespace])],
+                        ProviderCardFailureResource([card]),
+                    ),
+                    "card page query failed",
+                ),
+            ]
+        )
+        for client, expected in cases:
+            with self.subTest(expected=expected), patch(
                 "buoy_search.cli.load_routing_embedder",
-                side_effect=RuntimeError("not cached; downloads disabled"),
-            ), patch(
-                "buoy_search.cli.MultiNamespaceRetriever.from_configs",
-                side_effect=AssertionError("live prepared"),
+                side_effect=AssertionError("model loaded after unstable remote read"),
             ):
-                result, stdout, stderr = run_cli_with_environment(
-                    ["retrieve", "query", "--auto-route", "--catalog", str(valid), "--live", "--json"],
-                    environment,
+                result, stdout, stderr = self.run_automatic(
+                    ["retrieve", "query", "--json"], client=client
                 )
-            self.assertEqual(result, 2)
-            self.assertEqual(stdout, "")
-            self.assertIn("Route model load failed", stderr)
-            self.assertIn("downloads disabled", stderr)
+            self.assertEqual((result, stdout), (2, ""))
+            self.assertIn(expected, stderr)
+            self.assertNotIn(self.API_KEY, stderr)
+            self.assertNotIn("Authorization", stderr)
 
 
 if __name__ == "__main__":

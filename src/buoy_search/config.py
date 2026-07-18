@@ -44,7 +44,11 @@ class RuntimeConfig:
     embedding_precision: str = DEFAULT_EMBEDDING_PRECISION
 
 
-def load_config(*, warning_callback: Callable[[str], None] | None = None) -> RuntimeConfig:
+def load_config(
+    *,
+    warning_callback: Callable[[str], None] | None = None,
+    ignore_environment_namespace: bool = False,
+) -> RuntimeConfig:
     """Load non-secret runtime configuration from environment defaults.
 
     Deliberately excludes TURBOPUFFER_API_KEY so help and dry-run commands can be
@@ -95,7 +99,11 @@ def load_config(*, warning_callback: Callable[[str], None] | None = None) -> Run
 
     return RuntimeConfig(
         region=os.environ.get("TURBOPUFFER_REGION", DEFAULT_REGION),
-        namespace=os.environ.get("TURBOPUFFER_NAMESPACE", DEFAULT_NAMESPACE),
+        namespace=(
+            DEFAULT_NAMESPACE
+            if ignore_environment_namespace
+            else os.environ.get("TURBOPUFFER_NAMESPACE", DEFAULT_NAMESPACE)
+        ),
         embedding_model=embedding_model,
         embedding_precision=embedding_precision,
     )

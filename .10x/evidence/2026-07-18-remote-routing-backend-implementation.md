@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-18
 Updated: 2026-07-18
-Relates-To: .10x/tickets/2026-07-18-build-remote-routing-backend.md, .10x/specs/namespace-routing-card-contract.md, .10x/specs/remote-turbopuffer-routing-catalog.md, .10x/specs/approved-apply-remote-catalog-registration.md
+Relates-To: .10x/tickets/done/2026-07-18-build-remote-routing-backend.md, .10x/specs/namespace-routing-card-contract.md, .10x/specs/remote-turbopuffer-routing-catalog.md, .10x/specs/approved-apply-remote-catalog-registration.md
 
 # Remote Routing Backend Implementation
 
