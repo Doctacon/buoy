@@ -8,7 +8,7 @@ Updated: 2026-07-18
 
 A Buoy website crawl MUST remain on the exact hostname reviewed in its base URL across discovery, sitemap/robots acquisition, page requests, and every redirect hop. This is a crawl-boundary safety contract, not a general SSRF defense.
 
-This contract is record-backed by the user-ratified historical ticket at `thistle-site-test@d7a37d7:.10x/tickets/done/2026-07-11-block-cross-host-crawl-redirects.md`, its local destination-side evidence, and its independent pass review. Those dirty-branch records describe the superseded `turbo_search`/Qdrant implementation and are historical evidence only; they are indexed in `.10x/research/2026-07-18-thistle-qdrant-dead-end-disposition.md` and do not govern current source.
+This contract is record-backed by the user-ratified historical exact-host behavior and final instruction to salvage that safety boundary, as preserved in `.10x/research/2026-07-18-thistle-qdrant-dead-end-disposition.md` and the exact path/hash inventories under `.10x/evidence/.storage/2026-07-18-thistle-qdrant-dead-end/`. The original ticket, destination-side evidence, and review were untracked files in the retired dirty worktree; they described the superseded `turbo_search`/Qdrant implementation, were inspected during triage, and are historical provenance rather than current authority. The merged research record is the durable provenance index; this specification governs current behavior.
 
 ## Behavior
 
