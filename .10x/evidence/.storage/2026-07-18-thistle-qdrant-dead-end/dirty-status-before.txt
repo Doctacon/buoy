@@ -1,0 +1,111 @@
+branch=thistle-site-test
+head=d7a37d79de7011d9b4c0a0180f8bcea6265a7f62
+status_sha256=68975bb89991897480f93ddc57be727d2728f674ef39952f9af49a3b0f35878f
+ M .pi/skills/qdrant-site-rag/SKILL.md
+ M .pi/skills/qdrant-site-rag/references/scrapling-site-workflow.md
+ M docs/generic-site-rag-plan-apply.md
+ M src/turbo_search/applied_state.py
+ M src/turbo_search/apply.py
+ M src/turbo_search/chunker.py
+ M src/turbo_search/cli.py
+ M src/turbo_search/crawler.py
+ M src/turbo_search/plan_artifacts.py
+ M src/turbo_search/plan_diff.py
+ M src/turbo_search/retriever.py
+ M tests/test_applied_state.py
+ M tests/test_apply_cli.py
+ M tests/test_cli.py
+ M tests/test_crawler.py
+ M tests/test_plan_artifacts.py
+ M tests/test_retriever.py
+?? .10x/evidence/.storage/2026-07-11-cross-host-crawl-safety/commands.txt
+?? .10x/evidence/.storage/2026-07-11-cross-host-crawl-safety/focused-pytest.txt
+?? .10x/evidence/.storage/2026-07-11-cross-host-crawl-safety/full-pytest.txt
+?? .10x/evidence/.storage/2026-07-11-cross-host-crawl-safety/git-diff-check.txt
+?? .10x/evidence/.storage/2026-07-11-cross-host-crawl-safety/hashes.txt
+?? .10x/evidence/.storage/2026-07-11-cross-host-crawl-safety/no-staged-files.txt
+?? .10x/evidence/.storage/2026-07-11-cross-host-crawl-safety/qdrant-state.txt
+?? .10x/evidence/.storage/2026-07-11-cross-host-crawl-safety/ruff.txt
+?? .10x/evidence/.storage/2026-07-11-cross-host-crawl-safety/uv-lock-check.txt
+?? .10x/evidence/.storage/2026-07-11-cross-host-crawl-safety/uv-sync-frozen.txt
+?? .10x/evidence/.storage/2026-07-11-mercury-site-smoke/apply-approved.json
+?? .10x/evidence/.storage/2026-07-11-mercury-site-smoke/apply-preflight.json
+?? .10x/evidence/.storage/2026-07-11-mercury-site-smoke/apply-time.txt
+?? .10x/evidence/.storage/2026-07-11-mercury-site-smoke/collections-before.json
+?? .10x/evidence/.storage/2026-07-11-mercury-site-smoke/plan.json
+?? .10x/evidence/.storage/2026-07-11-mercury-site-smoke/qdrant-ready.txt
+?? .10x/evidence/.storage/2026-07-11-mercury-site-smoke/qdrant-start.txt
+?? .10x/evidence/.storage/2026-07-11-mercury-site-smoke/qdrant-stop.txt
+?? .10x/evidence/.storage/2026-07-11-mercury-site-smoke/search-time.txt
+?? .10x/evidence/.storage/2026-07-11-mercury-site-smoke/search.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/apply-approved.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/apply-approved.pretty.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/apply-approved.stderr
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/apply-preflight.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/apply-preflight.pretty.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/apply-preflight.stderr
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/collection-after-apply.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/collection-after-apply.pretty.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/collections-before-apply.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/commands.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/corpus-inspection.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/git-diff-check.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/no-staged-files.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/plan-command.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/plan-command.pretty.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/plan-command.stderr
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/preflight-local.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/preflight-network-summary.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/pytest.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/qdrant-before-apply.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/qdrant-final-state.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/qdrant-ready.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/qdrant-stop.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/retrieval-1.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/retrieval-1.stderr
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/retrieval-2.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/retrieval-2.stderr
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/retrieval-3.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/retrieval-3.stderr
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/retrieval-4.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/retrieval-4.stderr
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/retrieval-report.md
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/retrieval-results-summary.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/retrieval-status.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/robots-headers.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/robots.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/ruff.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/sitemap-headers.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/sitemap-response.html
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/state-after-apply.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/state-after-apply.pretty.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/uv-lock-check.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-retry/uv-sync-frozen.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-test/apply-preflight-timing.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-test/apply-preflight.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-test/commands.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-test/content-inspection.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-test/hashes.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-test/plan-output.json
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-test/plan-timing.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-test/preflight-local.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-test/qdrant-final-state.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-test/representative-pages.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-test/robots.txt
+?? .10x/evidence/.storage/2026-07-11-thistle-site-qdrant-test/sitemap-observation.json
+?? .10x/evidence/.storage/2026-07-11-website-exact-chunk-deduplication/commands.txt
+?? .10x/evidence/2026-07-11-cross-host-crawl-safety.md
+?? .10x/evidence/2026-07-11-mercury-site-smoke.md
+?? .10x/evidence/2026-07-11-thistle-site-qdrant-test.md
+?? .10x/evidence/2026-07-11-website-exact-chunk-deduplication.md
+?? .10x/reviews/2026-07-11-cross-host-crawl-safety-review.md
+?? .10x/reviews/2026-07-11-thistle-site-test-stop-review.md
+?? .10x/reviews/2026-07-11-website-exact-chunk-deduplication-review.md
+?? .10x/specs/website-exact-chunk-deduplication.md
+?? .10x/tickets/2026-07-11-smoke-test-mercury-site.md
+?? .10x/tickets/2026-07-11-test-thistle-site-qdrant-rag.md
+?? .10x/tickets/done/2026-07-11-block-cross-host-crawl-redirects.md
+?? .10x/tickets/done/2026-07-11-reduce-website-crawl-boilerplate-duplication.md
+?? .turbo-search-thistle-retry/state/.namespace-locks/site-www-thistle-co-v1.lock
+?? .turbo-search-thistle-retry/state/www-thistle-co/site-www-thistle-co-v1/.apply.lock
+?? .turbo-search-thistle-retry/state/www-thistle-co/site-www-thistle-co-v1/applied-state.sqlite3
