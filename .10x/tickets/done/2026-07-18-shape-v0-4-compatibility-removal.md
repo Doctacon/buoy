@@ -50,6 +50,7 @@ Implementing removals; changing source/tests/user docs/version numbers; publishi
 - 2026-07-19: Classified `.turbo-search` state-root fallback, old plans, retrieve flags, source aliases, and `catalog migrate-local` as retained. Found two independently stale statements in the Scrapling workflow reference: retrieval no longer requires `--live`, and apply should not be directed by ambient `TURBOPUFFER_NAMESPACE` instead of its reviewed plan/CLI authority.
 - 2026-07-19: User ratified the exact reviewed 0.4.0 contract: pre-dispatch rejection of either old variable, exact stream/diagnostic/order behavior, console script and hook deletion, same-environment released-wheel upgrade proof, retained compatibility, and no state/data/remote effects.
 - 2026-07-19: Activated two focused specs; opened a non-executable parent and two bounded executable children; opened a separate record-only owner for both stale Scrapling workflow statements. Shaping response review passed. No source, tests, user docs, package/version metadata, state/data, remote resource, tag, publication, or release changed.
+- 2026-07-19: Final independent shaping review found no record-content blocker; parent-observed exact-head Python 3.11, Python 3.13, and distribution checks passed. Review: `.10x/reviews/2026-07-19-v0-4-compatibility-removal-shaping-review.md`.
 
 ## Closure mapping
 
@@ -59,6 +60,7 @@ Implementing removals; changing source/tests/user docs/version numbers; publishi
 - Non-executable aggregate plan and bounded execution children: `.10x/tickets/2026-07-19-buoy-v0-4-compatibility-removal-plan.md`.
 - Stale retrieval-mode and apply-namespace guidance disposition: `.10x/tickets/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md` owns both corrections.
 - Review response and graph-coherence check: `.10x/reviews/2026-07-19-v0-4-compatibility-removal-shaping-review-response.md`.
+- Independent acceptance and exact-head hosted checks: `.10x/reviews/2026-07-19-v0-4-compatibility-removal-shaping-review.md`.
 
 ## Retrospective
 
