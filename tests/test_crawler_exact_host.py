@@ -198,6 +198,80 @@ class ExactHostCrawlBoundaryTests(unittest.TestCase):
             ):
                 self.assertNotIn(blocked_detail, rendered_summaries)
 
+    def test_summary_redacts_autolinks_and_url_like_visible_labels(self) -> None:
+        with fixture_server() as allowed, fixture_server() as destination, tempfile.TemporaryDirectory() as tmp:
+            allowed_origin = f"http://localhost:{allowed.server_port}"
+            autolink_url = (
+                f"http://AUTOLINK_USER@127.0.0.1:{destination.server_port}"
+                "/autolink_(nested)/oauth/callback?code=AUTOLINK_QUERY#AUTOLINK_SENTINEL"
+            )
+            visible_url = (
+                f"http://VISIBLE_USER@127.0.0.1:{destination.server_port}"
+                "/visible_(nested)/oauth/callback?token=VISIBLE_QUERY#VISIBLE_SENTINEL"
+            )
+            visible_destination = visible_url.replace(
+                "VISIBLE_SENTINEL", "DESTINATION_SENTINEL"
+            )
+
+            destination.router = lambda _path: (
+                200,
+                {"Content-Type": "text/html"},
+                "unauthorized destination",
+            )
+
+            def allowed_router(raw_path: str) -> ResponseSpec:
+                path = urlparse(raw_path).path
+                if path == "/robots.txt":
+                    return 200, {"Content-Type": "text/plain"}, "User-agent: *\n"
+                if path == "/":
+                    return (
+                        200,
+                        {"Content-Type": "text/html"},
+                        "<html><head><title>Sanitizer fixture</title></head><body><main>"
+                        "<p>Useful sanitizer fixture content before links.</p>"
+                        f"<p>&lt;{autolink_url}&gt;</p>"
+                        f'<a href="{autolink_url}">{autolink_url}</a>'
+                        f'<a href="{visible_destination}">{visible_url}</a>'
+                        "<p>Useful sanitizer fixture content after links.</p>"
+                        "</main></body></html>",
+                    )
+                return 404, {}, "not found"
+
+            allowed.router = allowed_router
+            summary = crawl_site(
+                crawl_options(f"{allowed_origin}/", Path(tmp), strategy="link")
+            )
+
+            crawled_markdown = "\n".join(
+                path.read_text(encoding="utf-8")
+                for path in (Path(tmp) / "pages").glob("*.md")
+            )
+            self.assertIn(r"<http://AUTOLINK\_USER@", crawled_markdown)
+            self.assertIn("<http://AUTOLINK_USER@", crawled_markdown)
+            self.assertIn(r"[http://VISIBLE\_USER@", crawled_markdown)
+            self.assertEqual(destination.counts["/autolink_(nested)/oauth/callback"], 0)
+            self.assertEqual(destination.counts["/visible_(nested)/oauth/callback"], 0)
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                print_crawl_text(summary)
+            rendered_summaries = json.dumps(summary, sort_keys=True) + stdout.getvalue()
+            for blocked_detail in (
+                "127.0.0.1",
+                "AUTOLINK_USER@",
+                "VISIBLE_USER@",
+                "autolink_(nested)",
+                "visible_(nested)",
+                "oauth/callback",
+                "AUTOLINK_QUERY",
+                "VISIBLE_QUERY",
+                "AUTOLINK_SENTINEL",
+                "VISIBLE_SENTINEL",
+                "DESTINATION_SENTINEL",
+            ):
+                self.assertNotIn(blocked_detail, rendered_summaries)
+            self.assertIn("Useful sanitizer fixture content", rendered_summaries)
+
     def test_sitemap_and_robots_declarations_and_redirects_stay_on_host(self) -> None:
         with fixture_server() as allowed, fixture_server() as destination, tempfile.TemporaryDirectory() as tmp:
             allowed_origin = f"http://localhost:{allowed.server_port}"
@@ -352,6 +426,37 @@ class ExactHostCrawlBoundaryTests(unittest.TestCase):
             "query-sentinel",
             "SENTINEL_NESTED",
             "SENTINEL_ANGLE",
+        ):
+            self.assertNotIn(blocked_detail, preview)
+
+    def test_summary_destination_sanitizer_redacts_autolinks_and_url_labels(self) -> None:
+        content = (
+            r"Useful before <https://AUTO_USER@blocked.invalid/a_(b\)c)?code=AUTO_QUERY#AUTO_SENTINEL> "
+            r"and [https://LABEL_USER@blocked.invalid/label_(nested)?token=LABEL_QUERY#LABEL_SENTINEL]"
+            r"(https://DEST_USER@blocked.invalid/destination_(nested)?secret=DEST_QUERY#DEST_SENTINEL) "
+            r"plus //PROTO_USER@blocked.invalid/protocol_(nested)?key=PROTO_QUERY#PROTO_SENTINEL useful after."
+        )
+
+        preview = summary_content_preview(content, max_length=500)
+
+        self.assertIn("Useful before", preview)
+        self.assertIn("useful after", preview)
+        self.assertGreaterEqual(preview.count("[redacted URL]"), 3)
+        for blocked_detail in (
+            "blocked.invalid",
+            "AUTO_USER@",
+            "LABEL_USER@",
+            "DEST_USER@",
+            "PROTO_USER@",
+            "_(nested)",
+            "AUTO_QUERY",
+            "LABEL_QUERY",
+            "DEST_QUERY",
+            "PROTO_QUERY",
+            "AUTO_SENTINEL",
+            "LABEL_SENTINEL",
+            "DEST_SENTINEL",
+            "PROTO_SENTINEL",
         ):
             self.assertNotIn(blocked_detail, preview)
 

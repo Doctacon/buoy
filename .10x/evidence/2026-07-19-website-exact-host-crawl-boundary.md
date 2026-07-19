@@ -61,6 +61,21 @@ Validation after remediation:
 - Wheel and source distribution rebuilt successfully under `/tmp/buoy-exact-host-review-dist`.
 - All `src`/`tests` Python files parsed successfully; `git diff --check`, exact dependency/lock/version checks, and the blocked-detail output-field diff search passed.
 
+## Remaining summary-leak blocker remediation
+
+The website summary sanitizer was extended with a deterministic URL scanner rather than another destination regex. It consumes the already-supported Markdown destination grammar, then redacts HTTP(S), protocol-relative, angle-autolink, and URL-like visible text while preserving surrounding non-URL content. The website-only call site is unchanged, so PDF and local-file previews retain their pre-PR behavior.
+
+A new two-loopback-server regression records the crawler's raw Markdown to prove the fixture produced escaped angle autolinks, visible-text-equals-destination autolinks, and a URL-like visible label with a distinct destination fragment. It proves both blocked destination paths received zero requests, serialized JSON and rendered text omitted the destination host, userinfo, nested path, query, fragment, and sentinels, and useful fixture prose remained in the JSON summary. A focused scanner regression separately covers nested/escaped parentheses and protocol-relative visible text.
+
+Validation after this remediation:
+
+- Python 3.11 focused: 52 tests passed.
+- Python 3.11 full: 424 tests passed.
+- Python 3.13 focused: 52 tests passed.
+- Python 3.13 full: 424 tests passed.
+- Wheel and source distribution built successfully under `/tmp/buoy-exact-host-summary-dist`.
+- All 45 `src`/`tests` Python files parsed successfully and `git diff --check` passed.
+
 ## Limits
 
 - Fixtures contacted loopback servers only; no live site, model, Turbopuffer service, or other remote service was used.

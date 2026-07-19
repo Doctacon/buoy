@@ -2160,8 +2160,73 @@ def _markdown_link_destination_end(content: str, start: int) -> int | None:
     return cursor if cursor < len(content) and content[cursor] == ")" else None
 
 
+def _url_like_start(content: str, index: int) -> bool:
+    lowered = content[index : index + 8].lower()
+    if lowered.startswith("https://") or lowered.startswith("http://"):
+        return True
+    return (
+        content[index : index + 2] == "//"
+        and index + 2 < len(content)
+        and not content[index + 2].isspace()
+        and content[index + 2] not in "<>()[]{}'\"`/"
+    )
+
+
+def _url_like_end(content: str, start: int) -> int:
+    cursor = start
+    depth = 0
+    while cursor < len(content):
+        character = content[cursor]
+        if character == "\\" and cursor + 1 < len(content):
+            cursor += 2
+            continue
+        if character.isspace() or character in "<>[]{}'\"`":
+            break
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            if depth == 0:
+                break
+            depth -= 1
+        cursor += 1
+    return cursor
+
+
+def _redact_url_like_text(content: str) -> str:
+    parts: list[str] = []
+    copied_through = 0
+    index = 0
+    while index < len(content):
+        angle_wrapped = content[index] == "<" and _url_like_start(content, index + 1)
+        url_start = index + 1 if angle_wrapped else index
+        if not angle_wrapped and not _url_like_start(content, url_start):
+            index += 1
+            continue
+
+        if angle_wrapped:
+            cursor = url_start
+            while cursor < len(content):
+                if content[cursor] == "\\" and cursor + 1 < len(content):
+                    cursor += 2
+                    continue
+                if content[cursor] == ">":
+                    cursor += 1
+                    break
+                cursor += 1
+            url_end = cursor
+        else:
+            url_end = _url_like_end(content, url_start)
+
+        parts.extend((content[copied_through:index], "[redacted URL]"))
+        copied_through = url_end
+        index = url_end
+
+    parts.append(content[copied_through:])
+    return "".join(parts)
+
+
 def summary_content_preview(content: str, max_length: int = 240) -> str:
-    """Keep link labels while excluding complete valid Markdown destinations."""
+    """Exclude Markdown destinations and redact URL-like rendered text."""
 
     parts: list[str] = []
     copied_through = 0
@@ -2181,7 +2246,8 @@ def summary_content_preview(content: str, max_length: int = 240) -> str:
         index = copied_through
 
     parts.append(content[copied_through:])
-    return "".join(parts)[:max_length].replace("\n", " ")
+    sanitized = _redact_url_like_text("".join(parts))
+    return sanitized[:max_length].replace("\n", " ")
 
 
 def summarize_sample_chunks(
