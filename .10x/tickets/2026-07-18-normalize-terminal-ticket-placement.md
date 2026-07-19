@@ -2,7 +2,7 @@ Status: blocked
 Created: 2026-07-18
 Updated: 2026-07-18
 Parent: .10x/tickets/2026-07-18-repository-cleanup-plan.md
-Depends-On: .10x/tickets/2026-07-18-remove-unreachable-local-catalog-persistence.md
+Depends-On: .10x/tickets/done/2026-07-18-remove-unreachable-local-catalog-persistence.md
 
 # Normalize Terminal Ticket Placement
 

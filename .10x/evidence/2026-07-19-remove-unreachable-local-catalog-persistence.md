@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-19
 Updated: 2026-07-19
-Relates-To: .10x/tickets/2026-07-18-remove-unreachable-local-catalog-persistence.md
+Relates-To: .10x/tickets/done/2026-07-18-remove-unreachable-local-catalog-persistence.md
 
 # Unreachable Local-Catalog Persistence Removal
 

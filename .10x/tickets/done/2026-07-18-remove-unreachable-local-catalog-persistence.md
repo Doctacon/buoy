@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-07-18
 Updated: 2026-07-19
 Parent: .10x/tickets/2026-07-18-repository-cleanup-plan.md
@@ -36,7 +36,7 @@ Before/after production reachability report, exact deleted symbols/tests, focuse
 
 ## Blockers
 
-Complete the preceding exact-host crawler safety repair and incorporate current `develop` before execution.
+None.
 
 ## Explicit exclusions
 
@@ -54,4 +54,17 @@ Removing `catalog migrate-local`; changing card schema, semantic projection, rem
 - 2026-07-19: Pre-execution blocker revalidation confirmed the exact-host predecessor is done. Fetched `origin/develop`; task HEAD and current `origin/develop` both resolved to `25aafee398f78761d3638becd7bd452d00e14927`, so no integration commit was needed.
 - 2026-07-19: Recomputed production reachability with Python AST across `src/**/*.py`. None of the nine scoped symbols is imported or referenced from another production module. Intra-cluster edges are only `save_catalog -> document_to_dict/_atomic_write`, `load_catalog -> empty_catalog`, and `commit_system_card`/`mutate_catalog -> catalog_lock/load_catalog/save_catalog`; `resolve_catalog_path`, `commit_system_card`, and `mutate_catalog` have no production callers.
 - 2026-07-19: Removed exactly the nine scoped definitions and ten persistence-only tests. Preserved parser/card/generated merge coverage without persistence helpers. AST comparison found all 38 retained `catalog.py` definitions identical and no removed-symbol production import. Focused suites passed 151 tests and full suites passed 414 tests on both locked Python 3.11 and 3.13; wheel/sdist build and source/diff checks passed. No live Buoy, Turbopuffer, crawl, user-data, or local-catalog operation occurred. Evidence: `.10x/evidence/2026-07-19-remove-unreachable-local-catalog-persistence.md`. Independent review and closure remain pending.
-- 2026-07-19: Pushed implementation commit `c13bbcc` and opened PR #43 against `develop`. GitHub Actions run `29700312134` passed Python 3.11, Python 3.13, and distribution build. This ticket remains active for the required independent review and must not be closed by the implementation session.
+- 2026-07-19: Pushed implementation commit `c13bbcc` and opened PR #43 against `develop`. GitHub Actions run `29700312134` passed Python 3.11, Python 3.13, and distribution build. Implementation session left the ticket active for required independent review.
+- 2026-07-19: Exhaustive and bounded confirmation reviews both reached PASS; the bounded review completed with no blocker at head `fb52621e89222838ff4b847a3cfd11982a801693`. Review: `.10x/reviews/2026-07-19-remove-unreachable-local-catalog-persistence-review.md`.
+
+## Closure mapping
+
+- Exact dead-symbol scope: before/after production AST reachability and source search in evidence/review.
+- Retained behavior unchanged: 38 retained definitions AST-identical; routing/remote/apply/pending implementations unchanged.
+- Migration/parser/card behavior: direct `migrate-local -> parse_catalog` path and protective focused suites.
+- Obsolete tests only: ten persistence-only tests removed; mixed parser/merge assertions retained directly.
+- Validation: 151 focused and 414 full tests on Python 3.11/3.13, distributions, hosted checks, evidence, and independent pass review.
+
+## Retrospective
+
+After an authority cutover, preserving dead persistence helpers solely because their tests exist creates misleading architecture. Production reachability plus governing records provided a safer deletion boundary than test presence alone. Keep provider-neutral parsing/card logic separate from storage authority so future cutovers can delete one without destabilizing the other.
