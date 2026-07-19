@@ -25,7 +25,7 @@ Thistle triage must complete before deleting its dirty worktree. Source cleanup 
 ## Aggregate acceptance criteria
 
 - Dirty/unmerged work is never deleted before durable classification and salvage/disposition.
-- Product-neutral Thistle crawler/dedup findings receive durable owners; Qdrant-specific work is retired only with preserved evidence and coherent ticket statuses.
+- Product-neutral Thistle exact-host crawler safety receives a durable repair owner; exact-chunk dedup is retired/no-action with only historical non-authoritative provenance preserved; Qdrant-specific work is retired only with preserved inventory evidence and coherent ticket statuses.
 - Only production-unreachable local-catalog persistence code/tests are removed; active card/schema/remote/migrate-local behavior remains.
 - All already-terminal tickets live in terminal directories with repaired references.
 - Stale open/active/blocked tickets receive evidence-backed closure, cancellation/no-action rationale, or explicit remaining blockers; no closure evidence is invented.
@@ -46,3 +46,4 @@ Deleting ignored `artifacts/`, `.buoy/`, credentials, remote namespaces, local/r
 
 - 2026-07-18: User authorized the recommended cleanup sequence. Removed 28 clean worktrees tied to merged PRs, preserved both dirty/unmerged worktrees, and recovered approximately 13.4 GB.
 - 2026-07-18: Independent shaping review passed with no blockers. Review: `.10x/reviews/2026-07-18-repository-cleanup-shaping-review.md`.
+- 2026-07-18: User superseded the earlier dedup-reconciliation direction: retire exact-chunk dedup, preserve it only as historical non-authority, and salvage only the exact-host behavior from the dirty implementation.
