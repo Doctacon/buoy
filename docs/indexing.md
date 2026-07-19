@@ -175,7 +175,7 @@ Pending, preflighted, and failed plans remain available. Catalog registration pe
 
 If remote work and applied state succeed but pending confirmation, remote catalog commit, or pending cleanup fails, apply exits 2 with `remote_apply_succeeded=true`, a retained recoverable pending path, and an exact `buoy catalog reconcile` command. Output reports the phase truthfully: a cleanup-only failure keeps `catalog_updated=true`, includes catalog/card revisions, and sets `pending_cleanup=false`; earlier local failures report `catalog_updated=false`. Do not rerun apply; run the repair command instead. Reconcile can recover an interrupted confirmation only when the exact bound applied-state ledger proves a new matching success. Otherwise an unconfirmed pending file represents indeterminate remote state and can be removed only with the separately reviewed `buoy catalog abandon-pending ... --approve` flow described in the catalog guide.
 
-A legacy `last-applied.json` is removed when the DuckDB ledger is first used; the ledger starts empty so the next approved apply re-upserts reviewed rows rather than trusting legacy local state.
+DuckDB is the only applied-state authority. Obsolete JSON applied-state files are ignored and left unchanged; when no `state.duckdb` exists, apply uses normal first-apply behavior.
 
 ## Stale rows
 

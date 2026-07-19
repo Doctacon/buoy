@@ -20,6 +20,7 @@ from buoy_search.applied_state import (
     AppliedStateError,
     AppliedStateRow,
     acquire_namespace_apply_lock,
+    applied_state_paths,
     build_applied_state,
     load_applied_state,
     load_apply_run_summaries,
@@ -124,6 +125,11 @@ class FakeWriter:
         if FakeWriter.should_delete_fail:
             raise RuntimeError("fake delete failure")
         FakeWriter.deletes.extend(list(row_ids))
+
+
+def file_snapshot(path: Path) -> tuple[int, int, int, int, bytes]:
+    stat = path.stat()
+    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, path.read_bytes()
 
 
 def reset_fakes() -> None:
@@ -420,6 +426,36 @@ class ApplyCliTests(unittest.TestCase):
         )
         self.assertEqual(stderr, "")
 
+    def test_apply_preflight_is_byte_equivalent_with_obsolete_json_present(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            _, plan_path = build_saved_plan(root, state_root=state_root)
+            args = [
+                "apply", "--plan", str(plan_path), "--namespace", "site-example-com-v1",
+                "--state-root", str(state_root), "--json",
+            ]
+
+            absent_result = self.run_main(args)
+            paths = applied_state_paths(
+                site_id="example-com", namespace="site-example-com-v1", state_root=state_root
+            )
+            obsolete_paths = (
+                paths.state_dir / "last-applied.json",
+                paths.state_dir / "legacy-json" / "last-applied.json",
+            )
+            for index, obsolete_path in enumerate(obsolete_paths):
+                obsolete_path.parent.mkdir(parents=True, exist_ok=True)
+                obsolete_path.write_bytes(f"unparseable applied state {index}\x00".encode())
+            before = {path: file_snapshot(path) for path in obsolete_paths}
+
+            present_result = self.run_main(args)
+
+            self.assertEqual(present_result, absent_result)
+            self.assertEqual({path: file_snapshot(path) for path in obsolete_paths}, before)
+            self.assertTrue(json.loads(present_result[1])["state_first_apply"])
+            self.assertFalse(paths.database_path.exists())
+
     def test_retrieval_handoff_commands_quote_every_dynamic_value(self) -> None:
         commands = build_retrieval_commands(
             namespace="legacy namespace; echo unsafe",
@@ -575,6 +611,80 @@ class ApplyCliTests(unittest.TestCase):
         self.assertEqual(result, 2)
         self.assertEqual(stdout, "")
         self.assertIn("TURBOPUFFER_API_KEY must be set", stderr)
+
+    def test_confirmed_apply_matches_first_apply_behavior_with_obsolete_json_present(self) -> None:
+        def run_case(root: Path, *, obsolete: bool) -> tuple[dict[str, object], dict[Path, tuple[int, int, int, int, bytes]]]:
+            reset_fakes()
+            self.remote_catalog.cards = []
+            state_root = root / "state"
+            artifacts, plan_path = build_saved_plan(root, state_root=state_root)
+            paths = applied_state_paths(
+                site_id=artifacts.manifest.site_id,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            )
+            obsolete_paths = (
+                paths.state_dir / "last-applied.json",
+                paths.state_dir / "legacy-json" / "last-applied.json",
+            )
+            before: dict[Path, tuple[int, int, int, int, bytes]] = {}
+            if obsolete:
+                for index, obsolete_path in enumerate(obsolete_paths):
+                    obsolete_path.parent.mkdir(parents=True, exist_ok=True)
+                    obsolete_path.write_bytes(f"obsolete confirmed apply {index}\n".encode())
+                before = {path: file_snapshot(path) for path in obsolete_paths}
+
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
+            ):
+                result, stdout, stderr = self.run_main(
+                    [
+                        "apply", "--plan", str(plan_path), "--namespace", artifacts.manifest.namespace,
+                        "--state-root", str(state_root), "--approve", "--json",
+                    ],
+                    env={"TURBOPUFFER_API_KEY": "test-key"},
+                )
+            self.assertEqual(result, 0, stderr)
+            payload = json.loads(stdout)
+            loaded = load_applied_state(
+                site_id=artifacts.manifest.site_id,
+                namespace=artifacts.manifest.namespace,
+                base_url=artifacts.manifest.base_url,
+                state_root=state_root,
+            )
+            summaries = load_apply_run_summaries(
+                site_id=artifacts.manifest.site_id,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            )
+            after = {path: file_snapshot(path) for path in obsolete_paths} if obsolete else {}
+            projection = {
+                key: payload[key]
+                for key in (
+                    "approved", "dry_run", "state_first_apply", "rows_to_upsert", "rows_upserted",
+                    "embeddings_to_generate", "embeddings_generated", "stale_rows",
+                    "retained_stale_rows", "state_updated", "catalog_updated",
+                )
+            }
+            projection["written_row_ids"] = sorted(str(row["id"]) for row in FakeWriter.rows)
+            projection["state_rows"] = sorted((row.row_id, row.status) for row in loaded.rows)
+            projection["apply_summary_counts"] = [
+                (summary.rows_upserted, summary.rows_deleted, summary.retained_stale_rows)
+                for summary in summaries
+            ]
+            projection["plan_removed"] = not plan_path.parent.exists()
+            self.assertEqual(after, before)
+            return projection, after
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            absent_projection, absent_files = run_case(root / "absent", obsolete=False)
+            present_projection, present_files = run_case(root / "present", obsolete=True)
+
+        self.assertEqual(present_projection, absent_projection)
+        self.assertEqual(absent_files, {})
+        self.assertEqual(len(present_files), 2)
+        self.assertTrue(present_projection["state_first_apply"])
 
     def test_approved_apply_upserts_only_diff_rows_and_updates_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -767,6 +877,15 @@ class ApplyCliTests(unittest.TestCase):
             root = Path(tmp)
             state_root = root / "state"
             artifacts, plan_path = build_saved_plan(root, state_root=state_root)
+            paths = applied_state_paths(
+                site_id=artifacts.manifest.site_id,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            )
+            obsolete_path = paths.state_dir / "last-applied.json"
+            obsolete_path.parent.mkdir(parents=True, exist_ok=True)
+            obsolete_path.write_bytes(b"failed apply must not touch this\n")
+            obsolete_before = file_snapshot(obsolete_path)
             FakeWriter.should_fail = True
 
             with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
@@ -792,11 +911,13 @@ class ApplyCliTests(unittest.TestCase):
                 base_url=artifacts.manifest.base_url,
                 state_root=state_root,
             )
+            obsolete_after = file_snapshot(obsolete_path)
 
         self.assertEqual(result, 2)
         self.assertEqual(stdout, "")
         self.assertIn("fake upsert failure", stderr)
         self.assertTrue(loaded_state.first_apply)
+        self.assertEqual(obsolete_after, obsolete_before)
 
     def test_approved_apply_with_delete_stale_fails_when_no_stale_rows_before_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

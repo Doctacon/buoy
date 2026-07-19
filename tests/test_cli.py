@@ -10,11 +10,16 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from buoy_search.applied_state import AppliedStateRow, build_applied_state, save_applied_state
+from buoy_search.applied_state import AppliedStateRow, applied_state_paths, build_applied_state, save_applied_state
 from buoy_search.cli import OneLineProgress, build_parser, legacy_main, main, print_eval_text, print_retrieval_text
 from buoy_search.crawler import CrawlExecution, CrawlOptions
 from buoy_search.chunker import process_corpus
 from buoy_search.plan_artifacts import build_plan_artifacts, write_plan_artifacts
+
+
+def file_snapshot(path: Path) -> tuple[int, int, int, int, bytes]:
+    stat = path.stat()
+    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, path.read_bytes()
 
 
 def write_fake_crawl_page(pages_dir: Path) -> None:
@@ -629,6 +634,17 @@ class CliTests(unittest.TestCase):
         root = Path(tmp.name)
         out_dir = root / "plan"
         state_root = root / "state"
+        state_paths = applied_state_paths(
+            site_id="example-com", namespace="site-example-com-v1", state_root=state_root
+        )
+        obsolete_paths = (
+            state_paths.state_dir / "last-applied.json",
+            state_paths.state_dir / "legacy-json" / "last-applied.json",
+        )
+        for index, obsolete_path in enumerate(obsolete_paths):
+            obsolete_path.parent.mkdir(parents=True, exist_ok=True)
+            obsolete_path.write_bytes(f"obsolete plan state {index}\x00".encode())
+        obsolete_before = {path: file_snapshot(path) for path in obsolete_paths}
 
         def fake_crawl(options: CrawlOptions) -> dict[str, object]:
             write_fake_crawl_page(options.out_dir / "pages")
@@ -688,6 +704,8 @@ class CliTests(unittest.TestCase):
         self.assertTrue((out_dir / "chunks.jsonl").exists())
         self.assertTrue((out_dir / "summary.json").exists())
         self.assertEqual(len(list((out_dir / "pages").glob("*.md"))), 1)
+        self.assertEqual({path: file_snapshot(path) for path in obsolete_paths}, obsolete_before)
+        self.assertFalse(state_paths.database_path.exists())
         plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
         manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
         chunks = [json.loads(line) for line in (out_dir / "chunks.jsonl").read_text(encoding="utf-8").splitlines()]

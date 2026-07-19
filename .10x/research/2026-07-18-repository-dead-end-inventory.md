@@ -55,7 +55,7 @@ Conclusion: remove only the unreachable cluster and its obsolete persistence tes
 
 ### JSON applied-state compatibility
 
-`last-applied.json` discovery, parsing, migration, archive, and deletion are an intentional removal target already owned by `.10x/tickets/2026-07-18-remove-legacy-json-applied-state.md`. This inventory does not duplicate that owner.
+`last-applied.json` discovery, parsing, migration, archive, and deletion are an intentional removal target already owned by `.10x/tickets/done/2026-07-18-remove-legacy-json-applied-state.md`. This inventory does not duplicate that owner.
 
 ### Record graph debris
 

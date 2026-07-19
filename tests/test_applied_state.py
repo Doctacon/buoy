@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 import tempfile
@@ -21,7 +20,6 @@ from buoy_search.applied_state import (
     AppliedStateRow,
     acquire_namespace_apply_lock,
     applied_state_paths,
-    applied_state_to_json,
     build_applied_state,
     load_applied_state,
     load_apply_run_summaries,
@@ -43,6 +41,11 @@ def sample_row(row_id: str = "ts_abc", *, status: str = ROW_STATUS_ACTIVE) -> Ap
     )
 
 
+def file_snapshot(path: Path) -> tuple[int, int, int, int, bytes]:
+    stat = path.stat()
+    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, path.read_bytes()
+
+
 def sample_state(rows: list[AppliedStateRow] | None = None):
     return build_applied_state(
         site_id="example-com",
@@ -56,15 +59,12 @@ def sample_state(rows: list[AppliedStateRow] | None = None):
 
 
 class AppliedStateStoreTests(unittest.TestCase):
-    def test_default_paths_are_per_namespace_duckdb_and_legacy_cleanup(self) -> None:
+    def test_default_paths_are_per_namespace_duckdb(self) -> None:
         paths = applied_state_paths(site_id="example-com", namespace="site-example-com-v1")
 
-        self.assertEqual(paths.database_path, Path(".buoy/state/example-com/site-example-com-v1/state.duckdb"))
-        self.assertEqual(paths.legacy_state_path, Path(".buoy/state/example-com/site-example-com-v1/last-applied.json"))
-        self.assertEqual(
-            paths.legacy_archive_path,
-            Path(".buoy/state/example-com/site-example-com-v1/legacy-json/last-applied.json"),
-        )
+        self.assertEqual(paths.state_dir, Path(".buoy/state/example-com/site-example-com-v1"))
+        self.assertEqual(paths.database_path, paths.state_dir / "state.duckdb")
+        self.assertEqual(paths.lock_path, paths.state_dir / "apply.lock")
 
     def test_implicit_state_root_defaults_to_buoy_without_creating_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -175,8 +175,6 @@ class AppliedStateStoreTests(unittest.TestCase):
             )
 
             self.assertTrue(paths.database_path.exists())
-            self.assertFalse(paths.legacy_state_path.exists())
-            self.assertFalse(paths.legacy_archive_path.exists())
             self.assertFalse((paths.state_dir / "history").exists())
             self.assertEqual(loaded, expected)
             with duckdb.connect(str(paths.database_path), read_only=True) as connection:
@@ -232,79 +230,77 @@ class AppliedStateStoreTests(unittest.TestCase):
             )
             self.assertFalse((paths.state_dir / "history").exists())
 
-    def test_legacy_json_is_deleted_and_resets_active_state(self) -> None:
+    def test_obsolete_json_files_are_inert_without_duckdb_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             state_root = Path(tmp)
             paths = applied_state_paths(site_id="example-com", namespace="site-example-com-v1", state_root=state_root)
-            paths.state_dir.mkdir(parents=True)
-            paths.legacy_state_path.write_text(json.dumps(applied_state_to_json(sample_state())), encoding="utf-8")
+            obsolete_paths = (
+                paths.state_dir / "last-applied.json",
+                paths.state_dir / "legacy-json" / "last-applied.json",
+            )
+            for index, obsolete_path in enumerate(obsolete_paths):
+                obsolete_path.parent.mkdir(parents=True, exist_ok=True)
+                obsolete_path.write_bytes(f"not valid json {index}\x00".encode())
+            before = {path: file_snapshot(path) for path in obsolete_paths}
 
-            migrated = load_applied_state(
+            loaded = load_applied_state(
                 site_id="example-com",
                 namespace="site-example-com-v1",
                 base_url="https://example.com/docs/",
                 state_root=state_root,
             )
 
-            self.assertTrue(migrated.first_apply)
-            self.assertEqual(migrated.rows, [])
-            self.assertTrue(paths.database_path.exists())
-            self.assertFalse(paths.legacy_state_path.exists())
-            self.assertFalse(paths.legacy_archive_path.exists())
-            self.assertFalse(paths.legacy_archive_path.parent.exists())
-            self.assertFalse(list(paths.state_dir.glob(".state.duckdb.tmp-*")))
-
-    def test_legacy_json_survives_failed_database_initialization(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            state_root = Path(tmp)
-            paths = applied_state_paths(site_id="example-com", namespace="site-example-com-v1", state_root=state_root)
-            paths.state_dir.mkdir(parents=True)
-            legacy_payload = json.dumps(applied_state_to_json(sample_state()))
-            paths.legacy_state_path.write_text(legacy_payload, encoding="utf-8")
-
-            with mock.patch(
-                "buoy_search.applied_state._initialize_schema",
-                side_effect=duckdb.Error("simulated initialization failure"),
-            ):
-                with self.assertRaisesRegex(AppliedStateError, "could not initialize DuckDB applied state"):
-                    load_applied_state(
-                        site_id="example-com",
-                        namespace="site-example-com-v1",
-                        base_url="https://example.com/docs/",
-                        state_root=state_root,
-                    )
-
-            self.assertEqual(paths.legacy_state_path.read_text(encoding="utf-8"), legacy_payload)
+            self.assertTrue(loaded.first_apply)
+            self.assertEqual(loaded.rows, [])
             self.assertFalse(paths.database_path.exists())
-            self.assertFalse(list(paths.state_dir.glob(".state.duckdb.tmp-*")))
+            self.assertEqual({path: file_snapshot(path) for path in obsolete_paths}, before)
 
-    def test_legacy_migration_is_idempotent_and_purges_prior_archive(self) -> None:
+    def test_obsolete_json_files_are_inert_during_duckdb_save_and_load(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             state_root = Path(tmp)
             paths = applied_state_paths(site_id="example-com", namespace="site-example-com-v1", state_root=state_root)
-            paths.state_dir.mkdir(parents=True)
-            paths.legacy_archive_path.parent.mkdir()
-            paths.legacy_archive_path.write_text(json.dumps(applied_state_to_json(sample_state())), encoding="utf-8")
-            paths.legacy_state_path.write_text(json.dumps(applied_state_to_json(sample_state())), encoding="utf-8")
+            obsolete_paths = (
+                paths.state_dir / "last-applied.json",
+                paths.state_dir / "legacy-json" / "last-applied.json",
+            )
+            for index, obsolete_path in enumerate(obsolete_paths):
+                obsolete_path.parent.mkdir(parents=True, exist_ok=True)
+                obsolete_path.write_bytes(f"obsolete {index}\n".encode())
+            before = {path: file_snapshot(path) for path in obsolete_paths}
 
-            first = load_applied_state(
+            expected = sample_state()
+            save_applied_state(expected, state_root=state_root)
+            loaded = load_applied_state(
                 site_id="example-com",
                 namespace="site-example-com-v1",
                 base_url="https://example.com/docs/",
                 state_root=state_root,
             )
-            second = load_applied_state(
+
+            self.assertEqual(loaded, expected)
+            self.assertEqual({path: file_snapshot(path) for path in obsolete_paths}, before)
+
+    def test_valid_initialized_empty_duckdb_is_first_apply_with_obsolete_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            state_root = Path(tmp)
+            paths = save_applied_state(sample_state(), state_root=state_root)
+            with duckdb.connect(str(paths.database_path)) as connection:
+                connection.execute("DELETE FROM applied_rows")
+                connection.execute("DELETE FROM state_metadata")
+            obsolete_path = paths.state_dir / "last-applied.json"
+            obsolete_path.write_bytes(b'{"rows": ["must not parse"]}\n')
+            before = file_snapshot(obsolete_path)
+
+            loaded = load_applied_state(
                 site_id="example-com",
                 namespace="site-example-com-v1",
                 base_url="https://example.com/docs/",
                 state_root=state_root,
             )
 
-            self.assertTrue(first.first_apply)
-            self.assertTrue(second.first_apply)
-            self.assertFalse(paths.legacy_state_path.exists())
-            self.assertFalse(paths.legacy_archive_path.exists())
-            self.assertFalse(paths.legacy_archive_path.parent.exists())
+            self.assertTrue(loaded.first_apply)
+            self.assertEqual(loaded.rows, [])
+            self.assertEqual(file_snapshot(obsolete_path), before)
 
     def test_invalid_persisted_state_identity_fails_clearly(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -328,6 +324,9 @@ class AppliedStateStoreTests(unittest.TestCase):
             with duckdb.connect(str(paths.database_path)) as connection:
                 connection.execute("DELETE FROM state_schema")
                 connection.execute("INSERT INTO state_schema VALUES (999)")
+            obsolete_path = paths.state_dir / "last-applied.json"
+            obsolete_path.write_bytes(b"invalid duckdb must still fail closed\n")
+            before = file_snapshot(obsolete_path)
 
             with self.assertRaisesRegex(AppliedStateError, "unsupported DuckDB applied state schema version"):
                 load_applied_state(
@@ -336,6 +335,7 @@ class AppliedStateStoreTests(unittest.TestCase):
                     base_url="https://example.com/docs/",
                     state_root=state_root,
                 )
+            self.assertEqual(file_snapshot(obsolete_path), before)
 
     def test_applied_rows_without_exactly_one_metadata_row_fail_clearly(self) -> None:
         for mutation, expected_error in (

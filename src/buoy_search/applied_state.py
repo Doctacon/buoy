@@ -8,13 +8,10 @@ commands.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-import json
-import os
 from pathlib import Path
-from typing import Any, Iterator, Literal
-from uuid import uuid4
+from typing import Iterator, Literal
 
 import duckdb
 import portalocker
@@ -35,7 +32,6 @@ ROW_STATUS_DELETED = "deleted"
 VALID_ROW_STATUSES = {ROW_STATUS_ACTIVE, ROW_STATUS_RETAINED_STALE, ROW_STATUS_DELETED}
 
 RowStatus = Literal["active", "retained_stale", "deleted"]
-JsonObject = dict[str, Any]
 
 
 class AppliedStateError(ValueError):
@@ -113,8 +109,6 @@ class AppliedStatePaths:
     state_dir: Path
     database_path: Path
     lock_path: Path
-    legacy_state_path: Path
-    legacy_archive_path: Path
 
 
 def applied_state_paths(
@@ -123,7 +117,7 @@ def applied_state_paths(
     namespace: str,
     state_root: Path = DEFAULT_STATE_ROOT,
 ) -> AppliedStatePaths:
-    """Return local DuckDB and legacy-cleanup paths for one state ledger."""
+    """Return local DuckDB paths for one state ledger."""
 
     safe_site_id = safe_state_component(site_id, label="site_id")
     safe_namespace = safe_state_component(namespace, label="namespace")
@@ -132,8 +126,6 @@ def applied_state_paths(
         state_dir=state_dir,
         database_path=state_dir / "state.duckdb",
         lock_path=state_dir / "apply.lock",
-        legacy_state_path=state_dir / "last-applied.json",
-        legacy_archive_path=state_dir / "legacy-json" / "last-applied.json",
     )
 
 
@@ -169,16 +161,10 @@ def load_applied_state(
     base_url: str,
     state_root: Path = DEFAULT_STATE_ROOT,
 ) -> AppliedState:
-    """Load current DuckDB state or return a first-apply empty state.
-
-    A legacy JSON ledger is deleted and replaced with an intentionally empty
-    database. It is not imported because it may describe remote rows that no
-    longer exist.
-    """
+    """Load current DuckDB state or return a first-apply empty state."""
 
     normalized_base_url = validate_base_url(base_url)
     paths = applied_state_paths(site_id=site_id, namespace=namespace, state_root=state_root)
-    _migrate_legacy_state(paths)
     if not paths.database_path.exists():
         return _first_apply_state(site_id=site_id, namespace=namespace, base_url=normalized_base_url)
 
@@ -268,7 +254,6 @@ def save_applied_state(
         _validate_apply_run(apply_run, state=state)
 
     paths = applied_state_paths(site_id=state.site_id, namespace=state.namespace, state_root=state_root)
-    _migrate_legacy_state(paths)
     paths.state_dir.mkdir(parents=True, exist_ok=True)
     try:
         with duckdb.connect(str(paths.database_path)) as connection:
@@ -399,65 +384,6 @@ def build_applied_state(
     )
 
 
-def applied_state_to_json(state: AppliedState) -> JsonObject:
-    """Serialize legacy JSON state for archive fixtures and compatibility tests."""
-
-    payload = asdict(state)
-    payload.pop("first_apply", None)
-    return normalize_state_json(payload)
-
-
-def applied_state_from_json(payload: JsonObject) -> AppliedState:
-    """Parse a legacy JSON state payload without activating it."""
-
-    if not isinstance(payload, dict):
-        raise AppliedStateError("applied state must be a JSON object")
-    rows_payload = payload.get("rows", [])
-    if not isinstance(rows_payload, list):
-        raise AppliedStateError("applied state rows must be a list")
-    rows = [applied_state_row_from_json(row, index=index) for index, row in enumerate(rows_payload)]
-    try:
-        return AppliedState(
-            schema_version=int(payload["schema_version"]),
-            site_id=str(payload["site_id"]),
-            namespace=str(payload["namespace"]),
-            base_url=validate_base_url(str(payload["base_url"])),
-            updated_at=str(payload.get("updated_at", "")),
-            last_plan_id=str(payload.get("last_plan_id", "")),
-            last_apply_id=str(payload.get("last_apply_id", "")),
-            rows=rows,
-            first_apply=False,
-        )
-    except KeyError as exc:
-        raise AppliedStateError(f"applied state missing required field: {exc.args[0]}") from exc
-    except (TypeError, ValueError) as exc:
-        raise AppliedStateError(f"applied state is invalid: {exc}") from exc
-
-
-def applied_state_row_from_json(payload: Any, *, index: int) -> AppliedStateRow:
-    if not isinstance(payload, dict):
-        raise AppliedStateError(f"applied state row {index} must be a JSON object")
-    try:
-        status = str(payload.get("status", ROW_STATUS_ACTIVE))
-        if status not in VALID_ROW_STATUSES:
-            raise AppliedStateError(
-                f"applied state row {index} has invalid status {status!r}; "
-                f"expected one of {sorted(VALID_ROW_STATUSES)}"
-            )
-        return AppliedStateRow(
-            row_id=str(payload["row_id"]),
-            canonical_url=str(payload["canonical_url"]),
-            page_hash=str(payload["page_hash"]),
-            chunk_hash=str(payload["chunk_hash"]),
-            embedding_text_hash=str(payload["embedding_text_hash"]),
-            plan_id=str(payload["plan_id"]),
-            applied_at=str(payload["applied_at"]),
-            status=status,  # type: ignore[arg-type]
-        )
-    except KeyError as exc:
-        raise AppliedStateError(f"applied state row {index} missing required field: {exc.args[0]}") from exc
-
-
 def validate_applied_state(
     state: AppliedState,
     *,
@@ -504,18 +430,6 @@ def validate_applied_state(
                 raise AppliedStateError(f"applied state row {index} has empty {field_name}")
 
 
-def normalize_state_json(value: Any) -> Any:
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, dict):
-        return {str(key): normalize_state_json(value[key]) for key in sorted(value)}
-    if isinstance(value, (list, tuple)):
-        return [normalize_state_json(item) for item in value]
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    return str(value)
-
-
 def safe_state_component(value: str, *, label: str) -> str:
     """Validate one path component used by local state paths."""
 
@@ -538,48 +452,6 @@ def _first_apply_state(*, site_id: str, namespace: str, base_url: str) -> Applie
         rows=[],
         first_apply=True,
     )
-
-
-def _migrate_legacy_state(paths: AppliedStatePaths) -> None:
-    """Delete legacy JSON only after installing an empty valid database."""
-
-    _delete_legacy_archive(paths)
-    if paths.database_path.exists():
-        if paths.legacy_state_path.exists():
-            paths.legacy_state_path.unlink()
-        return
-    if not paths.legacy_state_path.exists():
-        return
-    paths.state_dir.mkdir(parents=True, exist_ok=True)
-    _initialize_empty_database(paths)
-    paths.legacy_state_path.unlink()
-
-
-def _initialize_empty_database(paths: AppliedStatePaths) -> None:
-    """Atomically install a valid empty DuckDB ledger without risking legacy state."""
-
-    temporary_path = paths.database_path.with_name(f".{paths.database_path.name}.tmp-{uuid4().hex}")
-    try:
-        with duckdb.connect(str(temporary_path)) as connection:
-            _initialize_schema(connection)
-        os.replace(temporary_path, paths.database_path)
-    except (duckdb.Error, OSError) as exc:
-        raise AppliedStateError(f"could not initialize DuckDB applied state: {exc}") from exc
-    finally:
-        if temporary_path.exists():
-            temporary_path.unlink()
-
-
-def _delete_legacy_archive(paths: AppliedStatePaths) -> None:
-    """Remove a legacy directory left by the superseded migration."""
-
-    if paths.legacy_archive_path.is_file():
-        paths.legacy_archive_path.unlink()
-    archive_dir = paths.legacy_archive_path.parent
-    if archive_dir.is_symlink():
-        archive_dir.unlink()
-    elif archive_dir.is_dir() and not any(archive_dir.iterdir()):
-        archive_dir.rmdir()
 
 
 def _initialize_schema(connection: duckdb.DuckDBPyConnection) -> None:

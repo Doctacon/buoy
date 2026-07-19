@@ -39,7 +39,7 @@ Each `(site_id, namespace)` has an embedded local DuckDB ledger at:
 Existing projects with only `.turbo-search` use that root in place with a warning; see `docs/migrating-to-buoy.md` for the bounded 0.2 compatibility contract.
 
 - The ledger stores current row state plus compact apply summaries, not full row snapshots.
-- On first access, a legacy `last-applied.json` is deleted and active state starts empty. The next approved apply must therefore re-upsert the reviewed corpus; do not assume old local rows still exist remotely.
+- DuckDB is the only applied-state authority. Obsolete JSON applied-state files are ignored and left unchanged; without `state.duckdb`, the next approved apply uses first-apply behavior and re-upserts the reviewed corpus.
 - `apply --approve` takes a non-blocking lock for that namespace before embeddings or Turbopuffer writes. A same-namespace contender fails with a busy error; different namespaces have independent databases and can apply concurrently.
 - This is embedded local state: do not add or depend on Quack, a listener, or shared cross-machine state.
 

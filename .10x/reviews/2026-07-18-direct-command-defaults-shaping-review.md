@@ -24,7 +24,7 @@ Final independent review found no remaining blocker. It confirmed:
 - `.10x/decisions/duckdb-only-applied-state-hard-cutover.md` makes DuckDB sole applied-state authority and makes obsolete JSON files inert without affecting unrelated compatibility;
 - `.10x/specs/compact-duckdb-applied-state.md` preserves content-failure, content-success, catalog-partial-success, locking, and invalid-state contracts;
 - `.10x/specs/approved-apply-remote-catalog-registration.md` agrees with the ledger-before-catalog sequence;
-- `.10x/tickets/2026-07-18-remove-legacy-json-applied-state.md` is executable without semantic invention.
+- `.10x/tickets/done/2026-07-18-remove-legacy-json-applied-state.md` is executable without semantic invention.
 
 ## Verdict
 
