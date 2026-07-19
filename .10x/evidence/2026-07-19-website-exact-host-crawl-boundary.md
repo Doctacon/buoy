@@ -66,4 +66,4 @@ Validation after remediation:
 - Fixtures contacted loopback servers only; no live site, model, Turbopuffer service, or other remote service was used.
 - Independent rereview remains a separate gate; this evidence does not review or close the ticket.
 - The redirect-safe robots integration remains private Scrapling API usage, bounded to exact version 0.4.9 and guarded to fail closed when the version or required runtime shape differs.
-- Hosted validation for the remediation commit was still pending when these local results were recorded.
+- Hosted GitHub Actions run `29697655401` passed Python 3.11 (44s), Python 3.13 (45s), and distribution build (10s) for remediation commit `5862708`.
