@@ -1662,6 +1662,7 @@ def print_crawl_text(payload: dict[str, object]) -> None:
         print(f"  pages_scraped: {payload['pages_scraped']}; chunks_generated: {payload['chunks_generated']}")
     print_limit_summary(payload)
     print_filter_summary(payload)
+    print_crawl_boundary_summary(payload)
     print_docs_version_summary(payload)
     print_language_summary(payload)
     print(f"  out_dir: {payload['out_dir']}")
@@ -1699,6 +1700,7 @@ def print_plan_text(payload: dict[str, object]) -> None:
         print(f"  pages_scraped: {payload['pages_scraped']}; chunks_generated: {payload['chunks_generated']}")
     print_limit_summary(payload)
     print_filter_summary(payload)
+    print_crawl_boundary_summary(payload)
     print_docs_version_summary(payload)
     print_language_summary(payload)
     diff = payload.get("diff", {}) if isinstance(payload.get("diff"), dict) else {}
@@ -1765,6 +1767,16 @@ def print_filter_summary(payload: dict[str, object]) -> None:
             f"exclude={list(exclude_paths)}; "
             f"strip_trailing_slash={strip_trailing_slash}"
         )
+
+
+def print_crawl_boundary_summary(payload: dict[str, object]) -> None:
+    if "blocked_discovery_count" not in payload and "blocked_redirect_count" not in payload:
+        return
+    print(
+        "  exact_host_boundary: "
+        f"blocked_discoveries={int(payload.get('blocked_discovery_count', 0) or 0)}; "
+        f"blocked_redirects={int(payload.get('blocked_redirect_count', 0) or 0)}"
+    )
 
 
 def print_docs_version_summary(payload: dict[str, object]) -> None:

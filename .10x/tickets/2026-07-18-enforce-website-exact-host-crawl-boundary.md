@@ -1,6 +1,6 @@
-Status: open
+Status: active
 Created: 2026-07-18
-Updated: 2026-07-18
+Updated: 2026-07-19
 Parent: .10x/tickets/2026-07-18-repository-cleanup-plan.md
 Depends-On: .10x/tickets/done/2026-07-18-triage-thistle-qdrant-dead-end.md
 
@@ -39,3 +39,5 @@ Live Thistle/Mercury crawling, remote mutation, general SSRF policy, subdomain e
 ## Progress and notes
 
 - 2026-07-18: Opened from read-only dead-end triage after current source inspection confirmed final response and redirect targets are not exact-host enforced.
+- 2026-07-19: Disabled automatic Scrapling/urllib redirects for website crawling and added exact-host validation before discovered or redirected requests, including robots/sitemap policy acquisition, spider sitemap/robots declarations, every redirect hop, final responses, and the 20-hop ceiling. Added separate count-only boundary stats and summary rendering without blocked destination details.
+- 2026-07-19: Added local two-server focused coverage for off-host discovery shapes, same-host and off-host redirects, different-port same-host behavior, robots denial, sitemap/robots declarations and redirects, the pre-crawl policy path, unexpected final hosts, hop limits, and summary leakage. Focused suites passed 46 tests and full suites passed 418 tests on both locked Python 3.11 and 3.13; wheel/sdist build and static checks passed. Evidence: `.10x/evidence/2026-07-19-website-exact-host-crawl-boundary.md`. Independent review and closure remain pending.
