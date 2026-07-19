@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-18
 Updated: 2026-07-18
-Relates-To: .10x/tickets/2026-07-18-make-retrieval-live-by-default.md, .10x/specs/default-remote-namespace-routing.md, .10x/specs/apply-to-retrieval-handoff.md
+Relates-To: .10x/tickets/done/2026-07-18-make-retrieval-live-by-default.md, .10x/specs/default-remote-namespace-routing.md, .10x/specs/apply-to-retrieval-handoff.md
 
 # Retrieval Live-by-Default Validation
 

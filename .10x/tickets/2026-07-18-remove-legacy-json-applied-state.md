@@ -2,7 +2,7 @@ Status: open
 Created: 2026-07-18
 Updated: 2026-07-18
 Parent: .10x/tickets/2026-07-18-direct-command-defaults-plan.md
-Depends-On: .10x/tickets/2026-07-18-make-retrieval-live-by-default.md
+Depends-On: .10x/tickets/done/2026-07-18-make-retrieval-live-by-default.md
 
 # Remove Legacy JSON Applied-State Compatibility
 

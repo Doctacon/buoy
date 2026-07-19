@@ -12,7 +12,7 @@ Make retrieval execute live by default and make interactive apply prompt after p
 
 ## Child sequence
 
-1. `.10x/tickets/2026-07-18-make-retrieval-live-by-default.md`
+1. `.10x/tickets/done/2026-07-18-make-retrieval-live-by-default.md`
 2. `.10x/tickets/2026-07-18-remove-legacy-json-applied-state.md`
 3. `.10x/tickets/2026-07-18-add-interactive-apply-confirmation.md`
 

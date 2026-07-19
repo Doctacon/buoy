@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-07-18
 Updated: 2026-07-18
 Parent: .10x/tickets/2026-07-18-direct-command-defaults-plan.md
@@ -53,5 +53,19 @@ Apply prompt/mode implementation; catalog command defaults; routing algorithm/ca
 - 2026-07-18: Reversed generated apply handoff commands so `live` is plain and `preview` appends `--dry-run`; updated retrieval help, README, changelog, retrieval guide, and migration guidance without changing apply confirmation or applied-state behavior.
 - 2026-07-18: Focused fake-backed suites passed on Python 3.11 and 3.13 (107 tests each); full suites passed on both (405 tests each); wheel/sdist build and asset verification passed. Evidence: `.10x/evidence/2026-07-18-retrieval-live-by-default.md`.
 - 2026-07-18: Initial hosted pull-request checks passed on Python 3.11, Python 3.13, and distribution build (PR #34, Actions run `29673894066`); identities are recorded in `.10x/evidence/2026-07-18-retrieval-live-by-default.md`.
-- 2026-07-18: Ticket remains active pending independent review; it is not closed by this implementation session.
+- 2026-07-18: Implementation session left the ticket active pending independent review.
 - 2026-07-18: Corrected the PR #34 review blocker: routed automatic preview now reports command-level credentials and read-only Turbopuffer API calls truthfully at the top level while explicit preview remains credential/API-free and live behavior is unchanged. Focused suites passed on Python 3.11 and 3.13 (26 tests each); full suites passed on both (405 tests each). Evidence: `.10x/evidence/2026-07-18-retrieval-live-by-default.md`.
+- 2026-07-18: Final independent re-review passed at commit `31aeeee27758e4aed9d16d73e7886b62235840b3`; hosted Python 3.11/3.13 and distribution checks passed. Review: `.10x/reviews/2026-07-18-retrieval-live-by-default-review.md`.
+
+## Closure mapping
+
+- Parser/mode/compatibility matrix: focused tests and evidence call traces in `.10x/evidence/2026-07-18-retrieval-live-by-default.md`.
+- Automatic and explicit live/preview boundaries: focused automatic and multi-namespace suites on Python 3.11/3.13 plus independent review.
+- Output equivalence, truthfulness, and all-or-nothing behavior: regression assertions reviewed at final commit, including the corrected command-level automatic-preview fields.
+- Generated handoff command shape/quoting: apply CLI tokenization tests and reviewed `shlex.join` implementation.
+- No apply/catalog write behavior change: bounded diff inspection and independent review.
+- Full validation: 405 tests on Python 3.11 and 3.13, wheel/sdist build, release asset checks, and hosted PR checks.
+
+## Retrospective
+
+The useful durable lesson is that nested output truth does not guarantee command-level truth when serializers compose objects. Existing tests asserted only nested routing facts, allowing contradictory top-level safety fields to pass. The final regression now checks both levels; this lesson is specific to the corrected implementation and does not require a separate reusable procedure.
