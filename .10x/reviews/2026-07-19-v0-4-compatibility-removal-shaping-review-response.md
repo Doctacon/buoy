@@ -22,7 +22,7 @@ Reviewed response targets:
 1. **Environment rejection boundary was underspecified.** The active response now requires inspection after successful parsing and before actual handler dispatch, covers every primary/catalog/autoresearch command, preserves parser/help/version/no-handler behavior, and rejects before reads or side effects.
 2. **Diagnostic and stream behavior was underspecified.** The active response defines exact singular/both diagnostics, presence including empty values, old/new matrices, deterministic model-then-precision ordering, value redaction, exit 2, one stderr line, and empty stdout under `--json`.
 3. **Console source and upgrade proof were incomplete.** The active response requires deletion of both the `pyproject.toml` script and dedicated `legacy_main` hook, plus clean install and a same-environment normal upgrade from the immutable digest-verified released GitHub 0.3.0 wheel to a candidate 0.4.0 wheel. Entry-point metadata and launcher directories are inspected before and after.
-4. **Graph/exclusions needed hardening.** The response creates a non-executable parent, two bounded executable children with parallel-work/aggregate-integration constraints, and a separate open record-only owner for stale direct-command guidance. The skill reference is explicitly excluded from 0.4 implementation.
+4. **Graph/exclusions needed hardening.** The response creates a non-executable parent, two bounded executable children with parallel-work/aggregate-integration constraints, and a separate open record-only owner for both stale statements found in the Scrapling workflow reference: retrieval no longer requires `--live`, and apply should not instruct setting `TURBOPUFFER_NAMESPACE` because the reviewed plan/CLI governs its namespace. The skill reference remains explicitly excluded from 0.4 implementation.
 5. **Retained compatibility and effects needed an exact boundary.** Both active specs preserve every inventoried non-alias compatibility surface and prohibit state/data/remote/publication/tag/release effects.
 
 ## Verification of shaping graph
@@ -30,7 +30,7 @@ Reviewed response targets:
 - Both focused specifications are active and contain behavior, edge cases, exact scenarios, acceptance criteria, exclusions, and evidence requirements.
 - Both implementation children have `Blockers: None`, reference the smallest governing spec, and contain no unresolved semantic default.
 - The parent is explicitly non-executable and states parallelism plus the aggregate 0.4.0 integration gate.
-- The stale skill-reference correction has a separate durable owner and is neither a child nor acceptance evidence for the 0.4 removal.
+- Both stale skill-reference corrections have the same exact, separate durable owner, with scope, acceptance criteria, exclusions, evidence expectations, and authority references for each; neither correction is a child or acceptance evidence for the 0.4 removal.
 - The shaping ticket's criteria map to the completed inventory, ratified specs, executable graph, and this response.
 
 ## Verdict

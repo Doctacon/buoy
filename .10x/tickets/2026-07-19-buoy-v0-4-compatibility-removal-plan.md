@@ -33,7 +33,7 @@ The children have no semantic dependency and their implementation/review work ma
 
 Each child records exact commands, focused/full results, changed paths, stream/exit assertions, package or sentinel observations, and explicit side-effect limits. Aggregate integration verifies both active specifications against the combined diff, candidate 0.4.0 metadata, distribution artifacts, hosted checks, and independent reviews before either child or this plan closes.
 
-The stale direct-command statement in `.pi/skills/turbopuffer-site-rag/references/scrapling-site-workflow.md` is separately owned by `.10x/tickets/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md`; it is not implementation scope or evidence for this plan.
+The two stale retrieval-mode and apply-namespace statements in `.pi/skills/turbopuffer-site-rag/references/scrapling-site-workflow.md` are separately owned by `.10x/tickets/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md`; neither is implementation scope or evidence for this plan.
 
 ## Blockers
 
@@ -41,7 +41,7 @@ None. The user ratified all execution-critical semantics on 2026-07-19.
 
 ## Explicit exclusions
 
-Any compatibility beyond the three named aliases; arbitrary user-owned launchers; state/data migration or deletion; remote reads/writes; PyPI publication; Git tags; GitHub Release creation; stale skill-reference correction; unrelated parser/config/refactoring work.
+Any compatibility beyond the three named aliases; arbitrary user-owned launchers; state/data migration or deletion; remote reads/writes; PyPI publication; Git tags; GitHub Release creation; stale skill-reference corrections; unrelated parser/config/refactoring work.
 
 ## References
 

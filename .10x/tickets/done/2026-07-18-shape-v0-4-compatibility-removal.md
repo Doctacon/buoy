@@ -47,9 +47,9 @@ Implementing removals; changing source/tests/user docs/version numbers; publishi
 
 - 2026-07-19: Dependency `.10x/tickets/done/2026-07-18-review-stale-ticket-statuses.md` completed; this shaping ticket became unblocked.
 - 2026-07-19: Inspected active removal authority and current implementation across source, parser/help, package metadata, user docs, changelog, tests, operational skill, decisions, specifications, release mechanics, and integrated direct-command behavior. Only `turbo-search`, `TURBO_SEARCH_EMBEDDING_MODEL`, and `TURBO_SEARCH_EMBEDDING_PRECISION` have an explicit 0.4 schedule. Inventory: `.10x/research/2026-07-19-v0-4-compatibility-removal-inventory.md`.
-- 2026-07-19: Classified `.turbo-search` state-root fallback, old plans, retrieve flags, source aliases, and `catalog migrate-local` as retained. Found independently stale retrieval guidance in the Scrapling workflow reference.
+- 2026-07-19: Classified `.turbo-search` state-root fallback, old plans, retrieve flags, source aliases, and `catalog migrate-local` as retained. Found two independently stale statements in the Scrapling workflow reference: retrieval no longer requires `--live`, and apply should not be directed by ambient `TURBOPUFFER_NAMESPACE` instead of its reviewed plan/CLI authority.
 - 2026-07-19: User ratified the exact reviewed 0.4.0 contract: pre-dispatch rejection of either old variable, exact stream/diagnostic/order behavior, console script and hook deletion, same-environment released-wheel upgrade proof, retained compatibility, and no state/data/remote effects.
-- 2026-07-19: Activated two focused specs; opened a non-executable parent and two bounded executable children; opened a separate record-only stale-guidance owner. Shaping response review passed. No source, tests, user docs, package/version metadata, state/data, remote resource, tag, publication, or release changed.
+- 2026-07-19: Activated two focused specs; opened a non-executable parent and two bounded executable children; opened a separate record-only owner for both stale Scrapling workflow statements. Shaping response review passed. No source, tests, user docs, package/version metadata, state/data, remote resource, tag, publication, or release changed.
 
 ## Closure mapping
 
@@ -57,7 +57,7 @@ Implementing removals; changing source/tests/user docs/version numbers; publishi
 - Ratified console behavior and upgrade validation: `.10x/specs/buoy-v0-4-console-alias-removal.md`.
 - Ratified command boundary, diagnostics, coverage, retained config, and no-side-effect behavior: `.10x/specs/buoy-v0-4-environment-alias-removal.md`.
 - Non-executable aggregate plan and bounded execution children: `.10x/tickets/2026-07-19-buoy-v0-4-compatibility-removal-plan.md`.
-- Stale guidance disposition: `.10x/tickets/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md`.
+- Stale retrieval-mode and apply-namespace guidance disposition: `.10x/tickets/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md` owns both corrections.
 - Review response and graph-coherence check: `.10x/reviews/2026-07-19-v0-4-compatibility-removal-shaping-review-response.md`.
 
 ## Retrospective

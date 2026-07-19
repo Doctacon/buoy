@@ -115,7 +115,7 @@ Integrated behavior agrees across `.10x/decisions/direct-commands-execute-by-def
 
 The scheduled command/environment alias removal does not conflict with those defaults if retained flags remain untouched.
 
-One active skill reference is stale independently of 0.4 removal: `.pi/skills/turbopuffer-site-rag/references/scrapling-site-workflow.md` says live retrieval and evals both require `--live`. Evals still does; retrieval does not. The same reference tells operators to set `TURBOPUFFER_NAMESPACE` during apply even though apply takes namespace from the verified plan/CLI and retrieval ignores the environment namespace. Future documentation/skill reconciliation should correct these statements without treating them as authority to remove any flag or environment contract. `.pi/skills/turbopuffer-site-rag/SKILL.md` otherwise uses primary `buoy` commands and preserves the state-root fallback; it contains no scheduled 0.4 alias promise.
+One active skill reference contains two stale statements independently of 0.4 removal: `.pi/skills/turbopuffer-site-rag/references/scrapling-site-workflow.md` says live retrieval and evals both require `--live`, and its apply sequence tells operators to set `TURBOPUFFER_NAMESPACE`. Evals still requires `--live`; retrieval does not. Apply takes its namespace from the verified plan: plan `--namespace` selects the recorded value, while apply `--namespace` may assert the same value and a mismatch fails. Ambient namespace setup is therefore not apply authority, and retrieval ignores the environment namespace. `.10x/tickets/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md` owns both record-only corrections without treating either as authority to remove a flag or change an environment contract. `.pi/skills/turbopuffer-site-rag/SKILL.md` otherwise uses primary `buoy` commands and preserves the state-root fallback; it contains no scheduled 0.4 alias promise.
 
 ## Release boundary and required implications
 
@@ -140,7 +140,7 @@ On 2026-07-19 the user explicitly ratified the reviewer's exact recommended cont
 4. Clean-install validation is supplemented by same-environment upgrade validation: install the immutable released 0.3.0 GitHub wheel, then normally upgrade that isolated environment to the candidate 0.4.0 wheel and inspect installed entry points/launchers.
 5. Every other compatibility surface in the matrix remains supported, and no state, data, or remote effect occurs.
 
-The exact active contracts are `.10x/specs/buoy-v0-4-console-alias-removal.md` and `.10x/specs/buoy-v0-4-environment-alias-removal.md`. Execution is owned by the non-executable plan `.10x/tickets/2026-07-19-buoy-v0-4-compatibility-removal-plan.md` and its two bounded children. The stale direct-command statement in the Scrapling workflow reference is separately owned by `.10x/tickets/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md` and is not part of 0.4 implementation.
+The exact active contracts are `.10x/specs/buoy-v0-4-console-alias-removal.md` and `.10x/specs/buoy-v0-4-environment-alias-removal.md`. Execution is owned by the non-executable plan `.10x/tickets/2026-07-19-buoy-v0-4-compatibility-removal-plan.md` and its two bounded children. The stale retrieval-mode and apply-namespace statements in the Scrapling workflow reference are both separately owned by `.10x/tickets/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md` and are not part of 0.4 implementation.
 
 ## Conclusion
 
