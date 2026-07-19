@@ -75,6 +75,7 @@ Validation after this remediation:
 - Python 3.13 full: 424 tests passed.
 - Wheel and source distribution built successfully under `/tmp/buoy-exact-host-summary-dist`.
 - All 45 `src`/`tests` Python files parsed successfully and `git diff --check` passed.
+- Hosted GitHub Actions run `29698186044` passed Python 3.11 (43s), Python 3.13 (43s), and distribution build (8s) for remediation commit `810ec28`.
 
 ## Limits
 
