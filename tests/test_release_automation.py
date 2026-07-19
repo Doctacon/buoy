@@ -188,20 +188,23 @@ class ReleaseAutomationTests(unittest.TestCase):
     def test_legacy_environment_alias_deprecation_consistently_targets_0_4(self) -> None:
         migration = (ROOT / "docs" / "migrating-to-buoy.md").read_text()
         environment_section = migration.split("## Environment variables\n", 1)[1].split("\n## ", 1)[0]
-        self.assertIn("Through 0.3, the old model and precision variables are accepted", environment_section)
-        self.assertIn("they are scheduled for removal in 0.4", environment_section)
-        self.assertNotIn("In 0.2, the old variable is accepted", environment_section)
+        for mapping in (
+            "TURBO_SEARCH_EMBEDDING_MODEL -> BUOY_EMBEDDING_MODEL",
+            "TURBO_SEARCH_EMBEDDING_PRECISION -> BUOY_EMBEDDING_PRECISION",
+        ):
+            self.assertIn(mapping, environment_section)
+        for contract in ("exits 2", "no stdout", "never values", "Help, version", "does not migrate or delete"):
+            self.assertIn(contract, environment_section)
 
         config_source = (ROOT / "src" / "buoy_search" / "config.py").read_text()
-        load_config_doc = config_source.split("def load_config", 1)[1].split("current_model =", 1)[0]
-        normalized_doc = " ".join(load_config_doc.split())
-        self.assertIn("retains the old branded embedding variables through 0.3", normalized_doc)
-        self.assertIn("scheduled for removal in 0.4", normalized_doc)
-        self.assertEqual(config_source.count('"It will be removed in 0.4."'), 2)
+        self.assertNotIn("legacy_model", config_source)
+        self.assertNotIn("legacy_precision", config_source)
+        self.assertNotIn("deprecated; use", config_source)
+        self.assertIn("rejected by CLI entry points before dispatch", config_source)
 
         changelog = (ROOT / "CHANGELOG.md").read_text()
         self.assertIn(
-            "configuration aliases remain available through 0.3 and are scheduled for removal in 0.4",
+            "removes the `TURBO_SEARCH_EMBEDDING_MODEL` and `TURBO_SEARCH_EMBEDDING_PRECISION` fallbacks",
             changelog,
         )
 

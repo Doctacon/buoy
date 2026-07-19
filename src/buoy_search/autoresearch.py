@@ -14,7 +14,12 @@ from pathlib import Path
 import sys
 from typing import Mapping, Sequence
 
-from buoy_search.config import EMBEDDING_PRECISIONS, RuntimeConfig, load_config
+from buoy_search.config import (
+    EMBEDDING_PRECISIONS,
+    RuntimeConfig,
+    load_config,
+    removed_embedding_environment_error,
+)
 from buoy_search.evals import (
     EvalCase,
     EvalRunResult,
@@ -477,6 +482,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    removed_environment_error = removed_embedding_environment_error()
+    if removed_environment_error is not None:
+        try:
+            print(removed_environment_error, file=sys.stderr)
+        except OSError:
+            pass
+        return 2
     try:
         experiment = load_experiment(args.experiment)
         out_dir = args.out or experiment.output_path

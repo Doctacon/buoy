@@ -15,6 +15,7 @@ Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 ### Removed
 
 - The deprecated package-owned `turbo-search` console entry point. Replace only the executable name with `buoy`; command arguments and behavior are unchanged, and Buoy does not delete user-created shell aliases, copied launchers, wrappers, or caches.
+- Buoy 0.4.0 removes the `TURBO_SEARCH_EMBEDDING_MODEL` and `TURBO_SEARCH_EMBEDDING_PRECISION` fallbacks. Rename them to `BUOY_EMBEDDING_MODEL` and `BUOY_EMBEDDING_PRECISION`; actual commands reject either old name with exit 2, empty stdout, and a value-redacted stderr mapping before any state, data, credential, model, artifact, DuckDB, or remote effect. Help/version remain available.
 
 
 ## [0.3.0] - 2026-07-16

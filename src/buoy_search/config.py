@@ -6,10 +6,9 @@ credentials at the call site only after explicit user approval.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import os
-import sys
 
 DEFAULT_REGION = "gcp-us-central1"
 DEFAULT_NAMESPACE = "site-scrapling-readthedocs-io-v1"
@@ -17,21 +16,30 @@ DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_EMBEDDING_PRECISION = "float32"
 EMBEDDING_PRECISIONS = ("float32", "float16")
 EMBEDDING_MODEL_ENV = "BUOY_EMBEDDING_MODEL"
-LEGACY_EMBEDDING_MODEL_ENV = "TURBO_SEARCH_EMBEDDING_MODEL"
+REMOVED_EMBEDDING_MODEL_ENV = "TURBO_SEARCH_EMBEDDING_MODEL"
 EMBEDDING_PRECISION_ENV = "BUOY_EMBEDDING_PRECISION"
-LEGACY_EMBEDDING_PRECISION_ENV = "TURBO_SEARCH_EMBEDDING_PRECISION"
+REMOVED_EMBEDDING_PRECISION_ENV = "TURBO_SEARCH_EMBEDDING_PRECISION"
+REMOVED_EMBEDDING_ENV_MAPPINGS = (
+    (REMOVED_EMBEDDING_MODEL_ENV, EMBEDDING_MODEL_ENV),
+    (REMOVED_EMBEDDING_PRECISION_ENV, EMBEDDING_PRECISION_ENV),
+)
 
 
 class RuntimeConfigError(ValueError):
     """Raised when non-secret runtime configuration is contradictory."""
 
 
-def _stderr_warning(message: str) -> None:
-    try:
-        print(message, file=sys.stderr)
-    except OSError:
-        # Configuration warnings are advisory and must not alter command behavior.
-        pass
+def removed_embedding_environment_error(
+    environment: Mapping[str, str] | None = None,
+) -> str | None:
+    """Return the value-redacted Buoy 0.4 diagnostic for removed variables."""
+
+    source = os.environ if environment is None else environment
+    present = [f"{old} -> {new}" for old, new in REMOVED_EMBEDDING_ENV_MAPPINGS if old in source]
+    if not present:
+        return None
+    noun = "variable is" if len(present) == 1 else "variables are"
+    return f"Removed environment {noun} not supported in Buoy 0.4.0: {'; '.join(present)}"
 
 
 @dataclass(frozen=True)
@@ -52,46 +60,15 @@ def load_config(
     """Load non-secret runtime configuration from environment defaults.
 
     Deliberately excludes TURBOPUFFER_API_KEY so help and dry-run commands can be
-    used safely without credentials. Buoy retains the old branded embedding
-    variables through 0.3 as bounded compatibility fallbacks scheduled for
-    removal in 0.4.
+    used safely without credentials. Removed branded embedding variables are
+    rejected by CLI entry points before dispatch and never become configuration.
     """
 
-    current_model = os.environ.get(EMBEDDING_MODEL_ENV)
-    legacy_model = os.environ.get(LEGACY_EMBEDDING_MODEL_ENV)
-    if current_model is not None and legacy_model is not None and current_model != legacy_model:
-        raise RuntimeConfigError(
-            f"conflicting {EMBEDDING_MODEL_ENV} and {LEGACY_EMBEDDING_MODEL_ENV} values; "
-            f"unset one or make them identical"
-        )
-    if current_model is not None:
-        embedding_model = current_model
-    elif legacy_model is not None:
-        embedding_model = legacy_model
-        (warning_callback or _stderr_warning)(
-            f"Warning: {LEGACY_EMBEDDING_MODEL_ENV} is deprecated; use {EMBEDDING_MODEL_ENV}. "
-            "It will be removed in 0.4."
-        )
-    else:
-        embedding_model = DEFAULT_EMBEDDING_MODEL
+    # Retain the keyword for source compatibility; removal emits no warnings.
+    del warning_callback
 
-    current_precision = os.environ.get(EMBEDDING_PRECISION_ENV)
-    legacy_precision = os.environ.get(LEGACY_EMBEDDING_PRECISION_ENV)
-    if current_precision is not None and legacy_precision is not None and current_precision != legacy_precision:
-        raise RuntimeConfigError(
-            f"conflicting {EMBEDDING_PRECISION_ENV} and {LEGACY_EMBEDDING_PRECISION_ENV} values; "
-            "unset one or make them identical"
-        )
-    if current_precision is not None:
-        embedding_precision = current_precision
-    elif legacy_precision is not None:
-        embedding_precision = legacy_precision
-        (warning_callback or _stderr_warning)(
-            f"Warning: {LEGACY_EMBEDDING_PRECISION_ENV} is deprecated; use {EMBEDDING_PRECISION_ENV}. "
-            "It will be removed in 0.4."
-        )
-    else:
-        embedding_precision = DEFAULT_EMBEDDING_PRECISION
+    embedding_model = os.environ.get(EMBEDDING_MODEL_ENV, DEFAULT_EMBEDDING_MODEL)
+    embedding_precision = os.environ.get(EMBEDDING_PRECISION_ENV, DEFAULT_EMBEDDING_PRECISION)
     if embedding_precision not in EMBEDDING_PRECISIONS:
         raise RuntimeConfigError(
             f"embedding precision must be one of: {', '.join(EMBEDDING_PRECISIONS)}"
