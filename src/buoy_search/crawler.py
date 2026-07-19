@@ -51,6 +51,7 @@ LANGUAGE_POLICIES = ("english", "all")
 MAX_REDIRECT_HOPS = 20
 REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 SUPPORTED_SCRAPLING_VERSION = "0.4.9"
+BLOCKED_WEBSITE_SAMPLE_REDACTION = "[redacted: blocked website crawl boundary]"
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):
@@ -2087,177 +2088,25 @@ def write_pdf_corpus(source: PdfSource, markdown: str, pages_dir: Path) -> Crawl
     return write_local_document_corpus(source, markdown, pages_dir)
 
 
-def _is_markdown_escaped(content: str, index: int) -> bool:
-    backslashes = 0
-    index -= 1
-    while index >= 0 and content[index] == "\\":
-        backslashes += 1
-        index -= 1
-    return backslashes % 2 == 1
-
-
-def _markdown_link_destination_end(content: str, start: int) -> int | None:
-    cursor = start
-    while cursor < len(content) and content[cursor].isspace():
-        cursor += 1
-    if cursor >= len(content):
-        return None
-    if content[cursor] == ")":
-        return cursor
-
-    if content[cursor] == "<":
-        cursor += 1
-        while cursor < len(content):
-            if content[cursor] == "\\" and cursor + 1 < len(content):
-                cursor += 2
-                continue
-            if content[cursor] == ">":
-                cursor += 1
-                break
-            cursor += 1
-        else:
-            return None
-    else:
-        depth = 0
-        while cursor < len(content):
-            character = content[cursor]
-            if character == "\\" and cursor + 1 < len(content):
-                cursor += 2
-                continue
-            if character == "(":
-                depth += 1
-            elif character == ")":
-                if depth == 0:
-                    return cursor
-                depth -= 1
-            elif character.isspace() and depth == 0:
-                break
-            cursor += 1
-        if depth:
-            return None
-
-    while cursor < len(content) and content[cursor].isspace():
-        cursor += 1
-    if cursor >= len(content) or content[cursor] == ")":
-        return cursor if cursor < len(content) else None
-
-    title_closer = {"\"": "\"", "'": "'", "(": ")"}.get(content[cursor])
-    if title_closer is None:
-        return None
-    cursor += 1
-    while cursor < len(content):
-        if content[cursor] == "\\" and cursor + 1 < len(content):
-            cursor += 2
-            continue
-        if content[cursor] == title_closer:
-            cursor += 1
-            break
-        cursor += 1
-    else:
-        return None
-    while cursor < len(content) and content[cursor].isspace():
-        cursor += 1
-    return cursor if cursor < len(content) and content[cursor] == ")" else None
-
-
-def _url_like_start(content: str, index: int) -> bool:
-    lowered = content[index : index + 8].lower()
-    if lowered.startswith("https://") or lowered.startswith("http://"):
-        return True
-    return (
-        content[index : index + 2] == "//"
-        and index + 2 < len(content)
-        and not content[index + 2].isspace()
-        and content[index + 2] not in "<>'\"`/"
-    )
-
-
-def _url_like_end(content: str, start: int) -> int:
-    cursor = start
-    while cursor < len(content):
-        character = content[cursor]
-        if character == "\\" and cursor + 1 < len(content):
-            cursor += 2
-            continue
-        if character.isspace() or character in "<>'\"`":
-            break
-        cursor += 1
-    return cursor
-
-
-def _redact_url_like_text(content: str) -> str:
-    parts: list[str] = []
-    copied_through = 0
-    index = 0
-    while index < len(content):
-        angle_wrapped = content[index] == "<" and _url_like_start(content, index + 1)
-        url_start = index + 1 if angle_wrapped else index
-        if not angle_wrapped and not _url_like_start(content, url_start):
-            index += 1
-            continue
-
-        if angle_wrapped:
-            cursor = url_start
-            while cursor < len(content):
-                if content[cursor] == "\\" and cursor + 1 < len(content):
-                    cursor += 2
-                    continue
-                if content[cursor] == ">":
-                    cursor += 1
-                    break
-                cursor += 1
-            url_end = cursor
-        else:
-            url_end = _url_like_end(content, url_start)
-
-        parts.extend((content[copied_through:index], "[redacted URL]"))
-        copied_through = url_end
-        index = url_end
-
-    parts.append(content[copied_through:])
-    return "".join(parts)
-
-
-def summary_content_preview(content: str, max_length: int = 240) -> str:
-    """Exclude Markdown destinations and redact URL-like rendered text."""
-
-    parts: list[str] = []
-    copied_through = 0
-    index = 0
-    while index < len(content) - 1:
-        if content[index : index + 2] != "](" or _is_markdown_escaped(
-            content, index
-        ):
-            index += 1
-            continue
-        destination_end = _markdown_link_destination_end(content, index + 2)
-        if destination_end is None:
-            index += 1
-            continue
-        parts.append(content[copied_through : index + 1])
-        copied_through = destination_end + 1
-        index = copied_through
-
-    parts.append(content[copied_through:])
-    sanitized = _redact_url_like_text("".join(parts))
-    return sanitized[:max_length].replace("\n", " ")
-
-
 def summarize_sample_chunks(
     plan: IndexingPlan,
     sample_size: int = 3,
     *,
-    sanitize_website_destinations: bool = False,
+    redact_untrusted_fields: bool = False,
 ) -> list[dict[str, object]]:
     return [
         {
             "id": chunk.id,
-            "title": chunk.title,
+            "title": (
+                BLOCKED_WEBSITE_SAMPLE_REDACTION
+                if redact_untrusted_fields
+                else chunk.title
+            ),
             "url": chunk.url,
             "section_path": chunk.section_path,
             "content_preview": (
-                summary_content_preview(chunk.content)
-                if sanitize_website_destinations
+                BLOCKED_WEBSITE_SAMPLE_REDACTION
+                if redact_untrusted_fields
                 else chunk.content[:240].replace("\n", " ")
             ),
         }
@@ -2276,6 +2125,8 @@ def build_summary(
     docs_version_report: dict[str, object],
     language_report: dict[str, object],
 ) -> dict[str, object]:
+    blocked_discovery_count = int(stats.get("blocked_discovery_count", 0) or 0)
+    blocked_redirect_count = int(stats.get("blocked_redirect_count", 0) or 0)
     return {
         "command": "crawl",
         "dry_run": True,
@@ -2307,15 +2158,18 @@ def build_summary(
         "robots_disallowed_count": int(stats.get("robots_disallowed_count", 0) or 0),
         "blocked_requests_count": int(stats.get("blocked_requests_count", 0) or 0),
         "failed_requests_count": int(stats.get("failed_requests_count", 0) or 0),
-        "blocked_discovery_count": int(stats.get("blocked_discovery_count", 0) or 0),
-        "blocked_redirect_count": int(stats.get("blocked_redirect_count", 0) or 0),
+        "blocked_discovery_count": blocked_discovery_count,
+        "blocked_redirect_count": blocked_redirect_count,
         "files_discovered": plan.files_discovered,
         "files_seen": plan.stats.files_seen,
         "files_error": plan.stats.files_error,
         "chunks_generated": plan.stats.chunks_generated,
         "limit_reached": plan.limit_reached,
         "sample_chunks": summarize_sample_chunks(
-            plan, sanitize_website_destinations=True
+            plan,
+            redact_untrusted_fields=bool(
+                blocked_discovery_count or blocked_redirect_count
+            ),
         ),
         "errors": [error.__dict__ for error in plan.stats.errors[:10]],
     }

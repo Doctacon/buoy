@@ -94,6 +94,22 @@ Validation after this remediation:
 - Remediation commit `9178e7d` was pushed; hosted GitHub Actions run `29698625563` passed Python 3.11 (48s), Python 3.13 (43s), and distribution build (10s).
 - Independent rereview remains pending.
 
+## Fail-closed blocked-summary policy remediation
+
+The representation-scanning website sanitizer was removed. Website `sample_chunks` now preserve their normal title and content preview only when both boundary counts are zero. If either `blocked_discovery_count` or `blocked_redirect_count` is nonzero, all sampled website titles and content previews use the fixed value `[redacted: blocked website crawl boundary]`; safe structural sample fields and count-only boundary reporting remain.
+
+Regression coverage proves the fixed replacement cannot expose unsanitized titles, literal URLs, userinfo, bare IPv4 or IPv6 labels, percent-encoded labels, Markdown links, angle autolinks, or arbitrary path/query/fragment text. Separate cases exercise discovery-only and redirect-only counts. JSON serialization and text rendering contain no fixture secrets. The existing two-server autolink fixture still proves destination-side zero requests and now proves every sampled title/preview is fixed. A zero-count regression proves useful normal website titles/previews are unchanged. Existing PDF/local-file tests prove their summary counters and link-bearing title/preview behavior remain outside the website policy.
+
+Validation after this remediation:
+
+- Python 3.11 focused: 52 tests passed.
+- Python 3.11 full: 424 tests passed.
+- Python 3.13 focused: 52 tests passed.
+- Python 3.13 full: 424 tests passed.
+- Wheel and source distribution built successfully under `/tmp/buoy-exact-host-fail-closed-dist`.
+- All 45 `src`/`tests` Python files parsed successfully; `git diff --check` passed; static search found no remaining custom summary-scanner symbols.
+- Hosted checks and independent rereview remain pending.
+
 ## Limits
 
 - Fixtures contacted loopback servers only; no live site, model, Turbopuffer service, or other remote service was used.

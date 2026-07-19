@@ -18,13 +18,13 @@ import anyio
 
 from buoy_search.cli import print_crawl_text
 from buoy_search.crawler import (
+    BLOCKED_WEBSITE_SAMPLE_REDACTION,
     CrawlOptions,
     _assert_scrapling_runtime_shape,
     build_link_spider_class,
+    build_summary,
     crawl_site,
     discover_sitemap_page_urls,
-    summarize_sample_chunks,
-    summary_content_preview,
 )
 
 
@@ -229,7 +229,7 @@ class ExactHostCrawlBoundaryTests(unittest.TestCase):
                     return (
                         200,
                         {"Content-Type": "text/html"},
-                        "<html><head><title>Sanitizer fixture</title></head><body><main>"
+                        "<html><head><title>TITLE_SENTINEL 192.0.2.40 2001:db8::40</title></head><body><main>"
                         "<p>Useful sanitizer fixture content before links.</p>"
                         f"<p>&lt;{autolink_url}&gt;</p>"
                         f'<a href="{autolink_url}">{autolink_url}</a>'
@@ -260,6 +260,9 @@ class ExactHostCrawlBoundaryTests(unittest.TestCase):
             rendered_summaries = json.dumps(summary, sort_keys=True) + stdout.getvalue()
             for blocked_detail in (
                 "127.0.0.1",
+                "192.0.2.40",
+                "2001:db8::40",
+                "TITLE_SENTINEL",
                 "AUTOLINK_USER@",
                 "VISIBLE_USER@",
                 "autolink_(nested)",
@@ -270,9 +273,14 @@ class ExactHostCrawlBoundaryTests(unittest.TestCase):
                 "AUTOLINK_SENTINEL",
                 "VISIBLE_SENTINEL",
                 "DESTINATION_SENTINEL",
+                "Useful sanitizer fixture content",
             ):
                 self.assertNotIn(blocked_detail, rendered_summaries)
-            self.assertIn("Useful sanitizer fixture content", rendered_summaries)
+            for sample in summary["sample_chunks"]:
+                self.assertEqual(sample["title"], BLOCKED_WEBSITE_SAMPLE_REDACTION)
+                self.assertEqual(
+                    sample["content_preview"], BLOCKED_WEBSITE_SAMPLE_REDACTION
+                )
 
     def test_sitemap_and_robots_declarations_and_redirects_stay_on_host(self) -> None:
         with fixture_server() as allowed, fixture_server() as destination, tempfile.TemporaryDirectory() as tmp:
@@ -412,124 +420,131 @@ class ExactHostCrawlBoundaryTests(unittest.TestCase):
         self.assertFalse(spider._response_stayed_on_host(Response()))
         self.assertEqual(spider._blocked_redirect_count, 1)
 
-    def test_summary_destination_sanitizer_consumes_valid_complex_destinations(self) -> None:
+    def test_website_samples_fail_closed_for_either_blocked_count(self) -> None:
+        title = "TITLE_SECRET bare 192.0.2.10 2001:db8::10 PERCENT%2FSECRET"
         content = (
-            r'Before [nested](https://allowed.example@blocked.invalid/a_(b\)c)?code=oauth-query&SENTINEL_NESTED=1 "title (safe)") '
-            r"and [angle](<https://blocked.invalid/a(unbalanced?token=query-sentinel&SENTINEL_ANGLE=1> 'OAuth title)') after."
+            "Useful normal content LITERAL_SECRET "
+            "https://USER_SECRET@blocked.invalid/arbitrary/path?QUERY_SECRET=1#FRAGMENT_SECRET "
+            "<https://blocked.invalid/AUTOLINK_SECRET> "
+            "[MARKDOWN_SECRET](//blocked.invalid/%70%61%74%68?%71=%76#%66) "
+            "bare labels 198.51.100.20 2001:db8::20 fe80::1%25eth0 "
+            "percent labels blocked%2Einvalid %68%74%74%70%73%3A%2F%2Fblocked.invalid"
         )
-
-        preview = summary_content_preview(content)
-
-        self.assertEqual(preview, "Before [nested] and [angle] after.")
-        for blocked_detail in (
-            "blocked.invalid",
-            "allowed.example@",
-            "oauth-query",
-            "query-sentinel",
-            "SENTINEL_NESTED",
-            "SENTINEL_ANGLE",
-        ):
-            self.assertNotIn(blocked_detail, preview)
-
-    def test_summary_destination_sanitizer_redacts_autolinks_and_url_labels(self) -> None:
-        content = (
-            r"Useful before <https://AUTO_USER@blocked.invalid/a_(b\)c)?code=AUTO_QUERY#AUTO_SENTINEL> "
-            r"and [https://LABEL_USER@blocked.invalid/label_(nested)?token=LABEL_QUERY#LABEL_SENTINEL]"
-            r"(https://DEST_USER@blocked.invalid/destination_(nested)?secret=DEST_QUERY#DEST_SENTINEL) "
-            r"plus //PROTO_USER@blocked.invalid/protocol_(nested)?key=PROTO_QUERY#PROTO_SENTINEL useful after."
-        )
-
-        preview = summary_content_preview(content, max_length=500)
-
-        self.assertIn("Useful before", preview)
-        self.assertIn("useful after", preview)
-        self.assertGreaterEqual(preview.count("[redacted URL]"), 3)
-        for blocked_detail in (
-            "blocked.invalid",
-            "AUTO_USER@",
-            "LABEL_USER@",
-            "DEST_USER@",
-            "PROTO_USER@",
-            "_(nested)",
-            "AUTO_QUERY",
-            "LABEL_QUERY",
-            "DEST_QUERY",
-            "PROTO_QUERY",
-            "AUTO_SENTINEL",
-            "LABEL_SENTINEL",
-            "DEST_SENTINEL",
-            "PROTO_SENTINEL",
-        ):
-            self.assertNotIn(blocked_detail, preview)
-
-    def test_summary_destination_sanitizer_consumes_ipv6_and_attached_punctuation(self) -> None:
-        variants = (
-            "https://IPV6_USER_A@[2001:db8::1]/PATH_A?QUERY_A=1#FRAGMENT_A_SENTINEL_A],};",
-            "(https://IPV6_USER_B@[::ffff:192.0.2.1]:8443/a[b]{c}(d))]},;?QUERY_B=2#FRAGMENT_B_SENTINEL_B.,",
-            "<https://IPV6_USER_C@[fe80::1%25eth0]/PATH_C?QUERY_C=3#FRAGMENT_C_SENTINEL_C>",
-            "[https://IPV6_USER_D@[2001:db8::4]/PATH_D?QUERY_D=4#FRAGMENT_D_SENTINEL_D]"
-            "(https://DEST_USER@[2001:db8::5]/DEST_PATH?DEST_QUERY=5#DEST_FRAGMENT_SENTINEL_DEST)",
-            "//[2001:db8::7]/PATH_PROTOCOL?QUERY_PROTOCOL=7#FRAGMENT_PROTOCOL_SENTINEL_PROTOCOL]}.,",
-            '"https://IPV6_USER_E@[2001:db8::6]/PATH_E?QUERY_E=6#FRAGMENT_E_SENTINEL_E"',
-        )
-        content = "Useful before " + " useful middle ".join(variants) + " useful after."
-
-        preview = summary_content_preview(content, max_length=2000)
-        self.assertIn("useful middle", preview)
         plan = SimpleNamespace(
+            files_discovered=1,
+            stats=SimpleNamespace(
+                files_seen=1,
+                files_error=0,
+                chunks_generated=1,
+                errors=[],
+            ),
+            limit_reached=False,
             chunks=[
                 SimpleNamespace(
-                    id=f"ipv6-adversarial-{index}",
-                    title="IPv6 adversarial",
-                    url="https://allowed.example/",
-                    section_path="",
-                    content=f"Useful before {variant} useful after.",
+                    id="safe-structural-id",
+                    title=title,
+                    url="https://allowed.example/safe-page",
+                    section_path="safe-section",
+                    content=content,
                 )
-                for index, variant in enumerate(variants)
-            ]
+            ],
         )
-        sample_chunks = summarize_sample_chunks(
-            plan,
-            sample_size=len(variants),
-            sanitize_website_destinations=True,
-        )
-        rendered_outputs = (
-            preview,
-            json.dumps({"sample_chunks": sample_chunks}),
-            str(sample_chunks),
+        options = crawl_options(
+            "https://allowed.example/", Path("unused"), strategy="link"
         )
 
-        for rendered in rendered_outputs:
-            self.assertIn("Useful before", rendered)
-            self.assertIn("useful after", rendered)
-            for blocked_detail in (
-                "IPV6_USER",
-                "2001:db8",
-                "::ffff:192.0.2.1",
-                "fe80::1",
-                "PATH_A",
-                "PATH_C",
-                "PATH_D",
-                "PATH_E",
-                "PATH_PROTOCOL",
-                "DEST_PATH",
-                "QUERY_A",
-                "QUERY_B",
-                "QUERY_C",
-                "QUERY_D",
-                "QUERY_E",
-                "QUERY_PROTOCOL",
-                "DEST_QUERY",
-                "FRAGMENT_A",
-                "FRAGMENT_B",
-                "FRAGMENT_C",
-                "FRAGMENT_D",
-                "FRAGMENT_E",
-                "FRAGMENT_PROTOCOL",
-                "DEST_FRAGMENT",
-                "SENTINEL",
-            ):
-                self.assertNotIn(blocked_detail, rendered)
+        for blocked_stats in (
+            {"blocked_discovery_count": 1, "blocked_redirect_count": 0},
+            {"blocked_discovery_count": 0, "blocked_redirect_count": 1},
+        ):
+            with self.subTest(blocked_stats=blocked_stats):
+                summary = build_summary(
+                    options=options,
+                    pages=[],
+                    stats=blocked_stats,
+                    crawl_strategy="link",
+                    plan=plan,
+                    pages_dir=Path("unused/pages"),
+                    docs_version_report={"detected": False},
+                    language_report={"detected": False},
+                )
+                sample = summary["sample_chunks"][0]
+                self.assertEqual(sample["title"], BLOCKED_WEBSITE_SAMPLE_REDACTION)
+                self.assertEqual(
+                    sample["content_preview"], BLOCKED_WEBSITE_SAMPLE_REDACTION
+                )
+                self.assertEqual(sample["id"], "safe-structural-id")
+                self.assertEqual(sample["url"], "https://allowed.example/safe-page")
+                self.assertEqual(sample["section_path"], "safe-section")
+
+                stdout = StringIO()
+                with redirect_stdout(stdout):
+                    print_crawl_text(summary)
+                serialized_json = json.dumps(summary, sort_keys=True)
+                rendered_text = stdout.getvalue()
+                self.assertIn(BLOCKED_WEBSITE_SAMPLE_REDACTION, serialized_json)
+                self.assertIn("exact_host_boundary", rendered_text)
+                for secret in (
+                    "TITLE_SECRET",
+                    "192.0.2.10",
+                    "2001:db8::10",
+                    "PERCENT%2FSECRET",
+                    "LITERAL_SECRET",
+                    "USER_SECRET",
+                    "blocked.invalid",
+                    "QUERY_SECRET",
+                    "FRAGMENT_SECRET",
+                    "AUTOLINK_SECRET",
+                    "MARKDOWN_SECRET",
+                    "198.51.100.20",
+                    "2001:db8::20",
+                    "fe80::1%25eth0",
+                    "blocked%2Einvalid",
+                    "%68%74%74%70%73",
+                    "Useful normal content",
+                ):
+                    self.assertNotIn(secret, serialized_json)
+                    self.assertNotIn(secret, rendered_text)
+
+    def test_website_samples_remain_useful_when_nothing_is_blocked(self) -> None:
+        plan = SimpleNamespace(
+            files_discovered=1,
+            stats=SimpleNamespace(
+                files_seen=1,
+                files_error=0,
+                chunks_generated=1,
+                errors=[],
+            ),
+            limit_reached=False,
+            chunks=[
+                SimpleNamespace(
+                    id="normal-id",
+                    title="Useful normal title",
+                    url="https://allowed.example/normal",
+                    section_path="overview",
+                    content="Useful normal website content\nwith a second line.",
+                )
+            ],
+        )
+        summary = build_summary(
+            options=crawl_options(
+                "https://allowed.example/", Path("unused"), strategy="link"
+            ),
+            pages=[],
+            stats={"blocked_discovery_count": 0, "blocked_redirect_count": 0},
+            crawl_strategy="link",
+            plan=plan,
+            pages_dir=Path("unused/pages"),
+            docs_version_report={"detected": False},
+            language_report={"detected": False},
+        )
+
+        sample = summary["sample_chunks"][0]
+        self.assertEqual(sample["title"], "Useful normal title")
+        self.assertEqual(
+            sample["content_preview"],
+            "Useful normal website content with a second line.",
+        )
 
     def test_redirected_robots_denial_is_used_before_page_requests(self) -> None:
         with fixture_server() as allowed, tempfile.TemporaryDirectory() as tmp:
