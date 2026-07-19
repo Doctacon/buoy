@@ -40,7 +40,7 @@ Existing projects with only `.turbo-search` use that root in place with a warnin
 
 - The ledger stores current row state plus compact apply summaries, not full row snapshots.
 - DuckDB is the only applied-state authority. Obsolete JSON applied-state files are ignored and left unchanged; without `state.duckdb`, the next approved apply uses first-apply behavior and re-upserts the reviewed corpus.
-- `apply --approve` takes a non-blocking lock for that namespace before embeddings or Turbopuffer writes. A same-namespace contender fails with a busy error; different namespaces have independent databases and can apply concurrently.
+- A confirmed plain interactive apply or `apply --approve` takes a non-blocking lock for that namespace before embeddings or Turbopuffer writes. A same-namespace contender fails with a busy error; different namespaces have independent databases and can apply concurrently.
 - This is embedded local state: do not add or depend on Quack, a listener, or shared cross-machine state.
 
 ## Non-negotiable guardrails
@@ -62,9 +62,10 @@ Use this when building or testing the “base URL → crawl → chunks → names
 The polished workflow is Terraform-like:
 
 1. `buoy plan`: turbopuffer-local preview. It may fetch the public source, then extracts Markdown, chunks, compares with local applied state, and writes review artifacts. It does not read turbopuffer credentials, load embeddings, create namespaces, or call turbopuffer. Interactive text-mode runs show default one-line stderr progress; use `--no-progress` to disable it. Versioned docs sites stop before page crawling by default with `--docs-version-policy warn`; use `latest`, `stable-latest`, `latest-nightly`, or `all` to make the policy explicit.
-2. `buoy apply` without `--approve`: local-only preflight. Re-read the saved plan, verify artifacts, recompute the local diff, and report what would happen. No credentials, embeddings, or turbopuffer calls.
-3. `buoy apply --approve`: explicit live path. Require `TURBOPUFFER_API_KEY` in the environment, embed/upsert only new or changed chunks using the plan-recorded precision, and update local applied state after success. Float16 is opt-in at plan time and requires CUDA or Apple MPS.
-4. `--delete-stale`: extra delete guardrail. Stale rows are retained by default; live stale deletion requires both `--approve` and `--delete-stale`.
+2. `buoy apply --dry-run`: prompt-free local preflight. Re-read the saved plan, verify artifacts, recompute the local diff, and report what would happen. No credentials, embeddings, or turbopuffer calls.
+3. Plain interactive `buoy apply`: display that complete preflight and prompt `Apply this plan? [y/N]`; only exact `y`/`yes` enters the approved path. Enter, no, arbitrary input, EOF, or prompt failure cancels without writes. Plain non-interactive apply is rejected.
+4. `buoy apply --approve`: prompt-free automation path. Require `TURBOPUFFER_API_KEY` in the environment, embed/upsert only new or changed chunks using the plan-recorded precision, and update local applied state after success. Float16 is opt-in at plan time and requires CUDA or Apple MPS.
+5. `--delete-stale`: extra delete guardrail. Stale rows are retained by default; live stale deletion requires interactive confirmation or both `--approve` and `--delete-stale`.
 
 Plan artifacts are Markdown/JSON-first: `plan.json`, `summary.json`, `manifest.json`, `chunks.jsonl`, and `pages/*.md`. Pending, failed, and preflight plans remain for review/retry; successful approved apply removes its exact plan directory, and a new verified plan removes older same-namespace sibling plans. Copy artifacts elsewhere before approved apply when long-term audit/source retention is needed. Local applied state lives under `.buoy/state/.../state.duckdb` and is gitignored.
 
@@ -93,10 +94,10 @@ Only proceed if the user explicitly asks for a live generic site apply.
 2. Run apply preflight without approval:
 
 ```bash
-uv run buoy apply
+uv run buoy apply --dry-run
 ```
 
-`apply` defaults to the newest `artifacts/site-crawls/**/plan.json` and the namespace recorded in that plan. Use `--json` for scripts/automation. Use `--plan` or `--namespace` only when overriding those defaults.
+`apply` defaults to the newest `artifacts/site-crawls/**/plan.json` and the namespace recorded in that plan. Use `--json --dry-run` for scripted preflight or `--approve` for separately authorized automation; plain apply requires an interactive stdin. Use `--plan` or `--namespace` only when overriding those defaults.
 
 3. Confirm the namespace, rows to upsert, embeddings to generate, stale row counts, and whether stale deletion is desired. Default: retain stale rows; never delete namespaces here.
 4. When the repository `.env` is the approved credential source, load it only in the command subshell; the CLI reads the resulting process environment and never prints or stores the key:
@@ -106,11 +107,11 @@ uv run buoy apply
   set -a
   . ./.env
   set +a
-  uv run buoy apply --approve
+  uv run buoy apply
 )
 ```
 
    Otherwise, set `TURBOPUFFER_API_KEY` only in the active shell and run the same approved command. Pass `--region` and `--namespace` when the reviewed plan requires non-default values.
 
-5. Delete stale rows only when explicitly requested with both `--approve` and `--delete-stale`.
+5. Delete stale rows only when explicitly requested with interactive confirmation plus `--delete-stale`, or with both `--approve` and `--delete-stale` for automation.
 6. Record evidence with counts and command shape, never secret values, private vault names, item titles, share IDs, or token/API-key values.

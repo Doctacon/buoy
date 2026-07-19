@@ -534,11 +534,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     apply_parser = subparsers.add_parser(
         "apply",
-        help="verify and optionally apply a saved generic site RAG plan",
+        help="preflight and interactively apply a saved generic site RAG plan",
         description=(
-            "Verify a saved plan artifact and recompute its local state diff. Default mode is "
-            "a safe preflight: no credentials, embeddings, or turbopuffer API calls are used. "
-            "Pass --approve to embed and upsert only new/changed rows."
+            "Verify a saved plan artifact and recompute its local state diff. Plain interactive "
+            "apply displays the complete local preflight, then prompts before any live work. "
+            "Use --dry-run for prompt-free preflight or --approve for prompt-free automation."
         ),
     )
     apply_parser.add_argument(
@@ -576,14 +576,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Local Sentence Transformers computation batch size for approved apply mode.",
     )
     apply_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Perform prompt-free local preflight without credentials, embeddings, or API calls.",
+    )
+    apply_parser.add_argument(
         "--approve",
         action="store_true",
-        help="Explicitly embed and upsert rows selected by the recomputed diff.",
+        help="Bypass the prompt and run the confirmed apply path for automation.",
     )
     apply_parser.add_argument(
         "--delete-stale",
         action="store_true",
-        help="With --approve, delete exact stale row IDs from the recomputed diff instead of retaining them.",
+        help="Plan stale deletion; execution still requires interactive confirmation or --approve.",
     )
     apply_parser.add_argument(
         "--json",
@@ -1262,7 +1267,34 @@ def plan_catalog_registration_preview(
     }
 
 
+def _stdin_is_interactive() -> bool:
+    try:
+        return bool(sys.stdin.isatty())
+    except Exception:
+        return False
+
+
+def _confirm_apply() -> bool:
+    try:
+        sys.stderr.write("Apply this plan? [y/N] ")
+        sys.stderr.flush()
+        response = sys.stdin.readline()
+    except Exception:
+        return False
+    return response.strip().lower() in {"y", "yes"}
+
+
 def _run_apply(args: argparse.Namespace) -> int:
+    if args.dry_run and args.approve:
+        print("Choose either --dry-run or --approve, not both.", file=sys.stderr)
+        return 2
+    interactive = not args.dry_run and not args.approve
+    if interactive and not _stdin_is_interactive():
+        print(
+            "Plain apply requires an interactive stdin; use --dry-run for preflight or --approve for confirmed execution.",
+            file=sys.stderr,
+        )
+        return 2
     if not resolve_cli_state_root(args):
         return 2
     progress = OneLineProgress(enabled=should_show_progress(args))
@@ -1295,11 +1327,39 @@ def _run_apply(args: argparse.Namespace) -> int:
             print(str(exc), file=sys.stderr)
             return 2
         progress.finish()
-        if args.json:
-            _print_json(summary)
-        else:
-            print_apply_text(summary)
-        return 0
+        if args.dry_run:
+            if args.json:
+                _print_json(summary)
+            else:
+                print_apply_text(summary)
+            return 0
+
+        prompt_available = True
+        try:
+            if args.json:
+                print_apply_text({**summary, "confirmation_pending": True}, stream=sys.stderr)
+            else:
+                print_apply_text({**summary, "confirmation_pending": True})
+        except OSError:
+            prompt_available = False
+        confirmed = prompt_available and _confirm_apply()
+        if not confirmed:
+            cancelled = {
+                **summary,
+                "approved": False,
+                "dry_run": False,
+                "cancelled": True,
+                "confirmation": "declined_or_unavailable",
+                "turbopuffer_api_calls": False,
+                "api_calls_occurred": False,
+                "state_updated": False,
+                "catalog_updated": False,
+            }
+            if args.json:
+                _print_json(cancelled)
+            else:
+                print("Apply cancelled; nothing was written.")
+            return 0
 
     config = replace(
         load_config(),
@@ -1757,64 +1817,69 @@ def print_language_summary(payload: dict[str, object]) -> None:
         )
 
 
-def print_apply_text(payload: dict[str, object]) -> None:
+def print_apply_text(payload: dict[str, object], *, stream: TextIO | None = None) -> None:
+    output = stream or sys.stdout
+
+    def emit(message: str) -> None:
+        print(message, file=output)
+
     approved = bool(payload.get("approved"))
     if approved:
-        print("Website RAG apply completed (explicitly approved live upsert path):")
+        emit("Website RAG apply completed (confirmed live upsert path):")
     else:
-        print("Website RAG apply preflight (no credentials, embeddings, or turbopuffer API calls):")
-    print(f"  source: {payload['base_url']}")
-    print(f"  plan_path: {payload['plan_path']}")
-    print(f"  plan_id: {payload['plan_id']}")
-    print(f"  artifact_hash: {payload['artifact_hash']}")
-    print(f"  namespace: {payload['namespace']} ({payload['region']})")
-    print(f"  embedding_model: {payload['embedding_model']}")
-    print(f"  embedding_precision: {payload['embedding_precision']}")
-    print(f"  first_apply: {payload['state_first_apply']}")
+        emit("Website RAG apply preflight (no credentials, embeddings, or turbopuffer API calls):")
+    emit(f"  source: {payload['base_url']}")
+    emit(f"  plan_path: {payload['plan_path']}")
+    emit(f"  plan_id: {payload['plan_id']}")
+    emit(f"  artifact_hash: {payload['artifact_hash']}")
+    emit(f"  namespace: {payload['namespace']} ({payload['region']})")
+    emit(f"  embedding_model: {payload['embedding_model']}")
+    emit(f"  embedding_precision: {payload['embedding_precision']}")
+    emit(f"  first_apply: {payload['state_first_apply']}")
     diff = payload.get("diff") if isinstance(payload.get("diff"), dict) else {}
-    print(
+    emit(
         f"  rows: to_upsert={payload['rows_to_upsert']}; "
         f"upserted={payload['rows_upserted']}; "
         f"unchanged={diff.get('chunks_unchanged', 0)}"
     )
-    print(
+    emit(
         f"  embeddings: to_generate={payload['embeddings_to_generate']}; "
         f"generated={payload['embeddings_generated']}"
     )
-    print(
+    emit(
         f"  stale_rows: current={payload['stale_rows']}; "
         f"already_retained={payload['retained_stale_rows']}; "
         f"deleted={payload['rows_deleted']}"
     )
     if payload.get("delete_stale"):
-        print(f"  stale_intent: delete {payload['stale_rows_to_delete']} stale rows")
+        emit(f"  stale_intent: delete {payload['stale_rows_to_delete']} stale rows")
     else:
-        print(f"  stale_intent: retain {payload['stale_rows_retained']} stale rows")
-    print(f"  state_path: {payload['state_path']}")
+        emit(f"  stale_intent: retain {payload['stale_rows_retained']} stale rows")
+    emit(f"  state_path: {payload['state_path']}")
     registration = payload.get("catalog_registration")
     if isinstance(registration, dict):
-        print(
+        emit(
             "  catalog_registration: "
             f"{registration['action']}; {registration['catalog_namespace']} "
             f"(remote_state={registration.get('remote_catalog_state', 'resolved')})"
         )
-    if "catalog_updated" in payload:
-        print(
+    if "catalog_updated" in payload and approved:
+        emit(
             f"  catalog_updated: {payload['catalog_updated']}; "
             f"catalog: {payload['catalog_namespace']}"
         )
         if payload.get("card_revision"):
-            print(f"  committed_card_revision: {payload['card_revision']}")
+            emit(f"  committed_card_revision: {payload['card_revision']}")
         if payload.get("catalog_snapshot_complete") is False:
-            print("  catalog_snapshot: incomplete; no final stable snapshot is claimed")
+            emit("  catalog_snapshot: incomplete; no final stable snapshot is claimed")
         elif payload.get("snapshot_revision"):
-            print(f"  catalog_snapshot_revision: {payload['snapshot_revision']}")
+            emit(f"  catalog_snapshot_revision: {payload['snapshot_revision']}")
         if payload.get("pending_cleanup") is False:
-            print(f"  pending_cleanup: False; pending_path: {payload['pending_path']}")
-            print(f"  repair: {payload['catalog_repair_command']}")
+            emit(f"  pending_cleanup: False; pending_path: {payload['pending_path']}")
+            emit(f"  repair: {payload['catalog_repair_command']}")
     timing = payload.get("timing")
     if isinstance(timing, dict):
-        print(
+        emit(
             "  timing: "
             f"elapsed={timing['elapsed_seconds']:.1f}s; "
             f"embedding={timing['embedding_seconds']:.1f}s; "
@@ -1827,10 +1892,12 @@ def print_apply_text(payload: dict[str, object]) -> None:
     commands = payload.get("retrieval_commands")
     if isinstance(commands, dict):
         label = "next retrieval step" if approved else "retrieval after successful apply"
-        print(f"  {label} (preview): {commands['preview']}")
-        print(f"  {label} (live): {commands['live']}")
-    if not approved:
-        print("  live: pass --approve to embed and upsert selected rows")
+        emit(f"  {label} (preview): {commands['preview']}")
+        emit(f"  {label} (live): {commands['live']}")
+    if payload.get("confirmation_pending"):
+        emit("  live: confirmation required at the prompt below")
+    elif not approved:
+        emit("  live: rerun without --dry-run for interactive confirmation, or pass --approve for automation")
 
 
 def print_retrieval_text(

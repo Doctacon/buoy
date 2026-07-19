@@ -323,6 +323,7 @@ class CliTests(unittest.TestCase):
         parser = build_parser()
         help_text = parser.format_help()
         retrieve_help = parser._subparsers._group_actions[0].choices["retrieve"].format_help()
+        apply_help = parser._subparsers._group_actions[0].choices["apply"].format_help()
 
         self.assertIn("local-only", help_text)
         self.assertNotIn("index", help_text)
@@ -337,6 +338,10 @@ class CliTests(unittest.TestCase):
         self.assertIn("explicit --namespace remains local and credential-free", normalized_retrieve_help)
         self.assertIn("TURBOPUFFER_NAMESPACE is ignored", retrieve_help)
         self.assertNotIn("--catalog", retrieve_help)
+        normalized_apply_help = " ".join(apply_help.split())
+        self.assertIn("Plain interactive apply displays the complete local preflight", normalized_apply_help)
+        self.assertIn("--dry-run", apply_help)
+        self.assertIn("prompt-free automation", normalized_apply_help)
 
     def test_one_line_progress_reuses_current_terminal_line(self) -> None:
         stream = TtyStringIO()

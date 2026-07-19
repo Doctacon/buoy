@@ -206,23 +206,28 @@ def apply_preflight_summary(
 ) -> JsonObject:
     """Return a clear no-write apply summary."""
 
-    return build_apply_summary(
-        verified=verified,
-        namespace=namespace,
-        region=region,
-        approved=approved,
-        delete_stale=delete_stale,
-        rows_upserted=0,
-        embeddings_generated=0,
-        rows_deleted=0,
-        state_updated=False,
-        api_calls_occurred=False,
-        catalog_registration=catalog_registration_preview(
-            verified,
+    return {
+        **build_apply_summary(
+            verified=verified,
             namespace=namespace,
             region=region,
+            approved=approved,
+            delete_stale=delete_stale,
+            rows_upserted=0,
+            embeddings_generated=0,
+            rows_deleted=0,
+            state_updated=False,
+            api_calls_occurred=False,
+            catalog_registration=catalog_registration_preview(
+                verified,
+                namespace=namespace,
+                region=region,
+            ),
         ),
-    )
+        "cancelled": False,
+        "confirmation": "not_requested",
+        "catalog_updated": False,
+    }
 
 
 def verified_source_metadata(verified: VerifiedApplyPlan) -> list[dict[str, str]]:

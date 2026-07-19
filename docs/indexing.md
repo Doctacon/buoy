@@ -7,8 +7,8 @@ This is the detailed reference for turning a source into a reviewed, incremental
 Indexing has three gates:
 
 1. `plan` crawls or converts the source, chunks it, compares it with local state, and writes review artifacts. It does not read credentials, load embeddings, or contact turbopuffer.
-2. `apply` verifies the saved artifacts and recomputes the diff. Without `--approve`, it is still local-only.
-3. `apply --approve` loads the local embedding model and writes only the reviewed new or changed rows.
+2. `apply --dry-run` verifies the saved artifacts and recomputes the diff without prompting, credentials, models, or API calls.
+3. Plain interactive `apply` displays that complete preflight and prompts `Apply this plan? [y/N]`; only exact `y`/`yes` loads the local embedding model and writes reviewed rows. `apply --approve` bypasses the prompt for automation.
 
 Stale rows are retained unless `--delete-stale` is also explicit. Namespace deletion is not part of this workflow.
 
@@ -108,10 +108,10 @@ See `uv run buoy plan --help` for current caps and all crawl controls.
 ## Review the preflight
 
 ```bash
-uv run buoy apply
+uv run buoy apply --dry-run
 ```
 
-By default, apply selects the newest plan under `artifacts/site-crawls/`. Use `--plan <path>` when multiple plans exist.
+By default, apply selects the newest plan under `artifacts/site-crawls/`. Use `--plan <path>` when multiple plans exist. Plain apply requires an interactive stdin; scripts must choose `--dry-run` or `--approve`, and piped input cannot confirm.
 
 Preflight verifies schema, namespace, manifest/chunk agreement, embedding-text hashes, artifact integrity, and compatibility with local state. Because it does not contact Turbopuffer, remote catalog state and the resulting registration action remain unknown until approved. Its text identifies the automatically selected plan path and source, artifact hash, namespace and region, verified embedding model and precision, first-apply state, upsert/embedding/unchanged/stale counts, and an explicit `retain N` or `delete N` stale-row intent.
 
@@ -119,14 +119,16 @@ Use `--region REGION` to override `TURBOPUFFER_REGION` and bind that region into
 
 Preflight does not read `TURBOPUFFER_API_KEY`, load an embedding model, mutate the catalog, or contact turbopuffer. It also prints shell-safe preview and live retrieval commands labeled for use after a successful apply; the approved apply repeats them as the next step. Replace the quoted `<query>` placeholder with the question to search while preserving the recorded namespace, region, model, and precision.
 
-## Approved apply
+## Confirmed apply
 
-After reviewing the plan and preflight:
+After reviewing the plan and preflight, run the normal interactive flow:
 
 ```bash
 export TURBOPUFFER_API_KEY="..."
-uv run buoy apply --approve
+uv run buoy apply
 ```
+
+The complete preflight is displayed again before the exact `[y/N]` prompt. Enter, no, arbitrary input, EOF, or prompt failure cancels successfully without writes and retains the plan. For separately authorized non-interactive automation, use `uv run buoy apply --approve`; it never prompts.
 
 If credentials live in this repository's `.env`, load them only into the command subshell:
 
@@ -135,7 +137,7 @@ If credentials live in this repository's `.env`, load them only into the command
   set -a
   . ./.env
   set +a
-  uv run buoy apply --approve
+  uv run buoy apply
 )
 ```
 
@@ -182,7 +184,7 @@ DuckDB is the only applied-state authority. Obsolete JSON applied-state files ar
 Preview stale deletion locally:
 
 ```bash
-uv run buoy apply --delete-stale
+uv run buoy apply --dry-run --delete-stale
 ```
 
 Delete only those exact stale row IDs after approval:

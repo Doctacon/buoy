@@ -23,18 +23,18 @@ Build and search a website index:
 # 1. Fetch, chunk, and plan locally. No Turbopuffer credentials, embeddings, or calls.
 uv run buoy plan https://example.com/
 
-# 2. Verify the plan and preview its diff. Still local-only.
-uv run buoy apply
+# 2. Verify the plan and preview its diff. Still local-only and prompt-free.
+uv run buoy apply --dry-run
 
-# 3. Approve the reviewed diff, write it to turbopuffer, and register its remote catalog card.
+# 3. Run the normal interactive flow: preflight, then exact [y/N] confirmation.
 export TURBOPUFFER_API_KEY="..."
-uv run buoy apply --approve
+uv run buoy apply
 
 # 4. Search through authenticated automatic remote routing.
 uv run buoy retrieve "How does this feature work?"
 ```
 
-`plan` may fetch a public source, but it does not read Turbopuffer credentials, load embeddings, or contact Turbopuffer. Writes require `--approve`. Retrieval is live by default and requires `TURBOPUFFER_API_KEY`; use `retrieve --dry-run` (or `--plan`) for preview. Apply preflight and explicit `--namespace` previews remain local-only, while automatic previews perform read-only remote discovery and catalog reads. Compatibility flag `retrieve --live` remains accepted as a no-op.
+`plan` may fetch a public source, but it does not read Turbopuffer credentials, load embeddings, or contact Turbopuffer. Plain interactive `apply` displays that local preflight and writes only after exact `y`/`yes`; use `apply --dry-run` for prompt-free preflight or `apply --approve` for non-interactive automation. Retrieval is live by default and requires `TURBOPUFFER_API_KEY`; use `retrieve --dry-run` (or `--plan`) for preview. Explicit `--namespace` retrieval previews remain local-only, while automatic previews perform read-only remote discovery and catalog reads. Compatibility flag `retrieve --live` remains accepted as a no-op.
 
 ## Choose a source
 
@@ -56,8 +56,8 @@ Source type and namespace are detected automatically. Use `uv run buoy plan --he
 ## What happens
 
 1. **Plan** — Scrapling, git, or MarkItDown produces local Markdown and deterministic chunks.
-2. **Preflight** — `apply` verifies artifacts and compares them with the local DuckDB ledger.
-3. **Approved apply** — the local BGE model embeds only new or changed chunks, then turbopuffer upserts them.
+2. **Preflight** — `apply --dry-run` verifies artifacts and compares them with the local DuckDB ledger.
+3. **Confirmed apply** — plain interactive `apply` prompts after preflight; the local BGE model then embeds only new or changed chunks and turbopuffer upserts them.
 4. **Retrieve** — hybrid ANN + BM25 search returns ranked, citable source chunks.
 
 Plans live under `artifacts/`; new applied state lives under `.buoy/`. Both are generated, local, and gitignored. Existing users should read [Migrating from turbo-search](docs/migrating-to-buoy.md).

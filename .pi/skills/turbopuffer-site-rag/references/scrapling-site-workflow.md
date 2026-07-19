@@ -107,23 +107,25 @@ Ask before creating/writing a namespace. Never delete or overwrite an existing n
 
 ## Apply sequence
 
-Apply has a preflight mode and an explicit live mode.
+Apply has explicit prompt-free preflight, normal interactive confirmation, and prompt-free automation modes.
 
 Preflight, no credentials or live calls:
+
+```bash
+uv run buoy apply --dry-run
+```
+
+By default, apply uses the newest `artifacts/site-crawls/**/plan.json` and the namespace recorded in that plan. Pass `--json --dry-run` for scripts. Pass `--plan` or `--namespace` only when overriding those defaults.
+
+Normal interactive apply, only after explicit user approval and after `TURBOPUFFER_API_KEY` is already in the environment:
 
 ```bash
 uv run buoy apply
 ```
 
-By default, apply uses the newest `artifacts/site-crawls/**/plan.json` and the namespace recorded in that plan. Pass `--json` for scripts/automation. Pass `--plan` or `--namespace` only when overriding those defaults.
+It displays complete preflight and prompts `Apply this plan? [y/N]`; only exact `y`/`yes` proceeds. Use `uv run buoy apply --approve` only for separately authorized non-interactive automation.
 
-Approved live upsert, only after explicit user approval and after `TURBOPUFFER_API_KEY` is already in the environment:
-
-```bash
-uv run buoy apply --approve
-```
-
-Stale row deletion is off by default. Preflight with `--delete-stale` reports exact stale row IDs without live calls. Live stale deletion requires both `--approve` and `--delete-stale`:
+Stale row deletion is off by default. Preflight with `--dry-run --delete-stale` reports exact stale row IDs without live calls. Live stale deletion requires interactive confirmation with `--delete-stale`, or both `--approve` and `--delete-stale` for automation:
 
 ```bash
 uv run buoy apply --approve --delete-stale

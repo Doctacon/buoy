@@ -12,6 +12,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
+import buoy_search.cli as cli_module
 from buoy_search.apply import build_retrieval_commands, load_verified_apply_plan, run_approved_apply
 from buoy_search.applied_state import (
     ROW_STATUS_ACTIVE,
@@ -48,6 +49,22 @@ class TtyStringIO(StringIO):
 class FailingTtyStringIO(TtyStringIO):
     def write(self, value: str) -> int:
         raise OSError("simulated stderr failure")
+
+
+class FailingPromptInput(TtyStringIO):
+    def readline(self, *args, **kwargs) -> str:
+        del args, kwargs
+        raise OSError("simulated prompt read failure")
+
+
+class EventPromptInput(TtyStringIO):
+    def __init__(self, value: str, events: list[str]) -> None:
+        super().__init__(value)
+        self.events = events
+
+    def readline(self, *args, **kwargs) -> str:
+        self.events.append("prompt-read")
+        return super().readline(*args, **kwargs)
 
 
 class FakeEmbedder:
@@ -298,7 +315,7 @@ class ApplyCliTests(unittest.TestCase):
             )
             with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
                 "buoy_search.apply.TurbopufferWriter", FakeWriter
-            ):
+            ), patch("buoy_search.cli._confirm_apply", side_effect=AssertionError("prompted")):
                 result, _stdout, _stderr = self.run_main(
                     ["apply", "--approve", "--plan", str(plan_path), "--state-root", str(root / "state"), "--json"],
                     env={"TURBOPUFFER_API_KEY": "test-key", "BUOY_EMBEDDING_PRECISION": "float32"},
@@ -358,15 +375,221 @@ class ApplyCliTests(unittest.TestCase):
         args: list[str],
         *,
         env: dict[str, str] | None = None,
+        stdin: StringIO | None = None,
         stderr: StringIO | None = None,
     ):
         stdout = StringIO()
+        stdin = stdin or StringIO()
         stderr = stderr or StringIO()
         env_patch = {} if env is None else env
-        with patch.dict("os.environ", env_patch, clear=True):
+        with patch.dict("os.environ", env_patch, clear=True), patch("sys.stdin", stdin):
             with redirect_stdout(stdout), redirect_stderr(stderr):
                 result = main(args)
         return result, stdout.getvalue(), stderr.getvalue()
+
+    def test_apply_mode_gate_and_non_tty_rejection_precede_plan_work(self) -> None:
+        with patch("buoy_search.cli.resolve_cli_state_root", side_effect=AssertionError("state root")), patch(
+            "buoy_search.cli.discover_latest_plan_path", side_effect=AssertionError("plan selection")
+        ):
+            conflict, conflict_stdout, conflict_stderr = self.run_main(
+                ["apply", "--dry-run", "--approve", "--json"]
+            )
+            piped, piped_stdout, piped_stderr = self.run_main(
+                ["apply", "--json"], stdin=StringIO("yes\n")
+            )
+
+        self.assertEqual((conflict, conflict_stdout), (2, ""))
+        self.assertIn("either --dry-run or --approve", conflict_stderr)
+        self.assertEqual((piped, piped_stdout), (2, ""))
+        self.assertIn("interactive stdin", piped_stderr)
+        self.assertIn("--dry-run", piped_stderr)
+        self.assertIn("--approve", piped_stderr)
+
+    def test_interactive_declines_eof_and_prompt_failures_cancel_without_side_effects(self) -> None:
+        responses = {
+            "enter": "\n",
+            "lower-no": "no\n",
+            "upper-no": " NO \n",
+            "arbitrary": "apply it\n",
+            "eof": "",
+        }
+        for label, response in responses.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
+                reset_fakes()
+                self.remote_catalog.cards = []
+                root = Path(tmp)
+                state_root = root / "state"
+                artifacts, plan_path = build_saved_plan(root, state_root=state_root)
+                paths = applied_state_paths(
+                    site_id=artifacts.manifest.site_id,
+                    namespace=artifacts.manifest.namespace,
+                    state_root=state_root,
+                )
+                obsolete = paths.state_dir / "last-applied.json"
+                obsolete.parent.mkdir(parents=True, exist_ok=True)
+                obsolete.write_bytes(b"obsolete cancellation sentinel\x00")
+                before = file_snapshot(obsolete)
+                with patch("buoy_search.cli.load_config", side_effect=AssertionError("credentials/config")), patch(
+                    "buoy_search.cli.run_approved_apply", side_effect=AssertionError("approved pipeline")
+                ), patch("buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("model")), patch(
+                    "buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer")
+                ):
+                    result, stdout, stderr = self.run_main(
+                        [
+                            "apply", "--plan", str(plan_path), "--state-root", str(state_root), "--json",
+                        ],
+                        stdin=TtyStringIO(response),
+                    )
+                payload = json.loads(stdout)
+                self.assertEqual(result, 0, stderr)
+                self.assertFalse(payload["approved"])
+                self.assertFalse(payload["dry_run"])
+                self.assertTrue(payload["cancelled"])
+                self.assertEqual(payload["confirmation"], "declined_or_unavailable")
+                self.assertFalse(payload["turbopuffer_api_calls"])
+                self.assertFalse(payload["state_updated"])
+                self.assertFalse(payload["catalog_updated"])
+                self.assertIn("Website RAG apply preflight", stderr)
+                self.assertTrue(stderr.endswith("Apply this plan? [y/N] "))
+                self.assertTrue(plan_path.exists())
+                self.assertFalse(paths.database_path.exists())
+                self.assertFalse((state_root / "catalog-pending").exists())
+                self.assertEqual(file_snapshot(obsolete), before)
+                self.assertEqual(FakeEmbedder.texts, [])
+                self.assertEqual(FakeWriter.rows, [])
+                self.assertEqual(self.remote_catalog.cards, [])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            _, plan_path = build_saved_plan(root, state_root=state_root)
+            result, stdout, stderr = self.run_main(
+                ["apply", "--plan", str(plan_path), "--state-root", str(state_root)],
+                stdin=FailingPromptInput(),
+            )
+        self.assertEqual(result, 0, stderr)
+        self.assertIn("Website RAG apply preflight", stdout)
+        self.assertTrue(stdout.endswith("Apply cancelled; nothing was written.\n"))
+        self.assertTrue(stderr.endswith("Apply this plan? [y/N] "))
+
+    def test_interactive_preflight_failure_never_prompts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            missing_plan = Path(tmp) / "missing" / "plan.json"
+            with patch("buoy_search.cli._confirm_apply", side_effect=AssertionError("prompted")):
+                result, stdout, stderr = self.run_main(
+                    ["apply", "--plan", str(missing_plan), "--json"],
+                    stdin=TtyStringIO("yes\n"),
+                )
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout, "")
+        self.assertIn("Plan file not found", stderr)
+        self.assertNotIn("Apply this plan?", stderr)
+
+    def test_prompt_output_failure_is_safe_json_cancellation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            _, plan_path = build_saved_plan(root, state_root=state_root)
+            result, stdout, _stderr = self.run_main(
+                ["apply", "--plan", str(plan_path), "--state-root", str(state_root), "--json"],
+                stdin=TtyStringIO("yes\n"),
+                stderr=FailingTtyStringIO(),
+            )
+            plan_retained = plan_path.exists()
+        payload = json.loads(stdout)
+        self.assertEqual(result, 0)
+        self.assertTrue(payload["cancelled"])
+        self.assertFalse(payload["state_updated"])
+        self.assertTrue(plan_retained)
+
+    def test_interactive_confirmation_accepts_only_exact_yes_forms(self) -> None:
+        for response in ("y\n", "yes\n", " Y \n", " YeS\t\n"):
+            with self.subTest(response=response), tempfile.TemporaryDirectory() as tmp:
+                reset_fakes()
+                self.remote_catalog.cards = []
+                root = Path(tmp)
+                state_root = root / "state"
+                artifacts, plan_path = build_saved_plan(root, state_root=state_root)
+                paths = applied_state_paths(
+                    site_id=artifacts.manifest.site_id,
+                    namespace=artifacts.manifest.namespace,
+                    state_root=state_root,
+                )
+                obsolete = paths.state_dir / "legacy-json" / "last-applied.json"
+                obsolete.parent.mkdir(parents=True, exist_ok=True)
+                obsolete.write_bytes(b"obsolete confirmed interactive sentinel\x00")
+                obsolete_before = file_snapshot(obsolete)
+                with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
+                    "buoy_search.apply.TurbopufferWriter", FakeWriter
+                ), patch("buoy_search.cli._confirm_apply", wraps=cli_module._confirm_apply) as confirm:
+                    result, stdout, stderr = self.run_main(
+                        ["apply", "--plan", str(plan_path), "--state-root", str(state_root), "--json"],
+                        env={"TURBOPUFFER_API_KEY": "test-key"},
+                        stdin=TtyStringIO(response),
+                    )
+                payload = json.loads(stdout)
+                self.assertEqual(result, 0, stderr)
+                self.assertTrue(payload["approved"])
+                self.assertFalse(payload["dry_run"])
+                self.assertTrue(payload["state_updated"])
+                self.assertTrue(payload["catalog_updated"])
+                self.assertEqual(confirm.call_count, 1)
+                self.assertIn("Website RAG apply preflight", stderr)
+                self.assertIn("Apply this plan? [y/N] ", stderr)
+                self.assertFalse(plan_path.exists())
+                self.assertEqual(file_snapshot(obsolete), obsolete_before)
+                self.assertEqual(len(FakeWriter.rows), len(artifacts.manifest.chunks))
+
+    def test_interactive_preflight_prompt_and_approved_revalidation_order(self) -> None:
+        events: list[str] = []
+        real_print_apply_text = cli_module.print_apply_text
+        real_load_config = cli_module.load_config
+        real_lock = acquire_namespace_apply_lock
+
+        def ordered_print(payload, *, stream=None):  # noqa: ANN001
+            events.append("preflight-visible")
+            return real_print_apply_text(payload, stream=stream)
+
+        def ordered_config():
+            events.append("load-config")
+            return real_load_config()
+
+        @contextmanager
+        def ordered_lock(**kwargs):
+            events.append("lock")
+            with real_lock(**kwargs):
+                yield
+
+        class OrderedEmbedder(FakeEmbedder):
+            def __init__(self, model_name: str, *, precision: str = "float32") -> None:
+                events.append("model")
+                super().__init__(model_name, precision=precision)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            _, plan_path = build_saved_plan(root, state_root=state_root)
+            with patch("buoy_search.cli.print_apply_text", side_effect=ordered_print), patch(
+                "buoy_search.cli.load_config", side_effect=ordered_config
+            ), patch("buoy_search.apply.acquire_namespace_apply_lock", ordered_lock), patch(
+                "buoy_search.apply.load_verified_apply_plan", wraps=load_verified_apply_plan
+            ) as revalidate, patch("buoy_search.apply.SentenceTransformerEmbedder", OrderedEmbedder), patch(
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
+            ):
+                result, stdout, stderr = self.run_main(
+                    ["apply", "--plan", str(plan_path), "--state-root", str(state_root)],
+                    env={"TURBOPUFFER_API_KEY": "test-key"},
+                    stdin=EventPromptInput("yes\n", events),
+                )
+        self.assertEqual(result, 0, stderr)
+        self.assertIn("artifact_hash:", stdout)
+        self.assertIn("state_path:", stdout)
+        self.assertIn("Apply this plan? [y/N] ", stderr)
+        self.assertEqual(revalidate.call_count, 1)
+        self.assertLess(events.index("preflight-visible"), events.index("prompt-read"))
+        self.assertLess(events.index("prompt-read"), events.index("load-config"))
+        self.assertLess(events.index("load-config"), events.index("lock"))
+        self.assertLess(events.index("lock"), events.index("model"))
 
     def test_apply_preflight_verifies_plan_without_credentials_or_live_calls(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -380,6 +603,7 @@ class ApplyCliTests(unittest.TestCase):
                 result, stdout, stderr = self.run_main(
                     [
                         "apply",
+                        "--dry-run",
                         "--plan",
                         str(plan_path),
                         "--namespace",
@@ -395,6 +619,8 @@ class ApplyCliTests(unittest.TestCase):
         self.assertEqual(payload["command"], "apply")
         self.assertFalse(payload["approved"])
         self.assertTrue(payload["dry_run"])
+        self.assertFalse(payload["cancelled"])
+        self.assertEqual(payload["confirmation"], "not_requested")
         self.assertFalse(payload["credentials_required"])
         self.assertFalse(payload["turbopuffer_api_calls"])
         self.assertFalse(payload["api_calls_occurred"])
@@ -432,7 +658,7 @@ class ApplyCliTests(unittest.TestCase):
             state_root = root / "state"
             _, plan_path = build_saved_plan(root, state_root=state_root)
             args = [
-                "apply", "--plan", str(plan_path), "--namespace", "site-example-com-v1",
+                "apply", "--dry-run", "--plan", str(plan_path), "--namespace", "site-example-com-v1",
                 "--state-root", str(state_root), "--json",
             ]
 
@@ -486,7 +712,7 @@ class ApplyCliTests(unittest.TestCase):
             artifacts, plan_path = build_saved_plan(root, state_root=state_root)
             with patch("buoy_search.cli.discover_latest_plan_path", return_value=plan_path) as discover:
                 result, stdout, stderr = self.run_main(
-                    ["apply", "--state-root", str(state_root)],
+                    ["apply", "--dry-run", "--state-root", str(state_root)],
                     env={"TURBOPUFFER_REGION": "aws-us-west-2"},
                 )
 
@@ -531,7 +757,7 @@ class ApplyCliTests(unittest.TestCase):
                 with patch(
                     "buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")
                 ), patch("buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")):
-                    result, stdout, stderr = self.run_main(["apply", "--json"])
+                    result, stdout, stderr = self.run_main(["apply", "--dry-run", "--json"])
 
                 self.assertFalse(Path(".buoy").exists())
                 self.assertEqual(marker.read_text(encoding="utf-8"), "preserve")
@@ -576,7 +802,7 @@ class ApplyCliTests(unittest.TestCase):
             old_cwd = Path.cwd()
             try:
                 os.chdir(root)
-                result, stdout, stderr = self.run_main(["apply", "--json"])
+                result, stdout, stderr = self.run_main(["apply", "--dry-run", "--json"])
             finally:
                 os.chdir(old_cwd)
 
@@ -991,6 +1217,7 @@ class ApplyCliTests(unittest.TestCase):
             result, stdout, stderr = self.run_main(
                 [
                     "apply",
+                    "--dry-run",
                     "--plan",
                     str(plan_path),
                     "--namespace",
@@ -1026,6 +1253,7 @@ class ApplyCliTests(unittest.TestCase):
             result, stdout, stderr = self.run_main(
                 [
                     "apply",
+                    "--dry-run",
                     "--plan",
                     str(plan_path),
                     "--namespace",
@@ -1138,6 +1366,7 @@ class ApplyCliTests(unittest.TestCase):
                 result, stdout, stderr = self.run_main(
                     [
                         "apply",
+                        "--dry-run",
                         "--plan",
                         str(plan_path),
                         "--namespace",
@@ -1150,6 +1379,7 @@ class ApplyCliTests(unittest.TestCase):
                 text_result, text_stdout, text_stderr = self.run_main(
                     [
                         "apply",
+                        "--dry-run",
                         "--plan",
                         str(plan_path),
                         "--namespace",
@@ -1185,6 +1415,7 @@ class ApplyCliTests(unittest.TestCase):
                 result, stdout, stderr = self.run_main(
                     [
                         "apply",
+                        "--dry-run",
                         "--plan",
                         str(plan_path),
                         "--namespace",
@@ -1198,6 +1429,7 @@ class ApplyCliTests(unittest.TestCase):
                 text_result, text_stdout, text_stderr = self.run_main(
                     [
                         "apply",
+                        "--dry-run",
                         "--plan",
                         str(plan_path),
                         "--namespace",
@@ -1830,6 +2062,7 @@ class ApplyCliTests(unittest.TestCase):
             result, _stdout, stderr = self.run_main(
                 [
                     "apply",
+                    "--dry-run",
                     "--plan",
                     str(plan_path),
                     "--namespace",
@@ -2030,6 +2263,7 @@ class ApplyCliTests(unittest.TestCase):
             result, _stdout, stderr = self.run_main(
                 [
                     "apply",
+                    "--dry-run",
                     "--plan",
                     str(plan_path),
                     "--namespace",

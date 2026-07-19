@@ -256,7 +256,7 @@ class CatalogPendingIntegrationTests(unittest.TestCase):
                 "buoy_search.apply.REMOTE_CATALOG_CLIENT_FACTORY", side_effect=AssertionError("api")
             ), patch("buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("content model")):
                 result, stdout, stderr = run_cli([
-                    "apply", "--plan", str(plan_path), "--state-root", str(state_root),
+                    "apply", "--dry-run", "--plan", str(plan_path), "--state-root", str(state_root),
                     "--region", REGION, "--json",
                 ])
             payload = json.loads(stdout)

@@ -6,6 +6,7 @@ Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ### Changed
 
+- Plain interactive apply now shows complete local preflight and prompts `Apply this plan? [y/N]`; `--dry-run` is explicit prompt-free preflight, `--approve` remains prompt-free automation, and plain non-interactive apply is rejected before plan work.
 - Plain automatic and explicit retrieval now execute live; `--dry-run`/`--plan` request preview, while `--live` remains an accepted compatibility no-op that conflicts with preview flags.
 - Retrieval without CLI `--namespace` defaults to authenticated live-namespace discovery intersected with fixed remote `buoy-routing-catalog-v1`; repeatable CLI `--namespace` is the sole bypass, `TURBOPUFFER_NAMESPACE` is ignored, and `--auto-route` remains a compatibility no-op.
 - Catalog lifecycle, approved-apply registration, and recovery now use conditional remote cards with explicit permissions, stable reads, preview-first removal, safe rebase, and operator-approved exact-revision acceptance.
