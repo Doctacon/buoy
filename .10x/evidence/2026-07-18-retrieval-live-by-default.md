@@ -53,6 +53,31 @@ The unittest runs emitted one existing non-fatal warning from a cleanup-path tes
 
 This supports the ticket's focused/full Python 3.11/3.13, parser/help, exact routing boundary, preview safety, all-or-nothing, generated command tokenization, documentation, distribution-build, hosted-CI, and no-write acceptance claims. Hosted run `29673894066` for pull request `#34` passed both versioned test jobs and the dependent distribution build. Independent review remains a separate required gate.
 
+## PR #34 automatic-preview truthfulness correction
+
+Independent review found that routed automatic preview inherited explicit-preview top-level safety fields from `MultiNamespaceRetrievalPlan.to_dict()`, producing `credentials_required=false`, `turbopuffer_api_calls=false`, and `api_calls_occurred=false` even though the nested routing object truthfully reported credentialed read-only catalog calls. `RoutedRetrievalPlan.to_dict()` now replaces those three top-level fields with command-level routing facts while preserving the explicit preview plan's credential/API-free fields and both preview modes' `content_retrieval_occurred=false` value. No field was added or removed, and live serialization and execution paths were not changed.
+
+Focused regression assertions cover the three top-level automatic-preview fields, the nested credential/read-only call fields, both top-level and nested no-content-retrieval fields, and the explicit-preview credential/API-free contract.
+
+```text
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.11 python -m unittest tests.test_automatic_routing tests.test_multi_namespace_retrieval -q
+# Ran 26 tests in 0.632s — OK
+
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 python -m unittest tests.test_automatic_routing tests.test_multi_namespace_retrieval -q
+# Ran 26 tests in 0.389s — OK
+
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 python -m unittest discover -s tests -p 'test_*.py' -q
+# Ran 405 tests in 25.147s — OK
+
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.11 python -m unittest discover -s tests -p 'test_*.py' -q
+# Ran 405 tests in 27.249s — OK
+
+git diff --check
+# exit 0
+```
+
+The full unittest runs emitted the same existing non-fatal cleanup-path warning about a temporary plan artifact directory and completed `OK`.
+
 ## Limits
 
 All remote interactions were deterministic fakes; no real Turbopuffer account was contacted. This evidence does not constitute independent review and does not close the ticket.

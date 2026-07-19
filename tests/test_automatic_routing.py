@@ -315,6 +315,7 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         self.assertEqual(payload["namespaces"], ["explicit-one", "explicit-two"])
         self.assertFalse(payload["credentials_required"])
         self.assertFalse(payload["turbopuffer_api_calls"])
+        self.assertFalse(payload["api_calls_occurred"])
         self.assertNotIn("routing", payload)
 
     def test_preview_aliases_and_auto_route_are_identical_and_parser_limit_is_bounded(self) -> None:
@@ -369,6 +370,9 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         )
         self.assertEqual(routing["requested_limit"], 3)
         self.assertEqual(routing["catalog_namespace"], REMOTE_CATALOG_NAMESPACE)
+        self.assertTrue(payload["credentials_required"])
+        self.assertTrue(payload["turbopuffer_api_calls"])
+        self.assertTrue(payload["api_calls_occurred"])
         self.assertTrue(routing["credentials_required"])
         self.assertTrue(routing["read_only_api_calls_occurred"])
         self.assertFalse(payload["content_retrieval_occurred"])

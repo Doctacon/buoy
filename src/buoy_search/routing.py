@@ -105,7 +105,14 @@ class RoutedRetrievalPlan:
     routing: RoutingSelection
 
     def to_dict(self) -> dict[str, object]:
-        return {**self.plan.to_dict(), "routing": self.routing.to_dict()}
+        routing = self.routing.to_dict()
+        return {
+            **self.plan.to_dict(),
+            "credentials_required": routing["credentials_required"],
+            "turbopuffer_api_calls": routing["read_only_api_calls_occurred"],
+            "api_calls_occurred": routing["read_only_api_calls_occurred"],
+            "routing": routing,
+        }
 
 
 @dataclass(frozen=True)
