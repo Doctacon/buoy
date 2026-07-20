@@ -1,6 +1,6 @@
 Status: recorded
 Created: 2026-07-16
-Updated: 2026-07-16
+Updated: 2026-07-20
 Relates-To: .10x/tickets/done/2026-07-15-create-buoy-v0-3-0-github-release.md, .10x/tickets/done/2026-07-15-buoy-v0-3-0-release-plan.md
 
 # Buoy v0.3.0 GitHub Release
@@ -57,6 +57,6 @@ This supports every technical acceptance criterion for the GitHub-only v0.3.0 pu
 ## Limits and residual risk
 
 - GitHub generated notes include the complete compare range; curated release content remains the pending changelog section until the separately owned post-release finalization child lands.
-- Hosted jobs emitted Node.js 20 deprecation/forced-Node-24 annotations but succeeded. The existing owner is `.10x/tickets/2026-07-14-update-node24-github-actions.md`; this release did not widen scope to change action pins.
+- Hosted jobs emitted Node.js 20 deprecation/forced-Node-24 annotations but succeeded. The existing owner is `.10x/tickets/done/2026-07-14-update-node24-github-actions.md`; this release did not widen scope to change action pins.
 - PyPI absence is an HTTP 404 observation at preflight/postflight, not a permanent guarantee.
 - The downloaded dependency installation contacted package indexes for dependencies but did not publish anything. No secret values were recorded.

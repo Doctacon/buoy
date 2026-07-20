@@ -1,6 +1,6 @@
 Status: recorded
 Created: 2026-07-14
-Updated: 2026-07-14
+Updated: 2026-07-20
 Relates-To: .10x/tickets/done/2026-07-14-publish-buoy-rebrand-commit.md, .10x/tickets/done/2026-07-14-buoy-public-ci-release-plan.md
 
 # Buoy Rebrand and CI Commit Pre-Push Validation
@@ -49,7 +49,7 @@ Supports creating one normal `feat: rebrand project as Buoy` commit and pushing 
 - CI: https://github.com/Doctacon/buoy-search/actions/runs/29359814276 completed successfully.
 - Jobs: Python 3.11 passed in 32 seconds; Python 3.13 passed in 39 seconds; distribution build passed in 11 seconds.
 
-GitHub emitted deprecation annotations because the pinned checkout/setup-uv action revisions target the Node.js 20 action runtime and are currently forced onto Node.js 24. This did not fail CI; durable follow-up is `.10x/tickets/2026-07-14-update-node24-github-actions.md`.
+GitHub emitted deprecation annotations because the pinned checkout/setup-uv action revisions target the Node.js 20 action runtime and are currently forced onto Node.js 24. This did not fail CI; durable follow-up is `.10x/tickets/done/2026-07-14-update-node24-github-actions.md`.
 
 ## Limits
 

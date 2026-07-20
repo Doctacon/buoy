@@ -1,6 +1,6 @@
 Status: recorded
 Created: 2026-07-14
-Updated: 2026-07-14
+Updated: 2026-07-20
 Relates-To: .10x/tickets/done/2026-07-14-create-buoy-v0-2-1-github-release.md, .10x/decisions/superseded/github-only-release-automation-v0-2-1.md
 
 # Buoy v0.2.1 GitHub Release
@@ -37,4 +37,4 @@ Postflight confirmed v0.2.0 still has no Release, PyPI remains absent, and `main
 
 ## Limits
 
-GitHub controls hosted release/attestation availability. The hosted run emitted already-tracked Node.js runtime deprecation annotations; `.10x/tickets/2026-07-14-update-node24-github-actions.md` owns that follow-up. Independent review remains required before closure.
+GitHub controls hosted release/attestation availability. The hosted run emitted already-tracked Node.js runtime deprecation annotations; `.10x/tickets/done/2026-07-14-update-node24-github-actions.md` owns that follow-up. Independent review remains required before closure.

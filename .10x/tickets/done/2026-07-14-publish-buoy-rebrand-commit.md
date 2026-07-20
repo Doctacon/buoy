@@ -1,6 +1,6 @@
 Status: done
 Created: 2026-07-14
-Updated: 2026-07-14
+Updated: 2026-07-20
 Parent: .10x/tickets/done/2026-07-14-buoy-public-ci-release-plan.md
 Depends-On: .10x/tickets/done/2026-07-14-buoy-rebrand-plan.md, .10x/tickets/done/2026-07-14-validate-buoy-ci-release-automation.md
 
@@ -36,7 +36,7 @@ Pre/post index inventories, complete staged-diff review, tests/build as needed, 
 ## Progress and notes
 
 - 2026-07-14: Reconciled the complete public CI/release plan tree, excluded ignored local/generated/secret paths, passed 235 tests plus package build/lock/diff validation, and prepared one normal commit. Evidence: `.10x/evidence/2026-07-14-publish-buoy-rebrand-commit.md`.
-- 2026-07-14: Created commit `d846d2b2e965e7f62ff180442724d02705688a1a` (`feat: rebrand project as Buoy`) and pushed it normally to canonical `origin/main`. Hosted CI run `29359814276` passed Python 3.11, Python 3.13, and build jobs. The run emitted Node.js 20 action-runtime deprecation annotations; follow-up: `.10x/tickets/2026-07-14-update-node24-github-actions.md`.
+- 2026-07-14: Created commit `d846d2b2e965e7f62ff180442724d02705688a1a` (`feat: rebrand project as Buoy`) and pushed it normally to canonical `origin/main`. Hosted CI run `29359814276` passed Python 3.11, Python 3.13, and build jobs. The run emitted Node.js 20 action-runtime deprecation annotations; follow-up: `.10x/tickets/done/2026-07-14-update-node24-github-actions.md`.
 - 2026-07-14: Independent review passed. Review: `.10x/reviews/2026-07-14-publish-buoy-rebrand-commit-review.md`.
 
 ## Blockers

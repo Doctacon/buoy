@@ -1,6 +1,6 @@
 Status: done
 Created: 2026-07-18
-Updated: 2026-07-19
+Updated: 2026-07-20
 
 # Repository Dead-End Inventory
 
@@ -69,7 +69,7 @@ The inventory also identified tickets requiring closure review rather than autom
 - `.10x/tickets/cancelled/2026-07-14-conditional-website-replanning.md` was cancelled with no action after the independently reviewed authoritative-validator gate failed.
 - `.10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md` remains active with exact missing terminal support for named heavy hypotheses and routed-selector/profile work.
 
-At inventory time, `.10x/tickets/done/2026-07-15-reconcile-retrieval-tag-output.md` was not dead: it owned current source/documentation drift requiring a product decision. That shaping ticket is now complete; `.10x/tickets/2026-07-19-return-retrieval-tags.md` owns the ratified implementation. `.10x/tickets/2026-07-14-update-node24-github-actions.md` is also live maintenance, not dead-end cleanup.
+At inventory time, `.10x/tickets/done/2026-07-15-reconcile-retrieval-tag-output.md` was not dead: it owned current source/documentation drift requiring a product decision. That shaping ticket is now complete; `.10x/tickets/2026-07-19-return-retrieval-tags.md` owns the ratified implementation. `.10x/tickets/done/2026-07-14-update-node24-github-actions.md` was also live maintenance at inventory time, not dead-end cleanup.
 
 ### Intentional compatibility, not current dead code
 

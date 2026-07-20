@@ -1,6 +1,6 @@
 {
   "known_warning": {
-    "durable_owner": ".10x/tickets/2026-07-14-update-node24-github-actions.md",
+    "durable_owner": ".10x/tickets/done/2026-07-14-update-node24-github-actions.md",
     "node20_action_runtime_forced_to_node24": true,
     "release_result": "success"
   },

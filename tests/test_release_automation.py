@@ -22,8 +22,8 @@ from scripts.release_checks import (
 ROOT = Path(__file__).resolve().parents[1]
 PINNED_ACTION = re.compile(r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
 EXPECTED_ACTION_MAJORS = {
-    "actions/checkout": "v4",
-    "astral-sh/setup-uv": "v6",
+    "actions/checkout": "v5",
+    "astral-sh/setup-uv": "v7",
     "actions/upload-artifact": "v4",
     "actions/download-artifact": "v4",
     "actions/attest-build-provenance": "v2",
