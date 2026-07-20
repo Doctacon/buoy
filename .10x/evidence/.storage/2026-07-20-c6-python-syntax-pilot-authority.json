@@ -1,0 +1,1535 @@
+{
+  "forecast": {
+    "approval_checkpoint": {
+      "arms_per_repository": 3,
+      "estimated_deletes": 0,
+      "estimated_upsert_requests_at_batch_64": 2378,
+      "maximum_rows_and_estimated_row_writes": 151990,
+      "multipliers_vs_three_current_default_namespaces": {
+        "final_rows_and_row_writes": 2.500822693,
+        "serialized_plan_rows_plus_raw_vectors": 2.607014766
+      },
+      "new_namespaces": 9,
+      "repositories": 3,
+      "serialized_plan_rows_plus_raw_vectors_bytes": 547388704
+    },
+    "artifact_sha256": "d5199276c19ae89779287eaa90824ce1e1cc684a3f060899f02f65d976016243",
+    "contract_inventory_sha256": "e6f97842ec90f0558f51e70f93ea6b8f09f82f63019a27d0738d2b1efb427608",
+    "fallback_path_categories": {
+      "buoy": {
+        "non_python_fallback": {
+          "count": 6,
+          "paths_sha256": "3746cf122ca0bfc4fa78e9176ede29dd3259f64d90c31c3bce933b784343a0de"
+        },
+        "python_parse_fallback": {
+          "count": 0,
+          "paths_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "pytest": {
+        "non_python_fallback": {
+          "count": 55,
+          "paths_sha256": "65dd4bdcd80700938c0ef8f201a9ebc813bb4b18b14b50b416ca422d5da35e2e"
+        },
+        "python_parse_fallback": {
+          "count": 0,
+          "paths_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "ruff": {
+        "non_python_fallback": {
+          "count": 6281,
+          "paths_sha256": "5cabfc19a6f7351fd2d6a321752d6b04561167fa8aa055d407201fe0e57e7a64"
+        },
+        "python_parse_fallback": {
+          "count": 559,
+          "paths_sha256": "51c144aaadc34c089fe10419e1e309ed63fb78b52c0262980374593645c8ffdb"
+        }
+      }
+    },
+    "local_plan_equivalence": {
+      "all_first_apply_diffs_have_zero_stale_rows": true,
+      "identical_commit_and_selected_corpus_across_arms": true,
+      "identical_header_rows_across_arms": true,
+      "ordinary_vs_current_default_exact_by_repository": true
+    },
+    "model_tokenizer_preflight": {
+      "artifact_path": ".10x/evidence/.storage/2026-07-20-c6-python-syntax-tokenizer-preflight.json.gz",
+      "artifact_sha256": "c3a1560e611114760909c110a118a3ce1a60f0527de08c769a85a20b263f4e0f",
+      "incompatible_paths": 4162,
+      "incompatible_paths_sha256": "78de7935e5cc839dada868d04bf81ed264078bbeb9eaca673a2c1b9054c8a9c6",
+      "incompatible_rows": 21292,
+      "incompatible_rows_sha256": "340fe3b033f656b79f30fcac06e92183ea6bf683dd16413f7e788372d818ae20",
+      "maximum_observed_tokens": 12785,
+      "model": "BAAI/bge-small-en-v1.5",
+      "model_max_tokens": 512,
+      "ready": false,
+      "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+      "tokenizer_files_sha256": "9c7beccadaa552c323907a895ad9ab188d8b75763022403f72c5d91085334f3b"
+    },
+    "namespace_contract_sha256_12": "e6f97842ec90",
+    "preflight_findings": {
+      "approval_ready": false,
+      "blocking_interpretation": "The citation correction preserves exact current-default parity. C6 readiness still fails because exact pinned-tokenizer preflight found treatment payloads above the model maximum; no truncation or token subdivision is authorized.",
+      "python_parse_fallbacks_by_treatment_and_repository": {
+        "buoy": {
+          "eligible_code_files": 40,
+          "fallback_files": 0,
+          "fallback_rate": 0.0,
+          "semantics": "SyntaxError/ValueError whole-file fallback"
+        },
+        "pytest": {
+          "eligible_code_files": 236,
+          "fallback_files": 0,
+          "fallback_rate": 0.0,
+          "semantics": "SyntaxError/ValueError whole-file fallback"
+        },
+        "ruff": {
+          "eligible_code_files": 2875,
+          "fallback_files": 559,
+          "fallback_rate": 0.194434783,
+          "semantics": "SyntaxError/ValueError whole-file fallback"
+        }
+      },
+      "ruff_current_default_affected_file_count": 170,
+      "ruff_current_default_affected_paths": [
+        "crates/ruff/tests/snapshots/integration_test__rule_f401.snap",
+        "crates/ruff/tests/snapshots/integration_test__rule_f401_output_text.snap",
+        "crates/ruff_python_formatter/resources/test/fixtures/ruff/docstring_code_examples.py",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__cantfit.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__comments2.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__comments6.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__comments9.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__comments_in_blocks.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__empty_lines.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__expression.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__fmtonoff.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__fmtonoff4.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__fmtonoff5.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__fmtpass_imports.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__fmtskip11.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__fmtskip12.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__fmtskip_multiple_in_clause.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__fmtskip_multiple_strings.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__form_feeds.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__fstring_quotations.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__funcdef_return_type_trailing_comma.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__function_trailing_comma.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__ignore_pyi.pyi.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__line_ranges_diff_edge_case.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__line_ranges_fmt_off_decorator.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__multiline_consecutive_open_parentheses_ignore.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__pattern_matching_with_if_stmt.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__pep604_union_types_line_breaks.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__pep_572_remove_parens.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__pep_701.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__prefer_rhs_split.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__prefer_rhs_split_reformatted.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__preview_cantfit.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__preview_cantfit_string.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__preview_comments7.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__preview_fmtpass_imports.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__preview_hug_parens_with_braces_and_square_brackets.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__preview_hug_parens_with_braces_and_square_brackets_no_ll1.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__preview_import_line_collapse.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__preview_long_dict_values.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__preview_long_strings__east_asian_width.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__preview_multiline_strings.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__preview_remove_multiline_lone_list_item_parens.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__preview_return_annotation_brackets_string.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__preview_wrap_comprehension_in.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__remove_await_parens.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__remove_except_parens.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__remove_for_brackets.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__remove_lone_list_item_parens.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__remove_parens_from_lhs.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__return_annotation_brackets.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__trailing_commas_in_leading_parts.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@cases__tupleassign.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/black_compatibility@miscellaneous__string_quotes.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@comment_prefixes.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@docstring_newlines.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@docstring_non_visible_characters.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@docstring_tab_indentation.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__attribute.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__await.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__binary.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__binary_implicit_string.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__binary_pow_spacing.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__boolean_operation.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__bytes.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__call.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__compare.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__dict.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__dict_comp.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__fstring_preview.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__generator_exp.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__hug.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__if.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__join_implicit_concatenated_string.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__join_implicit_concatenated_string_assignment.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__join_implicit_concatenated_string_preserve.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__lambda.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__list.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__list_comp.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__nested_string_quote_style.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__optional_parentheses_comments.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__set_comp.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__slice.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__split_empty_brackets.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__string.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__subscript.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__tstring.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__tuple.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__unary.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__unsplittable.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@expression__yield.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@f-string-carriage-return-newline.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fluent.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_on_off__comments.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_on_off__empty_file.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_on_off__fmt_off_unclosed_deep_nested_trailing_comment.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_on_off__fmt_off_unclosed_trailing_comment.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_on_off__form_feed.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_on_off__indent.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_on_off__mixed_space_and_tab.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_on_off__newlines.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_on_off__no_fmt_on.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_on_off__off_on_off_on.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_on_off__simple.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_on_off__trailing_comments.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_on_off__trailing_semicolon.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_on_off__yapf.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_skip__compound_one_liners.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_skip__decorators.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_skip__match.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_skip__or_else.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_skip__reason.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_skip__semicolons.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@fmt_skip__top_level_semicolon.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@form_feed.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@module_dangling_comment1.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@module_dangling_comment2.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@multiline_string_deviations.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@newlines.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@newlines.pyi.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@parentheses__call_chains.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@parentheses__expression_parentheses_comments.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@parentheses__nested.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@parentheses__opening_parentheses_comment_empty.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@parentheses__opening_parentheses_comment_value.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@pattern__pattern_maybe_parenthesize.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@pattern_match_regression_brackets.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@range_formatting__empty_file.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@range_formatting__end_of_file.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@range_formatting__indent.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@range_formatting__regressions.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@range_formatting__same_line_body.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@range_formatting__stub.pyi.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@skip_magic_trailing_comma.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__ann_assign.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__assert.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__assign.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__assignment_split_value_first.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__break.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__class_definition.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__delete.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__for.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__function.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__if.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__import.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__import_from.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__long_type_annotations.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__match.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__module_comment.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__raise.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__return.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__return_annotation.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__return_type_no_parameters.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__return_type_parameters.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__stub_functions_trailing_comments.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__top_level.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__top_level.pyi.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__try.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__type_alias.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__while.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__with.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@statement__with_39.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@stub_files__blank_line_after_nested_stub_class.pyi.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@stub_files__blank_line_after_nested_stub_class_eof.pyi.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@stub_files__comments.pyi.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@stub_files__decorated_class_after_function.pyi.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@tab_width.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@trailing_comments.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@trailing_pragma_nested.py.snap",
+        "crates/ruff_python_formatter/tests/snapshots/format@trivia.py.snap"
+      ],
+      "ruff_current_default_affected_paths_sha256": "abf6436f89e794bc8fed9c06ded00a8ffcb71ac98639ea02b12d7c0fc8674d39",
+      "ruff_current_default_source_rows_without_lines_component": 2722,
+      "treatment_rows_over_512_approximate_tokens": 15187
+    },
+    "repositories": {
+      "buoy": {
+        "arms": {
+          "current-default": {
+            "artifact_hash": "20c63708acb32991f0253d10e16b8e362b916972d6a0830451aba7bfbb84bfb2",
+            "chunk_distribution": {
+              "line_span_semantics": "originating 80-entry section for current-default; exact payload range for Python-aware arms",
+              "source_rows_without_parseable_lines_component": 0
+            },
+            "diff_summary": {
+              "chunks_to_embed": 876,
+              "chunks_unchanged": 0,
+              "first_apply": true,
+              "pages_added": 57,
+              "pages_changed": 0,
+              "pages_removed": 0,
+              "pages_unchanged": 0,
+              "retained_stale_rows": 0,
+              "rows_to_upsert": 876,
+              "stale_rows": 0
+            },
+            "estimated_deletes": 0,
+            "estimated_row_writes": 876,
+            "estimated_upsert_requests_at_batch_64": 14,
+            "fallback_by_language": {
+              "python": {
+                "eligible_code_files": 40,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "svg": {
+                "eligible_code_files": 1,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "text": {
+                "eligible_code_files": 2,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "toml": {
+                "eligible_code_files": 1,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "yaml": {
+                "eligible_code_files": 2,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              }
+            },
+            "final_rows": 876,
+            "header_identity_sha256": "843ee739cb5c0183d94cecdf5df7dfccadb6eaf55a31c5f3fbba073ac6017144",
+            "header_rows": 46,
+            "local_artifact_file_sha256": {
+              "chunks.jsonl": "a2244c21e0cf1c5f8c429edfcdd26cea2c05c6e1120d98247ecdd697a235ae84",
+              "manifest.json": "7c853d777d71c2050e67bca5ac7a3cb024eb98e5b29928d5f085e64eff87386f",
+              "plan.json": "93d9cdb85450fe5fce33c2b76fd87c850b6243c942147918fade0609d6aea098"
+            },
+            "namespace": "github-doctacon-buoy-search-exp-c6-syntax-current-default-e6f97842ec90-v1",
+            "plan_id": "plan_20c63708acb32991",
+            "plan_signature_sha256": "1c291ca427e9643e66641ae89720041959d8ffad1f9b713a0c31850dfe9482f1",
+            "prose_rows": 74,
+            "source_rows": 756,
+            "storage_estimates_bytes": {
+              "content_utf8": 789588,
+              "provider_index_overhead_included": false,
+              "raw_384_dim_f16_vectors": 672768,
+              "serialized_plan_chunks_jsonl": 2425733,
+              "serialized_plan_rows_plus_raw_vectors": 3098501
+            }
+          },
+          "fixed-80-python-breadcrumbs": {
+            "artifact_hash": "de46b15cb704e270c710e6084da8c7af98e072f55ffdeec175865165fec53f3f",
+            "chunk_distribution": {
+              "line_span_semantics": "originating 80-entry section for current-default; exact payload range for Python-aware arms",
+              "source_rows_without_parseable_lines_component": 0
+            },
+            "diff_summary": {
+              "chunks_to_embed": 372,
+              "chunks_unchanged": 0,
+              "first_apply": true,
+              "pages_added": 57,
+              "pages_changed": 0,
+              "pages_removed": 0,
+              "pages_unchanged": 0,
+              "retained_stale_rows": 0,
+              "rows_to_upsert": 372,
+              "stale_rows": 0
+            },
+            "estimated_deletes": 0,
+            "estimated_row_writes": 372,
+            "estimated_upsert_requests_at_batch_64": 6,
+            "fallback_by_language": {
+              "python": {
+                "eligible_code_files": 40,
+                "fallback_files": 0,
+                "fallback_rate": 0.0,
+                "semantics": "SyntaxError/ValueError whole-file fallback"
+              },
+              "svg": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "text": {
+                "eligible_code_files": 2,
+                "fallback_files": 2,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "toml": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "yaml": {
+                "eligible_code_files": 2,
+                "fallback_files": 2,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              }
+            },
+            "final_rows": 372,
+            "header_identity_sha256": "843ee739cb5c0183d94cecdf5df7dfccadb6eaf55a31c5f3fbba073ac6017144",
+            "header_rows": 46,
+            "local_artifact_file_sha256": {
+              "chunks.jsonl": "2fce018984d146586cbae6d58c9808c2ecd8ca20636106bb214cca6f5a0a52c1",
+              "manifest.json": "aa6040b891bb11d130900bf80780aa4ec517497b3f3756a0f86261238192b32f",
+              "plan.json": "a13c4949e19e3633b0a7ce12302f680c5b5441b48a885880cf177601dd6df888"
+            },
+            "namespace": "github-doctacon-buoy-search-exp-c6-syntax-fixed-80-python-breadcrumbs-e6f97842ec90-v1",
+            "plan_id": "plan_de46b15cb704e270",
+            "plan_signature_sha256": "375e235f9789ee43deeeba1a270580c4902d2fa4adc3a27be43b2618e3ba614f",
+            "prose_rows": 74,
+            "source_rows": 252,
+            "storage_estimates_bytes": {
+              "content_utf8": 863227,
+              "provider_index_overhead_included": false,
+              "raw_384_dim_f16_vectors": 285696,
+              "serialized_plan_chunks_jsonl": 1574496,
+              "serialized_plan_rows_plus_raw_vectors": 1860192
+            }
+          },
+          "python-ast": {
+            "artifact_hash": "db2f6dc81c35d6555074cdfe9a115686600b294dae20e013160157a0f6a53af9",
+            "chunk_distribution": {
+              "line_span_semantics": "originating 80-entry section for current-default; exact payload range for Python-aware arms",
+              "source_rows_without_parseable_lines_component": 0
+            },
+            "diff_summary": {
+              "chunks_to_embed": 1418,
+              "chunks_unchanged": 0,
+              "first_apply": true,
+              "pages_added": 57,
+              "pages_changed": 0,
+              "pages_removed": 0,
+              "pages_unchanged": 0,
+              "retained_stale_rows": 0,
+              "rows_to_upsert": 1418,
+              "stale_rows": 0
+            },
+            "estimated_deletes": 0,
+            "estimated_row_writes": 1418,
+            "estimated_upsert_requests_at_batch_64": 23,
+            "fallback_by_language": {
+              "python": {
+                "eligible_code_files": 40,
+                "fallback_files": 0,
+                "fallback_rate": 0.0,
+                "semantics": "SyntaxError/ValueError whole-file fallback"
+              },
+              "svg": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "text": {
+                "eligible_code_files": 2,
+                "fallback_files": 2,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "toml": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "yaml": {
+                "eligible_code_files": 2,
+                "fallback_files": 2,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              }
+            },
+            "final_rows": 1418,
+            "header_identity_sha256": "843ee739cb5c0183d94cecdf5df7dfccadb6eaf55a31c5f3fbba073ac6017144",
+            "header_rows": 46,
+            "local_artifact_file_sha256": {
+              "chunks.jsonl": "beda031d4c279dddb208a36a8b07b26a90089059db39b87e10f3c03e8aee05fa",
+              "manifest.json": "e73433cfecafaf4538b0929d800a3ac25ac1793fbf88272d4047db90a4e0d2f6",
+              "plan.json": "5dd4da74e1b83eecfc48ff8aa866440b233715d8aa5eabead5c5656b0a3ad206"
+            },
+            "namespace": "github-doctacon-buoy-search-exp-c6-syntax-python-ast-e6f97842ec90-v1",
+            "plan_id": "plan_db2f6dc81c35d655",
+            "plan_signature_sha256": "606830b19e4fbe77adf33ed9b930df89468bb03d1cbdcc318b914127117f534e",
+            "prose_rows": 74,
+            "source_rows": 1298,
+            "storage_estimates_bytes": {
+              "content_utf8": 895765,
+              "provider_index_overhead_included": false,
+              "raw_384_dim_f16_vectors": 1089024,
+              "serialized_plan_chunks_jsonl": 3477872,
+              "serialized_plan_rows_plus_raw_vectors": 4566896
+            }
+          }
+        },
+        "current_default_equivalent_to_ordinary_no_arm": true,
+        "identical_header_rows_across_arms": true,
+        "identical_selected_corpus_across_arms": true,
+        "ordinary_no_arm_plan_signature_sha256": "1c291ca427e9643e66641ae89720041959d8ffad1f9b713a0c31850dfe9482f1",
+        "selected_corpus_sha256": "4ad84f89503ea659832e9fe5c4c0f08d5b2fdf163d88f760b8711514b243e820",
+        "selected_file_count": 57,
+        "selected_paths_sha256": "132b8ce145841c16ce661bf95ae63f89358428f0b2ee4488fc44347e81714433",
+        "source_commit": "fcb7abbe1652d2eab4ee23816b6d992d893603ac"
+      },
+      "pytest": {
+        "arms": {
+          "current-default": {
+            "artifact_hash": "a48c9efbeca5dd4be5fefbaf608b67ec5f3b2d0f17d7f643aeed1444771989a0",
+            "chunk_distribution": {
+              "line_span_semantics": "originating 80-entry section for current-default; exact payload range for Python-aware arms",
+              "source_rows_without_parseable_lines_component": 0
+            },
+            "diff_summary": {
+              "chunks_to_embed": 3493,
+              "chunks_unchanged": 0,
+              "first_apply": true,
+              "pages_added": 572,
+              "pages_changed": 0,
+              "pages_removed": 0,
+              "pages_unchanged": 0,
+              "retained_stale_rows": 0,
+              "rows_to_upsert": 3493,
+              "stale_rows": 0
+            },
+            "estimated_deletes": 0,
+            "estimated_row_writes": 3493,
+            "estimated_upsert_requests_at_batch_64": 55,
+            "fallback_by_language": {
+              "css": {
+                "eligible_code_files": 1,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "feature": {
+                "eligible_code_files": 1,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "html": {
+                "eligible_code_files": 1,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "ini": {
+                "eligible_code_files": 5,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "json": {
+                "eligible_code_files": 2,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "python": {
+                "eligible_code_files": 236,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "svg": {
+                "eligible_code_files": 12,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "text": {
+                "eligible_code_files": 13,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "toml": {
+                "eligible_code_files": 3,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "xsd": {
+                "eligible_code_files": 1,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "yaml": {
+                "eligible_code_files": 16,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              }
+            },
+            "final_rows": 3493,
+            "header_identity_sha256": "4b27766c6e2a7b0b244a1a33413cfa594c07cf8064b56720013801a758e6bc1c",
+            "header_rows": 291,
+            "local_artifact_file_sha256": {
+              "chunks.jsonl": "a8955835cfa55c8d23d0f980dc6f86094a5ee23e2ad125fa910d0587c08abda0",
+              "manifest.json": "0dd94bd2c303946acd48abab3bab8b90720e2fedca7a0d50b70f914426f55c7f",
+              "plan.json": "321bd91083a259572467a215649e3136d4deb1c0a3a16aebda4d491f97a1491a"
+            },
+            "namespace": "github-pytest-dev-pytest-exp-c6-syntax-current-default-e6f97842ec90-v1",
+            "plan_id": "plan_a48c9efbeca5dd4b",
+            "plan_signature_sha256": "de5e4d73bfa72e3caca618306be678c7c81ffc86ab16df958071b2c0a8ce9cf4",
+            "prose_rows": 1089,
+            "source_rows": 2113,
+            "storage_estimates_bytes": {
+              "content_utf8": 2844424,
+              "provider_index_overhead_included": false,
+              "raw_384_dim_f16_vectors": 2682624,
+              "serialized_plan_chunks_jsonl": 9283811,
+              "serialized_plan_rows_plus_raw_vectors": 11966435
+            }
+          },
+          "fixed-80-python-breadcrumbs": {
+            "artifact_hash": "f8c805e80411d81216ddcdf5bb7b35f0cb0ca5aea9d441e07987a5149b5c1338",
+            "chunk_distribution": {
+              "line_span_semantics": "originating 80-entry section for current-default; exact payload range for Python-aware arms",
+              "source_rows_without_parseable_lines_component": 0
+            },
+            "diff_summary": {
+              "chunks_to_embed": 2294,
+              "chunks_unchanged": 0,
+              "first_apply": true,
+              "pages_added": 572,
+              "pages_changed": 0,
+              "pages_removed": 0,
+              "pages_unchanged": 0,
+              "retained_stale_rows": 0,
+              "rows_to_upsert": 2294,
+              "stale_rows": 0
+            },
+            "estimated_deletes": 0,
+            "estimated_row_writes": 2294,
+            "estimated_upsert_requests_at_batch_64": 36,
+            "fallback_by_language": {
+              "css": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "feature": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "html": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "ini": {
+                "eligible_code_files": 5,
+                "fallback_files": 5,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "json": {
+                "eligible_code_files": 2,
+                "fallback_files": 2,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "python": {
+                "eligible_code_files": 236,
+                "fallback_files": 0,
+                "fallback_rate": 0.0,
+                "semantics": "SyntaxError/ValueError whole-file fallback"
+              },
+              "svg": {
+                "eligible_code_files": 12,
+                "fallback_files": 12,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "text": {
+                "eligible_code_files": 13,
+                "fallback_files": 13,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "toml": {
+                "eligible_code_files": 3,
+                "fallback_files": 3,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "xsd": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "yaml": {
+                "eligible_code_files": 16,
+                "fallback_files": 16,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              }
+            },
+            "final_rows": 2294,
+            "header_identity_sha256": "4b27766c6e2a7b0b244a1a33413cfa594c07cf8064b56720013801a758e6bc1c",
+            "header_rows": 291,
+            "local_artifact_file_sha256": {
+              "chunks.jsonl": "915b1b9d8cd313c0255cf55440a8bc0b1c77fde51ec3d8848e40d3dd213e0332",
+              "manifest.json": "0663523fcfce893d5bb8e38816de8915330887140da20511e707574f66fbdd6a",
+              "plan.json": "fa2e53b9a6284a67093251e6baa8f6e3f82b59a9f318bbcf8916bdd5735a8823"
+            },
+            "namespace": "github-pytest-dev-pytest-exp-c6-syntax-fixed-80-python-breadcrumbs-e6f97842ec90-v1",
+            "plan_id": "plan_f8c805e80411d812",
+            "plan_signature_sha256": "16f695a7dc76526af3f7886ab9b2dd8d0e4a8da05ef08585be07702c38046f35",
+            "prose_rows": 1089,
+            "source_rows": 914,
+            "storage_estimates_bytes": {
+              "content_utf8": 3036721,
+              "provider_index_overhead_included": false,
+              "raw_384_dim_f16_vectors": 1761792,
+              "serialized_plan_chunks_jsonl": 7327231,
+              "serialized_plan_rows_plus_raw_vectors": 9089023
+            }
+          },
+          "python-ast": {
+            "artifact_hash": "98be18d5048785c66d59a8748706ebabbef1bf6845006ad0423e74dd7ec46348",
+            "chunk_distribution": {
+              "line_span_semantics": "originating 80-entry section for current-default; exact payload range for Python-aware arms",
+              "source_rows_without_parseable_lines_component": 0
+            },
+            "diff_summary": {
+              "chunks_to_embed": 6900,
+              "chunks_unchanged": 0,
+              "first_apply": true,
+              "pages_added": 572,
+              "pages_changed": 0,
+              "pages_removed": 0,
+              "pages_unchanged": 0,
+              "retained_stale_rows": 0,
+              "rows_to_upsert": 6900,
+              "stale_rows": 0
+            },
+            "estimated_deletes": 0,
+            "estimated_row_writes": 6900,
+            "estimated_upsert_requests_at_batch_64": 108,
+            "fallback_by_language": {
+              "css": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "feature": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "html": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "ini": {
+                "eligible_code_files": 5,
+                "fallback_files": 5,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "json": {
+                "eligible_code_files": 2,
+                "fallback_files": 2,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "python": {
+                "eligible_code_files": 236,
+                "fallback_files": 0,
+                "fallback_rate": 0.0,
+                "semantics": "SyntaxError/ValueError whole-file fallback"
+              },
+              "svg": {
+                "eligible_code_files": 12,
+                "fallback_files": 12,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "text": {
+                "eligible_code_files": 13,
+                "fallback_files": 13,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "toml": {
+                "eligible_code_files": 3,
+                "fallback_files": 3,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "xsd": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "yaml": {
+                "eligible_code_files": 16,
+                "fallback_files": 16,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              }
+            },
+            "final_rows": 6900,
+            "header_identity_sha256": "4b27766c6e2a7b0b244a1a33413cfa594c07cf8064b56720013801a758e6bc1c",
+            "header_rows": 291,
+            "local_artifact_file_sha256": {
+              "chunks.jsonl": "4c7b236a42c997df2fe94dafec32a05585c2dff0d4456eb7d29c7aa6ee111df1",
+              "manifest.json": "ecbfaba5f6d7c9acdedbbcd4eceb753968ec89c9d9638e1bcb6ffca192ce7334",
+              "plan.json": "8a4abfcc8b4ae9d04164e8ed01cff8a69135e00b03063aca5fe051800e005df8"
+            },
+            "namespace": "github-pytest-dev-pytest-exp-c6-syntax-python-ast-e6f97842ec90-v1",
+            "plan_id": "plan_98be18d5048785c6",
+            "plan_signature_sha256": "3612c8862734c8b21b643003eecedde9ec2d991365ff1a1fafc68c0a86dbd84f",
+            "prose_rows": 1089,
+            "source_rows": 5520,
+            "storage_estimates_bytes": {
+              "content_utf8": 3192631,
+              "provider_index_overhead_included": false,
+              "raw_384_dim_f16_vectors": 5299200,
+              "serialized_plan_chunks_jsonl": 15543435,
+              "serialized_plan_rows_plus_raw_vectors": 20842635
+            }
+          }
+        },
+        "current_default_equivalent_to_ordinary_no_arm": true,
+        "identical_header_rows_across_arms": true,
+        "identical_selected_corpus_across_arms": true,
+        "ordinary_no_arm_plan_signature_sha256": "de5e4d73bfa72e3caca618306be678c7c81ffc86ab16df958071b2c0a8ce9cf4",
+        "selected_corpus_sha256": "d66fa012dcf48e45ed020eafd10c6966b93ef9b389b944adf548411ecf8f7fb2",
+        "selected_file_count": 572,
+        "selected_paths_sha256": "c31372d0f22b3fa2b628f4776fcb9e40db478103cb124715368f16239a5788ee",
+        "source_commit": "1aa747de62dd9e9f395513c25298ba604f1724d0"
+      },
+      "ruff": {
+        "arms": {
+          "current-default": {
+            "artifact_hash": "f6b3a835e1ceae89248b517f311d5a078fc872fc1b1ca0091af5769304d62ea5",
+            "chunk_distribution": {
+              "line_span_semantics": "originating 80-entry section for current-default; exact payload range for Python-aware arms",
+              "source_rows_without_parseable_lines_component": 2722
+            },
+            "diff_summary": {
+              "chunks_to_embed": 56407,
+              "chunks_unchanged": 0,
+              "first_apply": true,
+              "pages_added": 9758,
+              "pages_changed": 0,
+              "pages_removed": 0,
+              "pages_unchanged": 0,
+              "retained_stale_rows": 0,
+              "rows_to_upsert": 56407,
+              "stale_rows": 0
+            },
+            "estimated_deletes": 0,
+            "estimated_row_writes": 56407,
+            "estimated_upsert_requests_at_batch_64": 882,
+            "fallback_by_language": {
+              "css": {
+                "eligible_code_files": 3,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "csv": {
+                "eligible_code_files": 1,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "dot": {
+                "eligible_code_files": 1,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "ecosystem": {
+                "eligible_code_files": 1,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "expect": {
+                "eligible_code_files": 208,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "html": {
+                "eligible_code_files": 4,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "ipynb": {
+                "eligible_code_files": 42,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "javascript": {
+                "eligible_code_files": 1,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "json": {
+                "eligible_code_files": 138,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "json5": {
+                "eligible_code_files": 1,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "lock": {
+                "eligible_code_files": 10,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "mjs": {
+                "eligible_code_files": 1,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "patch": {
+                "eligible_code_files": 4,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "pyi": {
+                "eligible_code_files": 116,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "python": {
+                "eligible_code_files": 2875,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "rust": {
+                "eligible_code_files": 1782,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "shell": {
+                "eligible_code_files": 15,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "snap": {
+                "eligible_code_files": 3656,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "svg": {
+                "eligible_code_files": 28,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "text": {
+                "eligible_code_files": 31,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "toml": {
+                "eligible_code_files": 159,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "tsx": {
+                "eligible_code_files": 31,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "typescript": {
+                "eligible_code_files": 18,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "vars": {
+                "eligible_code_files": 1,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              },
+              "yaml": {
+                "eligible_code_files": 29,
+                "fallback_files": 0,
+                "fallback_rate": null,
+                "semantics": "not parsed"
+              }
+            },
+            "final_rows": 56407,
+            "header_identity_sha256": "1b885c47cbccd187a07221ee7c068ff24f1c4e5e4296991bfb341048d5915119",
+            "header_rows": 9156,
+            "local_artifact_file_sha256": {
+              "chunks.jsonl": "e8efab3db99a9e2e5d499afcdb47e85b266bed8de3486c6f93c7d94ca6430387",
+              "manifest.json": "9221e4bd6121b45d69bf9e20b3d3b91176adf63a24b448e69c55f106ec99e0e2",
+              "plan.json": "53acc3bddcda07fd87660414e1baf785e95096490285c54a49d649fe6e0646d4"
+            },
+            "namespace": "github-astral-sh-ruff-exp-c6-syntax-current-default-e6f97842ec90-v1",
+            "plan_id": "plan_f6b3a835e1ceae89",
+            "plan_signature_sha256": "2a21ad47f65b08173e67fc3785bb16cbecacadeb4b6edb53cd06789e7c4fa963",
+            "prose_rows": 7662,
+            "source_rows": 39589,
+            "storage_estimates_bytes": {
+              "content_utf8": 34189046,
+              "provider_index_overhead_included": false,
+              "raw_384_dim_f16_vectors": 43320576,
+              "serialized_plan_chunks_jsonl": 151582115,
+              "serialized_plan_rows_plus_raw_vectors": 194902691
+            }
+          },
+          "fixed-80-python-breadcrumbs": {
+            "artifact_hash": "7886da0e29c18ecdd95e7cf2ff19c20ea10941cb71454be321b058a662fca6c5",
+            "chunk_distribution": {
+              "line_span_semantics": "originating 80-entry section for current-default; exact payload range for Python-aware arms",
+              "source_rows_without_parseable_lines_component": 0
+            },
+            "diff_summary": {
+              "chunks_to_embed": 35245,
+              "chunks_unchanged": 0,
+              "first_apply": true,
+              "pages_added": 9758,
+              "pages_changed": 0,
+              "pages_removed": 0,
+              "pages_unchanged": 0,
+              "retained_stale_rows": 0,
+              "rows_to_upsert": 35245,
+              "stale_rows": 0
+            },
+            "estimated_deletes": 0,
+            "estimated_row_writes": 35245,
+            "estimated_upsert_requests_at_batch_64": 551,
+            "fallback_by_language": {
+              "css": {
+                "eligible_code_files": 3,
+                "fallback_files": 3,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "csv": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "dot": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "ecosystem": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "expect": {
+                "eligible_code_files": 208,
+                "fallback_files": 208,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "html": {
+                "eligible_code_files": 4,
+                "fallback_files": 4,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "ipynb": {
+                "eligible_code_files": 42,
+                "fallback_files": 42,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "javascript": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "json": {
+                "eligible_code_files": 138,
+                "fallback_files": 138,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "json5": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "lock": {
+                "eligible_code_files": 10,
+                "fallback_files": 10,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "mjs": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "patch": {
+                "eligible_code_files": 4,
+                "fallback_files": 4,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "pyi": {
+                "eligible_code_files": 116,
+                "fallback_files": 116,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "python": {
+                "eligible_code_files": 2875,
+                "fallback_files": 559,
+                "fallback_rate": 0.194434783,
+                "semantics": "SyntaxError/ValueError whole-file fallback"
+              },
+              "rust": {
+                "eligible_code_files": 1782,
+                "fallback_files": 1782,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "shell": {
+                "eligible_code_files": 15,
+                "fallback_files": 15,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "snap": {
+                "eligible_code_files": 3656,
+                "fallback_files": 3656,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "svg": {
+                "eligible_code_files": 28,
+                "fallback_files": 28,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "text": {
+                "eligible_code_files": 31,
+                "fallback_files": 31,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "toml": {
+                "eligible_code_files": 159,
+                "fallback_files": 159,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "tsx": {
+                "eligible_code_files": 31,
+                "fallback_files": 31,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "typescript": {
+                "eligible_code_files": 18,
+                "fallback_files": 18,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "vars": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "yaml": {
+                "eligible_code_files": 29,
+                "fallback_files": 29,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              }
+            },
+            "final_rows": 35245,
+            "header_identity_sha256": "1b885c47cbccd187a07221ee7c068ff24f1c4e5e4296991bfb341048d5915119",
+            "header_rows": 9156,
+            "local_artifact_file_sha256": {
+              "chunks.jsonl": "df08110a96091e1c8bb3a8e4967fe046b22fec22219f95594467b8dac0314fa2",
+              "manifest.json": "08c4b770da2b4ecfbf9bbb4cccc4be9e3359586772a968b4827d9ab16e1cf2ac",
+              "plan.json": "3fb4ac9508021414249d4f37e57677b305e5c867267d0e5e963f393006b4fb4e"
+            },
+            "namespace": "github-astral-sh-ruff-exp-c6-syntax-fixed-80-python-breadcrumbs-e6f97842ec90-v1",
+            "plan_id": "plan_7886da0e29c18ecd",
+            "plan_signature_sha256": "61fd4fe0f8ab617b77d83ce07fcacae5add0b073d34a1513bf6e77363870c6a3",
+            "prose_rows": 7662,
+            "source_rows": 18427,
+            "storage_estimates_bytes": {
+              "content_utf8": 36241418,
+              "provider_index_overhead_included": false,
+              "raw_384_dim_f16_vectors": 27068160,
+              "serialized_plan_chunks_jsonl": 110115283,
+              "serialized_plan_rows_plus_raw_vectors": 137183443
+            }
+          },
+          "python-ast": {
+            "artifact_hash": "73b349eebdd5eeb8841218a4dcddde685db7c8d62e0e604b698d3a8addc220e3",
+            "chunk_distribution": {
+              "line_span_semantics": "originating 80-entry section for current-default; exact payload range for Python-aware arms",
+              "source_rows_without_parseable_lines_component": 0
+            },
+            "diff_summary": {
+              "chunks_to_embed": 44985,
+              "chunks_unchanged": 0,
+              "first_apply": true,
+              "pages_added": 9758,
+              "pages_changed": 0,
+              "pages_removed": 0,
+              "pages_unchanged": 0,
+              "retained_stale_rows": 0,
+              "rows_to_upsert": 44985,
+              "stale_rows": 0
+            },
+            "estimated_deletes": 0,
+            "estimated_row_writes": 44985,
+            "estimated_upsert_requests_at_batch_64": 703,
+            "fallback_by_language": {
+              "css": {
+                "eligible_code_files": 3,
+                "fallback_files": 3,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "csv": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "dot": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "ecosystem": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "expect": {
+                "eligible_code_files": 208,
+                "fallback_files": 208,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "html": {
+                "eligible_code_files": 4,
+                "fallback_files": 4,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "ipynb": {
+                "eligible_code_files": 42,
+                "fallback_files": 42,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "javascript": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "json": {
+                "eligible_code_files": 138,
+                "fallback_files": 138,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "json5": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "lock": {
+                "eligible_code_files": 10,
+                "fallback_files": 10,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "mjs": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "patch": {
+                "eligible_code_files": 4,
+                "fallback_files": 4,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "pyi": {
+                "eligible_code_files": 116,
+                "fallback_files": 116,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "python": {
+                "eligible_code_files": 2875,
+                "fallback_files": 559,
+                "fallback_rate": 0.194434783,
+                "semantics": "SyntaxError/ValueError whole-file fallback"
+              },
+              "rust": {
+                "eligible_code_files": 1782,
+                "fallback_files": 1782,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "shell": {
+                "eligible_code_files": 15,
+                "fallback_files": 15,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "snap": {
+                "eligible_code_files": 3656,
+                "fallback_files": 3656,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "svg": {
+                "eligible_code_files": 28,
+                "fallback_files": 28,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "text": {
+                "eligible_code_files": 31,
+                "fallback_files": 31,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "toml": {
+                "eligible_code_files": 159,
+                "fallback_files": 159,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "tsx": {
+                "eligible_code_files": 31,
+                "fallback_files": 31,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "typescript": {
+                "eligible_code_files": 18,
+                "fallback_files": 18,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "vars": {
+                "eligible_code_files": 1,
+                "fallback_files": 1,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              },
+              "yaml": {
+                "eligible_code_files": 29,
+                "fallback_files": 29,
+                "fallback_rate": 1.0,
+                "semantics": "deterministic non-Python fallback"
+              }
+            },
+            "final_rows": 44985,
+            "header_identity_sha256": "1b885c47cbccd187a07221ee7c068ff24f1c4e5e4296991bfb341048d5915119",
+            "header_rows": 9156,
+            "local_artifact_file_sha256": {
+              "chunks.jsonl": "ff3e337f5e74557fb85360f0b8e5b0cfcd9b6d5633f2078eec59dc02b6b075f9",
+              "manifest.json": "30decb32ab8c26e3abca4eb5e2d9851060ed1a02e7bcfe728f5c6fe4ba91c61b",
+              "plan.json": "822054f38d77fd5aa024dcdf4d3fb29c79c59aab8905219362ee513a259697c7"
+            },
+            "namespace": "github-astral-sh-ruff-exp-c6-syntax-python-ast-e6f97842ec90-v1",
+            "plan_id": "plan_73b349eebdd5eeb8",
+            "plan_signature_sha256": "7bd3f4e617dd42a4093e0ac79e9f77da191246aa20093f55bd08f2b674555207",
+            "prose_rows": 7662,
+            "source_rows": 28167,
+            "storage_estimates_bytes": {
+              "content_utf8": 36555904,
+              "provider_index_overhead_included": false,
+              "raw_384_dim_f16_vectors": 34548480,
+              "serialized_plan_chunks_jsonl": 129330408,
+              "serialized_plan_rows_plus_raw_vectors": 163878888
+            }
+          }
+        },
+        "current_default_equivalent_to_ordinary_no_arm": true,
+        "identical_header_rows_across_arms": true,
+        "identical_selected_corpus_across_arms": true,
+        "ordinary_no_arm_plan_signature_sha256": "2a21ad47f65b08173e67fc3785bb16cbecacadeb4b6edb53cd06789e7c4fa963",
+        "selected_corpus_sha256": "a44fba4516993d6c9f6e1e4533370f990f6259428d4671e64320029087e83a01",
+        "selected_file_count": 9758,
+        "selected_paths_sha256": "52170634aef04324792002c607f4765da230ccc000a667ee721ed0879a7998b0",
+        "source_commit": "e6856de97d72225196444b7d969b8fe084140503"
+      }
+    },
+    "safety": {
+      "applied_state_writes": 0,
+      "catalog_writes": 0,
+      "credential_reads": 0,
+      "default_changes": 0,
+      "final_successful_forecast_public_source_git_reads": 3,
+      "model_loads": 0,
+      "namespace_deletes": 0,
+      "namespace_writes": 0,
+      "provider_calls": 0
+    },
+    "settings": {
+      "embedding_model_recorded_only": "BAAI/bge-small-en-v1.5",
+      "embedding_precision_recorded_only": "float32",
+      "frozen_corpus_selection": "exact C1 selected_repo_paths, then unchanged 50 KiB source-file cap and no card modes",
+      "max_chunks": 100000,
+      "max_file_bytes": 51200,
+      "max_files": 10000,
+      "overlap_sentences": 2,
+      "repo_file_cards": false,
+      "repo_oversize_file_cards": false,
+      "repo_search_metadata": false,
+      "stored_vector_schema_estimate": "[384]f16",
+      "target_tokens": 300
+    },
+    "totals": {
+      "current-default": {
+        "content_utf8_bytes": 37823058,
+        "estimated_deletes": 0,
+        "estimated_row_writes": 60776,
+        "estimated_upsert_requests_at_batch_64": 951,
+        "final_rows": 60776,
+        "multipliers_vs_current_default": {
+          "content_utf8_bytes": 1.0,
+          "estimated_row_writes": 1.0,
+          "final_rows": 1.0,
+          "raw_vector_bytes": 1.0,
+          "serialized_plan_chunks_jsonl_bytes": 1.0,
+          "serialized_plan_rows_plus_raw_vectors_bytes": 1.0,
+          "total_approx_tokens": 1.0
+        },
+        "new_namespaces": 3,
+        "raw_vector_bytes": 46675968,
+        "serialized_plan_chunks_jsonl_bytes": 163291659,
+        "serialized_plan_rows_plus_raw_vectors_bytes": 209967627,
+        "total_approx_tokens": 11810733
+      },
+      "fixed-80-python-breadcrumbs": {
+        "content_utf8_bytes": 40141366,
+        "estimated_deletes": 0,
+        "estimated_row_writes": 37911,
+        "estimated_upsert_requests_at_batch_64": 593,
+        "final_rows": 37911,
+        "multipliers_vs_current_default": {
+          "content_utf8_bytes": 1.06129351,
+          "estimated_row_writes": 0.623782414,
+          "final_rows": 0.623782414,
+          "raw_vector_bytes": 0.623782414,
+          "serialized_plan_chunks_jsonl_bytes": 0.72886154,
+          "serialized_plan_rows_plus_raw_vectors_bytes": 0.705502368,
+          "total_approx_tokens": 0.86701435
+        },
+        "new_namespaces": 3,
+        "raw_vector_bytes": 29115648,
+        "serialized_plan_chunks_jsonl_bytes": 119017010,
+        "serialized_plan_rows_plus_raw_vectors_bytes": 148132658,
+        "total_approx_tokens": 10240075
+      },
+      "python-ast": {
+        "content_utf8_bytes": 40644300,
+        "estimated_deletes": 0,
+        "estimated_row_writes": 53303,
+        "estimated_upsert_requests_at_batch_64": 834,
+        "final_rows": 53303,
+        "multipliers_vs_current_default": {
+          "content_utf8_bytes": 1.074590532,
+          "estimated_row_writes": 0.877040279,
+          "final_rows": 0.877040279,
+          "raw_vector_bytes": 0.877040279,
+          "serialized_plan_chunks_jsonl_bytes": 0.908507611,
+          "serialized_plan_rows_plus_raw_vectors_bytes": 0.901512398,
+          "total_approx_tokens": 0.879046965
+        },
+        "new_namespaces": 3,
+        "raw_vector_bytes": 40936704,
+        "serialized_plan_chunks_jsonl_bytes": 148351715,
+        "serialized_plan_rows_plus_raw_vectors_bytes": 189288419,
+        "total_approx_tokens": 10382189
+      }
+    }
+  },
+  "schema_version": 1
+}
