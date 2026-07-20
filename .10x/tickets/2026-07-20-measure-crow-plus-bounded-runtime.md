@@ -8,7 +8,7 @@ Depends-On: .10x/tickets/done/2026-07-20-bootstrap-crow-plus-immutable-cache.md
 
 ## Outcome
 
-Own the smallest eligible phase 3 checkpoint for one separately approved, bounded load and two fixed inference observations using the already verified immutable Crow-Plus cache. This ticket is blocked pending separate phase 3 approval. Phase 2 success grants no model-load authority, and opening this owner authorizes no execution.
+Own the smallest eligible phase 3 checkpoint for one separately approved, bounded load and two fixed inference observations using the already verified immutable Crow-Plus cache. Separate phase 3 approval was recorded before operation, but the approved attempt stopped at the available-memory start floor before cache/dependency verification or any model/Hub import, child process, tokenization, load, monitoring, or inference. Independent review passed the failed-attempt evidence, not the measurement acceptance criteria. The ticket remains blocked: phase 3 measurement acceptance is unfulfilled, the original approval grants no retry, and any later attempt requires a fresh revised checkpoint and new separate approval.
 
 ## Scope only after separate approval
 
@@ -42,9 +42,11 @@ Own the smallest eligible phase 3 checkpoint for one separately approved, bounde
 - No source/test/lockfile mutation, dependency operation, credential lookup, Turbopuffer or other live-service access, namespace/card/catalog/default operation, staging, indexing, delete, or write occurs.
 - Closure states that phase 3 success grants no phase 4 implementation/source-change authority.
 
+These measurement acceptance criteria remain unfulfilled because the child never started and no cache/dependency, tokenizer, model-runtime, output, monitoring, hard-bound, or qualification observation was produced. Independent PASS applies only to the accuracy and boundedness of the failed-attempt evidence.
+
 ## Approval gate and blockers
 
-Blocked pending explicit, separate user approval of this exact phase 3 operation. No model import, construction, load, tokenization, inference, watchdog/monitor execution, or output observation may occur before that approval is durably recorded. Phase 2 approval and success are non-transitive.
+The user's explicit, separate approval of this exact phase 3 operation was durably recorded before preflight and before any model/Hub import, construction, load, tokenization, inference, watchdog/monitor execution, or output observation. The approved attempt then failed the 8,589,934,592-byte available-memory start floor and stopped immediately without starting a child process. Independent review passed the evidence for that failed attempt but did not satisfy measurement acceptance. No retry is authorized under the spent original approval; a later attempt requires a fresh revised checkpoint and new separate approval. Phase 2 approval and success remain non-transitive, and phase 4–5 remain unauthorized.
 
 ## Explicit exclusions
 
@@ -61,7 +63,12 @@ Separate approval provenance; pre-import cache/host/runtime/dependency/offline v
 - `.10x/tickets/done/2026-07-20-bootstrap-crow-plus-immutable-cache.md`
 - `.10x/evidence/2026-07-20-crow-plus-phase-2-immutable-cache-bootstrap.md`
 - `.10x/reviews/2026-07-20-crow-plus-phase-2-immutable-cache-bootstrap-review.md`
+- `.10x/evidence/2026-07-20-crow-plus-phase-3-bounded-runtime-preflight-failure.md`
+- `.10x/reviews/2026-07-20-crow-plus-phase-3-bounded-runtime-preflight-failure-review.md`
 
 ## Progress and notes
 
 - 2026-07-20: Opened blocked only after phase 2 evidence received independent PASS and the bootstrap ticket closed. This owner mirrors the active exact phase 3 checkpoint without authorizing it. No model or Hub library import, construction, load, tokenization, inference, watchdog/monitor execution, dependency operation, source/test/lockfile mutation, credential or live-service access, namespace/card/catalog/default operation, staging, indexing, delete, or write occurred.
+- 2026-07-20: Before any model or Hub import, construction, load, tokenization, inference, watchdog/monitor execution, or output observation, recorded the user's separate explicit approval to execute this exact phase 3 ticket. The approval repeats the immutable manifest/cache identity, exact Mac14,9 M2 Pro/macOS host and locked dependencies, pre-import offline/telemetry/no-remote-code controls, MPS-only float32-construction-then-single-float16-cast batch-1 workload, exact ordered 51-byte query and 129-byte LF document, tokenizer/output requirements, dual-monitor sampling and immediate-abort bounds, qualification thresholds, and all no-source/no-live/no-downstream exclusions. Ticket activated for phase 3 only; phase 4 implementation/source changes and phase 5 indexing/write remain unauthorized.
+- 2026-07-20: Preflight matched `Mac14,9`, Apple M2 Pro, 17,179,869,184-byte memory, and macOS 26.5.1 (`25F80`), with all required offline/telemetry/update controls set before any possible model-library import. The first recorded `vm_stat` snapshot computed `(3,720 + 178,757 + 4,285) * 16,384 = 3,059,908,608` available bytes, 5,530,025,984 below the mandatory 8,589,934,592-byte start floor. Stopped immediately without retry and before cache/dependency verification, model/Hub import, child creation, tokenization, load, monitoring, inference, or output. No dependency/source/test/lock, credential, network/live-service, Turbopuffer, namespace/catalog/state, staging, indexing, delete, or write operation occurred. Raw artifact: `.10x/evidence/.storage/2026-07-20-crow-plus-phase3-preflight-failure.json`; evidence: `.10x/evidence/2026-07-20-crow-plus-phase-3-bounded-runtime-preflight-failure.md`. No retry or phase 4 authority exists.
+- 2026-07-20: Independent review passed PR #67 head `a547040` as accurate failed-attempt evidence, including the arithmetic, immediate stop, bounded scope, and explicit timestamp/attestation limits. This PASS does not satisfy phase 3 measurement acceptance. Returned the ticket to `blocked`; a future attempt requires a fresh revised checkpoint and new separate approval, and no retry is authorized.

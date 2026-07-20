@@ -1,0 +1,82 @@
+{
+  "schema": "crow-plus-phase3-preflight-failure-v1",
+  "recorded_date": "2026-07-20",
+  "approval_recorded_before_preflight": true,
+  "ticket": ".10x/tickets/2026-07-20-measure-crow-plus-bounded-runtime.md",
+  "repository": "Shuu12121/CodeSearch-ModernBERT-Crow-Plus",
+  "revision": "96ff525a7aa3bf8bfa90d77337c2b24bd45229af",
+  "cache_root": "/Users/crlough/Library/Caches/buoy/models/crow-plus-96ff525a7aa3bf8bfa90d77337c2b24bd45229af",
+  "expected_manifest_identity_sha256": "99aa6f73b5baf87adcb80c1383e784f5ec2457ec61eb9e75e7bb7dfd7d98e2cb",
+  "environment_controls_set_before_python_or_model_library_import": {
+    "HF_HUB_OFFLINE": "1",
+    "TRANSFORMERS_OFFLINE": "1",
+    "HF_HUB_DISABLE_TELEMETRY": "1",
+    "DO_NOT_TRACK": "1",
+    "HF_HUB_DISABLE_UPDATE_CHECK": "1",
+    "HF_HUB_DISABLE_IMPLICIT_TOKEN": "1",
+    "HF_TOKEN": "unset_without_reading",
+    "HUGGING_FACE_HUB_TOKEN": "unset_without_reading"
+  },
+  "host_observation": {
+    "hw_model": "Mac14,9",
+    "cpu_brand": "Apple M2 Pro",
+    "hw_memsize_bytes": 17179869184,
+    "macos_product_version": "26.5.1",
+    "macos_build_version": "25F80",
+    "matches_required_host": true
+  },
+  "vm_stat_raw": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                     3720.\nPages active:                                 183667.\nPages inactive:                               178757.\nPages speculative:                              4285.\nPages throttled:                                   0.\nPages wired down:                             354213.\nPages purgeable:                                 704.\n\"Translation faults\":                    45189351964.\nPages copy-on-write:                      7865519180.\nPages zero filled:                       11179438790.\nPages reactivated:                        1255779187.\nPages purged:                              171987007.\nFile-backed pages:                            117336.\nAnonymous pages:                              249373.\nPages stored in compressor:                  1753863.\nPages occupied by compressor:                 284034.\nDecompressions:                           1915857012.\nCompressions:                             2027849153.\nPageins:                                   681370792.\nPageouts:                                    5272064.\nSwapins:                                   156633455.\nSwapouts:                                  165529464.\n",
+  "available_memory_calculation": {
+    "page_size_bytes": 16384,
+    "pages_free": 3720,
+    "pages_inactive": 178757,
+    "pages_speculative": 4285,
+    "formula": "(free + inactive + speculative) * page_size",
+    "observed_available_bytes": 3059908608,
+    "required_minimum_bytes": 8589934592,
+    "shortfall_bytes": 5530025984,
+    "passed": false
+  },
+  "preflight_sequence": [
+    "recorded separate phase 3 approval in the active ticket",
+    "set offline, telemetry, update-check, and no-implicit-token controls; removed token variables without reading them",
+    "observed exact host identity",
+    "captured one vm_stat snapshot",
+    "computed the required available-memory formula",
+    "stopped immediately because the start floor failed"
+  ],
+  "not_run_after_failure": [
+    "immutable cache re-hash and manifest verification",
+    "locked dependency version verification",
+    "model or Hub library import",
+    "tokenization",
+    "model construction or load",
+    "float16 cast",
+    "MPS monitoring",
+    "query inference",
+    "document inference",
+    "output observation",
+    "watchdog child monitoring"
+  ],
+  "result": {
+    "phase3_measurement_started": false,
+    "phase3_measurement_passed": false,
+    "phase3_qualification_passed": false,
+    "failure_stage": "available-memory-start-floor",
+    "failure_reason": "Observed 3,059,908,608 available bytes, below the required 8,589,934,592-byte start floor.",
+    "exit_or_signal": "no child process started"
+  },
+  "scope_attestation": {
+    "dependency_install_update_resolution": false,
+    "source_test_lockfile_mutation": false,
+    "credential_lookup": false,
+    "model_or_service_network_attempt": false,
+    "turbopuffer_or_live_service_access": false,
+    "namespace_catalog_state_staging_indexing_or_write": false,
+    "phase4_authorized": false
+  },
+  "limits": [
+    "The preflight shell command did not capture a machine timestamp alongside the vm_stat text; this artifact preserves the exact raw snapshot and is recorded contemporaneously on 2026-07-20.",
+    "Because the mandatory start floor failed, the procedure stopped before cache/dependency verification and before all model-runtime observations."
+  ]
+}
