@@ -55,13 +55,13 @@ None. On 2026-07-19 the user ratified output-only behavior: existing automatic c
 - 2026-07-15: Drift discovered during metadata/tagging/knowledge-graph research. Repository search found no existing active or terminal ticket owning retrieval tag output/filtering. No implementation or live operation occurred.
 - 2026-07-19: User ratified the exact output decision: every live JSON hit has ordered `tags` as a list (empty when absent/unavailable); text shows only non-empty tags; no tag filter or ranking behavior is added; single/multi namespace hits are consistent; and bounded missing-attribute fallback supports old schemas without weakening `repo_path` portability.
 - 2026-07-19: Inspected current `SearchHit` serialization, text rendering, raw/grouped hit construction, single/multi result shapes, existing missing-`repo_path` retry, active multi-namespace specification, focused tests, and documentation drift.
-- 2026-07-19: Activated `.10x/specs/retrieval-tag-output.md` and opened bounded executable child `.10x/tickets/2026-07-19-return-retrieval-tags.md`. The child is review-ready with focused test/evidence expectations and no unresolved semantic blocker. No source, user documentation, tests, live operation, remote resource, or product behavior changed in this shaping turn.
+- 2026-07-19: Activated `.10x/specs/retrieval-tag-output.md` and opened bounded executable child `.10x/tickets/done/2026-07-19-return-retrieval-tags.md`. The child is review-ready with focused test/evidence expectations and no unresolved semantic blocker. No source, user documentation, tests, live operation, remote resource, or product behavior changed in this shaping turn.
 - 2026-07-19: Independent review passed in `.10x/reviews/2026-07-19-retrieval-tag-output-shaping-review.md`; the executable child remains open and unimplemented.
 
 ## Closure mapping
 
 - Ratified behavior and single/multi compatibility: `.10x/specs/retrieval-tag-output.md`.
-- Bounded implementation, test, documentation, evidence, and review owner: `.10x/tickets/2026-07-19-return-retrieval-tags.md`.
+- Bounded implementation, test, documentation, evidence, and review owner: `.10x/tickets/done/2026-07-19-return-retrieval-tags.md`.
 - Independent shaping and closure review: `.10x/reviews/2026-07-19-retrieval-tag-output-shaping-review.md`.
 - Historical drift and original blocker remain preserved above.
 

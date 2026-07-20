@@ -15,6 +15,7 @@ from buoy_search.retriever import (
     MultiNamespaceRetriever,
     RetrievalOptions,
 )
+from buoy_search.routing import RoutedRetrievalResult
 
 
 class RecordingEmbedder:
@@ -42,11 +43,17 @@ class RankedNamespace:
                         "title": f"{self.name} {row_id}",
                         "url": f"https://example.com/{self.name}/{row_id}",
                         "content": f"content {row_id}",
+                        "tags": [self.name, row_id],
                     },
                 }
                 for row_id in self.ids
             ]
         }
+
+
+class FakeRoutingSelection:
+    def to_dict(self) -> dict[str, object]:
+        return {"active": True, "strategy": "hybrid_rrf"}
 
 
 class FailingNamespace:
@@ -104,12 +111,22 @@ class MultiNamespaceRetrieverTests(unittest.TestCase):
         self.assertEqual(payload["fusion"], "cross_namespace_rrf")
         self.assertEqual(payload["hits"][0]["namespace"], "namespace-0")
         self.assertEqual(payload["hits"][1]["namespace"], "namespace-1")
+        self.assertEqual(payload["hits"][0]["tags"], ["first", "shared"])
+        self.assertEqual(payload["hits"][1]["tags"], ["second", "shared"])
         self.assertIn("cross_namespace_rrf_score", payload["hits"][0]["score_info"])
         self.assertEqual(RRF_K, 60)
         self.assertAlmostEqual(
             payload["hits"][0]["score_info"]["cross_namespace_rrf_score"],
             1.0 / (RRF_K + 1),
         )
+
+        routed_payload = RoutedRetrievalResult(
+            result=result,
+            routing=FakeRoutingSelection(),  # type: ignore[arg-type]
+        ).to_dict()
+        self.assertEqual(routed_payload["hits"][0]["tags"], ["first", "shared"])
+        self.assertEqual(routed_payload["hits"][0]["namespace"], "namespace-0")
+        self.assertEqual(routed_payload["routing"]["strategy"], "hybrid_rrf")
 
     def test_namespace_failure_aborts_with_attribution_after_one_embedding(self) -> None:
         order: list[str] = []
@@ -278,6 +295,7 @@ class MultiNamespaceCliTests(unittest.TestCase):
                             "title": "One",
                             "url": "https://one.example/",
                             "content": "one",
+                            "tags": ["library", "guide"],
                             "score_info": {},
                             "namespace": "site-one-v1",
                         },
@@ -286,6 +304,7 @@ class MultiNamespaceCliTests(unittest.TestCase):
                             "title": "Two",
                             "url": "https://two.example/",
                             "content": "two",
+                            "tags": [],
                             "score_info": {},
                             "namespace": "site-two-v1",
                         },
@@ -327,6 +346,8 @@ class MultiNamespaceCliTests(unittest.TestCase):
         self.assertEqual(outputs[0], outputs[1])
         self.assertIn("Namespace: site-one-v1", outputs[0])
         self.assertIn("Namespace: site-two-v1", outputs[0])
+        self.assertIn("Tags: library, guide", outputs[0])
+        self.assertEqual(outputs[0].count("Tags:"), 1)
 
     def test_live_namespace_failure_prints_no_partial_payload(self) -> None:
         class FailingMultiRetriever:

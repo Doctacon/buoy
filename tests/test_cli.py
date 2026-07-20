@@ -206,6 +206,39 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(stdout.getvalue().count("embedding_precision: float16"), 3)
 
+    def test_retrieval_text_prints_tags_only_when_non_empty_in_stored_order(self) -> None:
+        class Output:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "dry_run": False,
+                    "fusion": "server_rrf",
+                    "ranking_mode": "page",
+                    "ranking_profile": "none",
+                    "ranking_aggregation": "max",
+                    "embedding_precision": "float32",
+                    "hits": [
+                        {
+                            "id": "tagged",
+                            "title": "Tagged",
+                            "tags": ["library", "guide"],
+                            "score_info": {},
+                        },
+                        {
+                            "id": "empty",
+                            "title": "Empty",
+                            "tags": [],
+                            "score_info": {},
+                        },
+                    ],
+                }
+
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            print_retrieval_text(Output())  # type: ignore[arg-type]
+
+        self.assertIn("Tags: library, guide", stdout.getvalue())
+        self.assertEqual(stdout.getvalue().count("Tags:"), 1)
+
     def test_help_identifies_primary_buoy_cli(self) -> None:
         parser = build_parser()
 
@@ -1142,6 +1175,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["ranking_aggregation"], "max")
         self.assertEqual(payload["retrieval"]["rerank_by"], ["RRF"])
         include_attributes = payload["retrieval"]["subqueries"][0]["include_attributes"]
+        self.assertIn("tags", include_attributes)
+        self.assertIn("repo_path", include_attributes)
         self.assertNotIn("vector", include_attributes)
 
     def test_retrieve_command_uses_repo_defaults_for_github_namespace_in_dry_run(self) -> None:

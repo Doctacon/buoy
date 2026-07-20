@@ -16,6 +16,7 @@ from buoy_search.retriever import (
     is_source_path,
     rank_hits,
     ranking_profile_multiplier,
+    row_to_hit,
 )
 
 
@@ -54,6 +55,7 @@ class CapturingNamespace:
                         "content": "Choose Fetcher, DynamicFetcher, or StealthyFetcher based on the target site.",
                         "path": "fetching/choosing.md",
                         "repo_path": "src/buoy_search/retriever.py",
+                        "tags": ["library", "guide"],
                         "doc_kind": "docs",
                         "chunk_index": 3,
                         "vector": [9.0, 9.0],
@@ -102,16 +104,55 @@ class DuplicateRepoPathNamespace:
         }
 
 
-class MissingRepoPathSchemaNamespace:
-    def __init__(self) -> None:
+class MissingOptionalAttributesNamespace:
+    def __init__(self, missing_order: list[str], *, list_requested_attributes: bool = False) -> None:
+        self.missing_order = list(missing_order)
+        self.list_requested_attributes = list_requested_attributes
         self.calls: list[dict[str, object]] = []
 
     def multi_query(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(kwargs)
         include_attributes = kwargs["queries"][0]["include_attributes"]
+        for attribute in self.missing_order:
+            if attribute in include_attributes:
+                self.missing_order.remove(attribute)
+                context = (
+                    f"requested attributes: {include_attributes}; "
+                    if self.list_requested_attributes
+                    else ""
+                )
+                raise RuntimeError(
+                    f'{context}attribute "{attribute}" not found in schema'
+                )
+        attributes: dict[str, object] = {
+            "title": "Page",
+            "url": "https://example.com/docs",
+            "content": "Docs",
+        }
         if "repo_path" in include_attributes:
-            raise RuntimeError('attribute "repo_path" not found in schema')
-        return {"rows": [{"id": "page-1", "attributes": {"title": "Page", "url": "https://example.com/docs", "content": "Docs"}}]}
+            attributes["repo_path"] = "docs/page.md"
+        if "tags" in include_attributes:
+            attributes["tags"] = ["library", "guide"]
+        return {"rows": [{"id": "page-1", "attributes": attributes}]}
+
+
+class UnrelatedSchemaErrorNamespace:
+    def __init__(self, attribute: str = "content") -> None:
+        self.attribute = attribute
+        self.calls: list[dict[str, object]] = []
+
+    def multi_query(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(kwargs)
+        raise RuntimeError(f'attribute "{self.attribute}" not found in schema')
+
+
+class MalformedTagsNamespace:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def multi_query(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(kwargs)
+        return {"rows": [{"id": "bad", "attributes": {"tags": "not-a-list"}}]}
 
 
 class DuplicateUrlNamespace:
@@ -207,9 +248,23 @@ class RetrieverTests(unittest.TestCase):
         self.assertEqual(payload["hits"][0]["url"], "https://scrapling.readthedocs.io/en/latest/fetching/choosing.html")
         self.assertEqual(payload["hits"][0]["section_path"], "Fetcher choices")
         self.assertEqual(payload["hits"][0]["repo_path"], "src/buoy_search/retriever.py")
+        self.assertEqual(payload["hits"][0]["tags"], ["library", "guide"])
         self.assertEqual(result.hits[0].repo_path, "src/buoy_search/retriever.py")
         self.assertEqual(hit_summary(result.hits[0], 1)["repo_path"], "src/buoy_search/retriever.py")
         self.assertIn("score_info", payload["hits"][0])
+
+    def test_search_hit_and_row_conversion_always_serialize_tags_as_lists(self) -> None:
+        tagged = row_to_hit(
+            {"id": "tagged", "attributes": {"tags": ["library", "guide"]}}
+        )
+        empty = row_to_hit({"id": "empty", "attributes": {"tags": []}})
+        missing = row_to_hit({"id": "missing", "attributes": {}})
+
+        self.assertEqual(tagged.tags, ["library", "guide"])
+        self.assertEqual(tagged.to_dict()["tags"], ["library", "guide"])
+        self.assertEqual(empty.to_dict()["tags"], [])
+        self.assertEqual(missing.to_dict()["tags"], [])
+        self.assertEqual(SearchHit(id="default").to_dict()["tags"], [])
 
     def test_client_side_rrf_fallback_when_server_rerank_unsupported(self) -> None:
         namespace = RerankUnsupportedNamespace()
@@ -726,6 +781,33 @@ class RetrieverTests(unittest.TestCase):
         self.assertEqual([hit.repo_path for hit in result.hits], ["docs/guide.md", "src/module.py", ".pi/skills/tool/SKILL.md"])
         self.assertEqual(len({hit.repo_path for hit in result.hits}), 3)
 
+    def test_grouping_preserves_representative_hit_tags_and_order(self) -> None:
+        hits = [
+            SearchHit(
+                id="representative",
+                url="https://example.com/docs#first",
+                tags=["library", "guide"],
+            ),
+            SearchHit(
+                id="other",
+                url="https://example.com/docs#second",
+                tags=["reference"],
+            ),
+        ]
+
+        ranked = rank_hits(
+            hits,
+            options=RetrievalOptions(
+                ranking_mode="page",
+                ranking_profile="none",
+                ranking_aggregation="max",
+            ),
+        )
+
+        self.assertEqual(len(ranked), 1)
+        self.assertEqual(ranked[0].id, "representative")
+        self.assertEqual(ranked[0].tags, ["library", "guide"])
+
     def test_page_ranking_capped_sum_3_rewards_multi_chunk_page_evidence(self) -> None:
         retriever = HybridRetriever(
             namespace=PageAggregationNamespace(),
@@ -814,20 +896,117 @@ class RetrieverTests(unittest.TestCase):
         self.assertEqual(result.hits[0].repo_path, "src/module.py")
         self.assertEqual(len({hit.repo_path for hit in result.hits}), 3)
 
-    def test_live_retriever_retries_without_repo_path_for_website_schema(self) -> None:
-        namespace = MissingRepoPathSchemaNamespace()
+    def test_live_retriever_bounded_optional_schema_fallback_in_either_order(self) -> None:
+        cases = [
+            (["tags"], [(True, True), (True, False)], "docs/page.md", []),
+            (["repo_path"], [(True, True), (False, True)], "", ["library", "guide"]),
+            (
+                ["tags", "repo_path"],
+                [(True, True), (True, False), (False, False)],
+                "",
+                [],
+            ),
+            (
+                ["repo_path", "tags"],
+                [(True, True), (False, True), (False, False)],
+                "",
+                [],
+            ),
+        ]
+        for missing_order, expected_attempts, expected_repo_path, expected_tags in cases:
+            with self.subTest(missing_order=missing_order):
+                namespace = MissingOptionalAttributesNamespace(missing_order)
+                retriever = HybridRetriever(
+                    namespace=namespace,
+                    embedder=FakeEmbedder(),
+                    config=RuntimeConfig(),
+                )
+
+                result = retriever.retrieve(
+                    "website docs", RetrievalOptions(top_k=1, candidates=10)
+                )
+
+                attempts: list[tuple[bool, bool]] = []
+                for call in namespace.calls:
+                    query_attributes = [
+                        query["include_attributes"] for query in call["queries"]
+                    ]
+                    self.assertEqual(query_attributes[0], query_attributes[1])
+                    attempts.append(
+                        (
+                            "repo_path" in query_attributes[0],
+                            "tags" in query_attributes[0],
+                        )
+                    )
+                self.assertEqual(attempts, expected_attempts)
+                self.assertEqual(result.hits[0].repo_path, expected_repo_path)
+                self.assertEqual(result.hits[0].tags, expected_tags)
+
+    def test_live_retriever_omits_only_diagnostic_attribute_when_request_is_listed(self) -> None:
+        cases = [
+            (
+                ["tags", "repo_path"],
+                [(True, True), (True, False), (False, False)],
+            ),
+            (
+                ["repo_path", "tags"],
+                [(True, True), (False, True), (False, False)],
+            ),
+        ]
+        for missing_order, expected_attempts in cases:
+            with self.subTest(missing_order=missing_order):
+                namespace = MissingOptionalAttributesNamespace(
+                    missing_order,
+                    list_requested_attributes=True,
+                )
+                retriever = HybridRetriever(
+                    namespace=namespace,
+                    embedder=FakeEmbedder(),
+                    config=RuntimeConfig(),
+                )
+
+                retriever.retrieve(
+                    "website docs", RetrievalOptions(top_k=1, candidates=10)
+                )
+
+                attempts = [
+                    (
+                        "repo_path" in call["queries"][0]["include_attributes"],
+                        "tags" in call["queries"][0]["include_attributes"],
+                    )
+                    for call in namespace.calls
+                ]
+                self.assertEqual(attempts, expected_attempts)
+
+    def test_live_retriever_does_not_fallback_for_unrelated_errors(self) -> None:
+        for attribute in ("content", "repo_tags"):
+            with self.subTest(attribute=attribute):
+                namespace = UnrelatedSchemaErrorNamespace(attribute)
+                retriever = HybridRetriever(
+                    namespace=namespace,
+                    embedder=FakeEmbedder(),
+                    config=RuntimeConfig(),
+                )
+
+                with self.assertRaisesRegex(RuntimeError, attribute):
+                    retriever.retrieve(
+                        "website docs", RetrievalOptions(top_k=1, candidates=10)
+                    )
+
+                self.assertEqual(len(namespace.calls), 1)
+
+    def test_live_retriever_propagates_malformed_tags_without_fallback(self) -> None:
+        namespace = MalformedTagsNamespace()
         retriever = HybridRetriever(
             namespace=namespace,
             embedder=FakeEmbedder(),
             config=RuntimeConfig(),
         )
 
-        result = retriever.retrieve("website docs", RetrievalOptions(top_k=1, candidates=10))
+        with self.assertRaisesRegex(RuntimeError, "tags must be a list of strings"):
+            retriever.retrieve("website docs", RetrievalOptions(top_k=1, candidates=10))
 
-        self.assertEqual(result.hits[0].url, "https://example.com/docs")
-        self.assertEqual(len(namespace.calls), 2)
-        self.assertIn("repo_path", namespace.calls[0]["queries"][0]["include_attributes"])
-        self.assertNotIn("repo_path", namespace.calls[1]["queries"][0]["include_attributes"])
+        self.assertEqual(len(namespace.calls), 1)
 
 
 if __name__ == "__main__":

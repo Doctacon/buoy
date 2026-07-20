@@ -63,7 +63,7 @@ A read-only inspection on 2026-07-15 found open-source `BAAI/bge-small-en-v1.5` 
 - downloads, hosted APIs, or credentials;
 - production ACL, lifecycle, freshness, or compatibility policy;
 - downstream same-query multi-namespace retrieval or `cross_namespace_rrf` execution without comparable hits;
-- tag output changes owned by `.10x/tickets/2026-07-19-return-retrieval-tags.md` (shaping history: `.10x/tickets/done/2026-07-15-reconcile-retrieval-tag-output.md`); tag filtering remains excluded;
+- tag output changes owned by `.10x/tickets/done/2026-07-19-return-retrieval-tags.md` (shaping history: `.10x/tickets/done/2026-07-15-reconcile-retrieval-tag-output.md`); tag filtering remains excluded;
 - promotion thresholds or production integration choice;
 - query decomposition, concepts, relationships, ontology, or graphs.
 

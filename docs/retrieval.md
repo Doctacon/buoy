@@ -53,3 +53,11 @@ Runtime configuration uses `TURBOPUFFER_API_KEY`, `TURBOPUFFER_REGION`, `BUOY_EM
 Each live namespace query produces an ANN subquery over the normalized local BGE query vector and a BM25 full-text subquery, then fuses them with reciprocal-rank fusion. `--candidates` controls each subquery pool and `--top-k` controls final results. `--doc-kind` filters result categories.
 
 Website and document cards normally use page grouping with `none` profile, pool 20, and `max` aggregation. Repository cards normally use file grouping with `repo-code` profile, pool 100, and `adaptive-sum-3`. Automatic routing uses each card's recorded values; explicit ranking flags override the corresponding field across selected cards. Compare changes with a fixed eval dataset; see [Evaluate search quality](evaluation.md).
+
+## Retrieval tags
+
+Indexed chunks can carry ordered structural tags. Every live JSON hit includes `tags` as a list, including `[]` when a chunk has no tags or an older namespace does not provide the attribute. Text output prints `Tags: value-one, value-two` only when the list is non-empty. File/page grouping keeps the selected representative chunk's tag values and order.
+
+This contract is identical for single-namespace, explicit multi-namespace, and automatically routed multi-namespace retrieval; multi-namespace hits continue to include their source namespace. Tags are output metadata only: there is no tag filter or tag-based ranking control, and tags do not change the existing `doc_kind` filter, fusion, grouping, ranking, or limits.
+
+Live queries initially request both `tags` and `repo_path`. For older namespace schemas, Buoy retries without only the optional attribute reported missing, and can successively omit both in either order. Unavailable tags become `[]`, unavailable `repo_path` remains empty, and unrelated provider errors still fail the complete retrieval without partial results.

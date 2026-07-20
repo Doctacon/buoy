@@ -2023,6 +2023,9 @@ def print_retrieval_text(
             print(f"   Section: {section_path}")
         if hit.get("path"):
             print(f"   Path: {hit['path']}")
+        tags = hit.get("tags")
+        if isinstance(tags, list) and tags:
+            print(f"   Tags: {', '.join(tags)}")
         print(f"   Score: {hit.get('score_info', {})}")
         content = str(hit.get("content") or "").strip()
         if content:

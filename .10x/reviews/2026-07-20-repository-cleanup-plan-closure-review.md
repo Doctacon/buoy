@@ -37,7 +37,7 @@ The following are explicitly separate and do not block this parent:
 - MarkItDown normalization (subsequently completed): `.10x/tickets/done/2026-07-18-restore-markitdown-control-character-normalization.md`;
 - stale Scrapling workflow guidance (subsequently completed): `.10x/tickets/done/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md`;
 - Node action upgrade (subsequently completed): `.10x/tickets/done/2026-07-14-update-node24-github-actions.md`;
-- retrieval-tag implementation: `.10x/tickets/2026-07-19-return-retrieval-tags.md` (shaping history: `.10x/tickets/done/2026-07-15-reconcile-retrieval-tag-output.md`);
+- retrieval-tag implementation: `.10x/tickets/done/2026-07-19-return-retrieval-tags.md` (shaping history: `.10x/tickets/done/2026-07-15-reconcile-retrieval-tag-output.md`);
 - heavy ranking experiments: `.10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md`.
 
 No unowned parent residual was identified.
