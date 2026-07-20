@@ -1,0 +1,100 @@
+{
+  "api_pages": 1,
+  "entry_count": 15,
+  "expected_total_bytes": 611525163,
+  "files": [
+    {
+      "lfs": null,
+      "oid": "a6344aac8c09253b3b630fb776ae94478aa0275b",
+      "path": ".gitattributes",
+      "size": 1519
+    },
+    {
+      "lfs": null,
+      "oid": "1b013adee922cdde26976d6e46f4ec75a651dfdf",
+      "path": "1_Pooling/config.json",
+      "size": 296
+    },
+    {
+      "lfs": null,
+      "oid": "0d0b845641ef7c5a2e54e0b88fc0d649d4d42f98",
+      "path": "README.md",
+      "size": 10959
+    },
+    {
+      "lfs": null,
+      "oid": "0363d66cdd8c81716b5798733762da604d02913d",
+      "path": "added_tokens.json",
+      "size": 73
+    },
+    {
+      "lfs": null,
+      "oid": "6a29bc9cab5f18bee683d39ae3f5b9a312bd9b41",
+      "path": "config.json",
+      "size": 1295
+    },
+    {
+      "lfs": null,
+      "oid": "ffa181dac4f80334e09562cfd42cb81e6bd9bbdb",
+      "path": "config_sentence_transformers.json",
+      "size": 205
+    },
+    {
+      "lfs": null,
+      "oid": "1b344a7d494a60e1937b2d02d981635f69606cbf",
+      "path": "merges.txt",
+      "size": 462431
+    },
+    {
+      "lfs": {
+        "oid": "801a2a2608009baa7e661ca6a6206734f39954cf8a4af85409ffc70705094c68",
+        "pointerSize": 134,
+        "size": 606681112
+      },
+      "oid": "9e0dc527e5ad1f4e5faccc71e46e89e6bdab5a40",
+      "path": "model.safetensors",
+      "size": 606681112
+    },
+    {
+      "lfs": null,
+      "oid": "f7640f94e81bb7f4f04daf1668850b38763a13d9",
+      "path": "modules.json",
+      "size": 229
+    },
+    {
+      "lfs": null,
+      "oid": "e7bb85401db3e1fe2d0cd6bfb1da34b3d6c0486d",
+      "path": "sentence_bert_config.json",
+      "size": 54
+    },
+    {
+      "lfs": null,
+      "oid": "ea2a226cea95636acba0349a6a5201f8e14fb87f",
+      "path": "special_tokens_map.json",
+      "size": 964
+    },
+    {
+      "lfs": null,
+      "oid": "41033540411966aeba71e4d7b7eff7a55cfac0e2",
+      "path": "tokenizer.json",
+      "size": 3560202
+    },
+    {
+      "lfs": null,
+      "oid": "7e05e1c8541944c2dbcd15f1baa9d44676b741a1",
+      "path": "tokenizer_config.json",
+      "size": 2151
+    },
+    {
+      "lfs": null,
+      "oid": "8376778fd85fec89efaa1b17fbf5fe1552446d38",
+      "path": "vocab.json",
+      "size": 803673
+    }
+  ],
+  "manifest_sha256": "99aa6f73b5baf87adcb80c1383e784f5ec2457ec61eb9e75e7bb7dfd7d98e2cb",
+  "regular_file_count": 14,
+  "repository": "Shuu12121/CodeSearch-ModernBERT-Crow-Plus",
+  "revision": "96ff525a7aa3bf8bfa90d77337c2b24bd45229af",
+  "total_bytes": 611525163
+}

@@ -201,7 +201,7 @@ C4 remains blocked because its exact 384-dimensional candidate condition was not
 
 The user ratified the candidate, explicit-only containment, complete staging-before-write rule, five independent phase boundaries, and exact resource checkpoint in `.10x/specs/crow-plus-resource-verification-checkpoint.md`: dedicated empty cache; immutable 611,525,163-byte tree; 611,525,163-byte transfer and 768-MiB cache ceilings; 5-GiB/4-GiB disk floors; observed M2 Pro/MPS host; float32 construction then float16 inference; two sequential batch-1 calls using the exact 51-byte query (`4f51d3b9…d8cc`) then exact 129-byte LF-terminated code/document (`a89366d7…1260`), with separate `[1,768]` finite normalized outputs; 120-second load/300-second total hard deadlines; 4-GiB RSS/2-GiB MPS-current/3-GiB MPS-driver hard ceilings; 100-ms monitoring; tighter 75%-of-bound qualification values; and immediate abort.
 
-Both focused specifications are active exactly as independently reviewed. Phase 1 activates records only. Phases 2–5—bootstrap/download, bounded measurement load, implementation/source changes, and indexing/write—each require their own later approval, and no phase implies the next. The blocked phase 2 owner is `.10x/tickets/2026-07-20-bootstrap-crow-plus-immutable-cache.md`.
+Both focused specifications are active exactly as independently reviewed. Phase 1 activates records only. Phases 2–5—bootstrap/download, bounded measurement load, implementation/source changes, and indexing/write—each require their own later approval, and no phase implies the next. The blocked phase 2 owner is `.10x/tickets/done/2026-07-20-bootstrap-crow-plus-immutable-cache.md`.
 
 ## Safety and limits
 

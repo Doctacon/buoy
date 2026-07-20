@@ -16,7 +16,7 @@ On 2026-07-20, after C2 established that no credible native 384-dimensional cand
 
 The user then ratified Crow-Plus at 768 dimensions; explicit namespace only with no cards, catalogs, or automatic routing; every vector plus resource/output compliance staged and validated before the first remote content write; and five independent phase approvals in this fixed order: specification, bootstrap/download, bounded measurement load, implementation/source changes, and indexing/write. Approval or success of one phase does not authorize, approve, or imply the next. No bootstrap/download, load, inference, implementation, source/test change, or external operation was approved.
 
-After independent review passed repaired PR #61 head `9445030a5438de7f6c4308bfb8645ce0e4bf2bc5`, the user explicitly ratified the exact phase 1 checkpoint and directed activation of both reviewed specifications without changing their Crow/resource/staging contracts. This phase 1 ratification authorizes active records only. Phase 2 bootstrap/download remains separately approval-gated and blocked at `.10x/tickets/2026-07-20-bootstrap-crow-plus-immutable-cache.md`.
+After independent review passed repaired PR #61 head `9445030a5438de7f6c4308bfb8645ce0e4bf2bc5`, the user explicitly ratified the exact phase 1 checkpoint and directed activation of both reviewed specifications without changing their Crow/resource/staging contracts. This phase 1 ratification authorized active records only. Phase 2 bootstrap/download was separately approval-gated; it later completed and closed at `.10x/tickets/done/2026-07-20-bootstrap-crow-plus-immutable-cache.md`. Phase 3 remains separately blocked at `.10x/tickets/2026-07-20-measure-crow-plus-bounded-runtime.md`.
 
 ## Scope
 
@@ -45,7 +45,7 @@ After independent review passed repaired PR #61 head `9445030a5438de7f6c4308bfb8
 
 ## Blockers
 
-None for this completed shaping outcome. Phase 2 is separately owned and blocked at `.10x/tickets/2026-07-20-bootstrap-crow-plus-immutable-cache.md`; phases 3–5 remain approval-gated by the active specifications and have no executable owners.
+None for this completed shaping outcome. Phase 2 is separately complete at `.10x/tickets/done/2026-07-20-bootstrap-crow-plus-immutable-cache.md`; phase 3 is blocked pending separate approval at `.10x/tickets/2026-07-20-measure-crow-plus-bounded-runtime.md`, and phases 4–5 remain approval-gated by the active specifications without executable owners.
 
 ## Explicit exclusions
 
@@ -92,8 +92,8 @@ C2's immutable model evidence, inspected current source and locked open-source p
 - **Exact workload identity:** The resource spec binds the 51-byte query and 129-byte LF-terminated code/document by exact text and SHA-256, sequential batch-1 calls, separate `[1,768]` outputs, and post-bootstrap tokenizer-ID observation without input changes or truncation.
 - **Safety and scope:** `.10x/evidence/2026-07-20-dynamic-content-vector-dimension-shaping.md` and `.10x/evidence/2026-07-20-crow-plus-phase-1-specification-ratification.md` record that no download/install, model load/inference, credentials, live service, source/test/lockfile change, or namespace/card/catalog/default operation occurred.
 - **Review and ratification:** `.10x/reviews/2026-07-20-dynamic-content-vector-dimensions-shaping-review.md` records independent PASS on repaired head `9445030`; the user then ratified phase 1 exactly as reviewed. Both specifications are active.
-- **Unfinished work:** `.10x/tickets/2026-07-20-bootstrap-crow-plus-immutable-cache.md` is the smallest next durable owner and remains blocked pending separate phase 2 approval. Later phases remain governed and blocked without premature executable tickets.
+- **Downstream work:** `.10x/tickets/done/2026-07-20-bootstrap-crow-plus-immutable-cache.md` was the smallest next owner and is now independently reviewed and done. `.10x/tickets/2026-07-20-measure-crow-plus-bounded-runtime.md` is the blocked phase 3 owner pending separate approval; later phases remain governed and blocked without premature executable tickets.
 
 ## Retrospective
 
-This shaping established that dynamic content dimensions are safely reviewable only when content and routing vectors remain explicitly separate, model identity includes every role/pooling/normalization/precision field, complete staging precedes any remote client, and resource discovery is split into independently approved immutable bootstrap and bounded measurement phases. Those durable behaviors live in the two active focused specifications; no additional knowledge or skill record is needed. The blocked phase 2 owner preserves the only eligible next action without laundering phase 1 ratification into execution authority.
+This shaping established that dynamic content dimensions are safely reviewable only when content and routing vectors remain explicitly separate, model identity includes every role/pooling/normalization/precision field, complete staging precedes any remote client, and resource discovery is split into independently approved immutable bootstrap and bounded measurement phases. Those durable behaviors live in the two active focused specifications; no additional knowledge or skill record is needed. The independently reviewed phase 2 owner now preserves the completed bootstrap evidence, while the blocked phase 3 owner preserves the only eligible next approval checkpoint without laundering phase 1 or phase 2 success into model-load authority.

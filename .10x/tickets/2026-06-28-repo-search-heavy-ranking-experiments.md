@@ -31,16 +31,17 @@ The known broad basket is 13 repositories and 90 unique composite `repo_key:case
 5. **C5 — local syntax implementation, blocked pending a ratified active focused syntax spec:** `.10x/tickets/2026-07-19-implement-opt-in-python-syntax-chunking.md`
 6. **C6 — blocked live syntax evaluation after C5 and exact write approval:** `.10x/tickets/2026-07-19-evaluate-python-syntax-chunking.md`
 7. **C7 — blocked offline held-out ranker after C3 and user-ratified material-weight/sign/order thresholds:** `.10x/tickets/2026-07-19-evaluate-lightweight-learning-to-rank.md`
-8. **C8 — blocked offline routed-profile reproduction/generalization after C3 and a user-ratified oracle-gap measure/threshold:** `.10x/tickets/2026-07-19-reproduce-and-generalize-routed-profile-selection.md`
+8. **C8 — threshold ratified; blocked offline routed-profile reproduction/generalization pending C3/cache and protocol prerequisites:** `.10x/tickets/2026-07-19-reproduce-and-generalize-routed-profile-selection.md`
 9. **C9 — blocked productization after C8 and product ratification:** `.10x/tickets/2026-07-19-productize-routed-ranking-profile.md`
 
 Separate follow-up owners (not new C-numbers):
 
 - **done:** `.10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md`
 - **done; phase 1 specs active:** `.10x/tickets/done/2026-07-20-shape-dynamic-content-vector-dimensions.md`
-- **phase 2 blocked pending separate approval:** `.10x/tickets/2026-07-20-bootstrap-crow-plus-immutable-cache.md`
+- **done; phase 2 immutable cache bootstrap independently reviewed:** `.10x/tickets/done/2026-07-20-bootstrap-crow-plus-immutable-cache.md`
+- **phase 3 bounded measurement blocked pending separate approval:** `.10x/tickets/2026-07-20-measure-crow-plus-bounded-runtime.md`
 
-C1 is complete with the frozen outcome `contract frozen; Buoy insufficient; C3+ remains blocked`. The separately ratified Buoy label removal is now implemented, rehashed, independently reviewed, and closed; path membership is complete, but Buoy remains insufficient because its proposed baseline is still `pending_approval` and unverified. C2 is complete with the reviewed outcome `complete 14-model screen; no credible native 384-dimensional candidate; C4 remains blocked`. The separately approved dynamic content-vector dimension shaping completed with active Crow-Plus explicit-namespace and resource-verification specifications. It does not alter or unblock C4: phase 2 bootstrap remains separately blocked, and phases 3–5 have no executable authority. C4 and eventual local C5 may proceed only after their remaining gates. C7 and C8 share the exact immutable C3 cache and MUST NOT issue duplicate retrieval calls, but both remain blocked after C3 until their distinct experiment thresholds are pre-registered and user-ratified. C1 did not invent those thresholds or make C7/C8 executable. C9 remains blocked and has no active product spec until C8 plus the user checkpoint.
+C1 is complete with the frozen outcome `contract frozen; Buoy insufficient; C3+ remains blocked`. The separately ratified Buoy label removal is now implemented, rehashed, independently reviewed, and closed; path membership is complete, but Buoy remains insufficient because its proposed baseline is still `pending_approval` and unverified. C2 is complete with the reviewed outcome `complete 14-model screen; no credible native 384-dimensional candidate; C4 remains blocked`. The separately approved dynamic content-vector dimension shaping completed with active Crow-Plus explicit-namespace and resource-verification specifications. The separately approved phase 2 immutable cache bootstrap also completed and passed independent review. Neither alters or unblocks C4: phase 3 bounded measurement has only a blocked approval owner, and phases 3–5 have no executable authority. C4 and eventual local C5 may proceed only after their remaining gates. C7 and C8 share the exact immutable C3 cache and MUST NOT issue duplicate retrieval calls. C7 remains independently threshold-blocked. C8's reviewed oracle-gap formula, inclusive 50% threshold, gates, and disposition are user-ratified unchanged, but C8 remains blocked on C3/cache and its frozen pre-scoring protocol prerequisites; the ratification does not authorize execution. C1 did not invent either threshold or make C7/C8 executable. C9 remains blocked and has no active product spec until C8 plus the user checkpoint.
 
 ## Aggregate acceptance criteria
 
@@ -62,7 +63,7 @@ C1 is complete with the frozen outcome `contract frozen; Buoy insufficient; C3+ 
 - Stop C4/C6 on absent exact approval, failed pilot gate, incompatible contracts, or resource use beyond the approved bound.
 - Stop C5 before implementation/spec activation until exact syntax arms, AST boundaries, line coverage/citations, and fallback behavior are ratified.
 - Stop C7 before execution until the definition of material weights and exact sign/order stability thresholds are pre-registered and user-ratified; afterward stop on leakage, repository identity, incomplete folds, regressions, or failure of those thresholds.
-- Stop C8 before execution until the oracle-gap measure and exact minimum materially-closed threshold are pre-registered and user-ratified. Stop C8/C9 automatic selection if evidence supports only oracle/static per-repo mapping. Never ship a benchmark lookup table as generalization.
+- C8's oracle-gap measure and exact minimum materially-closed threshold are ratified. Stop before execution until C3's immutable cache/hash and all frozen action-set, selector-input, fold, seed, fallback, tie-breaking, leakage, and replay prerequisites are satisfied. Stop C8/C9 automatic selection if evidence supports only oracle/static per-repo mapping. Never ship a benchmark lookup table as generalization.
 
 ## Exact user checkpoints
 
@@ -71,7 +72,7 @@ C1 is complete with the frozen outcome `contract frozen; Buoy insufficient; C3+ 
 3. C5: confirm or correct exact syntax arms, AST ownership, long-symbol subdivision, coverage/citation semantics, and syntax-error/non-Python fallback before an active spec is created.
 4. C6: approve exact per-arm rows/namespaces/writes/storage multiplier from passing local C5 plans.
 5. C7: pre-register and user-ratify the definition of material weights and exact allowed sign/order stability thresholds before fitting.
-6. C8: pre-register and user-ratify the oracle-gap measure and exact minimum materially-closed threshold before selector evaluation.
+6. C8: **satisfied 2026-07-20** — the user ratified the reviewed pre-registration unchanged; provenance is recorded in `.10x/evidence/2026-07-20-c8-selector-threshold-ratification.md`.
 7. C9: after C8, confirm the recommended versioned explicit opt-in profile with `repo_code` unchanged, or explicitly authorize shaping an automatic selector from held-out evidence.
 8. Promotion: only for a learned/embedding default candidate, decide whether assistant-drafted labels suffice or whether bounded independent review is required.
 
@@ -81,7 +82,7 @@ C4, C6, C7, and C8 must each have evidence-backed terminal disposition or explic
 
 ## Blockers
 
-The parent is intentionally non-executable. C1, C2, the separate Buoy judgment-removal follow-up, and dynamic-dimension shaping are done. Current blockers remain recorded on C3-C9; Crow-Plus phase 2 bootstrap is separately blocked pending exact approval at `.10x/tickets/2026-07-20-bootstrap-crow-plus-immutable-cache.md`. Contract v1 now has complete judgment-path membership, but Buoy remains insufficient because the exact proposed 903-row same-source baseline namespace is still approval-gated and unverified. C3 remains blocked on baseline compatibility and exact retrieval-only approval. C4 remains stopped on C2's 384-dimensional condition; dynamic-dimension shaping does not supersede it. C7/C8 are also blocked on distinct pre-registered user-ratified thresholds; C1 cannot supply or infer those thresholds.
+The parent is intentionally non-executable. C1, C2, the separate Buoy judgment-removal follow-up, dynamic-dimension shaping, and Crow-Plus phase 2 immutable cache bootstrap are done. Current blockers remain recorded on C3-C9; Crow-Plus phase 3 bounded measurement is separately blocked pending exact approval at `.10x/tickets/2026-07-20-measure-crow-plus-bounded-runtime.md`. Contract v1 now has complete judgment-path membership, but Buoy remains insufficient because the exact proposed 903-row same-source baseline namespace is still approval-gated and unverified. C3 remains blocked on baseline compatibility and exact retrieval-only approval. C4 remains stopped on C2's 384-dimensional condition; dynamic-dimension shaping does not supersede it. C7 remains blocked on its distinct pre-registered user-ratified threshold. C8's threshold blocker is satisfied, but C8 remains blocked on C3/cache and its complete pre-scoring protocol prerequisites; no selector scoring or C9 productization is authorized.
 
 ## Explicit exclusions
 
@@ -101,6 +102,8 @@ Reopening completed reranker/metadata/aggregation/ranking-grid work; source/test
 - `.10x/evidence/2026-07-01-repo-portfolio-routing-validation.md`
 - `.10x/evidence/2026-07-02-repo-routed-profile-portfolio-validation.md`
 - `.10x/reviews/2026-07-19-stale-ticket-status-closure-review.md`
+- `.10x/evidence/2026-07-20-c8-selector-threshold-ratification.md`
+- `.10x/reviews/2026-07-20-c8-selector-threshold-preregistration-review.md`
 
 ## Progress and notes
 
@@ -150,8 +153,10 @@ Reopening completed reranker/metadata/aggregation/ranking-grid work; source/test
 - 2026-07-20: C1 PR #59 repair checked in deterministic source-path authority plus automated validation, made Click path-complete on its existing compatible v4 corpus, and froze current post-rebrand Buoy at 64 selected paths/903 proposed baseline rows. One internal Buoy judgment is outside the public corpus and `github-doctacon-buoy-search-v1` requires a separate write approval. No labels or remote state changed.
 - 2026-07-20: Independent review passed C1 head `2d11a2e`; C1 moved to done with outcome `contract frozen; Buoy insufficient; C3+ remains blocked`. The user's later ratification to remove only the grade-1 internal `.10x` judgment is recorded in `.10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md`. No dataset/hash was changed and no downstream child was unblocked by closure.
 - 2026-07-20: C2 repaired PR #58 with a complete 14-result discovery roster and retained only Nomic at 3,584 dimensions plus Crow-Plus at 768 dimensions as decision candidates. Independent review passed head `7ec84b6`; C2 moved to done with no credible native 384-dimensional candidate, and C4 remains blocked and stopped.
-- 2026-07-20: The user explicitly approved separate shaping for dynamic content-vector dimensions across the 768/3,584 candidates, namespace schema/card/routing compatibility, isolation or migration, resource bounds, offline pinned loading, and Nomic's query-only prefix. Shaping later completed after independent review and exact phase 1 ratification: Crow-Plus explicit-namespace and resource-verification specs are active, while `.10x/tickets/2026-07-20-bootstrap-crow-plus-immutable-cache.md` remains blocked. No download, model load, implementation, inference, namespace/card/catalog write, or default change was authorized.
+- 2026-07-20: The user explicitly approved separate shaping for dynamic content-vector dimensions across the 768/3,584 candidates, namespace schema/card/routing compatibility, isolation or migration, resource bounds, offline pinned loading, and Nomic's query-only prefix. Shaping later completed after independent review and exact phase 1 ratification: Crow-Plus explicit-namespace and resource-verification specs are active, while `.10x/tickets/done/2026-07-20-bootstrap-crow-plus-immutable-cache.md` remains blocked. No download, model load, implementation, inference, namespace/card/catalog write, or default change was authorized.
 - 2026-07-20: The separate Buoy judgment-removal follow-up passed independent review at PR #60 head `ac9bb34` and closed after exact removal, complete rehash, and local validation. Buoy remains `insufficient` and `pending_approval`; C3 remains blocked, and C2/dynamic-dimension shaping ownership is unchanged.
+- 2026-07-20: The user ratified PR #62's reviewed C8 oracle-gap pre-registration exactly as written at `b9780495adfbc8ebee37be9a92525cbd4a0e9511`. The unchanged formula/gates are active C8 authority and the threshold blocker is satisfied. C8 remains blocked on C3/cache and frozen protocol prerequisites; no scoring, source/live work, default change, or productization was authorized.
+- 2026-07-20: Crow-Plus phase 2 independently passed PR #66 execution/evidence head `d6e13ac` and closed with exact immutable cache evidence preserved. Phase 3 now has only blocked owner `.10x/tickets/2026-07-20-measure-crow-plus-bounded-runtime.md`; no model import, construction, load, tokenization, inference, source change, or live operation was authorized by closure.
 
 ## Closure note
 

@@ -1,0 +1,270 @@
+{
+  "access": "public raw HTTPS; curl config disabled; no authorization header; HF token variables removed",
+  "actual_regular_file_bytes": 611525163,
+  "actual_regular_file_count": 14,
+  "allocated_ceiling_bytes": 805306368,
+  "cache_root": "/Users/crlough/Library/Caches/buoy/models/crow-plus-96ff525a7aa3bf8bfa90d77337c2b24bd45229af",
+  "files": [
+    {
+      "actual_size": 1519,
+      "advertised_hash": {
+        "algorithm": "git-blob-sha1",
+        "value": "a6344aac8c09253b3b630fb776ae94478aa0275b"
+      },
+      "advertised_hash_matched": true,
+      "advertised_size": 1519,
+      "git_blob_sha1": "a6344aac8c09253b3b630fb776ae94478aa0275b",
+      "path": ".gitattributes",
+      "sha256": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361"
+    },
+    {
+      "actual_size": 296,
+      "advertised_hash": {
+        "algorithm": "git-blob-sha1",
+        "value": "1b013adee922cdde26976d6e46f4ec75a651dfdf"
+      },
+      "advertised_hash_matched": true,
+      "advertised_size": 296,
+      "git_blob_sha1": "1b013adee922cdde26976d6e46f4ec75a651dfdf",
+      "path": "1_Pooling/config.json",
+      "sha256": "d02ebf56344d20f773449b15d0c10ee9a86a9178f3b3c9bfecb8b87d4350ce38"
+    },
+    {
+      "actual_size": 10959,
+      "advertised_hash": {
+        "algorithm": "git-blob-sha1",
+        "value": "0d0b845641ef7c5a2e54e0b88fc0d649d4d42f98"
+      },
+      "advertised_hash_matched": true,
+      "advertised_size": 10959,
+      "git_blob_sha1": "0d0b845641ef7c5a2e54e0b88fc0d649d4d42f98",
+      "path": "README.md",
+      "sha256": "311dc88b29eb04efc7d32003de39ad000c3ffc0fb96eeaff42a65ac78a7ee7ca"
+    },
+    {
+      "actual_size": 73,
+      "advertised_hash": {
+        "algorithm": "git-blob-sha1",
+        "value": "0363d66cdd8c81716b5798733762da604d02913d"
+      },
+      "advertised_hash_matched": true,
+      "advertised_size": 73,
+      "git_blob_sha1": "0363d66cdd8c81716b5798733762da604d02913d",
+      "path": "added_tokens.json",
+      "sha256": "3d576798cdfa41e23257a4821b0b46a26ddc72c350c9ecf2e02e1dabdb6880e2"
+    },
+    {
+      "actual_size": 1295,
+      "advertised_hash": {
+        "algorithm": "git-blob-sha1",
+        "value": "6a29bc9cab5f18bee683d39ae3f5b9a312bd9b41"
+      },
+      "advertised_hash_matched": true,
+      "advertised_size": 1295,
+      "git_blob_sha1": "6a29bc9cab5f18bee683d39ae3f5b9a312bd9b41",
+      "path": "config.json",
+      "sha256": "ef7c2d946fbee3d6e54c55c4e4bcfdc5d3d66dea4c271623af8ace80fe95ed72"
+    },
+    {
+      "actual_size": 205,
+      "advertised_hash": {
+        "algorithm": "git-blob-sha1",
+        "value": "ffa181dac4f80334e09562cfd42cb81e6bd9bbdb"
+      },
+      "advertised_hash_matched": true,
+      "advertised_size": 205,
+      "git_blob_sha1": "ffa181dac4f80334e09562cfd42cb81e6bd9bbdb",
+      "path": "config_sentence_transformers.json",
+      "sha256": "d2808824cba6c46dd429a5d0a40d7e7dc969bf89759d5de132af90549e0272cf"
+    },
+    {
+      "actual_size": 462431,
+      "advertised_hash": {
+        "algorithm": "git-blob-sha1",
+        "value": "1b344a7d494a60e1937b2d02d981635f69606cbf"
+      },
+      "advertised_hash_matched": true,
+      "advertised_size": 462431,
+      "git_blob_sha1": "1b344a7d494a60e1937b2d02d981635f69606cbf",
+      "path": "merges.txt",
+      "sha256": "1ca39c8d071acdf5f7a73ad437ba6787d96e71f737e0e250dc17e9b7c69dddd2"
+    },
+    {
+      "actual_size": 606681112,
+      "advertised_hash": {
+        "algorithm": "sha256",
+        "value": "801a2a2608009baa7e661ca6a6206734f39954cf8a4af85409ffc70705094c68"
+      },
+      "advertised_hash_matched": true,
+      "advertised_size": 606681112,
+      "git_blob_sha1": "a60b76a46681004717f62e2dd1ffbcb602c6c67f",
+      "path": "model.safetensors",
+      "sha256": "801a2a2608009baa7e661ca6a6206734f39954cf8a4af85409ffc70705094c68"
+    },
+    {
+      "actual_size": 229,
+      "advertised_hash": {
+        "algorithm": "git-blob-sha1",
+        "value": "f7640f94e81bb7f4f04daf1668850b38763a13d9"
+      },
+      "advertised_hash_matched": true,
+      "advertised_size": 229,
+      "git_blob_sha1": "f7640f94e81bb7f4f04daf1668850b38763a13d9",
+      "path": "modules.json",
+      "sha256": "8f4b264b80206c830bebbdcae377e137925650a433b689343a63bdc9b3145460"
+    },
+    {
+      "actual_size": 54,
+      "advertised_hash": {
+        "algorithm": "git-blob-sha1",
+        "value": "e7bb85401db3e1fe2d0cd6bfb1da34b3d6c0486d"
+      },
+      "advertised_hash_matched": true,
+      "advertised_size": 54,
+      "git_blob_sha1": "e7bb85401db3e1fe2d0cd6bfb1da34b3d6c0486d",
+      "path": "sentence_bert_config.json",
+      "sha256": "883e03a457df81d352c233ff7d86df2449a869c5784ecadbab38d312f8682972"
+    },
+    {
+      "actual_size": 964,
+      "advertised_hash": {
+        "algorithm": "git-blob-sha1",
+        "value": "ea2a226cea95636acba0349a6a5201f8e14fb87f"
+      },
+      "advertised_hash_matched": true,
+      "advertised_size": 964,
+      "git_blob_sha1": "ea2a226cea95636acba0349a6a5201f8e14fb87f",
+      "path": "special_tokens_map.json",
+      "sha256": "d19e5e1b2decfcbdb8f60673b82cf25c042d43439cdf2bb00638cbcb257125df"
+    },
+    {
+      "actual_size": 3560202,
+      "advertised_hash": {
+        "algorithm": "git-blob-sha1",
+        "value": "41033540411966aeba71e4d7b7eff7a55cfac0e2"
+      },
+      "advertised_hash_matched": true,
+      "advertised_size": 3560202,
+      "git_blob_sha1": "41033540411966aeba71e4d7b7eff7a55cfac0e2",
+      "path": "tokenizer.json",
+      "sha256": "625524dc6b1e903bccad3970f3f925874658d8dd480016f8b77ae0686c1b1d27"
+    },
+    {
+      "actual_size": 2151,
+      "advertised_hash": {
+        "algorithm": "git-blob-sha1",
+        "value": "7e05e1c8541944c2dbcd15f1baa9d44676b741a1"
+      },
+      "advertised_hash_matched": true,
+      "advertised_size": 2151,
+      "git_blob_sha1": "7e05e1c8541944c2dbcd15f1baa9d44676b741a1",
+      "path": "tokenizer_config.json",
+      "sha256": "15d01a959ffad423e1cc3f39180f686fff44321f4fd7fb25a8d589c708e8a341"
+    },
+    {
+      "actual_size": 803673,
+      "advertised_hash": {
+        "algorithm": "git-blob-sha1",
+        "value": "8376778fd85fec89efaa1b17fbf5fe1552446d38"
+      },
+      "advertised_hash_matched": true,
+      "advertised_size": 803673,
+      "git_blob_sha1": "8376778fd85fec89efaa1b17fbf5fe1552446d38",
+      "path": "vocab.json",
+      "sha256": "ec480bd911eda41bdcb0532b20f6b18e7120a318bcfb9a1cfcb46676f954f7a6"
+    }
+  ],
+  "final_allocated_cache_bytes": 626688000,
+  "finished_unix_ns": 1784566694645692000,
+  "manifest_sha256": "99aa6f73b5baf87adcb80c1383e784f5ec2457ec61eb9e75e7bb7dfd7d98e2cb",
+  "manifest_total_bytes": 611525163,
+  "phase3_authorized": false,
+  "post_free_bytes": 34192142336,
+  "post_free_floor_bytes": 4294967296,
+  "post_hashes": [
+    {
+      "path": ".gitattributes",
+      "sha256": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+      "size": 1519
+    },
+    {
+      "path": "1_Pooling/config.json",
+      "sha256": "d02ebf56344d20f773449b15d0c10ee9a86a9178f3b3c9bfecb8b87d4350ce38",
+      "size": 296
+    },
+    {
+      "path": "README.md",
+      "sha256": "311dc88b29eb04efc7d32003de39ad000c3ffc0fb96eeaff42a65ac78a7ee7ca",
+      "size": 10959
+    },
+    {
+      "path": "added_tokens.json",
+      "sha256": "3d576798cdfa41e23257a4821b0b46a26ddc72c350c9ecf2e02e1dabdb6880e2",
+      "size": 73
+    },
+    {
+      "path": "config.json",
+      "sha256": "ef7c2d946fbee3d6e54c55c4e4bcfdc5d3d66dea4c271623af8ace80fe95ed72",
+      "size": 1295
+    },
+    {
+      "path": "config_sentence_transformers.json",
+      "sha256": "d2808824cba6c46dd429a5d0a40d7e7dc969bf89759d5de132af90549e0272cf",
+      "size": 205
+    },
+    {
+      "path": "merges.txt",
+      "sha256": "1ca39c8d071acdf5f7a73ad437ba6787d96e71f737e0e250dc17e9b7c69dddd2",
+      "size": 462431
+    },
+    {
+      "path": "model.safetensors",
+      "sha256": "801a2a2608009baa7e661ca6a6206734f39954cf8a4af85409ffc70705094c68",
+      "size": 606681112
+    },
+    {
+      "path": "modules.json",
+      "sha256": "8f4b264b80206c830bebbdcae377e137925650a433b689343a63bdc9b3145460",
+      "size": 229
+    },
+    {
+      "path": "sentence_bert_config.json",
+      "sha256": "883e03a457df81d352c233ff7d86df2449a869c5784ecadbab38d312f8682972",
+      "size": 54
+    },
+    {
+      "path": "special_tokens_map.json",
+      "sha256": "d19e5e1b2decfcbdb8f60673b82cf25c042d43439cdf2bb00638cbcb257125df",
+      "size": 964
+    },
+    {
+      "path": "tokenizer.json",
+      "sha256": "625524dc6b1e903bccad3970f3f925874658d8dd480016f8b77ae0686c1b1d27",
+      "size": 3560202
+    },
+    {
+      "path": "tokenizer_config.json",
+      "sha256": "15d01a959ffad423e1cc3f39180f686fff44321f4fd7fb25a8d589c708e8a341",
+      "size": 2151
+    },
+    {
+      "path": "vocab.json",
+      "sha256": "ec480bd911eda41bdcb0532b20f6b18e7120a318bcfb9a1cfcb46676f954f7a6",
+      "size": 803673
+    }
+  ],
+  "pre_free_bytes": 34815438848,
+  "pre_free_floor_bytes": 5368709120,
+  "repository": "Shuu12121/CodeSearch-ModernBERT-Crow-Plus",
+  "revision": "96ff525a7aa3bf8bfa90d77337c2b24bd45229af",
+  "started_unix_ns": 1784566670749428000,
+  "status": "success",
+  "telemetry_controls": {
+    "DO_NOT_TRACK": "1",
+    "HF_HUB_DISABLE_IMPLICIT_TOKEN": "1",
+    "HF_HUB_DISABLE_TELEMETRY": "1",
+    "HF_HUB_DISABLE_UPDATE_CHECK": "1"
+  },
+  "transfer_ceiling_bytes": 611525163,
+  "transferred_bytes": 611525163
+}

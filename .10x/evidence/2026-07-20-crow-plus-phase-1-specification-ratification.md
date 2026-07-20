@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-20
 Updated: 2026-07-20
-Relates-To: .10x/specs/crow-plus-explicit-namespace-pilot.md, .10x/specs/crow-plus-resource-verification-checkpoint.md, .10x/tickets/done/2026-07-20-shape-dynamic-content-vector-dimensions.md, .10x/tickets/2026-07-20-bootstrap-crow-plus-immutable-cache.md
+Relates-To: .10x/specs/crow-plus-explicit-namespace-pilot.md, .10x/specs/crow-plus-resource-verification-checkpoint.md, .10x/tickets/done/2026-07-20-shape-dynamic-content-vector-dimensions.md, .10x/tickets/done/2026-07-20-bootstrap-crow-plus-immutable-cache.md
 
 # Crow-Plus Phase 1 Specification Ratification
 
@@ -36,4 +36,4 @@ No model/dependency download or install, model import/load/inference, source/tes
 
 ## Limits and residual risk
 
-The immutable model tree, local cache, runtime compatibility, resource measurements, output compliance, implementation, staged vectors, and remote target remain unverified and unexecuted. `.10x/tickets/2026-07-20-bootstrap-crow-plus-immutable-cache.md` is blocked until the user separately approves phase 2. Later phases remain governed by the active specifications and need durable owners only when their prerequisites make a separate approval request eligible.
+The immutable model tree, local cache, runtime compatibility, resource measurements, output compliance, implementation, staged vectors, and remote target remain unverified and unexecuted. `.10x/tickets/done/2026-07-20-bootstrap-crow-plus-immutable-cache.md` is blocked until the user separately approves phase 2. Later phases remain governed by the active specifications and need durable owners only when their prerequisites make a separate approval request eligible.
