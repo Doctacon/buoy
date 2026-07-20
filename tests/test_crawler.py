@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import tempfile
+import zlib
 from pathlib import Path
 import json
 import unittest
@@ -284,8 +285,64 @@ class CrawlerHelperTests(unittest.TestCase):
 
                 self.assertIsNotNone(resource)
                 assert resource is not None
+                self.assertEqual(resource.final_url, url)
                 self.assertEqual(len(resource.body), ceiling)
                 self.assertLessEqual(response.max_read_size, 64 * 1024)
+
+    def test_resource_read_preserves_validated_final_redirect_url(self) -> None:
+        class Response:
+            def __init__(
+                self,
+                url: str,
+                *,
+                status: int,
+                body: bytes = b"",
+                headers: dict[str, str] | None = None,
+            ) -> None:
+                self.url = url
+                self.status = status
+                self.body = body
+                self.headers = headers or {}
+                self.offset = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def geturl(self) -> str:
+                return self.url
+
+            def read(self, size: int) -> bytes:
+                chunk = self.body[self.offset : self.offset + size]
+                self.offset += len(chunk)
+                return chunk
+
+        original_url = "https://example.com/sitemap.xml"
+        final_url = "https://example.com/final.xml.gz"
+        responses = (
+            Response(
+                original_url,
+                status=302,
+                headers={"location": "/final.xml.gz"},
+            ),
+            Response(final_url, status=200, body=b"body"),
+        )
+        with patch(
+            "buoy_search.crawler._NO_REDIRECT_OPENER.open",
+            side_effect=responses,
+        ):
+            resource = fetch_url_bytes(
+                original_url,
+                ceiling=SITEMAP_TRANSFER_MAX_BYTES,
+                limit_type="sitemap transferred bytes",
+                allowed_host="example.com",
+            )
+
+        self.assertIsNotNone(resource)
+        assert resource is not None
+        self.assertEqual(resource.final_url, final_url)
 
     def test_incremental_resource_read_rejects_over_limit_robots_and_sitemap(self) -> None:
         class Response:
@@ -397,6 +454,87 @@ class CrawlerHelperTests(unittest.TestCase):
                         content_encoding=content_encoding,
                     )
 
+    def test_corrupt_deflate_is_wrapped_as_url_specific_malformed_gzip(self) -> None:
+        corrupt_deflate = bytes.fromhex("1f8b08000000000000ff07") + b"\x00" * 8
+        url = "https://example.com/corrupt.xml.gz"
+
+        with self.assertRaisesRegex(
+            SitemapResourceError, rf"malformed gzip sitemap at {url}"
+        ) as raised:
+            maybe_decompress_sitemap(corrupt_deflate, url)
+
+        self.assertIsInstance(raised.exception.__cause__, zlib.error)
+
+    def test_redirected_declared_gzip_fails_closed_before_link_fallback(self) -> None:
+        class Response:
+            def __init__(
+                self,
+                url: str,
+                *,
+                status: int,
+                body: bytes = b"",
+                headers: dict[str, str] | None = None,
+            ) -> None:
+                self.url = url
+                self.status = status
+                self.body = body
+                self.headers = headers or {}
+                self.offset = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def geturl(self) -> str:
+                return self.url
+
+            def read(self, size: int) -> bytes:
+                chunk = self.body[self.offset : self.offset + size]
+                self.offset += len(chunk)
+                return chunk
+
+        original_url = "https://example.com/sitemap.xml"
+        final_url = "https://example.com/redirected.xml.gz"
+        requested_urls: list[str] = []
+
+        def fake_open(request, **_kwargs):
+            requested_url = request.full_url
+            requested_urls.append(requested_url)
+            if requested_url == original_url:
+                return Response(
+                    original_url,
+                    status=302,
+                    headers={"location": "/redirected.xml.gz"},
+                )
+            if requested_url == final_url:
+                return Response(final_url, status=200, body=b"not gzip")
+            return Response(requested_url, status=404)
+
+        options = CrawlOptions(
+            base_url="https://example.com/", out_dir=Path("unused")
+        )
+        with patch(
+            "buoy_search.crawler._NO_REDIRECT_OPENER.open", side_effect=fake_open
+        ):
+            with patch("buoy_search.crawler.build_link_spider_class") as link_mock:
+                with self.assertRaisesRegex(
+                    SitemapResourceError,
+                    rf"malformed gzip sitemap at {final_url}",
+                ):
+                    crawl_pages(options)
+
+        self.assertEqual(
+            requested_urls,
+            [
+                "https://example.com/robots.txt",
+                original_url,
+                final_url,
+            ],
+        )
+        link_mock.assert_not_called()
+
     def test_multiple_sitemap_queue_propagates_late_limit_error(self) -> None:
         options = CrawlOptions(
             base_url="https://example.com/", out_dir=Path("unused")
@@ -406,17 +544,20 @@ class CrawlerHelperTests(unittest.TestCase):
         oversized_url = "https://example.com/oversized.xml"
         resources = {
             "https://example.com/robots.txt": FetchedResource(
-                f"Sitemap: {index_url}\n".encode()
+                f"Sitemap: {index_url}\n".encode(),
+                "https://example.com/robots.txt",
             ),
             index_url: FetchedResource(
                 (
                     "<sitemapindex><sitemap><loc>"
                     f"{first_url}</loc></sitemap><sitemap><loc>{oversized_url}"
                     "</loc></sitemap></sitemapindex>"
-                ).encode()
+                ).encode(),
+                index_url,
             ),
             first_url: FetchedResource(
-                b"<urlset><url><loc>https://example.com/docs/first</loc></url></urlset>"
+                b"<urlset><url><loc>https://example.com/docs/first</loc></url></urlset>",
+                first_url,
             ),
         }
 

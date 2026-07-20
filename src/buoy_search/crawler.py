@@ -21,6 +21,7 @@ from pathlib import Path
 import re
 import time
 from typing import Any, Callable, Literal, Sequence
+import zlib
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urljoin, urlparse, urlunparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -799,6 +800,7 @@ def local_xml_name(tag: str) -> str:
 @dataclass(frozen=True)
 class FetchedResource:
     body: bytes
+    final_url: str
     content_type: str = ""
     content_encoding: str = ""
 
@@ -882,6 +884,7 @@ def fetch_url_bytes(
                     headers = getattr(response, "headers", None)
                     return FetchedResource(
                         body=bytes(body),
+                        final_url=final_url,
                         content_type=str(headers.get("content-type", ""))
                         if headers
                         else "",
@@ -953,7 +956,7 @@ def maybe_decompress_sitemap(
         return bytes(out)
     except SitemapResourceError:
         raise
-    except (EOFError, OSError) as error:
+    except (EOFError, OSError, zlib.error) as error:
         raise SitemapResourceError(
             f"malformed gzip sitemap at {url}: {error}"
         ) from error
@@ -1061,18 +1064,20 @@ def discover_sitemap_page_urls(
         if resource is None:
             continue
         if is_robots:
-            enqueue_declarations(sitemap_urls_from_robots(resource.body), url)
+            enqueue_declarations(
+                sitemap_urls_from_robots(resource.body), resource.final_url
+            )
             continue
 
         pages, child_sitemaps = sitemap_locations_from_xml(
             resource.body,
-            url,
+            resource.final_url,
             content_type=resource.content_type,
             content_encoding=resource.content_encoding,
         )
-        enqueue_declarations(child_sitemaps, url)
+        enqueue_declarations(child_sitemaps, resource.final_url)
         for declared_page_url in pages:
-            page_url = urljoin(url, declared_page_url)
+            page_url = urljoin(resource.final_url, declared_page_url)
             if not same_host_url(page_url, allowed_host):
                 if urlparse(page_url).scheme in {"http", "https"}:
                     increment_boundary_stat(boundary_stats, "blocked_discovery_count")
