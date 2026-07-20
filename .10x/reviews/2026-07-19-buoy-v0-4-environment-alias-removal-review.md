@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-19
 Updated: 2026-07-19
-Target: .10x/tickets/2026-07-19-remove-buoy-v0-4-environment-aliases.md
+Target: .10x/tickets/done/2026-07-19-remove-buoy-v0-4-environment-aliases.md
 Verdict: pass
 
 # Buoy 0.4 Environment Alias Removal Review

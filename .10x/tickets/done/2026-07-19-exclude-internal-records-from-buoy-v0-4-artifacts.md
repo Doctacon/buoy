@@ -1,7 +1,7 @@
-Status: open
+Status: done
 Created: 2026-07-19
 Updated: 2026-07-19
-Parent: .10x/tickets/2026-07-19-buoy-v0-4-compatibility-removal-plan.md
+Parent: .10x/tickets/done/2026-07-19-buoy-v0-4-compatibility-removal-plan.md
 Depends-On: .10x/evidence/2026-07-19-buoy-v0-4-compatibility-removal-candidate.md
 
 # Exclude Internal Records from Buoy 0.4 Artifacts
@@ -51,7 +51,7 @@ Any exclusion other than repository-root `.10x/**`; removal or relocation of rep
 
 ## References
 
-- `.10x/tickets/2026-07-19-buoy-v0-4-compatibility-removal-plan.md`
+- `.10x/tickets/done/2026-07-19-buoy-v0-4-compatibility-removal-plan.md`
 - `.10x/specs/buoy-v0-4-internal-record-artifact-exclusion.md`
 - `.10x/specs/buoy-release-validation.md`
 - `.10x/evidence/2026-07-19-buoy-v0-4-compatibility-removal-candidate.md`
@@ -64,4 +64,5 @@ Any exclusion other than repository-root `.10x/**`; removal or relocation of rep
 - 2026-07-19: Implemented only the repository-root Hatch exclusion `exclude = ["/.10x/**"]` plus one focused exact-config assertion. Controlled CPython 3.13 builds with a frozen five-package Hatchling environment and `SOURCE_DATE_EPOCH=1784506710` produced identical 45-member wheels and 95-member sdists before/after adding and staging exactly one `.10x` evidence record: wheel SHA-256 `1a5cdb4a303eb0c4f7e42b335138a43f4b1098a8f8b2189ded2d3d9fc8e00d30`, sdist SHA-256 `bd7d2f80e06e8f6ae2c99a5b81f9ae709d5af5e71c0659cf5333f281e46404b1`, both `cmp`-identical, both inventories with zero `.10x` entries.
 - 2026-07-19: Python 3.11/3.13 aggregate suites each passed 422 tests; 75 focused packaging/environment/CLI/autoresearch/release tests passed. Fresh 0.4.0 clean install exposed only `buoy`; the digest-verified released 0.3.0 wheel exposed both launchers before a same-environment candidate upgrade and only `buoy` afterward. Exact installed gate/no-side-effect validation passed. Evidence: `.10x/evidence/2026-07-19-exclude-internal-records-from-buoy-v0-4-artifacts.md`. No publication, tag, release, state/data mutation, or live product-service operation occurred. Ticket remains active pending independent bounded/aggregate review and exact-head hosted checks.
 - 2026-07-19: PR #49 implementation/evidence head `9b6f701` passed hosted workflow `29709536904`: Python 3.11 job `88251487441`, Python 3.13 job `88251487432`, and Build distributions job `88251535975`. A record-only follow-up persists the identities; the ticket stays active pending its exact-head hosted checks and independent bounded/final aggregate review.
-- 2026-07-19: Final aggregate review of exact head `9e7ec237d31d9fb4ef79209df1d45fcc2b0dd6cf` passed the packaging implementation and found only a record-coherence concern: this ticket and its parent still described the exclusion as unimplemented/currently blocking. Reconciled both current Blockers sections against the final evidence and review `.10x/reviews/2026-07-19-buoy-v0-4-compatibility-removal-final-aggregate-review.md`. This child and its parent/siblings remain open/active pending final bounded re-review; no ticket was closed or moved.
+- 2026-07-19: Final aggregate review of exact head `9e7ec237d31d9fb4ef79209df1d45fcc2b0dd6cf` passed the packaging implementation and found only a record-coherence concern: this ticket and its parent still described the exclusion as unimplemented/currently blocking. Reconciled both current Blockers sections against the final evidence and review `.10x/reviews/2026-07-19-buoy-v0-4-compatibility-removal-final-aggregate-review.md`.
+- 2026-07-19: Bounded re-review confirmed record coherence, and parent-observed exact-head Python 3.11, Python 3.13, and distribution checks passed. All acceptance criteria map to exact exclusion/determinism/install/upgrade evidence. Review: `.10x/reviews/2026-07-19-buoy-v0-4-compatibility-removal-closure-review.md`.

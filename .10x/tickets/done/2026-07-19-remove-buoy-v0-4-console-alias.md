@@ -1,7 +1,7 @@
-Status: active
+Status: done
 Created: 2026-07-19
 Updated: 2026-07-19
-Parent: .10x/tickets/2026-07-19-buoy-v0-4-compatibility-removal-plan.md
+Parent: .10x/tickets/done/2026-07-19-buoy-v0-4-compatibility-removal-plan.md
 Depends-On: None
 
 # Remove Buoy 0.4 Console Alias
@@ -33,7 +33,7 @@ Record exact changed files, artifact paths/hashes/versions, 0.3 URL and digest v
 
 ## Dependencies and parallelism
 
-No child execution dependency. Work may proceed in parallel with `.10x/tickets/2026-07-19-remove-buoy-v0-4-environment-aliases.md`, but the two reviewed diffs and coherent 0.4.0 metadata must be assembled into one aggregate candidate before integration to `develop`.
+No child execution dependency. Work may proceed in parallel with `.10x/tickets/done/2026-07-19-remove-buoy-v0-4-environment-aliases.md`, but the two reviewed diffs and coherent 0.4.0 metadata must be assembled into one aggregate candidate before integration to `develop`.
 
 ## Blockers
 
@@ -45,7 +45,7 @@ Environment-alias runtime/config changes; removal of any other compatibility; ar
 
 ## References
 
-- `.10x/tickets/2026-07-19-buoy-v0-4-compatibility-removal-plan.md`
+- `.10x/tickets/done/2026-07-19-buoy-v0-4-compatibility-removal-plan.md`
 - `.10x/specs/buoy-v0-4-console-alias-removal.md`
 - `.10x/specs/buoy-v0-4-environment-alias-removal.md`
 - `.10x/decisions/buoy-product-identity-and-compatibility-v0-3.md`
@@ -60,4 +60,5 @@ Environment-alias runtime/config changes; removal of any other compatibility; ar
 - 2026-07-19: Opened PR #47 without merging. Hosted CI run `29707534036` passed Python 3.11 job `88246909509`, Python 3.13 job `88246909505`, and distribution build job `88246964840` on pushed head `5bfa8455f35f12aae0041f8cfec98c6bec70e22f`.
 - 2026-07-19: Independent bounded review passed implementation head `f518a78` and observed exact-head hosted checks. Integration remains blocked until the environment-alias child and aggregate 0.4 reconciliation pass. Review: `.10x/reviews/2026-07-19-buoy-v0-4-console-alias-removal-review.md`. Ticket remains active.
 - 2026-07-19: Full reviewed tip `b6bbfcc` is preserved as an ancestor of aggregate candidate `68477fdca5a5b5f7b890d059c484739f02fc1dd8`. Aggregate build/install/upgrade and Python 3.11/3.13 validation passed with the sibling environment removal present. Evidence: `.10x/evidence/2026-07-19-buoy-v0-4-compatibility-removal-candidate.md`. Independent aggregate review remains pending; ticket stays active.
-- 2026-07-19: Post-assembly packaging repair preserved runtime/package code and reran clean plus digest-verified released-0.3.0 same-environment upgrade validation: pre-upgrade metadata/launcher inspection had both package-owned launchers; candidate metadata and the complete post-upgrade launcher directory had only `buoy`, with no `legacy_main` source/package hook change. Evidence: `.10x/evidence/2026-07-19-exclude-internal-records-from-buoy-v0-4-artifacts.md`. Ticket remains active pending final aggregate review and exact-head hosted checks.
+- 2026-07-19: Post-assembly packaging repair preserved runtime/package code and reran clean plus digest-verified released-0.3.0 same-environment upgrade validation: pre-upgrade metadata/launcher inspection had both package-owned launchers; candidate metadata and the complete post-upgrade launcher directory had only `buoy`, with no `legacy_main` source/package hook change. Evidence: `.10x/evidence/2026-07-19-exclude-internal-records-from-buoy-v0-4-artifacts.md`.
+- 2026-07-19: Final aggregate closure review and exact-head hosted checks passed; all acceptance criteria map to child and aggregate evidence. Review: `.10x/reviews/2026-07-19-buoy-v0-4-compatibility-removal-closure-review.md`.

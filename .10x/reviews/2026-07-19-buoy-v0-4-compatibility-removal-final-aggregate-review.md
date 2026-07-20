@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-19
 Updated: 2026-07-19
-Target: .10x/tickets/2026-07-19-buoy-v0-4-compatibility-removal-plan.md
+Target: .10x/tickets/done/2026-07-19-buoy-v0-4-compatibility-removal-plan.md
 Verdict: concerns
 
 # Buoy 0.4 Compatibility Removal Final Aggregate Review

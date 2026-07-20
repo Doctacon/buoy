@@ -140,7 +140,7 @@ On 2026-07-19 the user explicitly ratified the reviewer's exact recommended cont
 4. Clean-install validation is supplemented by same-environment upgrade validation: install the immutable released 0.3.0 GitHub wheel, then normally upgrade that isolated environment to the candidate 0.4.0 wheel and inspect installed entry points/launchers.
 5. Every other compatibility surface in the matrix remains supported, and no state, data, or remote effect occurs.
 
-The exact active contracts are `.10x/specs/buoy-v0-4-console-alias-removal.md` and `.10x/specs/buoy-v0-4-environment-alias-removal.md`. Execution is owned by the non-executable plan `.10x/tickets/2026-07-19-buoy-v0-4-compatibility-removal-plan.md` and its two bounded children. The stale retrieval-mode and apply-namespace statements in the Scrapling workflow reference are both separately owned by `.10x/tickets/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md` and are not part of 0.4 implementation.
+The exact active contracts are `.10x/specs/buoy-v0-4-console-alias-removal.md` and `.10x/specs/buoy-v0-4-environment-alias-removal.md`. Execution is owned by the non-executable plan `.10x/tickets/done/2026-07-19-buoy-v0-4-compatibility-removal-plan.md` and its two bounded children. The stale retrieval-mode and apply-namespace statements in the Scrapling workflow reference are both separately owned by `.10x/tickets/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md` and are not part of 0.4 implementation.
 
 ## Conclusion
 

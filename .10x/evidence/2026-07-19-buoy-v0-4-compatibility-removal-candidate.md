@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-19
 Updated: 2026-07-19
-Relates-To: .10x/tickets/2026-07-19-buoy-v0-4-compatibility-removal-plan.md, .10x/tickets/2026-07-19-remove-buoy-v0-4-console-alias.md, .10x/tickets/2026-07-19-remove-buoy-v0-4-environment-aliases.md, .10x/tickets/2026-07-19-exclude-internal-records-from-buoy-v0-4-artifacts.md, .10x/specs/buoy-v0-4-console-alias-removal.md, .10x/specs/buoy-v0-4-environment-alias-removal.md, .10x/specs/buoy-v0-4-internal-record-artifact-exclusion.md
+Relates-To: .10x/tickets/done/2026-07-19-buoy-v0-4-compatibility-removal-plan.md, .10x/tickets/done/2026-07-19-remove-buoy-v0-4-console-alias.md, .10x/tickets/done/2026-07-19-remove-buoy-v0-4-environment-aliases.md, .10x/tickets/done/2026-07-19-exclude-internal-records-from-buoy-v0-4-artifacts.md, .10x/specs/buoy-v0-4-console-alias-removal.md, .10x/specs/buoy-v0-4-environment-alias-removal.md, .10x/specs/buoy-v0-4-internal-record-artifact-exclusion.md
 
 # Buoy 0.4 Compatibility Removal Aggregate Candidate
 
@@ -93,7 +93,7 @@ It does not support final aggregate artifact acceptance under `.10x/specs/buoy-v
 - Normal 0.3.0-to-0.4.0 upgrade reconciled the candidate's reviewed `scrapling==0.4.9` pin and related transitive versions; neither child changed that dependency contract.
 - No live remote behavior was exercised; gate safety is supported by sentinel/non-dispatch tests and existing non-live suites.
 - Hosted aggregate checks passed for the pre-exclusion candidate, but do not resolve the `.10x/**` artifact blocker.
-- `.10x/tickets/2026-07-19-exclude-internal-records-from-buoy-v0-4-artifacts.md` must implement the exact exclusion, prove both-artifact controlled determinism across a record-only delta, rerun aggregate install/upgrade validation, and pass independent review plus exact-head hosted checks.
+- `.10x/tickets/done/2026-07-19-exclude-internal-records-from-buoy-v0-4-artifacts.md` must implement the exact exclusion, prove both-artifact controlled determinism across a record-only delta, rerun aggregate install/upgrade validation, and pass independent review plus exact-head hosted checks.
 - Independent final aggregate review remains pending. Parent and all children remain active and must not close while the packaging child is incomplete.
 
 ## Subsequent packaging disposition

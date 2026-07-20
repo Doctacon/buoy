@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-19
 Updated: 2026-07-19
-Relates-To: .10x/tickets/2026-07-19-exclude-internal-records-from-buoy-v0-4-artifacts.md, .10x/tickets/2026-07-19-buoy-v0-4-compatibility-removal-plan.md, .10x/specs/buoy-v0-4-internal-record-artifact-exclusion.md
+Relates-To: .10x/tickets/done/2026-07-19-exclude-internal-records-from-buoy-v0-4-artifacts.md, .10x/tickets/done/2026-07-19-buoy-v0-4-compatibility-removal-plan.md, .10x/specs/buoy-v0-4-internal-record-artifact-exclusion.md
 
 # Buoy 0.4 Internal Record Artifact Exclusion Evidence
 

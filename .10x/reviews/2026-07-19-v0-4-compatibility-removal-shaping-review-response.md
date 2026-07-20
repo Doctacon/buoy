@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-19
 Updated: 2026-07-19
-Target: .10x/tickets/2026-07-19-buoy-v0-4-compatibility-removal-plan.md
+Target: .10x/tickets/done/2026-07-19-buoy-v0-4-compatibility-removal-plan.md
 Verdict: pass
 
 # Buoy 0.4 Compatibility Removal Shaping Review Response
@@ -14,7 +14,7 @@ Reviewed response targets:
 
 - `.10x/specs/buoy-v0-4-console-alias-removal.md`
 - `.10x/specs/buoy-v0-4-environment-alias-removal.md`
-- `.10x/tickets/2026-07-19-buoy-v0-4-compatibility-removal-plan.md`
+- `.10x/tickets/done/2026-07-19-buoy-v0-4-compatibility-removal-plan.md`
 - its two executable children and the separate stale-guidance owner.
 
 ## Review findings and response

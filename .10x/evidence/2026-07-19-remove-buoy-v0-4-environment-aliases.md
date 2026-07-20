@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-19
 Updated: 2026-07-19
-Relates-To: .10x/tickets/2026-07-19-remove-buoy-v0-4-environment-aliases.md, .10x/specs/buoy-v0-4-environment-alias-removal.md
+Relates-To: .10x/tickets/done/2026-07-19-remove-buoy-v0-4-environment-aliases.md, .10x/specs/buoy-v0-4-environment-alias-removal.md
 
 # Buoy 0.4 Environment Alias Removal Implementation Evidence
 

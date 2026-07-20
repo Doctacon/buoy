@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-07-19
 Updated: 2026-07-19
 Parent: None
@@ -14,9 +14,9 @@ This parent is an aggregate plan and is not executable.
 
 ## Child graph
 
-- `.10x/tickets/2026-07-19-remove-buoy-v0-4-console-alias.md` owns the package entry point, dedicated legacy hook, candidate version metadata needed for the 0.4.0 wheel, console migration guidance, and clean/upgrade wheel validation.
-- `.10x/tickets/2026-07-19-remove-buoy-v0-4-environment-aliases.md` owns the pre-dispatch environment gate, exact diagnostics, complete command/help/version matrix, configuration migration guidance, and no-side-effect validation.
-- `.10x/tickets/2026-07-19-exclude-internal-records-from-buoy-v0-4-artifacts.md` owns the post-assembly packaging repair that retains repository `.10x/**` records while excluding exactly those records from both artifacts, proving controlled record-only artifact stability, and rerunning aggregate install/upgrade validation.
+- `.10x/tickets/done/2026-07-19-remove-buoy-v0-4-console-alias.md` owns the package entry point, dedicated legacy hook, candidate version metadata needed for the 0.4.0 wheel, console migration guidance, and clean/upgrade wheel validation.
+- `.10x/tickets/done/2026-07-19-remove-buoy-v0-4-environment-aliases.md` owns the pre-dispatch environment gate, exact diagnostics, complete command/help/version matrix, configuration migration guidance, and no-side-effect validation.
+- `.10x/tickets/done/2026-07-19-exclude-internal-records-from-buoy-v0-4-artifacts.md` owns the post-assembly packaging repair that retains repository `.10x/**` records while excluding exactly those records from both artifacts, proving controlled record-only artifact stability, and rerunning aggregate install/upgrade validation.
 
 The compatibility-removal children have no semantic dependency and their implementation/review work proceeded in parallel in separate task worktrees. They intentionally share the 0.4.0 boundary and MUST be reconciled into one aggregate candidate before integration: neither removal may land on `develop` without the other, and the 0.4.0 version metadata MUST agree across package/module/lock artifacts. Documentation/changelog conflicts are reconciled without broadening either child's behavior. The packaging child depends on the assembled candidate evidence and now blocks aggregate acceptance.
 
@@ -64,4 +64,17 @@ Any compatibility beyond the three named aliases; any artifact exclusion beyond 
 - 2026-07-19: Opened aggregate PR #49 against `develop` without merging. Hosted workflow `29708550897` passed Python 3.11 (`88249318152`), Python 3.13 (`88249318150`), and distribution (`88249388732`) jobs on pushed evidence head `6d4a24c27c215cc40ddcb9e8d4d66211ed2d445d`. A record-only follow-up documents hosted results; exact final-head checks remain visible on PR #49.
 - 2026-07-19: Aggregate packaging review found that the recorded 536-entry candidate sdist contains 441 `.10x` entries while the 45-entry wheel contains none. The user ratified excluding exactly repository-root `.10x/**` from both artifacts while retaining the records, plus a controlled record-only determinism proof and aggregate clean-install/upgrade rerun. Opened the focused active spec and executable packaging child; no exclusion was implemented. Parent and all children remain active and aggregate acceptance is blocked pending that child.
 - 2026-07-19: Packaging child implementation now excludes only repository-root `.10x/**`; controlled before/after builds across one staged evidence-record delta were byte-identical with zero `.10x` members, and aggregate Python 3.11/3.13, exact gate/no-side-effect, clean-install, and digest-verified same-environment upgrade validation passed. Evidence: `.10x/evidence/2026-07-19-exclude-internal-records-from-buoy-v0-4-artifacts.md`. Parent and all children remain active pending independent bounded/final aggregate review and exact-head hosted checks; no merge, publication, tag, release, state/data mutation, or live product-service operation occurred.
-- 2026-07-19: Final aggregate review of exact head `9e7ec237d31d9fb4ef79209df1d45fcc2b0dd6cf` passed the implementation and raised one record-coherence concern: this plan and the packaging child still described the already-proven exclusion as unimplemented/currently blocking. Reconciled both current Blockers sections against the final packaging evidence and review `.10x/reviews/2026-07-19-buoy-v0-4-compatibility-removal-final-aggregate-review.md`. Parent and all three children remain active/open pending final bounded re-review; no ticket was closed or moved.
+- 2026-07-19: Final aggregate review of exact head `9e7ec237d31d9fb4ef79209df1d45fcc2b0dd6cf` passed the implementation and raised one record-coherence concern: this plan and the packaging child still described the already-proven exclusion as unimplemented/currently blocking. Reconciled both current Blockers sections against the final packaging evidence and review `.10x/reviews/2026-07-19-buoy-v0-4-compatibility-removal-final-aggregate-review.md`.
+- 2026-07-19: Final bounded re-review confirmed record coherence. Parent-observed exact-head Python 3.11, Python 3.13, and distribution checks passed at `3e35c77df0d3a3c6109807203d58e3e0380dbdae`; PR #49 was clean and mergeable. All three children and aggregate criteria are supported by evidence and review. Review: `.10x/reviews/2026-07-19-buoy-v0-4-compatibility-removal-closure-review.md`.
+
+## Closure mapping
+
+- Console removal and upgrade behavior: child evidence and independent child review.
+- Environment rejection and no-side-effect boundary: exhaustive child/aggregate tests, evidence, and review.
+- Internal-record artifact boundary: controlled deterministic artifacts, zero-member inventories, aggregate install/upgrade evidence, and review.
+- Integration coherence: both reviewed child tips preserved, shared conflicts reconciled, 0.4.0 metadata coherent, full suites and exact-head hosted checks passed.
+- Side effects: no publication, tag, release, state/data mutation, or live product-service operation.
+
+## Retrospective
+
+Artifact evidence cannot self-attest exact heads when project records are shipped inside the artifact whose hash they record. Excluding repository-internal `.10x/**` records from distributions creates a stable evidence boundary while preserving durable repository memory. Aggregate version cutovers should establish that boundary before final artifact hashing.
