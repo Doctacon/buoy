@@ -1,6 +1,6 @@
 Status: done
 Created: 2026-07-15
-Updated: 2026-07-16
+Updated: 2026-07-20
 Parent: None
 Depends-On: None
 
@@ -64,4 +64,4 @@ Children are strictly sequential. The parent is not executable.
 
 ## Retrospective
 
-Key durable lessons are already captured in child records: derive changelogs from the full prior-tag range; test compatibility schedule text precisely; use a protected ancestry-only merge PR when update-branch cannot mutate a protected head; durably record harness reviews with their actual pre-merge chronology; distinguish tag push from environment-gated publication; and date temporal evidence from authoritative hosted events. The Node 24 action warning already has owner `.10x/tickets/2026-07-14-update-node24-github-actions.md`. No additional follow-up is required.
+Key durable lessons are already captured in child records: derive changelogs from the full prior-tag range; test compatibility schedule text precisely; use a protected ancestry-only merge PR when update-branch cannot mutate a protected head; durably record harness reviews with their actual pre-merge chronology; distinguish tag push from environment-gated publication; and date temporal evidence from authoritative hosted events. The Node 24 action warning already has owner `.10x/tickets/done/2026-07-14-update-node24-github-actions.md`. No additional follow-up is required.

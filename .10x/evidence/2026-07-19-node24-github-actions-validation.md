@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-19
-Updated: 2026-07-19
-Relates-To: .10x/tickets/2026-07-14-update-node24-github-actions.md
+Updated: 2026-07-20
+Relates-To: .10x/tickets/done/2026-07-14-update-node24-github-actions.md
 
 # Node.js 24 GitHub Actions Validation
 
@@ -83,4 +83,4 @@ This supports that the replacement pins are released, immutable full commit SHAs
 
 ## Limits
 
-The successful hosted run covers the pull-request CI workflow, not the tag-only release workflow; triggering release validation would violate this ticket's explicit no-tag/no-release boundary. Independent review remains pending, so the ticket stays active and this task must not merge the pull request.
+The successful hosted run covers the pull-request CI workflow, not the tag-only release workflow; triggering release validation would violate this ticket's explicit no-tag/no-release boundary. Independent review subsequently passed in `.10x/reviews/2026-07-20-node24-github-actions-review.md`; the review did not merge the pull request.
