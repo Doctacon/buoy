@@ -1,4 +1,4 @@
-Status: open
+Status: done
 Created: 2026-07-19
 Updated: 2026-07-19
 Parent: None
@@ -59,3 +59,21 @@ Buoy 0.4 console/environment alias implementation; changing retrieve/evals/apply
 
 - 2026-07-19: Opened as the separate owner discovered during 0.4 compatibility inventory. It is not a child or implementation prerequisite of the 0.4 removal plan.
 - 2026-07-19: Expanded after PR #46 review to own both stale statements already discovered in the same reference: retrieve's live mode and apply's ambient namespace setup. The contradictory apply-guidance exclusion was removed; implementation and specification semantics remain excluded.
+- 2026-07-19: Activated for record-only execution on `work/reconcile-scrapling-guidance`; the requested `context.md` and `plan.md` paths were absent, so the executable ticket and all of its referenced authority/source/tests were used as the execution contract.
+- 2026-07-19: Corrected only the target reference's Apply sequence and Retrieval validation prose. The apply guidance now keeps the reviewed plan namespace authoritative and treats apply `--namespace` as a matching assertion; retrieval guidance now distinguishes plain-live retrieve, retrieve preview, retrieve's compatibility `--live`, and evals' operative `--live`.
+- 2026-07-19: Bounded reference checks resolved all 13 ticket references and both target headings. Six focused Python 3.13 tests covering current help, retrieve/evals mode gates, credential-free preview/list behavior, apply preflight, and namespace mismatch passed. CLI help comparison and `git diff --check` passed; no live command or credential was used.
+- 2026-07-19: Recorded comparison and side-effect limits in `.10x/evidence/2026-07-19-reconcile-scrapling-site-workflow-guidance.md`. Ticket remains active pending required independent record-only review.
+- 2026-07-19: Independent review passed PR #51 at `dd3cb6f871b6a7b26696bd242151f3ec0eeced0d`. Hosted Python 3.11, Python 3.13, and distribution checks remained successful. Review: `.10x/reviews/2026-07-19-reconcile-scrapling-site-workflow-guidance-review.md`.
+
+## Closure mapping
+
+- Retrieval mode guidance: the changed reference distinguishes plain-live retrieve, `--dry-run`/`--plan` preview, compatibility `--live`, and evals' operative `--live`; active decision/specification, current help/source, and focused tests agree.
+- Apply namespace guidance: the reference removes ambient namespace setup, identifies plan-time `--namespace` selection and the recorded plan namespace, and describes apply `--namespace` as a matching assertion; current parser, verified-plan loading, and matching/mismatch tests agree.
+- Safety and surrounding workflow: bounded diff review confirms credential-free explicit preview/list examples and preserves approval, API-key, region, review, confirmation, stale-deletion, and secret-handling guidance.
+- Exclusions: the reviewed implementation commit changes only this ticket, its evidence, and the two target prose areas; it contains no source, tests, specifications, package/version, state/data, or remote-resource behavior change.
+- Validation and review: six focused Python 3.13 tests, current retrieve/evals/apply help, 13 ticket references, two target headings, diff checks, independent review, and hosted PR checks passed.
+- Residual limit: no live Turbopuffer retrieval, eval, or apply was exercised; acceptance is supported by active authority, current source/help, fake-backed and credential-gate tests, and hosted CI rather than live-service validation.
+
+## Retrospective
+
+When operational guidance combines commands with different activation defaults, grouping them under one sentence can silently overgeneralize a safety flag. The durable correction is to state each command's live/preview boundary separately and to identify persisted reviewed artifacts—not ambient configuration—as authority where plan verification owns runtime identity. Existing active decisions, specifications, help text, and focused tests provided sufficient authority; no new reusable procedure is needed.

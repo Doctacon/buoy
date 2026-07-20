@@ -115,7 +115,7 @@ Preflight, no credentials or live calls:
 uv run buoy apply --dry-run
 ```
 
-By default, apply uses the newest `artifacts/site-crawls/**/plan.json` and the namespace recorded in that plan. Pass `--json --dry-run` for scripts. Pass `--plan` or `--namespace` only when overriding those defaults.
+By default, apply uses the newest `artifacts/site-crawls/**/plan.json` and the namespace recorded in that plan. Pass `--json --dry-run` for scripts. Pass `--plan` to select a different reviewed artifact. To choose a non-default namespace, pass `--namespace` when creating the plan so the reviewed artifact records it; apply's optional `--namespace` only asserts that same value, and a mismatch fails.
 
 Normal interactive apply, only after explicit user approval and after `TURBOPUFFER_API_KEY` is already in the environment:
 
@@ -136,7 +136,7 @@ Only after explicit user approval:
 1. Run `plan` and inspect page/chunk counts, samples, and diff.
 2. Run apply preflight and confirm namespace, rows to upsert, embeddings to generate, stale rows, and local state path.
 3. Retrieve `TURBOPUFFER_API_KEY` into shell memory only.
-4. Set `TURBOPUFFER_REGION` and `TURBOPUFFER_NAMESPACE` in shell only.
+4. Set `TURBOPUFFER_REGION` in shell only; apply uses the namespace recorded in the reviewed plan and does not require ambient `TURBOPUFFER_NAMESPACE` to direct it.
 5. Run approved apply; it embeds/upserts only new or changed chunks.
 6. Delete stale rows only with `--delete-stale`; this deletes row IDs only, not namespaces.
 7. Record evidence without secret values or private credential identifiers.
@@ -159,7 +159,7 @@ uv run buoy evals \
   --json
 ```
 
-Dry-run/list mode is credential-free and turbopuffer-free. Live retrieval/evals require `--live` and `TURBOPUFFER_API_KEY` in the environment; do not run them without explicit user approval.
+The explicit-namespace retrieval preview and eval list shown above are credential-free and turbopuffer-free. Plain `buoy retrieve` is live; retrieve's retained `--live` is a compatibility no-op, while `buoy retrieve --dry-run` or retrieve `--plan` requests preview. Evals remain list-only by default, and evals `--live` opts into live execution. Live retrieval and live evals require `TURBOPUFFER_API_KEY` in the environment; do not run them without explicit user approval.
 
 ## Known gaps before productionizing
 

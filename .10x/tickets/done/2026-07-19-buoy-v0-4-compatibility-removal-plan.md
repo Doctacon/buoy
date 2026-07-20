@@ -35,7 +35,7 @@ The compatibility-removal children have no semantic dependency and their impleme
 
 Each child records exact commands, focused/full results, changed paths, stream/exit assertions, package or sentinel observations, and explicit side-effect limits. Aggregate integration verifies all three active specifications against the combined diff, candidate 0.4.0 metadata, distribution artifacts, hosted checks, and independent reviews before either child or this plan closes.
 
-The two stale retrieval-mode and apply-namespace statements in `.pi/skills/turbopuffer-site-rag/references/scrapling-site-workflow.md` are separately owned by `.10x/tickets/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md`; neither is implementation scope or evidence for this plan.
+The two stale retrieval-mode and apply-namespace statements in `.pi/skills/turbopuffer-site-rag/references/scrapling-site-workflow.md` are separately owned by `.10x/tickets/done/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md`; neither is implementation scope or evidence for this plan.
 
 ## Blockers
 
