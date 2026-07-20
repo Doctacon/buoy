@@ -1,7 +1,7 @@
 {
   "composite_identity_count": 90,
   "contract_id": "repo-ranking-experiment-contract-v1",
-  "dataset_bundle_sha256": "3eb31ab2ac0c4b4a23b4c755668cc4480aecbdfa905893caf822c5a2aefa656e",
+  "dataset_bundle_sha256": "5a79f58aaca87a2d4f7cbec68fdcfbbcbf041131821587f8aba74a86daca99d9",
   "dataset_count": 13,
   "duplicate_local_case_ids_across_repositories": {
     "top-level-request-api": [
@@ -699,8 +699,8 @@
       "repo_key": "typer"
     }
   ],
-  "inventory_payload_sha256": "7c93ae8953e43aac2c2ed98d1ef846458329121453b2662a0d07d93c191c8c13",
-  "judgment_count": 370,
+  "inventory_payload_sha256": "97fb02f79e2f9ada09b19eb6e0c91f987ab4e132e906a6814f73af1bc66c50b1",
+  "judgment_count": 369,
   "repositories": [
     {
       "baseline_namespace": "github-psf-black-v1",
@@ -728,18 +728,13 @@
       "baseline_namespace_status": "pending_approval",
       "case_count": 10,
       "dataset_path": "src/buoy_search/data/buoy_search_repo_search_seed_evals.json",
-      "dataset_sha256": "605ac5b775a0b9ce2fc6adb78c4de9ee98a597ec9c8b4cd91e0712b2ed6e8eaf",
+      "dataset_sha256": "60008af2950ae8fa27da59c0af737ebf5b4a3e618680bfa113ec75951d338792",
       "embedding_model": "BAAI/bge-small-en-v1.5",
       "experiment_namespace_pattern": "github-{owner_slug}-{repo_slug}-exp-{experiment_slug}-{contract_sha256_12}-v{positive_integer}",
       "explicit_zero_judgment_count": 0,
-      "judgment_count": 33,
+      "judgment_count": 32,
       "manifest_chunk_count": 903,
-      "missing_judgment_paths": [
-        {
-          "composite_case_id": "buoy:evals-composite-metrics",
-          "repo_path": ".10x/specs/repo-search-eval-autoresearch.md"
-        }
-      ],
+      "missing_judgment_paths": [],
       "repo_key": "buoy",
       "repository": "Doctacon/buoy-search",
       "selected_corpus_artifact_hash": "b6c5d128295f442fcae21472c9bcb037ecb44101ca648115e8f666ba59a6f0ce",

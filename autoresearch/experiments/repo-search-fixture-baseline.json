@@ -143,10 +143,6 @@
       {
         "path": "tests/test_evals.py",
         "title": "test_evals.py"
-      },
-      {
-        "path": ".10x/specs/repo-search-eval-autoresearch.md",
-        "title": "repo-search-eval-autoresearch.md"
       }
     ],
     "evals-cli-safety": [

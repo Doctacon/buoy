@@ -207,11 +207,6 @@
           "repo_path": "tests/test_evals.py",
           "grade": 2,
           "reason": "Covers graded dataset loading, metric math, no-match behavior, duplicate handling, section matching, and invalid judgment validation."
-        },
-        {
-          "repo_path": ".10x/specs/repo-search-eval-autoresearch.md",
-          "grade": 1,
-          "reason": "Specifies the intended metric contract and config-only autoresearch scope, but is not runtime implementation."
         }
       ]
     },

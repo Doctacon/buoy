@@ -1,4 +1,4 @@
-Status: open
+Status: active
 Created: 2026-07-20
 Updated: 2026-07-20
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
@@ -47,7 +47,9 @@ Any other label edit or review; treating assistant-drafted labels as human groun
 - `.10x/evidence/2026-07-20-repo-ranking-experiment-contract-freeze.md`
 - `.10x/reviews/2026-07-20-repo-ranking-experiment-contract-freeze-review.md`
 - `.10x/specs/repo-search-eval-autoresearch.md`
+- `.10x/evidence/2026-07-20-remove-buoy-internal-ranking-judgment.md`
 
 ## Progress and notes
 
 - 2026-07-20: Opened as the separate owner for the user's exact post-review ratification. C1 closure did not edit the dataset, change 370-count/hash artifacts, or imply Buoy sufficiency.
+- 2026-07-20: Removed exactly the ratified grade-1 judgment and its stale ideal-fixture hit. Mechanically regenerated the Buoy count/hash (32), all-repository count (369), dataset bundle hash, inventory payload/whole-file hashes, path-membership fields, validator expectation, and focused regression coverage. Semantic comparison proved the revised Buoy JSON equals the prior JSON after only that exact object is removed, while all 12 other datasets remain byte-identical. Every remaining path resolves, but Buoy remains `insufficient` and `pending_approval`; C3+ stays blocked. Python 3.11/3.13 validators, 5 focused tests, 446 full tests, CI-equivalent locked environments, distribution builds, and diff hygiene passed. No namespace, catalog, model, credential, provider, retrieval, or remote domain state was read or mutated. Ticket remains active pending independent review; do not merge or close.

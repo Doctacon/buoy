@@ -263,7 +263,7 @@ def validate_contract(root: Path = ROOT, inventory_relative_path: Path = INVENTO
     _require(identities == inventory["identities"], "identity inventory differs from regenerated identities")
     duplicates = {case_id: sorted(repo_keys) for case_id, repo_keys in local_id_repositories.items() if len(repo_keys) > 1}
     _require(duplicates == inventory["duplicate_local_case_ids_across_repositories"], "cross-repository duplicate local IDs differ")
-    _require(total_judgments == inventory["judgment_count"] == 370, "judgment total must be 370")
+    _require(total_judgments == inventory["judgment_count"] == 369, "judgment total must be 369")
     _require(total_explicit_zero == inventory["explicit_zero_judgment_count"], "explicit-zero total mismatch")
     _require(inventory["dataset_count"] == len(repositories) == 13, "dataset count must be 13")
     _require(inventory["composite_identity_count"] == inventory["unique_composite_identity_count"] == 90, "inventory identity counts must be 90")
