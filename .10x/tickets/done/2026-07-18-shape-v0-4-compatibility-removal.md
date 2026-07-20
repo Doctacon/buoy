@@ -58,7 +58,7 @@ Implementing removals; changing source/tests/user docs/version numbers; publishi
 - Ratified console behavior and upgrade validation: `.10x/specs/buoy-v0-4-console-alias-removal.md`.
 - Ratified command boundary, diagnostics, coverage, retained config, and no-side-effect behavior: `.10x/specs/buoy-v0-4-environment-alias-removal.md`.
 - Non-executable aggregate plan and bounded execution children: `.10x/tickets/done/2026-07-19-buoy-v0-4-compatibility-removal-plan.md`.
-- Stale retrieval-mode and apply-namespace guidance disposition: `.10x/tickets/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md` owns both corrections.
+- Stale retrieval-mode and apply-namespace guidance disposition: `.10x/tickets/done/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md` owns both corrections.
 - Review response and graph-coherence check: `.10x/reviews/2026-07-19-v0-4-compatibility-removal-shaping-review-response.md`.
 - Independent acceptance and exact-head hosted checks: `.10x/reviews/2026-07-19-v0-4-compatibility-removal-shaping-review.md`.
 

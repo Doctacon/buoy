@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-19
 Updated: 2026-07-19
-Relates-To: .10x/tickets/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md
+Relates-To: .10x/tickets/done/2026-07-19-reconcile-scrapling-site-workflow-direct-command-guidance.md
 
 # Scrapling Site Workflow Guidance Reconciliation
 
@@ -46,4 +46,4 @@ This supports the two documentation corrections against active authority, curren
 
 ## Limits
 
-This is implementation evidence, not independent review. The owning ticket remains active pending the required independent record-only review. No live Turbopuffer behavior was exercised.
+This implementation evidence did not itself constitute independent review; the subsequent independent review is recorded in `.10x/reviews/2026-07-19-reconcile-scrapling-site-workflow-guidance-review.md`. No live Turbopuffer behavior was exercised.
