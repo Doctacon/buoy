@@ -90,9 +90,50 @@ The repository CI defines the full unittest command for Python 3.11 and 3.13 plu
 - Existing multi-namespace provider-failure tests continue to prove that a later namespace failure raises and CLI stdout remains empty, so no partial payload is emitted.
 - Documentation states the JSON, conditional text, metadata-only/no-filter, grouping, namespace consistency, and older-schema behavior.
 
+## PR #57 review-blocker remediation
+
+Independent review found that the original message-wide substring matching could associate `tags` or `repo_path` with unrelated parts of a provider error, including a near-name or the requested-attribute list, rather than the missing-schema diagnostic itself.
+
+The bounded repair at code/test commit `8aa2ced` parses only the known quoted `attribute "<name>" not found in schema` diagnostic, requires exactly one such diagnostic, and retries only when its exact captured name is a still-requested `tags` or `repo_path`. The retry removes only that attribute. A near-name such as `repo_tags`, an unrelated or ambiguous diagnostic, and a repeated diagnostic for an already-removed attribute propagate through the existing user-friendly error path. The latter membership check also preserves finite retry termination.
+
+Focused regressions now prove:
+
+- `attribute "repo_tags" not found in schema` propagates after one provider attempt and does not remove `tags`;
+- a provider message may list the full requested attribute list, including both `tags` and `repo_path`, while identifying only one exact missing attribute;
+- requested-list context preserves the other optional attribute until a subsequent diagnostic identifies it, in both sequences: `(true, true) -> (true, false) -> (false, false)` and `(true, true) -> (false, true) -> (false, false)`.
+
+After rebasing onto current `origin/develop` at `0ce5f37`, the following non-live validation passed:
+
+```text
+$ PYTHONDONTWRITEBYTECODE=1 uv run --python 3.11 python -m unittest tests.test_retriever tests.test_multi_namespace_retrieval tests.test_cli -q
+Ran 75 tests in 12.345s
+OK
+
+$ PYTHONDONTWRITEBYTECODE=1 uv run --python 3.11 python -m unittest discover -s tests -p 'test_*.py' -q
+Ran 441 tests in 12.646s
+OK
+
+$ PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 python -m unittest tests.test_retriever tests.test_multi_namespace_retrieval tests.test_cli -q
+Ran 75 tests in 12.956s
+OK
+
+$ PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 python -m unittest discover -s tests -p 'test_*.py' -q
+Ran 441 tests in 12.311s
+OK
+
+$ uv build --python 3.13 --out-dir /tmp/buoy-return-retrieval-tags-review-dist
+Successfully built buoy_search-0.4.0.tar.gz
+Successfully built buoy_search-0.4.0-py3-none-any.whl
+
+$ git diff --check
+(exit 0; no output)
+```
+
+The test suites emitted only the same pre-existing advisory plan-artifact cleanup warnings described above. No live Turbopuffer read or write was run.
+
 ## What this supports or challenges
 
-This supports every implementation and deterministic validation criterion in `.10x/tickets/2026-07-19-return-retrieval-tags.md`. It does not close the ticket: the required independent review remains a separate gate.
+This supports every implementation and deterministic validation criterion in `.10x/tickets/2026-07-19-return-retrieval-tags.md`, including the PR #57 fallback-association blocker. It does not close the ticket: independent re-review remains a separate gate.
 
 ## Handoff
 
@@ -102,4 +143,4 @@ Current `origin/develop` had no divergence before commit. Implementation commit 
 
 - Validation was entirely fake-backed/non-live. It proves request construction, fallback branching, conversion, serialization, rendering, and failure atomicity without contacting Turbopuffer.
 - No remote schema migration or backfill was performed or required.
-- Independent review and pull-request CI are not represented here and must occur before closure.
+- The initial independent review blocker and its local remediation are represented here; independent re-review and post-repair pull-request CI remain required before closure.
