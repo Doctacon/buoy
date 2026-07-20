@@ -2,7 +2,7 @@ Status: blocked
 Created: 2026-07-19
 Updated: 2026-07-20
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
-Depends-On: .10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/2026-07-20-remove-buoy-internal-ranking-judgment.md
+Depends-On: .10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md
 
 # C3: Capture Current Repo Candidates and Baselines
 
@@ -21,7 +21,7 @@ After C1 freezes exact datasets, snapshots, mappings, request accounting, and ar
 
 ## Approval gate
 
-Blocked pending resolution and rehash of the frozen Buoy insufficiency, verification of a compatible Buoy baseline, and this exact checkpoint with filled values:
+The ratified Buoy judgment removal and rehash are complete. C3 remains blocked pending verification of a compatible Buoy baseline and this exact checkpoint with filled values:
 
 > Approve one retrieval-only raw-candidate pass for the 90 frozen composite `repo_key:case_id` identities across `<exact namespace/commit map>`, with separate ANN and BM25 lists, `<predicted request count/cost bound>`, zero writes/deletes/catalog changes, and one immutable cache shared by C7/C8?
 
@@ -40,7 +40,7 @@ Approval provenance; exact request count; proof that the cache/schema contains a
 
 ## Blockers
 
-- C1 is complete, but its frozen contract marks Buoy insufficient. The ratified internal-judgment removal/rehash is pending under `.10x/tickets/2026-07-20-remove-buoy-internal-ranking-judgment.md`, and the proposed Buoy baseline remains unapproved and unverified.
+- The ratified internal-judgment removal/rehash is complete under `.10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md`, and all remaining paths resolve. Buoy remains `insufficient` because the proposed baseline is still `pending_approval` and its contents/model compatibility are unverified.
 - The required retrieval-only approval has not been granted.
 
 ## Explicit exclusions
@@ -51,7 +51,7 @@ Namespace writes/deletes; candidate re-indexing; source/tests implementation bef
 
 - `.10x/research/2026-07-19-repo-search-heavy-ranking-experiment-decomposition.md`
 - `.10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md`
-- `.10x/tickets/2026-07-20-remove-buoy-internal-ranking-judgment.md`
+- `.10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md`
 - `.10x/specs/repo-search-eval-autoresearch.md`
 
 ## Progress and notes
@@ -59,3 +59,4 @@ Namespace writes/deletes; candidate re-indexing; source/tests implementation bef
 - 2026-07-19: Opened blocked. No credentials, live calls, cache artifacts, source, or tests were created during decomposition.
 - 2026-07-20: Clarified that retrieval and cache identity use all 90 composite `repo_key:case_id` values while preserving dataset-local IDs and labels.
 - 2026-07-20: C1 closed with Buoy explicitly insufficient. C3 remains blocked on the separate ratified label-removal/rehash owner, a compatible Buoy baseline, and the exact retrieval-only approval; no call or remote operation was authorized.
+- 2026-07-20: The separate judgment-removal/rehash owner closed after independent review at `ac9bb34`; all 369 remaining paths resolve. Buoy still lacks an approved, verified compatible baseline, and the retrieval-only checkpoint remains unapproved, so C3 stays blocked with no call or remote operation.

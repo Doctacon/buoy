@@ -2,7 +2,7 @@ Status: blocked
 Created: 2026-07-19
 Updated: 2026-07-20
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
-Depends-On: .10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/2026-07-20-remove-buoy-internal-ranking-judgment.md, .10x/tickets/done/2026-07-19-research-code-aware-embedding-candidate.md
+Depends-On: .10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md, .10x/tickets/done/2026-07-19-research-code-aware-embedding-candidate.md
 
 # C4: Evaluate Code-Aware Embedding Pilot
 
@@ -47,7 +47,7 @@ Approval provenance, pinned model/license contract, local plans/preflights, exac
 
 - C2 is complete and found no credible native 384-dimensional code-aware candidate satisfying the open-source/local/SentenceTransformer/no-remote-code boundary. Its 3,584-dimensional primary and 768-dimensional fallback remain decision candidates only, so C4 is stopped under its existing condition.
 - The user's approval to shape dynamic content-vector dimensions is separately owned by `.10x/tickets/2026-07-20-shape-dynamic-content-vector-dimensions.md`. It does not supersede this ticket, make either candidate C4-compatible, or authorize C4 execution.
-- C1 is complete, but Buoy remains insufficient pending the separately owned judgment removal/rehash and a compatible same-source baseline.
+- The separately owned Buoy judgment removal/rehash is complete, but Buoy remains insufficient pending an approved and verified compatible same-source baseline.
 - No model/download/resource/new-namespace approval exists.
 
 ## Explicit exclusions
@@ -58,7 +58,7 @@ Dynamic vector dimensions; default model/ranking changes; routing/catalog migrat
 
 - `.10x/research/2026-07-19-repo-search-heavy-ranking-experiment-decomposition.md`
 - `.10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md`
-- `.10x/tickets/2026-07-20-remove-buoy-internal-ranking-judgment.md`
+- `.10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md`
 - `.10x/tickets/done/2026-07-19-research-code-aware-embedding-candidate.md`
 - `.10x/research/2026-07-19-code-aware-embedding-candidate.md`
 - `.10x/evidence/2026-07-19-code-aware-embedding-feasibility-research.md`
@@ -73,3 +73,4 @@ Dynamic vector dimensions; default model/ranking changes; routing/catalog migrat
 - 2026-07-20: C1 closed with Buoy explicitly insufficient. C4 remains blocked on the separate Buoy correction/baseline work, C2, and exact model/resource/write approval; no download or namespace operation was authorized.
 - 2026-07-20: C2's repaired complete 14-model screen passed independent review at `7ec84b6` and closed with no credible native 384-dimensional candidate. C4 remains blocked and stopped; Nomic at 3,584 dimensions and Crow-Plus at 768 dimensions cannot enter this ticket.
 - 2026-07-20: The user explicitly approved separate dynamic content-vector dimension shaping. That open shaping owner does not unblock or widen C4, activate behavior, approve a model, or authorize downloads, source changes, model loading, inference, namespace/card/catalog writes, or defaults.
+- 2026-07-20: The separate Buoy judgment-removal/rehash owner closed after review, but baseline approval/compatibility remains unresolved. C4 also remains stopped on C2's native 384-dimensional condition; dynamic-dimension shaping ownership is unchanged.

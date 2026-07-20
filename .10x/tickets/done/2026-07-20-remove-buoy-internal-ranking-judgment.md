@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-07-20
 Updated: 2026-07-20
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
@@ -35,7 +35,7 @@ A semantic before/after proving only the named judgment changed; regenerated cou
 
 ## Blockers
 
-None for a future bounded implementation. This follow-up was intentionally not executed or rehashed during C1 closure.
+None for closure. Buoy baseline approval/compatibility and C3 retrieval approval remain downstream blockers, not unfinished scope in this ticket.
 
 ## Explicit exclusions
 
@@ -48,6 +48,7 @@ Any other label edit or review; treating assistant-drafted labels as human groun
 - `.10x/reviews/2026-07-20-repo-ranking-experiment-contract-freeze-review.md`
 - `.10x/specs/repo-search-eval-autoresearch.md`
 - `.10x/evidence/2026-07-20-remove-buoy-internal-ranking-judgment.md`
+- `.10x/reviews/2026-07-20-remove-buoy-internal-ranking-judgment-review.md`
 
 ## Progress and notes
 
@@ -55,3 +56,24 @@ Any other label edit or review; treating assistant-drafted labels as human groun
 - 2026-07-20: Removed exactly the ratified grade-1 judgment and its stale ideal-fixture hit. Mechanically regenerated the Buoy count/hash (32), all-repository count (369), dataset bundle hash, inventory payload/whole-file hashes, path-membership fields, validator expectation, and focused regression coverage. Semantic comparison proved the revised Buoy JSON equals the prior JSON after only that exact object is removed, while all 12 other datasets remain byte-identical. Every remaining path resolves, but Buoy remains `insufficient` and `pending_approval`; C3+ stays blocked. Python 3.11/3.13 validators, 5 focused tests, 446 full tests, CI-equivalent locked environments, distribution builds, and diff hygiene passed. No namespace, catalog, model, credential, provider, retrieval, or remote domain state was read or mutated. Ticket remains active pending independent review; do not merge or close.
 - 2026-07-20: Pushed `work/remove-buoy-ranking-judgment` and opened PR #60 against `develop` for the required independent review. The branch incorporated current `origin/develop` before handoff. Ticket remains active; PR must not be merged before review.
 - 2026-07-20: PR #60 hosted Python 3.11, Python 3.13, and distribution-build checks passed. Independent review remains the only ticket gate; no merge or closure occurred.
+- 2026-07-20: Independent review passed the seven-file semantic change at PR #60 head `ac9bb34549a0bc172ad01a60f6d94512b48a9052` with no blockers. Incorporated current `origin/develop` `72d1344` and limited reconciliation to record ownership/status/reference updates, preserving completed C2 and dynamic-dimension shaping ownership. Closed this ticket without merging PR #60 or unblocking C3.
+
+## Closure mapping
+
+- Exact removal: the semantic before/after comparison proves only the ratified grade-1 judgment was removed; all 12 other datasets are byte-identical, and the matching fixture-only ideal hit is the only fixture change.
+- Counts and hashes: the validator independently reproduces 13 datasets, 90 composite identities, 369 judgments, the regenerated Buoy/dataset-bundle/inventory hashes, and the unchanged source-path bundle hash.
+- Path and baseline state: all 369 remaining paths resolve, while Buoy remains `insufficient` and `pending_approval`; no baseline contents or model compatibility were inferred.
+- Downstream isolation: C3 remains blocked on Buoy baseline approval/compatibility and exact retrieval-only approval; C7/C8 keep their independent threshold gates; C2 and dynamic-dimension shaping ownership remain unchanged.
+- Verification and review: focused/full Python 3.11/3.13 validation, CI-equivalent checks, distribution builds, exact-head hosted CI, diff hygiene, and the independent PASS review support closure.
+- Safety: evidence records that no namespace, catalog, model, credential, provider, retrieval, or remote domain operation occurred.
+
+## Retrospective
+
+A ratified label correction must be treated as a contract revision, not as evidence that its source corpus or baseline is usable. Mechanically regenerating every derived hash and retaining an explicit insufficiency state prevents path completeness from silently laundering an unapproved baseline into experiment eligibility. A focused regression asserting both the removed path and continued `pending_approval` state makes that boundary durable.
+
+## Residual
+
+- Buoy remains insufficient until the proposed 903-row same-source baseline is separately approved, populated, and verified for source/model compatibility.
+- C3 remains blocked on that baseline and the exact retrieval-only approval; C7/C8 retain separate user-ratified threshold gates.
+- The remaining seed labels are assistant-drafted experiment evidence, not human-approved product ground truth.
+- PR #60 remains open and must not be merged by this task.

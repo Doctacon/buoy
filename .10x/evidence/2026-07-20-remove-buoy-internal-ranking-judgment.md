@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-20
 Updated: 2026-07-20
-Relates-To: .10x/tickets/2026-07-20-remove-buoy-internal-ranking-judgment.md, .10x/specs/repo-search-eval-autoresearch.md, .10x/evidence/2026-07-20-repo-ranking-experiment-contract-freeze.md
+Relates-To: .10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md, .10x/specs/repo-search-eval-autoresearch.md, .10x/evidence/2026-07-20-repo-ranking-experiment-contract-freeze.md, .10x/reviews/2026-07-20-remove-buoy-internal-ranking-judgment-review.md
 
 # Remove Ratified Internal Buoy Ranking Judgment
 
@@ -61,6 +61,7 @@ Validation results:
 - Python 3.13: validator passed; 5 focused contract tests passed; 446 full tests passed.
 - CI-equivalent locked syncs passed on both interpreters; wheel and source distribution built successfully.
 - PR #60 hosted checks passed: Python 3.11, Python 3.13, and Build distributions.
+- After incorporating `origin/develop` `72d1344`, final closure reruns passed on Python 3.11 and 3.13: validator, 5 focused contract tests, and 446 full tests on each interpreter. Recomputed file hashes and semantic comparison exactly matched the values above.
 - `git diff --check` passed.
 
 The first Python 3.11 full-suite attempt correctly exposed that the sample ideal fixture still returned the removed internal path and scored `99.66666666666666` instead of `100.0`. Removing only that stale fixture hit restored the fixture's stated all-relevant-hits behavior; both complete reruns then passed.
@@ -69,4 +70,4 @@ The first Python 3.11 full-suite attempt correctly exposed that the sample ideal
 
 All validation was local. No namespace, catalog, model, credential, provider, retrieval, or remote state was read or mutated. No model was loaded or downloaded. No retrieval/provider/live namespace query ran. No namespace/catalog/default write or delete occurred.
 
-This evidence proves the checked-in dataset, contract hashes, local path membership, and test outcomes. It does not approve, create, populate, inspect, or verify `github-doctacon-buoy-search-v1`; does not establish Buoy model/corpus compatibility; and does not unblock C3 or dependent work. Independent review is still required before the active ticket can close.
+This evidence proves the checked-in dataset, contract hashes, local path membership, and test outcomes. It does not approve, create, populate, inspect, or verify `github-doctacon-buoy-search-v1`; does not establish Buoy model/corpus compatibility; and does not unblock C3 or dependent work. Independent review passed the seven-file semantic change at PR #60 head `ac9bb34549a0bc172ad01a60f6d94512b48a9052` with the residuals recorded in `.10x/reviews/2026-07-20-remove-buoy-internal-ranking-judgment-review.md`.
