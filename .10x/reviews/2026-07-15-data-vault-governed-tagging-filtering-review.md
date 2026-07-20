@@ -1,6 +1,6 @@
 Status: recorded
 Created: 2026-07-15
-Updated: 2026-07-15
+Updated: 2026-07-19
 Target: commit `a1680819583a8d3e0a0ed7dabcbfa9350875bfe7`; `.10x/research/2026-07-15-data-vault-governed-tagging-filtering.md`
 Verdict: concerns
 
@@ -12,7 +12,7 @@ Independently reviewed commit `a168081` against:
 
 - `.10x/tickets/done/2026-07-15-research-data-vault-governed-tagging-filtering.md`
 - `.10x/tickets/done/2026-07-15-semantic-retrieval-research-plan.md`
-- `.10x/tickets/2026-07-15-reconcile-retrieval-tag-output.md`
+- `.10x/tickets/done/2026-07-15-reconcile-retrieval-tag-output.md`
 - the active retrieval specification, preliminary research, current Buoy tagging/schema/retrieval/diff/apply source, and relevant tests
 - official Chief, RAGFlow, Cognee, Turbopuffer, SKOS, DataHub, OpenMetadata, and Databricks/Data Vault comparison pages cited by the research
 

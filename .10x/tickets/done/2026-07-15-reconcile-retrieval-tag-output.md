@@ -1,6 +1,6 @@
-Status: blocked
+Status: done
 Created: 2026-07-15
-Updated: 2026-07-15
+Updated: 2026-07-19
 Parent: None
 Depends-On: None
 
@@ -48,8 +48,21 @@ Record the ratified behavior, focused unit tests, single- and multi-namespace ou
 
 ## Blockers
 
-The intended public behavior is unclear. Current source proves tags are stored but not returned; documentation claims they are returned; the active retrieval specification does not settle tag output or filtering.
+None. On 2026-07-19 the user ratified output-only behavior: existing automatic chunk tags are returned in JSON and conditionally shown in text, no tag filtering is added, single/multi output is consistent, and missing-tag schema fallback preserves existing `repo_path` portability.
 
 ## Progress and notes
 
 - 2026-07-15: Drift discovered during metadata/tagging/knowledge-graph research. Repository search found no existing active or terminal ticket owning retrieval tag output/filtering. No implementation or live operation occurred.
+- 2026-07-19: User ratified the exact output decision: every live JSON hit has ordered `tags` as a list (empty when absent/unavailable); text shows only non-empty tags; no tag filter or ranking behavior is added; single/multi namespace hits are consistent; and bounded missing-attribute fallback supports old schemas without weakening `repo_path` portability.
+- 2026-07-19: Inspected current `SearchHit` serialization, text rendering, raw/grouped hit construction, single/multi result shapes, existing missing-`repo_path` retry, active multi-namespace specification, focused tests, and documentation drift.
+- 2026-07-19: Activated `.10x/specs/retrieval-tag-output.md` and opened bounded executable child `.10x/tickets/2026-07-19-return-retrieval-tags.md`. The child is review-ready with focused test/evidence expectations and no unresolved semantic blocker. No source, user documentation, tests, live operation, remote resource, or product behavior changed in this shaping turn.
+
+## Closure mapping
+
+- Ratified behavior and single/multi compatibility: `.10x/specs/retrieval-tag-output.md`.
+- Bounded implementation, test, documentation, evidence, and review owner: `.10x/tickets/2026-07-19-return-retrieval-tags.md`.
+- Historical drift and original blocker remain preserved above.
+
+## Retrospective
+
+Separating tag output from filtering avoids inventing filter grammar or ranking semantics. Treating `tags` and `repo_path` as independently optional retrieval attributes makes the old-schema compatibility requirement explicit without allowing unrelated provider failures to fall through.

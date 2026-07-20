@@ -1,6 +1,6 @@
 Status: superseded
 Created: 2026-07-15
-Updated: 2026-07-15
+Updated: 2026-07-19
 
 # Controlled Taxonomy Pilot
 
@@ -13,7 +13,7 @@ Superseded on 2026-07-15 by `.10x/specs/representative-semantic-namespace-routin
 
 Define a small, flat, local taxonomy and deterministic phrase matcher for a synthetic namespace-routing pilot. This contract does not ratify production taxonomy content, public tag behavior, hierarchy, ontology, or automatic tagging.
 
-The existing retrieval-tag output drift remains owned by `.10x/tickets/2026-07-15-reconcile-retrieval-tag-output.md`.
+The existing retrieval-tag output drift remains owned by `.10x/tickets/done/2026-07-15-reconcile-retrieval-tag-output.md`.
 
 ## Assumption provenance
 

@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-14
-Updated: 2026-07-18
+Updated: 2026-07-19
 
 # Explicit Multi-Namespace Retrieval
 
@@ -40,6 +40,7 @@ Remove the silent demo-namespace retrieval fallback and allow an operator to sea
 - Existing single-namespace text and JSON fields MUST remain compatible.
 - Multi-namespace output MUST use an explicit multi-namespace result shape rather than placing a misleading first namespace in the existing singular `namespace` field.
 - Schema changes for the new multi-namespace invocation are additive to individual hit data and documented.
+- Per-hit tag JSON/text behavior and old-schema fallback are governed by `.10x/specs/retrieval-tag-output.md` and MUST remain identical between single- and multi-namespace results.
 
 ## Acceptance scenarios
 

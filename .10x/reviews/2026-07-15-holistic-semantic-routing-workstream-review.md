@@ -1,6 +1,6 @@
 Status: recorded
 Created: 2026-07-15
-Updated: 2026-07-15
+Updated: 2026-07-19
 Target: semantic metadata/tagging/catalog/graph workstream through `develop` commit `78f2c0f1866383ef6eb4d74c44e81e594b33f873`
 Verdict: concerns
 
@@ -98,7 +98,7 @@ The new plan correctly requires reuse of `cross_namespace_rrf`, but it does not 
 
 ### Significant — The most immediate “tagging” defect remains unresolved
 
-Buoy stores `tags: []string` (`src/buoy_search/chunker.py:57-70`; `src/buoy_search/plan_artifacts.py:444-482`), while retrieval does not request or expose them and the documentation says it does (`docs/retrieval.md:54`). The drift is correctly owned by `.10x/tickets/2026-07-15-reconcile-retrieval-tag-output.md`.
+Buoy stores `tags: []string` (`src/buoy_search/chunker.py:57-70`; `src/buoy_search/plan_artifacts.py:444-482`), while retrieval does not request or expose them and the documentation says it does (`docs/retrieval.md:54`). The drift is correctly owned by `.10x/tickets/done/2026-07-15-reconcile-retrieval-tag-output.md`.
 
 The taxonomy pilot intentionally avoids public tag behavior. That separation is safe, but it means the first implementation does not improve the currently observable tagging surface.
 

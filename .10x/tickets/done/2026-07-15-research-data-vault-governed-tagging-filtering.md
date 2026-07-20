@@ -1,6 +1,6 @@
 Status: done
 Created: 2026-07-15
-Updated: 2026-07-15
+Updated: 2026-07-19
 Parent: .10x/tickets/done/2026-07-15-semantic-retrieval-research-plan.md
 Depends-On: None
 
@@ -33,7 +33,7 @@ Execute in branch `work/research-data-vault-tagging` in its own worktree based o
 
 ## Explicit exclusions
 
-- Implementing retrieval tag output/filtering, resolving `.10x/tickets/2026-07-15-reconcile-retrieval-tag-output.md`, or changing public behavior.
+- Implementing retrieval tag output/filtering, resolving `.10x/tickets/done/2026-07-15-reconcile-retrieval-tag-output.md`, or changing public behavior.
 - Treating LLM-inferred tags as Data Vault authority.
 - Live Turbopuffer operations or proprietary-only taxonomy services.
 

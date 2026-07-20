@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-15
-Updated: 2026-07-15
+Updated: 2026-07-19
 
 # Metadata, Tagging, Knowledge Graphs, and a Cross-Namespace Data Vault
 
@@ -97,7 +97,7 @@ Current Buoy schema in `src/buoy_search/chunker.py` includes:
 
 Current tags are not semantic concepts. `derive_doc_kind_and_tags()` deterministically derives them from document kind and the first URL/path segments. They are useful structural labels, not entity extraction or an ontology.
 
-Current retrieval filters only on `doc_kind`. `RETRIEVAL_ATTRIBUTES` does not request `tags`, and `SearchHit` has no tag field, even though `docs/retrieval.md` says live results include tags. This source/documentation drift is separately owned by `.10x/tickets/2026-07-15-reconcile-retrieval-tag-output.md`.
+Current retrieval filters only on `doc_kind`. `RETRIEVAL_ATTRIBUTES` does not request `tags`, and `SearchHit` has no tag field, even though `docs/retrieval.md` says live results include tags. Shaping for this source/documentation drift completed in `.10x/tickets/done/2026-07-15-reconcile-retrieval-tag-output.md`; `.10x/specs/retrieval-tag-output.md` governs the ratified output-only behavior and `.10x/tickets/2026-07-19-return-retrieval-tags.md` owns implementation.
 
 ### 3. “Tagging” describes at least four materially different layers
 

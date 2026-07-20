@@ -1,6 +1,6 @@
 Status: done
 Created: 2026-07-15
-Updated: 2026-07-15
+Updated: 2026-07-19
 
 # Data Vault Governed Tagging and Filtering
 
@@ -14,7 +14,7 @@ Retain this record's findings on structural versus governed versus inferred tags
 
 How should Buoy classify, govern, project, filter, and optionally boost tags over namespaces, sources, documents, and chunks while preserving Data Vault 2.0 authority and history, source provenance, deletion semantics, and authorization boundaries?
 
-This record is research, not a product contract. In particular, it does **not** decide whether Buoy's public retrieval output should return tags or whether its CLI should accept tag filters. That behavior remains blocked in `.10x/tickets/2026-07-15-reconcile-retrieval-tag-output.md`.
+This record is research, not a product contract. At research time it did **not** decide whether Buoy's public retrieval output should return tags or whether its CLI should accept tag filters; that shaping history is preserved in `.10x/tickets/done/2026-07-15-reconcile-retrieval-tag-output.md`. The later ratified output-only contract is `.10x/specs/retrieval-tag-output.md`, with implementation owned by `.10x/tickets/2026-07-19-return-retrieval-tags.md`; tag filtering remains explicitly excluded.
 
 ## Sources and methods
 
@@ -24,7 +24,7 @@ Research was performed on 2026-07-15. Official documentation and current local s
 
 - `.10x/tickets/done/2026-07-15-research-data-vault-governed-tagging-filtering.md`
 - `.10x/tickets/done/2026-07-15-semantic-retrieval-research-plan.md`
-- `.10x/tickets/2026-07-15-reconcile-retrieval-tag-output.md`
+- `.10x/tickets/done/2026-07-15-reconcile-retrieval-tag-output.md`
 - `.10x/research/2026-07-15-metadata-tagging-graphs-and-data-vault.md`
 - `.10x/specs/explicit-multi-namespace-retrieval.md`
 - `.10x/specs/turbopuffer-namespace-discovery.md`
@@ -468,7 +468,7 @@ Research can proceed without blockers, but implementation remains blocked on:
 - controlled taxonomy scope, initial terms, hierarchy behavior, and version/publishing workflow;
 - target granularity and inheritance rules for namespace/source/document/chunk assignments;
 - exact filter grammar, boost policy/weight, and missing-schema behavior;
-- public retrieval output and filter compatibility owned by `.10x/tickets/2026-07-15-reconcile-retrieval-tag-output.md`;
+- broader governed tag-filter compatibility remains unratified; the separately ratified output-only slice is governed by `.10x/specs/retrieval-tag-output.md` and owned by `.10x/tickets/2026-07-19-return-retrieval-tags.md`;
 - ACL source of truth, public/empty semantics ratification, revocation SLO, and multi-namespace policy compatibility;
 - whether retained-stale remote rows are searchable and how tag/ACL corrections reach them;
 - quantitative promotion thresholds and operating budget;
