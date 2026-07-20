@@ -60,6 +60,7 @@ Validation results:
 - Python 3.11: validator passed; 5 focused contract tests passed; 446 full tests passed.
 - Python 3.13: validator passed; 5 focused contract tests passed; 446 full tests passed.
 - CI-equivalent locked syncs passed on both interpreters; wheel and source distribution built successfully.
+- PR #60 hosted checks passed: Python 3.11, Python 3.13, and Build distributions.
 - `git diff --check` passed.
 
 The first Python 3.11 full-suite attempt correctly exposed that the sample ideal fixture still returned the removed internal path and scored `99.66666666666666` instead of `100.0`. Removing only that stale fixture hit restored the fixture's stated all-relevant-hits behavior; both complete reruns then passed.
