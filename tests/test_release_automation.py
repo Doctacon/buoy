@@ -147,8 +147,9 @@ class ReleaseAutomationTests(unittest.TestCase):
         self.assertIn("Programming Language :: Python :: 3.13", project["classifiers"])
         self.assertIn("vector-search", project["keywords"])
         with (ROOT / "pyproject.toml").open("rb") as handle:
-            build_system = tomllib.load(handle)["build-system"]
-        self.assertEqual(build_system["requires"], ["hatchling==1.31.0"])
+            config = tomllib.load(handle)
+        self.assertEqual(config["build-system"]["requires"], ["hatchling==1.31.0"])
+        self.assertEqual(config["tool"]["hatch"]["build"]["exclude"], ["/.10x/**"])
 
     def test_changelog_records_pending_and_verified_releases(self) -> None:
         changelog = (ROOT / "CHANGELOG.md").read_text()
