@@ -2,7 +2,7 @@ Status: blocked
 Created: 2026-07-19
 Updated: 2026-07-20
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
-Depends-On: .10x/tickets/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/2026-07-19-capture-current-repo-candidates-and-baselines.md
+Depends-On: .10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/2026-07-19-capture-current-repo-candidates-and-baselines.md
 
 # C7: Evaluate Lightweight Learning to Rank
 
@@ -45,7 +45,7 @@ Threshold ratification provenance; cache/hash and 90-composite-identity provenan
 
 ## Blockers
 
-- C1 and C3 are incomplete.
+- C1 is complete with Buoy explicitly insufficient; C3 remains blocked and incomplete.
 - The definition of a material weight and exact sign/order stability thresholds are not pre-registered or user-ratified.
 - C1 cannot infer these values or make C7 executable. The labels remain assistant-drafted and non-product-ratifying.
 
@@ -56,7 +56,7 @@ Live calls/writes; label review/editing; repository identity features; productio
 ## References
 
 - `.10x/research/2026-07-19-repo-search-heavy-ranking-experiment-decomposition.md`
-- `.10x/tickets/2026-07-19-freeze-repo-ranking-experiment-contract.md`
+- `.10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md`
 - `.10x/tickets/2026-07-19-capture-current-repo-candidates-and-baselines.md`
 - `.10x/decisions/repo-ranking-promotion-policy.md`
 
@@ -64,3 +64,4 @@ Live calls/writes; label review/editing; repository identity features; productio
 
 - 2026-07-19: Opened as an offline dependency-gated child. No features, labels, model weights, cache, source, tests, or product behavior were created.
 - 2026-07-20: Marked explicitly blocked because material-weight/sign/order thresholds were never pre-registered or user-ratified; C1 completion alone cannot activate this child.
+- 2026-07-20: C1 closed with Buoy explicitly insufficient. C7 remains blocked on C3 and its independent threshold ratification; no fitting or scoring was authorized.

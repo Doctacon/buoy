@@ -24,17 +24,19 @@ The known broad basket is 13 repositories and 90 unique composite `repo_key:case
 
 ## Child graph and sequence
 
-1. **C1 — executable local contract freeze:** `.10x/tickets/2026-07-19-freeze-repo-ranking-experiment-contract.md`
+1. **C1 — done; contract frozen with Buoy explicitly insufficient:** `.10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md`
 2. **C2 — executable read-only model research, parallel with C1:** `.10x/tickets/2026-07-19-research-code-aware-embedding-candidate.md`
-3. **C3 — blocked live retrieval-only shared capture after C1:** `.10x/tickets/2026-07-19-capture-current-repo-candidates-and-baselines.md`
-4. **C4 — blocked model/download/new-namespace pilot after C1+C2:** `.10x/tickets/2026-07-19-evaluate-code-aware-embedding-pilot.md`
-5. **C5 — local syntax implementation, blocked pending C1 and a ratified active focused syntax spec:** `.10x/tickets/2026-07-19-implement-opt-in-python-syntax-chunking.md`
+3. **C3 — blocked live retrieval-only shared capture after the C1 follow-up, Buoy baseline compatibility, and exact approval:** `.10x/tickets/2026-07-19-capture-current-repo-candidates-and-baselines.md`
+4. **C4 — blocked model/download/new-namespace pilot after C1+C2 and Buoy repair:** `.10x/tickets/2026-07-19-evaluate-code-aware-embedding-pilot.md`
+5. **C5 — local syntax implementation, blocked pending a ratified active focused syntax spec:** `.10x/tickets/2026-07-19-implement-opt-in-python-syntax-chunking.md`
 6. **C6 — blocked live syntax evaluation after C5 and exact write approval:** `.10x/tickets/2026-07-19-evaluate-python-syntax-chunking.md`
-7. **C7 — blocked offline held-out ranker after C1+C3 and user-ratified material-weight/sign/order thresholds:** `.10x/tickets/2026-07-19-evaluate-lightweight-learning-to-rank.md`
-8. **C8 — blocked offline routed-profile reproduction/generalization after C1+C3 and a user-ratified oracle-gap measure/threshold:** `.10x/tickets/2026-07-19-reproduce-and-generalize-routed-profile-selection.md`
+7. **C7 — blocked offline held-out ranker after C3 and user-ratified material-weight/sign/order thresholds:** `.10x/tickets/2026-07-19-evaluate-lightweight-learning-to-rank.md`
+8. **C8 — blocked offline routed-profile reproduction/generalization after C3 and a user-ratified oracle-gap measure/threshold:** `.10x/tickets/2026-07-19-reproduce-and-generalize-routed-profile-selection.md`
 9. **C9 — blocked productization after C8 and product ratification:** `.10x/tickets/2026-07-19-productize-routed-ranking-profile.md`
 
-C1 and C2 may run in parallel. C4 and eventual local C5 may proceed independently after their gates. C7 and C8 share the exact immutable C3 cache and MUST NOT issue duplicate retrieval calls, but both remain blocked after C1/C3 until their distinct experiment thresholds are pre-registered and user-ratified. C1 may freeze the shared contract but MUST NOT invent those thresholds or make C7/C8 executable. C9 remains blocked and has no active product spec until C8 plus the user checkpoint.
+Separate pending follow-up owner (not a new C-number): `.10x/tickets/2026-07-20-remove-buoy-internal-ranking-judgment.md`.
+
+C1 is complete with the frozen outcome `contract frozen; Buoy insufficient; C3+ remains blocked`. The subsequent exact Buoy label-removal ratification is owned separately and does not alter contract v1 until implemented and rehashed. C4 and eventual local C5 may proceed only after their remaining gates. C7 and C8 share the exact immutable C3 cache and MUST NOT issue duplicate retrieval calls, but both remain blocked after C3 until their distinct experiment thresholds are pre-registered and user-ratified. C1 did not invent those thresholds or make C7/C8 executable. C9 remains blocked and has no active product spec until C8 plus the user checkpoint.
 
 ## Aggregate acceptance criteria
 
@@ -75,7 +77,7 @@ C4, C6, C7, and C8 must each have evidence-backed terminal disposition or explic
 
 ## Blockers
 
-The parent is intentionally non-executable. Current child blockers are recorded on C3, C4, C5, C6, C7, C8, and C9. C1 and C2 are the only immediately executable children. C7/C8 are blocked both on dependencies and on distinct pre-registered user-ratified thresholds; C1 cannot supply or infer those thresholds.
+The parent is intentionally non-executable. C1 is done, and current blockers remain recorded on the open C1 label-removal follow-up and C3-C9. Contract v1 keeps Click path-complete and Buoy insufficient on one intentionally excluded internal path; the exact proposed 903-row same-source baseline namespace write remains separately approval-gated. The ratified future removal of only that grade-1 internal judgment is not yet implemented or rehashed and will not by itself establish Buoy baseline sufficiency. C7/C8 are also blocked on distinct pre-registered user-ratified thresholds; C1 cannot supply or infer those thresholds.
 
 ## Explicit exclusions
 
@@ -138,6 +140,8 @@ Reopening completed reranker/metadata/aggregation/ranking-grid work; source/test
 - 2026-07-19: Closure review confirmed that the extensive completed experiments are well evidenced and current promoted defaults remain coherent with `.10x/decisions/namespace-ranking-defaults.md` and `.10x/decisions/repo-ranking-promotion-policy.md`. Closure is nevertheless unsupported because named heavy hypotheses remain unevaluated and the latest routed portfolio is not productized. The ticket remains active; no completed experiment was reclassified as failed implementation. Review: `.10x/reviews/2026-07-19-stale-ticket-status-closure-review.md`.
 - 2026-07-19: Decomposed this umbrella into the non-executable C1-C9 graph. Only C1 local contract freeze and C2 read-only research are immediately executable; C3/C4/C5/C6/C9 retain explicit gates, and C7/C8 share one dependency-gated offline cache. No completed history, labels, model, budget, syntax/product semantics, live operation, write, default, or promotion was changed. Research: `.10x/research/2026-07-19-repo-search-heavy-ranking-experiment-decomposition.md`.
 - 2026-07-20: Repaired PR #56 review blockers: case uniqueness is composite `repo_key:case_id` while local IDs/labels remain intact; the three-repo rule is experiment escalation only; and C7/C8 are explicitly blocked on user-ratified pre-registered thresholds that C1 cannot invent.
+- 2026-07-20: C1 PR #59 repair checked in deterministic source-path authority plus automated validation, made Click path-complete on its existing compatible v4 corpus, and froze current post-rebrand Buoy at 64 selected paths/903 proposed baseline rows. One internal Buoy judgment is outside the public corpus and `github-doctacon-buoy-search-v1` requires a separate write approval. No labels or remote state changed.
+- 2026-07-20: Independent review passed C1 head `2d11a2e`; C1 moved to done with outcome `contract frozen; Buoy insufficient; C3+ remains blocked`. The user's later ratification to remove only the grade-1 internal `.10x` judgment is recorded in `.10x/tickets/2026-07-20-remove-buoy-internal-ranking-judgment.md`. No dataset/hash was changed and no downstream child was unblocked by closure.
 
 ## Closure note
 

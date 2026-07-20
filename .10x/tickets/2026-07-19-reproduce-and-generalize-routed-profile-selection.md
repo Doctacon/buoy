@@ -2,7 +2,7 @@ Status: blocked
 Created: 2026-07-19
 Updated: 2026-07-20
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
-Depends-On: .10x/tickets/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/2026-07-19-capture-current-repo-candidates-and-baselines.md
+Depends-On: .10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/2026-07-19-capture-current-repo-candidates-and-baselines.md
 
 # C8: Reproduce and Generalize Routed Profile Selection
 
@@ -37,7 +37,7 @@ Threshold ratification provenance; cache/hash and 90-composite-identity provenan
 
 ## Blockers
 
-- C1 and C3 are incomplete.
+- C1 is complete with Buoy explicitly insufficient; C3 remains blocked and incomplete.
 - The oracle-gap measure and exact minimum materially-closed threshold are not pre-registered or user-ratified.
 - C1 cannot infer these values or make C8 executable. Product semantics remain intentionally deferred to C9.
 
@@ -57,3 +57,4 @@ Live calls/writes; source/product implementation; static benchmark map as genera
 
 - 2026-07-19: Opened as an offline dependency-gated child. No selector semantics, profile surface, cache, source, tests, live operations, or promotion were created.
 - 2026-07-20: Marked explicitly blocked because an oracle-gap measure/threshold was never pre-registered or user-ratified; C1 completion alone cannot activate this child.
+- 2026-07-20: C1 closed with Buoy explicitly insufficient. C8 remains blocked on C3 and its independent oracle-gap ratification; no selector scoring was authorized.

@@ -1,4 +1,4 @@
-Status: open
+Status: done
 Created: 2026-07-19
 Updated: 2026-07-20
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
@@ -41,9 +41,13 @@ The paired baseline for an index-changing experiment MUST be the current promote
 
 A durable contract/evidence record containing the dataset/manifest inventory and hashes, all 90 composite identities plus preserved local IDs, 13-repo mapping, folds, correctly attributed experiment-escalation and promotion gates, artifact/cache schema, validation commands/output, explicit insufficient repositories if any, explicit unresolved C7/C8 thresholds, and confirmation that all work was local/read-only.
 
+## Outcome
+
+Contract frozen; Buoy insufficient; C3+ remains blocked.
+
 ## Blockers
 
-None. This is the first executable child and is record/local-inspection only.
+None for C1 closure. The frozen contract records Buoy's insufficiency rather than silently repairing or excluding it. Downstream blockers and the separately ratified label-removal follow-up remain owned outside this completed ticket.
 
 ## Explicit exclusions
 
@@ -60,3 +64,27 @@ Label edits or review; candidate retrieval; model research or selection; generat
 
 - 2026-07-19: Opened as the executable contract-freeze prerequisite. No freeze work was performed during decomposition.
 - 2026-07-20: Clarified composite case identity, label preservation, pilot-gate attribution, and the boundary that C1 cannot ratify or unblock C7/C8 experiment thresholds.
+- 2026-07-20: Executed the local/read-only freeze. All 13 datasets load as 90 unique composite identities with unchanged local IDs and 370 judgments; hashes, mappings, folds, metrics, gates, and raw artifact/cache rules are frozen in `.10x/evidence/2026-07-20-repo-ranking-experiment-contract-freeze.md` and its storage inventory. Manifest validation resolved 341 paths but found 22 Buoy and 7 Click paths absent, marking only those repositories insufficient and blocking C3+. No credentials, models, live calls, namespace operations, or label edits occurred. Ticket remains active pending independent review.
+- 2026-07-20: Repaired PR #59 review blockers. Checked in a 1.3 MB deterministic source-path bundle instead of 347 MB crawl artifacts; added a standard-library validator, focused tests, and CI invocation; reconciled the exact namespace pattern and `selected_corpus_artifact_hash` field; re-pinned Click only after verifying its existing v4 commit/corpus covers 36/36 judgments; and generated a current public-source post-rebrand Buoy plan at `fcb7abb` selecting 64 paths/903 rows. Buoy still misses the intentionally excluded internal `.10x` judgment and its exact proposed `github-doctacon-buoy-search-v1` 903-row baseline write remains pending separate approval. No labels, credentials, models, retrieval calls, namespaces, or catalogs changed.
+- 2026-07-20: Independent review passed PR #59 head `2d11a2e` with no blockers: `.10x/reviews/2026-07-20-repo-ranking-experiment-contract-freeze-review.md`. Closed C1 with the explicit outcome `contract frozen; Buoy insufficient; C3+ remains blocked`. The user's subsequent ratification to remove only the grade-1 internal Buoy `.10x` judgment is recorded separately in `.10x/tickets/2026-07-20-remove-buoy-internal-ranking-judgment.md`; no dataset or hash changed during this closure.
+- 2026-07-20: Final closure validation passed under Python 3.11 and 3.13: the validator reported 13 datasets, 90 identities, 370 judgments, and only Buoy insufficient/pending approval; 4 focused contract tests and 445 full tests passed on each interpreter; wheel and sdist builds passed. `git diff --check` passed.
+
+## Closure mapping
+
+- Dataset/identity preservation: the validator and inventory prove exactly 13 datasets, 90 unique composite identities, unchanged dataset-local IDs, and 370 unchanged judgments.
+- Source reproducibility: all 370 judgment paths were checked against the pinned source-path bundle; 369 resolve, Click is path-complete, and Buoy alone is explicitly insufficient for its one absent internal path.
+- Mapping and isolation: repository/source-commit/baseline mappings, the experiment namespace pattern, model/corpus compatibility, and new-namespace-only boundaries are frozen without creating or mutating a namespace.
+- Experiment contract: repository-held-out folds, primary/diagnostic metrics, pilot escalation versus full promotion gates, candidate/cache schemas, composite joins, deterministic tolerances, artifact hashing, redaction, request accounting, and missing-repository behavior are explicit and validator-backed.
+- Boundary preservation: C7/C8 thresholds remain deliberately unratified; no label-quality or human-ground-truth claim is made.
+- Verification and review: focused validator tests, full Python 3.11/3.13 suites, CI-equivalent validation/build checks, and independent PASS review support closure.
+
+## Retrospective
+
+A frozen experiment contract can complete while recording an insufficient repository, provided the insufficiency is explicit and dependent execution remains blocked. Deterministic checked-in path authority plus a standard-library validator is substantially smaller and more reproducible than retaining hundreds of megabytes of ignored crawl artifacts. Dataset corrections ratified after freeze belong to a separate owner and contract revision rather than being folded into closure.
+
+## Residual
+
+- Buoy remains insufficient in contract v1: its selected public corpus omits the grade-1 internal `.10x` path and its proposed 903-row same-source baseline namespace has neither approval nor contents verified.
+- `.10x/tickets/2026-07-20-remove-buoy-internal-ranking-judgment.md` owns the exact ratified future label removal and required rehash; it does not make Buoy sufficient because baseline approval/compatibility remains unresolved.
+- C3 and all dependent comparison work remain blocked. C4 also lacks C2 completion and model/write approval; C5 lacks a ratified syntax spec; C7/C8 retain their distinct threshold ratification gates.
+- No namespace, catalog, dataset, label, model, credential, or provider state was changed by C1 closure.

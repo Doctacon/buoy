@@ -2,7 +2,7 @@ Status: blocked
 Created: 2026-07-19
 Updated: 2026-07-20
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
-Depends-On: .10x/tickets/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/2026-07-19-research-code-aware-embedding-candidate.md
+Depends-On: .10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/2026-07-20-remove-buoy-internal-ranking-judgment.md, .10x/tickets/2026-07-19-research-code-aware-embedding-candidate.md
 
 # C4: Evaluate Code-Aware Embedding Pilot
 
@@ -26,7 +26,7 @@ Pilot repositories are Buoy, pytest, and Ruff. Candidate and paired baseline use
 
 ## Approval gate
 
-Blocked until C1/C2/local plans can fill this exact checkpoint:
+Blocked until C2, the separate Buoy contract correction/baseline requirements, and local plans can fill this exact checkpoint:
 
 > Approve download of pinned open-source model `<model>@<revision>` (`<bytes>`, `<RAM/device estimate>`) and up to `<rows>/<new namespaces>/<estimated writes>` for the Buoy/pytest/Ruff paired pilot, with zero deletes and no catalog/default change?
 
@@ -45,7 +45,7 @@ Approval provenance, pinned model/license contract, local plans/preflights, exac
 
 ## Blockers
 
-- C1 and C2 are incomplete.
+- C1 is complete, but Buoy remains insufficient pending the separately owned judgment removal/rehash and a compatible same-source baseline. C2 is incomplete.
 - No model/download/resource/new-namespace approval exists.
 
 ## Explicit exclusions
@@ -55,7 +55,8 @@ Dynamic vector dimensions; default model/ranking changes; routing/catalog migrat
 ## References
 
 - `.10x/research/2026-07-19-repo-search-heavy-ranking-experiment-decomposition.md`
-- `.10x/tickets/2026-07-19-freeze-repo-ranking-experiment-contract.md`
+- `.10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md`
+- `.10x/tickets/2026-07-20-remove-buoy-internal-ranking-judgment.md`
 - `.10x/tickets/2026-07-19-research-code-aware-embedding-candidate.md`
 - `.10x/decisions/repo-ranking-promotion-policy.md`
 
@@ -63,3 +64,4 @@ Dynamic vector dimensions; default model/ranking changes; routing/catalog migrat
 
 - 2026-07-19: Opened blocked. No model identity, budget, surface, download, namespace, source, test, or promotion was authorized or created.
 - 2026-07-20: Clarified that the three-repo rule is an experiment escalation gate only, not active promotion policy.
+- 2026-07-20: C1 closed with Buoy explicitly insufficient. C4 remains blocked on the separate Buoy correction/baseline work, C2, and exact model/resource/write approval; no download or namespace operation was authorized.

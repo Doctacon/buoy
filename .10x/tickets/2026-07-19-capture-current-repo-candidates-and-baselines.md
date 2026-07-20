@@ -2,7 +2,7 @@ Status: blocked
 Created: 2026-07-19
 Updated: 2026-07-20
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
-Depends-On: .10x/tickets/2026-07-19-freeze-repo-ranking-experiment-contract.md
+Depends-On: .10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/2026-07-20-remove-buoy-internal-ranking-judgment.md
 
 # C3: Capture Current Repo Candidates and Baselines
 
@@ -21,7 +21,7 @@ After C1 freezes exact datasets, snapshots, mappings, request accounting, and ar
 
 ## Approval gate
 
-Blocked pending C1 and this exact checkpoint with filled values:
+Blocked pending resolution and rehash of the frozen Buoy insufficiency, verification of a compatible Buoy baseline, and this exact checkpoint with filled values:
 
 > Approve one retrieval-only raw-candidate pass for the 90 frozen composite `repo_key:case_id` identities across `<exact namespace/commit map>`, with separate ANN and BM25 lists, `<predicted request count/cost bound>`, zero writes/deletes/catalog changes, and one immutable cache shared by C7/C8?
 
@@ -40,7 +40,7 @@ Approval provenance; exact request count; proof that the cache/schema contains a
 
 ## Blockers
 
-- C1 is not complete.
+- C1 is complete, but its frozen contract marks Buoy insufficient. The ratified internal-judgment removal/rehash is pending under `.10x/tickets/2026-07-20-remove-buoy-internal-ranking-judgment.md`, and the proposed Buoy baseline remains unapproved and unverified.
 - The required retrieval-only approval has not been granted.
 
 ## Explicit exclusions
@@ -50,10 +50,12 @@ Namespace writes/deletes; candidate re-indexing; source/tests implementation bef
 ## References
 
 - `.10x/research/2026-07-19-repo-search-heavy-ranking-experiment-decomposition.md`
-- `.10x/tickets/2026-07-19-freeze-repo-ranking-experiment-contract.md`
+- `.10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md`
+- `.10x/tickets/2026-07-20-remove-buoy-internal-ranking-judgment.md`
 - `.10x/specs/repo-search-eval-autoresearch.md`
 
 ## Progress and notes
 
 - 2026-07-19: Opened blocked. No credentials, live calls, cache artifacts, source, or tests were created during decomposition.
 - 2026-07-20: Clarified that retrieval and cache identity use all 90 composite `repo_key:case_id` values while preserving dataset-local IDs and labels.
+- 2026-07-20: C1 closed with Buoy explicitly insufficient. C3 remains blocked on the separate ratified label-removal/rehash owner, a compatible Buoy baseline, and the exact retrieval-only approval; no call or remote operation was authorized.

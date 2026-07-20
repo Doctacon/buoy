@@ -1,8 +1,8 @@
 Status: blocked
 Created: 2026-07-19
-Updated: 2026-07-19
+Updated: 2026-07-20
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
-Depends-On: .10x/tickets/2026-07-19-freeze-repo-ranking-experiment-contract.md
+Depends-On: .10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md
 
 # C5: Implement Opt-In Python Syntax Chunking
 
@@ -47,7 +47,6 @@ Ratification provenance, active focused spec, focused/full local tests, paired l
 
 ## Blockers
 
-- C1 is incomplete.
 - Exact syntax experiment behavior is not fully record-backed or user-ratified.
 - `.10x/specs/repo-python-syntax-chunking-experiment.md` intentionally does not exist yet.
 
@@ -65,3 +64,4 @@ Live retrieval or writes; namespace/catalog/default mutation; Tree-sitter; multi
 ## Progress and notes
 
 - 2026-07-19: Opened blocked. Inspection found the hypothesis record-backed but the exact behavior insufficient for an active spec; no spec, source, tests, plans, or live operations were created.
+- 2026-07-20: C1 closed. C5 remains blocked only on its separately required exact syntax-contract ratification and active focused spec; C1 closure authorized no implementation.
