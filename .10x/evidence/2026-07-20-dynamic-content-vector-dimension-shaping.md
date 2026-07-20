@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-20
 Updated: 2026-07-20
-Relates-To: .10x/tickets/2026-07-20-shape-dynamic-content-vector-dimensions.md, .10x/research/2026-07-20-dynamic-content-vector-dimensions.md
+Relates-To: .10x/tickets/done/2026-07-20-shape-dynamic-content-vector-dimensions.md, .10x/research/2026-07-20-dynamic-content-vector-dimensions.md
 
 # Dynamic Content-Vector Dimension Shaping Evidence
 
@@ -55,8 +55,10 @@ No model/dependency download or install, model load, inference, credential acces
 
 ## Residual risk
 
-- Independent review of the record-only PR is required before the shaping ticket can close.
-- Candidate and pilot containment are ratified; exact proposed resource/output thresholds remain draft and unratified, so both focused specs remain draft.
+The first two bullets below record the pre-phase-1 state of this shaping observation. Independent review and exact phase 1 ratification later activated both specs and closed shaping; `.10x/evidence/2026-07-20-crow-plus-phase-1-specification-ratification.md` is the current status authority. Runtime measurements and phases 2–5 remain unexecuted.
+
+- At this observation point, independent review was required before the shaping ticket could close.
+- At this observation point, candidate and pilot containment were ratified while exact resource/output thresholds and both focused specs remained draft.
 - Construction peak, steady host RSS, and peak/steady MPS allocation are unknown and unmeasured by design; measured values must pass a separately approved future phase 3 checkpoint before phase 4 implementation/source changes may be requested.
 - Exact pilot namespaces, rows, writes, storage, staged-artifact identity, and public experimental selection surface remain unavailable until later local planning and the independent phase 5 indexing/write approval.
 - The fixed sequence is phase 1 specification, phase 2 bootstrap/download, phase 3 bounded measurement load, phase 4 implementation/source changes, and phase 5 indexing/write; no phase approval or success implies the next.

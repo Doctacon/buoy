@@ -1,14 +1,14 @@
-Status: draft
+Status: active
 Created: 2026-07-20
 Updated: 2026-07-20
 
 # Crow-Plus Explicit-Namespace Pilot
 
-## Draft status and ratified direction
+## Active status and ratified direction
 
 The user ratified Crow-Plus at 768 dimensions as the first dynamic content-vector candidate; an explicit-namespace-only pilot with no namespace cards, catalog participation, or automatic routing; complete local staging and validation of every vector before the first remote content write; and five independent approvals in order for specification, bootstrap/download, bounded measurement load, implementation/source changes, and indexing/write. No phase approval or success implies the next.
 
-This specification remains **draft** because the exact resource-verification checkpoint in `.10x/specs/crow-plus-resource-verification-checkpoint.md` is proposed but not ratified. It MUST NOT authorize implementation, evaluation, model bootstrap/download/load/inference, or remote work. No executable implementation/evaluation ticket may be created until the checkpoint is approved and the governing focused specifications are active.
+The user separately ratified the exact resource-verification checkpoint in `.10x/specs/crow-plus-resource-verification-checkpoint.md` and activated both focused specifications as phase 1 only after independent review passed. Phase 1 authorizes these behavior records only. It does not authorize implementation, evaluation, model bootstrap/download/load/inference, or remote work. Each later phase remains blocked until separately approved.
 
 ## Purpose and scope
 

@@ -43,7 +43,7 @@ Model download/inference; benchmark execution; dependency/source/test changes; p
 - `.10x/research/2026-07-19-code-aware-embedding-candidate.md`
 - `.10x/evidence/2026-07-19-code-aware-embedding-feasibility-research.md`
 - `.10x/reviews/2026-07-20-code-aware-embedding-candidate-review.md`
-- `.10x/tickets/2026-07-20-shape-dynamic-content-vector-dimensions.md`
+- `.10x/tickets/done/2026-07-20-shape-dynamic-content-vector-dimensions.md`
 - `src/buoy_search/chunker.py`
 - `src/buoy_search/apply.py`
 - `src/buoy_search/catalog.py`
@@ -57,7 +57,7 @@ Model download/inference; benchmark execution; dependency/source/test changes; p
 - 2026-07-20: Repaired independent-review completeness findings by reproducing and dispositioning the full 14-result discovery roster. Fully screened `Shuu12121/CodeSearch-ModernBERT-Crow-Plus@96ff525a7aa3bf8bfa90d77337c2b24bd45229af` and retained it as the fallback dynamic-dimension decision candidate: authoritative Apache-2.0, standard SentenceTransformer/no remote code, single 768-dimensional CLS vector, no prefix, 1,024-token maximum, and 611,525,163 listed bytes. It remains incompatible with C4's exact 384-dimensional contract.
 - 2026-07-20: Qualified Nomic resources: current construct-then-`.half()` initialization requires more than 26.34 GiB float32 weights plus overhead; 24 GiB applies only after separately authorized direct-half/loading plumbing. C2 remains active pending a new independent review. C4 remains stopped; no model/dependency download/install, model load, inference, source/test/lockfile mutation, namespace/catalog operation, credential access, or Buoy live service call occurred.
 - 2026-07-20: Independent review passed repaired PR #58 head `7ec84b6`. C2 closed with the complete 14-model screen, no credible native 384-dimensional candidate, the 3,584-dimensional Nomic primary and 768-dimensional Crow-Plus fallback retained only for a later decision, and C4 still blocked under its stop condition.
-- 2026-07-20: The user explicitly approved separate shaping for dynamic content-vector dimensions. That shaping is owned by `.10x/tickets/2026-07-20-shape-dynamic-content-vector-dimensions.md`; it does not activate behavior, authorize either model, or authorize downloads, source changes, model loading, inference, namespace/card/catalog writes, or default changes.
+- 2026-07-20: The user explicitly approved separate shaping for dynamic content-vector dimensions. That shaping is owned by `.10x/tickets/done/2026-07-20-shape-dynamic-content-vector-dimensions.md`; it does not activate behavior, authorize either model, or authorize downloads, source changes, model loading, inference, namespace/card/catalog writes, or default changes.
 
 ## Closure mapping
 

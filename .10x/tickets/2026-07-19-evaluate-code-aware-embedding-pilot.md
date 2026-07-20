@@ -46,7 +46,7 @@ Approval provenance, pinned model/license contract, local plans/preflights, exac
 ## Blockers
 
 - C2 is complete and found no credible native 384-dimensional code-aware candidate satisfying the open-source/local/SentenceTransformer/no-remote-code boundary. Its 3,584-dimensional primary and 768-dimensional fallback remain decision candidates only, so C4 is stopped under its existing condition.
-- The user's approval to shape dynamic content-vector dimensions is separately owned by `.10x/tickets/2026-07-20-shape-dynamic-content-vector-dimensions.md`. It does not supersede this ticket, make either candidate C4-compatible, or authorize C4 execution.
+- The user's approval to shape dynamic content-vector dimensions is separately owned by `.10x/tickets/done/2026-07-20-shape-dynamic-content-vector-dimensions.md`. It does not supersede this ticket, make either candidate C4-compatible, or authorize C4 execution.
 - The separately owned Buoy judgment removal/rehash is complete, but Buoy remains insufficient pending an approved and verified compatible same-source baseline.
 - No model/download/resource/new-namespace approval exists.
 
@@ -63,7 +63,7 @@ Dynamic vector dimensions; default model/ranking changes; routing/catalog migrat
 - `.10x/research/2026-07-19-code-aware-embedding-candidate.md`
 - `.10x/evidence/2026-07-19-code-aware-embedding-feasibility-research.md`
 - `.10x/reviews/2026-07-20-code-aware-embedding-candidate-review.md`
-- `.10x/tickets/2026-07-20-shape-dynamic-content-vector-dimensions.md`
+- `.10x/tickets/done/2026-07-20-shape-dynamic-content-vector-dimensions.md`
 - `.10x/decisions/repo-ranking-promotion-policy.md`
 
 ## Progress and notes

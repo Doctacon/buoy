@@ -1,16 +1,16 @@
-Status: draft
+Status: active
 Created: 2026-07-20
 Updated: 2026-07-20
 
 # Crow-Plus Resource-Verification Checkpoint
 
-## Draft status
+## Active phase 1 status
 
-This is one exact conservative **proposal**, not an approved budget or operation. It resolves the sequencing ambiguity: every cache, hardware, precision, input, load-time, host/device, batch, observation, and abort value MUST be ratified before bounded measurement begins; the resulting measured values then gate later implementation/source changes and indexing/write. The user has not yet approved these exact values.
+This exact conservative checkpoint is ratified as the phase 1 resource contract, not as an approved budget or operation. It resolves the sequencing ambiguity: every cache, hardware, precision, input, load-time, host/device, batch, observation, and abort value is fixed before bounded measurement begins; the resulting measured values then gate later implementation/source changes and indexing/write.
 
 The five phases are fixed in this order and require five independent, non-transitive approvals: (1) specification, (2) bootstrap/download, (3) bounded measurement load, (4) implementation/source changes, and (5) indexing/write. Approval or success of one phase does not authorize, approve, or imply the next phase.
 
-No executable implementation/evaluation ticket, bootstrap/download, load, inference, source/test change, or remote operation is authorized while this specification is draft.
+Phase 1 activation authorizes records only. No executable bootstrap/download, load, inference, implementation/evaluation, source/test change, or remote operation is authorized without its later separate phase approval.
 
 ## Observed host and immutable candidate inputs
 
@@ -25,7 +25,7 @@ C2's immutable snapshot records Crow-Plus revision `96ff525a7aa3bf8bfa90d77337c2
 
 This checkpoint is host-specific. A different model identifier, chip, memory size, OS build, accelerator, dependency lock, or candidate revision requires a new proposed checkpoint and approval.
 
-## Proposed bootstrap checkpoint (separate approval)
+## Phase 2 bootstrap checkpoint (separate approval required)
 
 - Repository/revision: exactly `Shuu12121/CodeSearch-ModernBERT-Crow-Plus@96ff525a7aa3bf8bfa90d77337c2b24bd45229af`.
 - Cache root: exactly `/Users/crlough/Library/Caches/buoy/models/crow-plus-96ff525a7aa3bf8bfa90d77337c2b24bd45229af`; it MUST be absent before bootstrap. No default/global cache fallback or pre-existing blob reuse is allowed.
@@ -36,7 +36,7 @@ This checkpoint is host-specific. A different model identifier, chip, memory siz
 - Observation: record pre/post free bytes, per-file path/size/hash, transferred bytes, and final allocated cache bytes. Abort before the next file if the next advertised size would exceed transfer or free-disk bounds; delete only the dedicated incomplete cache root after recording failure.
 - Bootstrap success authorizes no model import, construction, load, or inference.
 
-## Proposed bounded-measurement checkpoint (separate approval after bootstrap)
+## Phase 3 bounded-measurement checkpoint (separate approval required after bootstrap)
 
 ### Hardware and runtime
 
@@ -89,8 +89,8 @@ Measured values MUST be copied into the later implementation checkpoint. Any imp
 
 A failure requires a revised draft checkpoint and new approval; it MUST NOT be worked around by raising a bound, changing device/precision/batch, falling back to CPU, installing dependencies, or proceeding to implementation/indexing.
 
-## Approval checkpoint
+## Ratified checkpoint and remaining approvals
 
-Confirm or correct this exact proposal before any bootstrap/download or bounded-measurement-load ticket is made executable: dedicated empty cache root; 611,525,163-byte transfer and 768-MiB cache ceilings; 5-GiB/4-GiB disk floors; exact observed Mac/MPS host; float32 construction then float16 inference; exactly two sequential batch-1 calls using the fixed 51-byte query (`4f51d3b9…d8cc`) then fixed 129-byte LF-terminated code/document (`a89366d7…1260`), each yielding a separate `[1,768]` finite normalized output; 120-second load and 300-second total hard deadlines; 4-GiB RSS, 2-GiB MPS-current, and 3-GiB MPS-driver hard ceilings; 100-ms dual monitoring; stated qualification headroom; and immediate abort.
+Phase 1 ratification fixed this exact checkpoint: dedicated empty cache root; 611,525,163-byte transfer and 768-MiB cache ceilings; 5-GiB/4-GiB disk floors; exact observed Mac/MPS host; float32 construction then float16 inference; exactly two sequential batch-1 calls using the fixed 51-byte query (`4f51d3b9…d8cc`) then fixed 129-byte LF-terminated code/document (`a89366d7…1260`), each yielding a separate `[1,768]` finite normalized output; 120-second load and 300-second total hard deadlines; 4-GiB RSS, 2-GiB MPS-current, and 3-GiB MPS-driver hard ceilings; 100-ms dual monitoring; stated qualification headroom; and immediate abort.
 
-These thresholds remain draft and unratified. Approval of this checkpoint would authorize only phase 1 record activation. Phases 2–5—bootstrap/download, bounded measurement load, implementation/source changes, and indexing/write—would each still require its own later approval; no phase approval or success implies the next.
+That approval authorized only phase 1 record activation. Phases 2–5—bootstrap/download, bounded measurement load, implementation/source changes, and indexing/write—each still require their own later approval; no phase approval or success implies the next.

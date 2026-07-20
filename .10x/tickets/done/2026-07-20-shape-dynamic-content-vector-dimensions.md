@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-07-20
 Updated: 2026-07-20
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
@@ -8,13 +8,15 @@ Depends-On: .10x/tickets/done/2026-07-19-research-code-aware-embedding-candidate
 
 ## Outcome
 
-Produce a user-legible architecture and product checkpoint for whether and how Buoy could support non-384-dimensional **content** embeddings. This is shaping only. It records the user's ratified first-candidate and containment choices and drafts the remaining exact resource checkpoint. It MUST NOT activate a behavior specification, create an executable implementation/evaluation ticket, implement plumbing, download or load weights, run inference, or perform namespace/card/catalog/default writes.
+Produced and independently reviewed a user-legible architecture and product checkpoint for how Buoy may support non-384-dimensional **content** embeddings. The user ratified phase 1 exactly as reviewed: Crow-Plus at 768 dimensions, explicit namespace only, complete local staging before the first remote content write, the exact resource-verification checkpoint, and five independent approval phases. Both focused specifications are active. No executable operation was authorized or performed.
 
 ## Approval provenance
 
 On 2026-07-20, after C2 established that no credible native 384-dimensional candidate fits the current boundary, the user explicitly approved opening separate shaping for dynamic content-vector dimensions. The approved shaping surface covers the retained 768- and 3,584-dimensional candidates, namespace schema/card/routing compatibility, isolation or migration, resource bounds, offline revision-pinned loading, and Nomic's query-only prefix.
 
 The user then ratified Crow-Plus at 768 dimensions; explicit namespace only with no cards, catalogs, or automatic routing; every vector plus resource/output compliance staged and validated before the first remote content write; and five independent phase approvals in this fixed order: specification, bootstrap/download, bounded measurement load, implementation/source changes, and indexing/write. Approval or success of one phase does not authorize, approve, or imply the next. No bootstrap/download, load, inference, implementation, source/test change, or external operation was approved.
+
+After independent review passed repaired PR #61 head `9445030a5438de7f6c4308bfb8645ce0e4bf2bc5`, the user explicitly ratified the exact phase 1 checkpoint and directed activation of both reviewed specifications without changing their Crow/resource/staging contracts. This phase 1 ratification authorizes active records only. Phase 2 bootstrap/download remains separately approval-gated and blocked at `.10x/tickets/2026-07-20-bootstrap-crow-plus-immutable-cache.md`.
 
 ## Scope
 
@@ -37,17 +39,17 @@ The user then ratified Crow-Plus at 768 dimensions; explicit namespace only with
 - Resource bounds distinguish download/disk, model construction peak, steady host RAM, device memory, and precision/loading assumptions. Unmeasured values remain labeled estimates or blockers.
 - Offline loading is revision-pinned, cache-explicit, network-failing after bootstrap, telemetry-disabled, and compatible with the locked open-source dependency path without remote code.
 - Query/document prefixes, pooling, and normalization are explicit for each candidate, including Nomic's query-only prefix.
-- The output records the ratified candidate/containment/staging choices and five independent ordered approval phases, with no phase implying the next, and ends at one exact resource-checkpoint confirm-or-correct boundary. It creates only draft focused specifications and no executable implementation/evaluation ticket.
+- Before phase 1 ratification, the output recorded the candidate/containment/staging choices and five independent ordered approval phases in two draft focused specifications. After independent review and explicit phase 1 ratification, those exact specifications became active; no executable implementation/evaluation ticket was created.
 - The proposed measurement fixes one exact UTF-8 query and one exact UTF-8 code/document input, including newline/encoding/hash identity, and requires sequential batch-1 calls with separate `[1,768]` outputs; pinned tokenizer IDs may be recorded after bootstrap.
 - The shaping work records that no model/dependency download or install, model load, inference, credential access, live service call, source/test/lockfile change, or namespace/card/catalog/default write occurred.
 
 ## Blockers
 
-The candidate, containment, staging rule, and five-phase sequence are ratified, but this ticket remains active pending independent review and phase 1 approval/correction of the exact proposed resource checkpoint in `.10x/specs/crow-plus-resource-verification-checkpoint.md`. Thresholds remain draft and unratified, and both focused specs remain draft. No executable implementation/evaluation ticket may be created until the checkpoint is approved and the governing specifications are activated. Phases 2–5—bootstrap/download, bounded measurement load, implementation/source changes, and indexing/write—each remain separately blocked on their own later approval; no phase implies the next.
+None for this completed shaping outcome. Phase 2 is separately owned and blocked at `.10x/tickets/2026-07-20-bootstrap-crow-plus-immutable-cache.md`; phases 3–5 remain approval-gated by the active specifications and have no executable owners.
 
 ## Explicit exclusions
 
-Active behavior specifications or decisions; executable implementation/evaluation tickets; model promotion; source, tests, configuration, dependencies, or lockfile changes; model/dependency downloads or installs; model loading or inference; credentials or live service calls; namespace, card, catalog, or default mutation; C4 execution or unblocking; migration execution; public CLI/API behavior.
+Executable phase 2–5 operation or implementation tickets; model promotion; source, tests, configuration, dependencies, or lockfile changes; model/dependency downloads or installs; model loading or inference; credentials or live service calls; namespace, card, catalog, or default mutation; C4 execution or unblocking; migration execution; public CLI/API behavior.
 
 ## Evidence expectations
 
@@ -78,3 +80,20 @@ C2's immutable model evidence, inspected current source and locked open-source p
 - 2026-07-20: Completed initial record-only shaping at `.10x/research/2026-07-20-dynamic-content-vector-dimensions.md` with immutable 768/3,584 candidate bytes, explicit unmeasured RAM/device categories, strict 384 routing separation, versioned-card options, new-namespace/no-migration isolation, plan/apply/retrieval/automatic-routing failure contracts, pinned offline bootstrap/runtime controls, model-specific role semantics, implementation implications, stop conditions, and a confirm-or-correct checkpoint. Evidence: `.10x/evidence/2026-07-20-dynamic-content-vector-dimension-shaping.md`. Ticket remained active pending required independent review; no executable implementation/evaluation ticket was created.
 - 2026-07-20: Applied the user's ratified choices: Crow-Plus 768 first; explicit namespace only with no card/catalog/automatic routing; complete vector/resource/output staging before write 1; and five independent approvals in order for specification, bootstrap/download, bounded measurement load, implementation/source changes, and indexing/write, with no phase implying the next. Drafted `.10x/specs/crow-plus-explicit-namespace-pilot.md` and `.10x/specs/crow-plus-resource-verification-checkpoint.md`. The experimental path stages every vector before a separately approved serial write and leaves the active depth-one default untouched. Read-only host inspection informed one exact conservative proposed checkpoint; thresholds remain draft and unratified, both specs remain draft, and no executable implementation/evaluation ticket or operation was authorized.
 - 2026-07-20: Repaired PR #61 final review blockers record-only: the phase contract is explicitly five ordered, independent approvals; the proposed measurement now binds a 51-byte no-final-newline UTF-8 query and 129-byte LF-terminated UTF-8 code/document by SHA-256, runs them sequentially at batch 1, and requires separate `[1,768]` outputs. Token IDs remain deferred until pinned tokenizer bootstrap. No executable ticket, bootstrap/download, model load/inference, source/test change, credential access, or live operation was authorized or performed.
+- 2026-07-20: Independent review passed repaired PR #61 head `9445030`; `.10x/reviews/2026-07-20-dynamic-content-vector-dimensions-shaping-review.md` records no phase 1 blocker and confirms the exact containment/resource/staging contract.
+- 2026-07-20: The user explicitly ratified phase 1 exactly as reviewed. Activated both focused specifications without changing their exact Crow/resource/staging values, opened only the blocked phase 2 bootstrap/download owner, and closed this shaping ticket. No phase 2–5 operation was authorized or performed.
+
+## Closure mapping
+
+- **Candidate matrix and authority:** `.10x/research/2026-07-20-dynamic-content-vector-dimensions.md` maps Crow-Plus 768 and Nomic 3,584 to C2's immutable revisions, bytes, role/pooling/normalization contracts, compatibility implications, and explicitly unmeasured runtime resources.
+- **Content/routing separation and isolation:** The research and active `.10x/specs/crow-plus-explicit-namespace-pilot.md` preserve the independent 384-dimensional routing projection and all existing 384-dimensional content namespaces/defaults. The pilot is exact explicit-namespace-only with no migration, cards, catalog, or automatic routing.
+- **Resource/offline contract:** Active `.10x/specs/crow-plus-resource-verification-checkpoint.md` fixes the immutable 611,525,163-byte revision tree, cache/disk bounds, host/device/precision path, offline/telemetry/no-remote-code controls, fixed inputs, output checks, monitoring, qualification, and abort behavior. Unmeasured runtime values remain blockers rather than facts.
+- **Complete staging and phase gates:** The active pilot spec requires every vector and resource/output observation to be staged and validated before credentials or remote content write 1, while preserving the ordinary depth-one default. Both specs require five ordered independent approvals with no transitive authority.
+- **Exact workload identity:** The resource spec binds the 51-byte query and 129-byte LF-terminated code/document by exact text and SHA-256, sequential batch-1 calls, separate `[1,768]` outputs, and post-bootstrap tokenizer-ID observation without input changes or truncation.
+- **Safety and scope:** `.10x/evidence/2026-07-20-dynamic-content-vector-dimension-shaping.md` and `.10x/evidence/2026-07-20-crow-plus-phase-1-specification-ratification.md` record that no download/install, model load/inference, credentials, live service, source/test/lockfile change, or namespace/card/catalog/default operation occurred.
+- **Review and ratification:** `.10x/reviews/2026-07-20-dynamic-content-vector-dimensions-shaping-review.md` records independent PASS on repaired head `9445030`; the user then ratified phase 1 exactly as reviewed. Both specifications are active.
+- **Unfinished work:** `.10x/tickets/2026-07-20-bootstrap-crow-plus-immutable-cache.md` is the smallest next durable owner and remains blocked pending separate phase 2 approval. Later phases remain governed and blocked without premature executable tickets.
+
+## Retrospective
+
+This shaping established that dynamic content dimensions are safely reviewable only when content and routing vectors remain explicitly separate, model identity includes every role/pooling/normalization/precision field, complete staging precedes any remote client, and resource discovery is split into independently approved immutable bootstrap and bounded measurement phases. Those durable behaviors live in the two active focused specifications; no additional knowledge or skill record is needed. The blocked phase 2 owner preserves the only eligible next action without laundering phase 1 ratification into execution authority.

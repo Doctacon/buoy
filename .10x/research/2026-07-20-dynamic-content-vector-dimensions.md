@@ -10,7 +10,7 @@ How could Buoy support a 768- or 3,584-dimensional **content** embedding without
 
 The user ratified Crow-Plus at 768 dimensions as the first candidate, contained in an explicit-namespace-only pilot with no cards, catalog participation, or automatic routing. Every vector plus resource/output compliance must be staged and validated before the first remote content write. Five phases require five independent approvals in this fixed order: specification, bootstrap/download, bounded measurement load, implementation/source changes, and indexing/write. Approval or success of one phase does not authorize, approve, or imply the next.
 
-This selection does not supersede the active 384-dimensional default pipeline or C4's stop. It approves no bootstrap/download, load/inference, source/test change, or remote operation. Exact resource thresholds remain draft and unratified; focused draft specifications record the selected behavior and one exact conservative checkpoint for confirm-or-correct approval.
+This selection does not supersede the active 384-dimensional default pipeline or C4's stop. Phase 1 ratification approves no bootstrap/download, load/inference, source/test change, or remote operation. The exact resource thresholds and focused behavior contracts are now active exactly as independently reviewed; each later operation remains separately approval-gated.
 
 ## Authority and observed current boundary
 
@@ -64,7 +64,7 @@ All byte values below are copied from C2's immutable tree snapshot. GB/GiB conve
 
 For comparison, current raw `[384]f16` vector payload is exactly 768 bytes; `[768]f16` is 1,536 bytes; `[3584]f16` is 7,168 bytes. These are raw element bytes only. Turbopuffer ANN/storage overhead, row encoding, replication, billing, cache filesystem allocation, tokenizer files in active use, activations, allocator fragmentation, batch effects, construction peak, steady host RSS, and steady/peak device memory are **unmeasured**.
 
-### Exact proposed resource checkpoint before any future download or load
+### Exact ratified resource checkpoint before any future download or load
 
 Read-only host inspection observed an Apple `Mac14,9` with M2 Pro, 17,179,869,184 bytes unified memory, macOS 26.5.1 (`25F80`), and 34,890,539,008 bytes available disk. `.10x/specs/crow-plus-resource-verification-checkpoint.md` proposes one exact host-specific checkpoint:
 
@@ -74,7 +74,7 @@ Read-only host inspection observed an Apple `Mac14,9` with M2 Pro, 17,179,869,18
 - start with at least 8 GiB available memory; hard-abort at 4 GiB child RSS, 2 GiB MPS current allocation, 3 GiB MPS driver allocation, 120 seconds load, or 300 seconds total;
 - sample external RSS/time and in-process MPS counters at most every 100 ms and fail on a sample gap over 200 ms; qualification additionally requires 3 GiB RSS, 1.5 GiB MPS-current, 2.25 GiB MPS-driver, 90-second load, and 225-second total ceilings.
 
-These exact values are a **proposal**, not ratified bounds. They resolve the prior circularity: phase 1 must approve the bounds and observation/abort behavior before phase 2 bootstrap/download can be requested; phase 2 does not authorize phase 3 bounded measurement load; passing phase 3 does not authorize phase 4 implementation/source changes; and phase 4 does not authorize phase 5 indexing/write. Until a permitted measurement, construction peak, steady host RAM, and peak/steady device memory remain unknown blockers, not facts. C2's 2/24/48 GiB values remain analytical planning estimates only.
+These exact values are ratified as the phase 1 contract, not as authority for an operation. They resolve the prior circularity: phase 2 bootstrap/download requires its own approval; phase 2 does not authorize phase 3 bounded measurement load; passing phase 3 does not authorize phase 4 implementation/source changes; and phase 4 does not authorize phase 5 indexing/write. Until a permitted measurement, construction peak, steady host RAM, and peak/steady device memory remain unknown blockers, not facts. C2's 2/24/48 GiB values remain analytical planning estimates only.
 
 ## Candidate-independent content contract
 
@@ -184,25 +184,24 @@ No new dependency is currently justified: immutable metadata indicates the locke
 
 ## Stop conditions before implementation or evaluation
 
-Stop with no active pilot spec, executable implementation/evaluation ticket, download, load, inference, source/test change, or remote operation if any of the following remains unresolved:
+The pilot specifications are active, but stop with no executable operation beyond the separately approved phase if any of the following remains unresolved:
 
-1. phase 1 specification approval of the exact proposed resource checkpoint, including cache/disk/hardware/precision/load-time/host/device/batch/input/observation/abort/output thresholds, after independent review of this repaired shaping output and draft specifications;
-2. phase 2 bootstrap/download approval and exact immutable manifest evidence;
-3. phase 3 bounded-measurement-load approval and passing measured resource/output evidence;
-4. phase 4 implementation/source-changes approval, active governing specs, and a bounded executable implementation ticket;
-5. phase 5 indexing/write approval naming exact new namespaces, rows, writes, storage, and staged-artifact identity;
-6. locked dependency compatibility/no-remote-code/offline-network behavior fails;
-7. any proposal changes existing namespaces/cards/catalog/defaults, invokes automatic routing, or requires migration.
+1. phase 2 bootstrap/download approval and exact immutable manifest evidence;
+2. phase 3 bounded-measurement-load approval and passing measured resource/output evidence;
+3. phase 4 implementation/source-changes approval and a bounded executable implementation ticket;
+4. phase 5 indexing/write approval naming exact new namespaces, rows, writes, storage, and staged-artifact identity;
+5. locked dependency compatibility/no-remote-code/offline-network behavior fails;
+6. any proposal changes existing namespaces/cards/catalog/defaults, invokes automatic routing, or requires migration.
 
 The five approvals are independent and non-transitive in that order. No phase approval or success implies the next.
 
 C4 remains blocked because its exact 384-dimensional candidate condition was not met. This selected dynamic pilot uses a separate contract and MUST NOT widen or execute C4.
 
-## Exact confirm-or-correct checkpoint
+## Phase 1 resolution
 
-The candidate, explicit-only containment, complete staging-before-write rule, and five independent phase boundaries are ratified. The remaining question is only the exact resource proposal in `.10x/specs/crow-plus-resource-verification-checkpoint.md`: dedicated empty cache; immutable 611,525,163-byte tree; 611,525,163-byte transfer and 768-MiB cache ceilings; 5-GiB/4-GiB disk floors; observed M2 Pro/MPS host; float32 construction then float16 inference; two sequential batch-1 calls using the exact 51-byte query (`4f51d3b9…d8cc`) then exact 129-byte LF-terminated code/document (`a89366d7…1260`), with separate `[1,768]` finite normalized outputs; 120-second load/300-second total hard deadlines; 4-GiB RSS/2-GiB MPS-current/3-GiB MPS-driver hard ceilings; 100-ms monitoring; tighter 75%-of-bound qualification values; and immediate abort.
+The user ratified the candidate, explicit-only containment, complete staging-before-write rule, five independent phase boundaries, and exact resource checkpoint in `.10x/specs/crow-plus-resource-verification-checkpoint.md`: dedicated empty cache; immutable 611,525,163-byte tree; 611,525,163-byte transfer and 768-MiB cache ceilings; 5-GiB/4-GiB disk floors; observed M2 Pro/MPS host; float32 construction then float16 inference; two sequential batch-1 calls using the exact 51-byte query (`4f51d3b9…d8cc`) then exact 129-byte LF-terminated code/document (`a89366d7…1260`), with separate `[1,768]` finite normalized outputs; 120-second load/300-second total hard deadlines; 4-GiB RSS/2-GiB MPS-current/3-GiB MPS-driver hard ceilings; 100-ms monitoring; tighter 75%-of-bound qualification values; and immediate abort.
 
-Confirm or correct those exact values before either draft spec is activated. The thresholds remain draft and unratified. Phase 1 specification approval activates records only; phases 2–5—bootstrap/download, bounded measurement load, implementation/source changes, and indexing/write—each require their own later approval, and no phase implies the next. No executable implementation/evaluation ticket may be created before phase 1 approval.
+Both focused specifications are active exactly as independently reviewed. Phase 1 activates records only. Phases 2–5—bootstrap/download, bounded measurement load, implementation/source changes, and indexing/write—each require their own later approval, and no phase implies the next. The blocked phase 2 owner is `.10x/tickets/2026-07-20-bootstrap-crow-plus-immutable-cache.md`.
 
 ## Safety and limits
 
