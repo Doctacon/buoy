@@ -43,7 +43,7 @@ A durable contract/evidence record containing the dataset/manifest inventory and
 
 ## Blockers
 
-None. This is the first executable child and is record/local-inspection only.
+Independent review is pending. Local source-manifest validation found 22 unresolved Buoy judgment paths and 7 unresolved Click judgment paths, so those repositories are insufficient and the full 13-repo contract cannot authorize C3 or any dependent comparison. Exact paths and hashes are recorded in `.10x/evidence/2026-07-20-repo-ranking-experiment-contract-freeze.md`.
 
 ## Explicit exclusions
 
@@ -60,3 +60,4 @@ Label edits or review; candidate retrieval; model research or selection; generat
 
 - 2026-07-19: Opened as the executable contract-freeze prerequisite. No freeze work was performed during decomposition.
 - 2026-07-20: Clarified composite case identity, label preservation, pilot-gate attribution, and the boundary that C1 cannot ratify or unblock C7/C8 experiment thresholds.
+- 2026-07-20: Executed the local/read-only freeze. All 13 datasets load as 90 unique composite identities with unchanged local IDs and 370 judgments; hashes, mappings, folds, metrics, gates, and raw artifact/cache rules are frozen in `.10x/evidence/2026-07-20-repo-ranking-experiment-contract-freeze.md` and its storage inventory. Manifest validation resolved 341 paths but found 22 Buoy and 7 Click paths absent, marking only those repositories insufficient and blocking C3+. No credentials, models, live calls, namespace operations, or label edits occurred. Ticket remains active pending independent review.
