@@ -39,4 +39,5 @@ OCR, semantic cleanup, table/page repair, heading rewriting, converter changes, 
 
 - 2026-07-18: Current source inspection confirmed `crawl_local_document()` directly calls `.strip()` on converted output and has no control-character normalization.
 - 2026-07-18: Implemented shared Unicode `Cc` removal before the existing `.strip()`, artifact write, and chunking path, while preserving newline, carriage return, and tab.
-- 2026-07-18: Added focused PDF, non-PDF, preservation, and normalization-produced-empty-output coverage. Focused and full non-live suites pass on Python 3.11 and 3.13. Ticket remains active pending independent review.
+- 2026-07-18: Added focused PDF, non-PDF, preservation, and normalization-produced-empty-output coverage. Focused and full non-live suites pass on Python 3.11 and 3.13.
+- 2026-07-18: Pushed implementation commit `403d4f9` and opened PR #52. GitHub Actions run `29713256945` passed Python 3.11, Python 3.13, and distribution build jobs. Ticket remains active pending independent review.

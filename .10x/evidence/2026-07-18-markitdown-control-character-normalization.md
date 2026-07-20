@@ -69,8 +69,18 @@ Result: `buoy_search-0.4.0-py3-none-any.whl` and `buoy_search-0.4.0.tar.gz` buil
 - Output containing only removable controls triggers the existing clear empty-extraction failure before the output directory is created.
 - Existing non-live behavior passes the complete test suite on supported Python 3.11 and 3.13.
 
+## Hosted validation and pull request
+
+Implementation commit `403d4f9` was pushed on branch `work/restore-markitdown-normalization` and opened as PR #52: <https://github.com/Doctacon/buoy-search/pull/52>.
+
+GitHub Actions run `29713256945` passed:
+
+- Python 3.11: passed in 43 seconds;
+- Python 3.13: passed in 44 seconds;
+- distribution build: passed in 10 seconds.
+
 ## Limits
 
 - No OCR, semantic cleanup, converter change, live apply, Turbopuffer call, or external source crawl was performed.
 - Independent review remains required; this evidence does not close the active ticket.
-- Hosted CI and pull-request results will be appended after the branch is pushed.
+- The task worktree did not merge PR #52.
