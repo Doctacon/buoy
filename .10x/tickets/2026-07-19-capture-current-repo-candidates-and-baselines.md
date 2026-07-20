@@ -2,7 +2,7 @@ Status: blocked
 Created: 2026-07-19
 Updated: 2026-07-20
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
-Depends-On: .10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md
+Depends-On: .10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md, .10x/tickets/2026-07-20-implement-experimental-buoy-baseline-executor.md
 
 # C3: Capture Current Repo Candidates and Baselines
 
@@ -41,7 +41,8 @@ Approval provenance; exact request count; proof that the cache/schema contains a
 ## Blockers
 
 - The ratified internal-judgment removal/rehash is complete under `.10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md`, and all remaining paths resolve. Buoy remains `insufficient` because the proposed baseline is still `pending_approval` and its contents/model compatibility are unverified.
-- The required retrieval-only approval has not been granted.
+- The fail-closed baseline executor contract at `.10x/specs/experimental-buoy-baseline-executor.md` is active after user ratification and independent specification review, but `.10x/tickets/2026-07-20-implement-experimental-buoy-baseline-executor.md` is open and unimplemented.
+- The required baseline-write and retrieval-only approvals are split and filled in `.10x/evidence/2026-07-20-c3-buoy-baseline-approval-checkpoint.md`; Approval A and Approval B remain ungranted. C3 cannot become executable until the executor is implemented and independently reviewed, Approval A is separately granted and produces compatible-baseline evidence, and Approval B is then separately granted.
 
 ## Explicit exclusions
 
@@ -53,6 +54,11 @@ Namespace writes/deletes; candidate re-indexing; source/tests implementation bef
 - `.10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md`
 - `.10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md`
 - `.10x/specs/repo-search-eval-autoresearch.md`
+- `.10x/evidence/2026-07-20-c3-buoy-baseline-approval-checkpoint.md`
+- `.10x/specs/experimental-buoy-baseline-executor.md`
+- `.10x/tickets/2026-07-20-implement-experimental-buoy-baseline-executor.md`
+- `.10x/evidence/2026-07-20-experimental-buoy-baseline-executor-ratification.md`
+- `.10x/reviews/2026-07-20-experimental-buoy-baseline-executor-spec-review.md`
 
 ## Progress and notes
 
@@ -60,3 +66,6 @@ Namespace writes/deletes; candidate re-indexing; source/tests implementation bef
 - 2026-07-20: Clarified that retrieval and cache identity use all 90 composite `repo_key:case_id` values while preserving dataset-local IDs and labels.
 - 2026-07-20: C1 closed with Buoy explicitly insufficient. C3 remains blocked on the separate ratified label-removal/rehash owner, a compatible Buoy baseline, and the exact retrieval-only approval; no call or remote operation was authorized.
 - 2026-07-20: The separate judgment-removal/rehash owner closed after independent review at `ac9bb34`; all 369 remaining paths resolve. Buoy still lacks an approved, verified compatible baseline, and the retrieval-only checkpoint remains unapproved, so C3 stays blocked with no call or remote operation.
+- 2026-07-20: Prepared the non-mutating split approval package in `.10x/evidence/2026-07-20-c3-buoy-baseline-approval-checkpoint.md`. Read-only cache/source inspection pins the proposed current-default model revision/bytes/contract and observed resource envelope; retained C1 artifacts reproduce `plan_b6c5d128295f442f`, 903 first-apply rows, and the exact namespace/source pin. The record inventories unavoidable apply catalog/local-state effects and bounds C3 at 90 physical two-subquery requests, 180 subqueries, and at most 36,000 candidate-list positions with zero retries; account dollar pricing is not source-derivable. Neither approval was granted, no live/model/domain operation occurred, and C3 remains blocked/non-executable.
+- 2026-07-20: Repaired the approval package record-only. The immutable default model/revision is now bound to MIT by its hashed cached README. Draft `.10x/specs/experimental-buoy-baseline-executor.md` fail-closes on an absent/verified-empty target, `max_retries=0`, per-response rows/billing/request accounting, bounded post-write reads, a 26-attempt/904-write-position/1,817-read-position ceiling, zero deletes, and no state/card success on mismatch. Approval B now freezes exact region/model/license/vector/BM25/filter/RRF/default/billing/request values. The draft is unratified with no executable source ticket; neither approval is granted and C3 remains blocked.
+- 2026-07-20: The user ratified the independently reviewed executor specification exactly as reviewed. It is now active, and `.10x/tickets/2026-07-20-implement-experimental-buoy-baseline-executor.md` is the one open executable source/test owner. No implementation or live/model/domain operation occurred. Approval A and Approval B remain ungranted, Buoy compatibility remains unverified, and C3 remains blocked/non-executable.
