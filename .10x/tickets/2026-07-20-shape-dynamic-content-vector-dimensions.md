@@ -1,4 +1,4 @@
-Status: open
+Status: active
 Created: 2026-07-20
 Updated: 2026-07-20
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
@@ -40,7 +40,7 @@ On 2026-07-20, after C2 established that no credible native 384-dimensional cand
 
 ## Blockers
 
-None for read-only shaping. All behavior selection, implementation, downloads, model loading, and remote writes remain blocked pending the shaping output, explicit semantic ratification, focused active specifications where required, bounded executable tickets, exact resource/write approvals, and review.
+The shaping output is complete but this ticket remains active pending independent review of the record-only PR. All behavior selection, implementation, downloads, model loading, and remote writes remain blocked pending review, explicit semantic ratification at the recorded checkpoint, focused active specifications where required, bounded executable tickets, and exact resource/write approvals.
 
 ## Explicit exclusions
 
@@ -56,6 +56,8 @@ C2's immutable model evidence, inspected current source and locked open-source p
 - `.10x/research/2026-07-19-code-aware-embedding-candidate.md`
 - `.10x/evidence/2026-07-19-code-aware-embedding-feasibility-research.md`
 - `.10x/reviews/2026-07-20-code-aware-embedding-candidate-review.md`
+- `.10x/research/2026-07-20-dynamic-content-vector-dimensions.md`
+- `.10x/evidence/2026-07-20-dynamic-content-vector-dimension-shaping.md`
 - `.10x/tickets/2026-07-19-evaluate-code-aware-embedding-pilot.md`
 - `src/buoy_search/chunker.py`
 - `src/buoy_search/apply.py`
@@ -67,3 +69,4 @@ C2's immutable model evidence, inspected current source and locked open-source p
 ## Progress and notes
 
 - 2026-07-20: Opened from the user's explicit approval to shape dynamic content-vector dimensions after C2's reviewed stop. No active behavior spec, candidate approval, download/install, model load, inference, source/test/lockfile change, namespace/card/catalog/default write, credential access, or live Buoy operation was authorized or performed.
+- 2026-07-20: Completed record-only shaping at `.10x/research/2026-07-20-dynamic-content-vector-dimensions.md` with immutable 768/3,584 candidate bytes, explicit unmeasured RAM/device categories, strict 384 routing separation, versioned-card options, new-namespace/no-migration isolation, plan/apply/retrieval/automatic-routing failure contracts, pinned offline bootstrap/runtime controls, model-specific role semantics, implementation implications, stop conditions, and a confirm-or-correct checkpoint. Evidence: `.10x/evidence/2026-07-20-dynamic-content-vector-dimension-shaping.md`. Ticket remains active pending required independent review; no model was selected and no behavior/spec/decision/ticket was activated.
