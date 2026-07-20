@@ -1,6 +1,6 @@
-Status: open
+Status: active
 Created: 2026-07-14
-Updated: 2026-07-14
+Updated: 2026-07-19
 Parent: None
 Depends-On: .10x/tickets/done/2026-07-14-publish-buoy-rebrand-commit.md
 
@@ -33,4 +33,9 @@ Upstream SHA/tag lookup, workflow diff, local tests, hosted CI URL/annotations, 
 
 ## Blockers
 
-- Requires identifying released upstream Node.js 24-compatible action versions; do not guess or weaken full-SHA pinning.
+None. Upstream release, tag, commit, and action-runtime provenance is recorded in `.10x/evidence/2026-07-19-node24-github-actions-validation.md`.
+
+## Progress and notes
+
+- 2026-07-19: Independently corroborated GitHub release/Git Data API results with upstream `git ls-remote`: `actions/checkout` v5.0.1 is commit `93cb6efe18208431cddfb8368fd83d5badbf9bfd`; `astral-sh/setup-uv` v7.6.0 is commit `37802adc94f370d6bfd71619e3f0bf239e1f3b78`; both commit-pinned `action.yml` files declare Node.js 24.
+- 2026-07-19: Updated only the checkout/setup-uv pins and identifying major comments in CI/release workflows, plus the static workflow test's expected majors. Local Python 3.11 and 3.13 suites each passed all 422 tests; distribution build and `git diff --check` passed. Hosted CI and independent review remain required, so the ticket stays active.
