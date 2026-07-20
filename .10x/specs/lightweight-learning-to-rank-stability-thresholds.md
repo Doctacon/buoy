@@ -1,4 +1,4 @@
-Status: draft
+Status: active
 Created: 2026-07-20
 Updated: 2026-07-20
 
@@ -6,17 +6,17 @@ Updated: 2026-07-20
 
 ## Purpose and authority
 
-This draft proposes the exact material-weight, sign-stability, and order-stability contract required before C7 may fit or score a model. It is a pre-registration proposal, not active authority. C7 remains blocked until the user explicitly ratifies this draft and C3 supplies its immutable compatible cache.
+This active specification defines the exact material-weight, sign-stability, and order-stability contract required before C7 may fit or score a model. The user ratified the exact pre-registered contract after independent review passed PR #63 head `4cb1649dae5c05707fbb91fcf28e02765e634c5f`. C7 remains blocked until C3 supplies its immutable compatible cache.
 
 The current contract after the ratified Buoy judgment removal still contains 13 repositories and 90 composite `repo_key:case_id` cases; only the judgment count changed, from 370 to 369. The frozen leave-one-repository-out order remains `black`, `buoy`, `click`, `django`, `flask`, `httpx`, `mkdocs`, `pydantic`, `pytest`, `requests`, `rich`, `ruff`, and `typer`. Each fold trains on the other 12 repositories. One repository is one fold vote regardless of whether it has five or ten cases.
 
 These thresholds are an operational stability screen over 13 strongly overlapping fits, not a statistical significance test or confidence interval. The folds are dependent because their training sets overlap, and the assistant-drafted labels are experiment-only calibration evidence.
 
-## Substrate assumed by the proposal
+## Substrate assumed by the contract
 
-The proposal applies only to C7's already-bounded transparent ranker direction: one deterministic linear scoring function fitted with a deterministic pairwise logistic objective, using only the retrieval-time-observable feature families allowed by the C7 ticket. Candidate families include ANN/BM25/RRF ranks or scores, file-hit count, path role, filename/query overlap, path-token overlap, available Python symbol overlap, and current `repo_code` multiplier components.
+The contract applies only to C7's already-bounded transparent ranker direction: one deterministic linear scoring function fitted with a deterministic pairwise logistic objective, using only the retrieval-time-observable feature families allowed by the C7 ticket. Candidate families include ANN/BM25/RRF ranks or scores, file-hit count, path role, filename/query overlap, path-token overlap, available Python symbol overlap, and current `repo_code` multiplier components.
 
-Before any fit, C7 MUST separately freeze and hash the exact feature columns, orientations, categorical reference coding, missing-value treatment, pair construction, grade-to-preference rule, regularization, solver/version, seed, convergence rule, and tie-breaking. Feature columns MUST have stable semantics across all folds. Repository or namespace identity, case ID, answer text, per-repository weights, and held-out outcomes remain forbidden. This draft does not ratify those still-to-be-frozen mechanics or add a production ranker.
+Before any fit, C7 MUST separately freeze and hash the exact feature columns, orientations, categorical reference coding, missing-value treatment, pair construction, grade-to-preference rule, regularization, solver/version, seed, convergence rule, and tie-breaking. Feature columns MUST have stable semantics across all folds. Repository or namespace identity, case ID, answer text, per-repository weights, and held-out outcomes remain forbidden. This contract does not ratify those still-to-be-frozen mechanics or add a production ranker.
 
 The intercept, if the frozen pairwise formulation retains one, is excluded from all materiality and stability tests because it does not order candidates from the same query.
 
@@ -33,7 +33,7 @@ These operations are computable from the frozen cache before fitting. They may n
 
 Let `w[f,j]` be the resulting finite standardized coefficient for fold `f` and feature `j`. A fitted coefficient with `abs(w[f,j]) <= 1e-12` is `zero`; it is not positive or negative. An absent feature is also unavailable for sign and order agreement even though its serialized coefficient is zero.
 
-## Exact proposed thresholds
+## Exact ratified thresholds
 
 ### Fold-level material weight
 
@@ -43,7 +43,7 @@ Define the fixed material-effect cutoff:
 M = ln(1.25) = 0.22314355131420976
 ```
 
-A feature is material in fold `f` exactly when it is not absent and `abs(w[f,j]) >= M`. Equality is material. Under the pairwise logistic proposal, `M` means that a one-training-standard-deviation feature change changes fitted preference odds by at least 25%, holding other columns fixed.
+A feature is material in fold `f` exactly when it is not absent and `abs(w[f,j]) >= M`. Equality is material. Under the ratified pairwise logistic contract, `M` means that a one-training-standard-deviation feature change changes fitted preference odds by at least 25%, holding other columns fixed.
 
 A feature is **basket-material** exactly when it is material in at least 10 of the 13 folds. Equality at 10 passes. Nine or fewer does not pass. The cutoff is absolute and may not be replaced with a percentile, top-k weights, fitted-weight standard deviation, or any other result-dependent rule.
 
@@ -94,7 +94,7 @@ No pooled refit, case-weighted fold vote, average coefficient, median coefficien
 
 ## Outcomes and no-tuning rule
 
-Before ratification or before a complete compatible C3 cache exists: **stop without fitting or scoring; C7 remains blocked**.
+Before a complete compatible C3 cache exists: **stop without fitting or scoring; C7 remains blocked**.
 
 After ratification and an otherwise valid execution:
 
@@ -110,13 +110,13 @@ A failure MUST NOT trigger threshold relaxation, feature deletion, regularizatio
 
 Training, fitting, scoring, cache creation, retrieval, model loading, live calls, namespace/catalog/default changes, source or test implementation, label changes or review, production ranker design, and promotion.
 
-## Ratification checkpoint
+## Ratified checkpoint
 
-The exact proposed user checkpoint is:
+The user explicitly confirmed this exact C7 preregistration after independent review:
 
 > Confirm or correct this C7 preregistration: standardize each feature from the 12 training repositories before fitting; define a fold-material coefficient as `abs(w) >= ln(1.25)` and basket-material as at least `10/13` folds; require one nonzero sign in at least `12/13` folds; and require every basket-material feature pair to have the same strict-or-tied absolute-weight relation, using deadband `ln(1.10)`, in at least `10/13` folds with at most one direct reversal of a dominant strict order. Equality passes the named cutoff; `abs(w) <= 1e-12` and zero-variance/absent features do not count as sign or order agreement. Threshold failure means insufficient/overfit and no tuning or product action.
 
-Until the user explicitly confirms exact values and semantics, this record MUST remain `draft` and C7 MUST remain `blocked`.
+This active contract removes only C7's threshold-ratification blocker. It does not authorize fitting, scoring, cache creation, source changes, live work, or promotion; C7 remains blocked on C3 and its existing downstream product/label-confidence gates.
 
 ## References
 
@@ -127,3 +127,5 @@ Until the user explicitly confirms exact values and semantics, this record MUST 
 - `.10x/evidence/2026-07-20-remove-buoy-internal-ranking-judgment.md`
 - `.10x/research/2026-06-28-expanded-validation-ranking-hypotheses.md`
 - `.10x/decisions/repo-ranking-promotion-policy.md`
+- `.10x/reviews/2026-07-20-lightweight-learning-to-rank-stability-thresholds-review.md`
+- `.10x/evidence/2026-07-20-lightweight-learning-to-rank-threshold-ratification.md`

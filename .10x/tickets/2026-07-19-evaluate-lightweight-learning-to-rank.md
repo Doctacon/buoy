@@ -8,18 +8,18 @@ Depends-On: .10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract
 
 ## Scope
 
-After the required thresholds are pre-registered and user-ratified, fit and evaluate one transparent lightweight ranker entirely offline from C3's immutable shared raw-candidate cache and the existing assistant-drafted graded paths. Use repository-held-out validation; do not query or write namespaces again.
+After C3 supplies its immutable compatible shared raw-candidate cache, fit and evaluate one transparent lightweight ranker entirely offline under the active user-ratified threshold contract and the existing assistant-drafted graded paths. Use repository-held-out validation; do not query or write namespaces again.
 
-## Required threshold checkpoint
+## Ratified threshold checkpoint
 
-Before fitting or scoring, pre-register and obtain explicit user ratification for:
+The active pre-registered contract at `.10x/specs/lightweight-learning-to-rank-stability-thresholds.md` fixes:
 
 - the exact definition that makes a learned weight "material";
 - the exact permitted sign-stability behavior across held-out folds;
 - the exact permitted order-stability behavior across held-out folds; and
 - how threshold equality and folds with absent/zero weights are handled.
 
-No threshold, sign rule, order rule, or materiality value may be inferred by C1 or this ticket. C1 may freeze shared schema/folds but cannot make C7 executable.
+No threshold, sign rule, order rule, or materiality value may be inferred or changed by C1 or this ticket. The user's exact ratification is recorded at `.10x/evidence/2026-07-20-lightweight-learning-to-rank-threshold-ratification.md`; C3 cache completion remains required before C7 can become executable.
 
 ## Acceptance criteria after threshold ratification
 
@@ -34,8 +34,8 @@ No threshold, sign rule, order rule, or materiality value may be inferred by C1 
 
 ## Stop conditions
 
-- Stop before fitting/scoring until the material-weight/sign/order definitions and exact thresholds are pre-registered and user-ratified.
-- After ratification, stop on C3 replay mismatch, missing/duplicate composite identity, cache/schema drift, label leakage, fewer than 12 training repos in a fold, repository identity dependence, any repo score/P@5 regression, or failure of the ratified thresholds.
+- Stop before fitting/scoring until C3 supplies the exact immutable compatible cache/hash and every other acceptance prerequisite is frozen; threshold ratification alone does not authorize execution.
+- Stop on C3 replay mismatch, missing/duplicate composite identity, cache/schema drift, label leakage, fewer than 12 training repos in a fold, repository identity dependence, any repo score/P@5 regression, or failure of the ratified thresholds.
 - Do not recapture candidates or issue live calls to repair an offline result.
 - Do not add a runtime dependency or production ranking surface under this ticket.
 
@@ -46,8 +46,9 @@ Threshold ratification provenance; cache/hash and 90-composite-identity provenan
 ## Blockers
 
 - C1 is complete and the ratified Buoy judgment removal preserves 13 repositories/90 composite identities with 369 judgments, but C3 remains blocked and incomplete because the Buoy baseline is unapproved/unverified and the retrieval-only checkpoint is unapproved.
-- `.10x/specs/lightweight-learning-to-rank-stability-thresholds.md` is a draft exact threshold proposal only. Its `ln(1.25)` material cutoff, `10/13` basket-material rule, `12/13` sign rule, and `ln(1.10)`/`10/13` pairwise order rule are not user-ratified.
-- C1 cannot infer these values or make C7 executable. The labels remain assistant-drafted and non-product-ratifying.
+- C7 cannot begin until C3 supplies the exact immutable compatible cache/hash and its required replay/identity provenance. The labels remain assistant-drafted and non-product-ratifying; even a passing experiment remains subject to the later label-confidence checkpoint and separate product ownership.
+
+The threshold blocker is resolved: `.10x/specs/lightweight-learning-to-rank-stability-thresholds.md` is active with the user-ratified `ln(1.25)` material cutoff, `10/13` basket-material rule, `12/13` sign rule, and `ln(1.10)`/`10/13` pairwise order rule.
 
 ## Explicit exclusions
 
@@ -59,7 +60,9 @@ Live calls/writes; label review/editing; repository identity features; productio
 - `.10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md`
 - `.10x/tickets/2026-07-19-capture-current-repo-candidates-and-baselines.md`
 - `.10x/decisions/repo-ranking-promotion-policy.md`
-- `.10x/specs/lightweight-learning-to-rank-stability-thresholds.md` (draft; not ratified)
+- `.10x/specs/lightweight-learning-to-rank-stability-thresholds.md` (active; user-ratified)
+- `.10x/reviews/2026-07-20-lightweight-learning-to-rank-stability-thresholds-review.md`
+- `.10x/evidence/2026-07-20-lightweight-learning-to-rank-threshold-ratification.md`
 
 ## Progress and notes
 
@@ -67,3 +70,4 @@ Live calls/writes; label review/editing; repository identity features; productio
 - 2026-07-20: Marked explicitly blocked because material-weight/sign/order thresholds were never pre-registered or user-ratified; C1 completion alone cannot activate this child.
 - 2026-07-20: C1 closed with Buoy explicitly insufficient. C7 remains blocked on C3 and its independent threshold ratification; no fitting or scoring was authorized.
 - 2026-07-20: Shaped a draft pre-registration without fitting or inspecting outcomes. The proposal standardizes each feature from the 12 training repositories before fitting; uses `abs(w) >= ln(1.25)` in at least `10/13` folds for basket materiality; requires one nonzero sign in at least `12/13`; and requires every basket-material pair's strict-or-tied absolute-weight relation, with `ln(1.10)` deadband, in at least `10/13` folds and at most one direct strict reversal. Equality, absent/zero weights, equal repo fold voting, complete reporting, and failure/no-action behavior are explicit in the draft spec. C7 remains blocked pending exact user ratification and C3; no training, scoring, source, tests, live calls, labels, cache, or product behavior changed.
+- 2026-07-20: Independent review passed PR #63 head `4cb1649`, and the user explicitly ratified the exact reviewed checkpoint unchanged. Activated the threshold specification and removed only C7's threshold blocker. C7 remains blocked on C3's immutable compatible cache and all existing replay, label-confidence, and product-ownership dependencies. No fitting, scoring, cache creation, training, source/test change, live call, label change, or product/default mutation occurred.
