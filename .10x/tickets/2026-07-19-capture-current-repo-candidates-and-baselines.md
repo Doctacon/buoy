@@ -2,7 +2,7 @@ Status: blocked
 Created: 2026-07-19
 Updated: 2026-07-20
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
-Depends-On: .10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md, .10x/tickets/done/2026-07-20-implement-experimental-buoy-baseline-executor.md
+Depends-On: .10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md, .10x/tickets/done/2026-07-20-implement-experimental-buoy-baseline-executor.md, .10x/tickets/2026-07-20-source-pin-and-execute-experimental-buoy-baseline.md
 
 # C3: Capture Current Repo Candidates and Baselines
 
@@ -40,9 +40,9 @@ Approval provenance; exact request count; proof that the cache/schema contains a
 
 ## Blockers
 
-- The ratified internal-judgment removal/rehash is complete under `.10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md`, and all remaining paths resolve. Buoy remains `insufficient` because the proposed baseline is still `pending_approval` and its contents/model compatibility are unverified.
-- The fail-closed baseline executor contract at `.10x/specs/experimental-buoy-baseline-executor.md` is active, and its bounded implementation independently passed review and closed at `.10x/tickets/done/2026-07-20-implement-experimental-buoy-baseline-executor.md`. This satisfies only the implementation prerequisite; the source-pinned Approval A grant constants remain `None` and provide no live authority.
-- The required baseline-write and retrieval-only approvals are split and filled in `.10x/evidence/2026-07-20-c3-buoy-baseline-approval-checkpoint.md`; Approval A and Approval B remain ungranted. C3 cannot become executable until Approval A is separately granted and produces compatible-baseline evidence, and Approval B is then separately granted.
+- The ratified internal-judgment removal/rehash is complete under `.10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md`, and all remaining paths resolve. Buoy remains `insufficient`: the exact baseline write is now granted, but no reviewed integrated source contains its pins, no live operation has occurred, and contents/model compatibility remain unverified.
+- The fail-closed baseline executor contract at `.10x/specs/experimental-buoy-baseline-executor.md` is active, and its bounded implementation independently passed review and closed at `.10x/tickets/done/2026-07-20-implement-experimental-buoy-baseline-executor.md`. The user separately granted exact Approval A at `.10x/evidence/2026-07-20-experimental-buoy-baseline-approval-a-grant.md`; however, both source-pinned grant constants remain `None`, so current source still provides no live authority.
+- `.10x/tickets/2026-07-20-source-pin-and-execute-experimental-buoy-baseline.md` owns the required exact source-pin change, independent review/integration, one live invocation from that reviewed integrated source, complete slot/accounting/partial-state evidence, and compatible-baseline review. Approval B remains ungranted and explicitly excluded. C3 stays blocked until that owner produces independently reviewed compatible-baseline evidence and Approval B is then separately granted.
 
 ## Explicit exclusions
 
@@ -59,6 +59,9 @@ Namespace writes/deletes; candidate re-indexing; source/tests implementation bef
 - `.10x/tickets/done/2026-07-20-implement-experimental-buoy-baseline-executor.md`
 - `.10x/evidence/2026-07-20-experimental-buoy-baseline-executor-ratification.md`
 - `.10x/reviews/2026-07-20-experimental-buoy-baseline-executor-spec-review.md`
+- `.10x/evidence/2026-07-20-experimental-buoy-baseline-approval-a-grant.md`
+- `.10x/evidence/.storage/2026-07-20-experimental-buoy-baseline-approval-a.json`
+- `.10x/tickets/2026-07-20-source-pin-and-execute-experimental-buoy-baseline.md`
 
 ## Progress and notes
 
@@ -70,3 +73,4 @@ Namespace writes/deletes; candidate re-indexing; source/tests implementation bef
 - 2026-07-20: Repaired the approval package record-only. The immutable default model/revision is now bound to MIT by its hashed cached README. Draft `.10x/specs/experimental-buoy-baseline-executor.md` fail-closes on an absent/verified-empty target, `max_retries=0`, per-response rows/billing/request accounting, bounded post-write reads, a 26-attempt/904-write-position/1,817-read-position ceiling, zero deletes, and no state/card success on mismatch. Approval B now freezes exact region/model/license/vector/BM25/filter/RRF/default/billing/request values. The draft is unratified with no executable source ticket; neither approval is granted and C3 remains blocked.
 - 2026-07-20: The user ratified the independently reviewed executor specification exactly as reviewed. It is now active, and `.10x/tickets/done/2026-07-20-implement-experimental-buoy-baseline-executor.md` was the one executable source/test owner. No implementation or live/model/domain operation occurred in that ratification turn. Approval A and Approval B remained ungranted, Buoy compatibility unverified, and C3 blocked/non-executable.
 - 2026-07-20: The bounded executor implementation independently passed review at PR #70 head `f6cd38dba1bc7cf8fbcb542133ca264e6cb3d61c` and its ticket closed. This satisfies only C3's implementation/review prerequisite. Approval A and Approval B remain ungranted, the source-pinned Approval A grant constants remain `None`, no baseline/model/provider/domain-state operation occurred, Buoy compatibility remains unverified, and C3 remains blocked/non-executable.
+- 2026-07-20: The user granted the checkpoint's exact Approval A text via `Approve baseline write (Recommended)`. `.10x/evidence/2026-07-20-experimental-buoy-baseline-approval-a-grant.md` records the exact text, actor/timestamp/provenance, immutable JSON bytes, and source-pin hashes. The new bounded sequential owner `.10x/tickets/2026-07-20-source-pin-and-execute-experimental-buoy-baseline.md` must first pin/review/integrate the exact grant and only then invoke live once from reviewed integrated source with complete slot/accounting/partial-state evidence. Current grant constants remain `None`; no credential/model/provider/domain-state operation occurred. Approval B remains ungranted, Buoy compatibility remains unverified, and C3 remains blocked.
