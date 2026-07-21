@@ -1,0 +1,1792 @@
+{
+  "accounting": {
+    "delete_attempts": 0,
+    "dollar_cost": "unknown",
+    "max_retries": 0,
+    "physical_attempts": 2,
+    "provider_attested": true,
+    "read_attempts": 2,
+    "required_max_retries": 0,
+    "returned_row_positions": 0,
+    "sdk_version": "2.4.0",
+    "slots": [
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 1,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "read",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 1,
+        "operation_number": 1,
+        "phase": "target_preflight_metadata",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": null,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "succeeded",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "read",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 2,
+        "operation_number": 1,
+        "phase": "target_empty_check",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": null,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 1,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": 1
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 2,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "read",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 3,
+        "operation_number": 1,
+        "phase": "catalog_preflight_metadata",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": null,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "succeeded",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "read",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 4,
+        "operation_number": 1,
+        "phase": "catalog_card_preflight",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": null,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 2,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": 2
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "read",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 5,
+        "operation_number": 2,
+        "phase": "catalog_card_preflight",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": null,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 2,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": 2
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 6,
+        "operation_number": 1,
+        "phase": "content_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 7,
+        "operation_number": 2,
+        "phase": "content_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 8,
+        "operation_number": 3,
+        "phase": "content_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 9,
+        "operation_number": 4,
+        "phase": "content_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 10,
+        "operation_number": 5,
+        "phase": "content_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 11,
+        "operation_number": 6,
+        "phase": "content_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 12,
+        "operation_number": 7,
+        "phase": "content_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 13,
+        "operation_number": 8,
+        "phase": "content_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 14,
+        "operation_number": 9,
+        "phase": "content_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 15,
+        "operation_number": 10,
+        "phase": "content_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 16,
+        "operation_number": 11,
+        "phase": "content_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 17,
+        "operation_number": 12,
+        "phase": "content_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 18,
+        "operation_number": 13,
+        "phase": "content_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 19,
+        "operation_number": 14,
+        "phase": "content_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 20,
+        "operation_number": 15,
+        "phase": "content_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 7,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "read",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 21,
+        "operation_number": 1,
+        "phase": "target_postwrite_metadata",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": null,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "read",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 22,
+        "operation_number": 1,
+        "phase": "target_postwrite_verification",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": null,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 904,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": 904
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "read",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 23,
+        "operation_number": 2,
+        "phase": "target_postwrite_verification",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": null,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 904,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": 904
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "write",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 24,
+        "operation_number": 1,
+        "phase": "catalog_conditional_write",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": 1,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "read",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 25,
+        "operation_number": 1,
+        "phase": "catalog_postwrite_verification",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": null,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 2,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": 2
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 0,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "kind": "read",
+        "metrics": null,
+        "metrics_present": false,
+        "number": 26,
+        "operation_number": 2,
+        "phase": "catalog_postwrite_verification",
+        "request_identity": null,
+        "request_identity_present": false,
+        "requested_rows": null,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 2,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": 2
+      }
+    ],
+    "write_attempts": 0,
+    "write_row_positions": 0
+  },
+  "actor": "implementation-subagent",
+  "approval_a": {
+    "approval_text_sha256": "bafc2500292bc8fcfc4aa806873782d43689330c704620f8981684a3796bfa10",
+    "granted_at": "2026-07-20T23:24:06Z",
+    "granted_by": "user",
+    "provenance": {
+      "conversation_id": "runtime-id-not-exposed",
+      "message_id": "sha256:4b066f19c3331b0074d4548b691b293072a50406df6f0557fcdba8e3d3f25d74",
+      "source_system": "pi"
+    },
+    "record_sha256": "46a44e9440425ef73c66e69d64d7e83a7c098ce0fa3f85f2caf7f8d7685cc5ec"
+  },
+  "approval_a_authority_consumed": true,
+  "approval_b_granted": false,
+  "c3_remains_blocked": true,
+  "c3_retrieval_performed": false,
+  "effects": {
+    "catalog_card": "catalog namespace metadata schema returned in slot_3 but top-level distance_metric was absent; card itself unobserved; slots_4_5_and_24_to_26 unused; no card write attempted",
+    "cleanup_delete_retry_resume": "not attempted outside the executor; executor ledger delete_attempts recorded above",
+    "duckdb_applied_state": {
+      "applied_state_sha256": null,
+      "exists": false,
+      "last_apply_id": null,
+      "last_plan_id": null,
+      "observation_error": null,
+      "path": "/tmp/buoy-c1-state/state/github-doctacon-buoy-search/github-doctacon-buoy-search-v1/state.duckdb",
+      "row_count": null
+    },
+    "extra_provider_evidence_requests": 0,
+    "indeterminate_remote_effects": "none attributable to mutation because no write/delete was attempted; provider state after the two observations was not re-read",
+    "known_local_effects": "state root and persistent lock-file path were created by lock acquisition; no pending record and no DuckDB applied state exist",
+    "known_remote_effects": "two metadata reads only; target reported absent and catalog returned schema; zero writes and zero deletes",
+    "local_lock": {
+      "file_exists_after_invocation": true,
+      "lock_context_exited": true,
+      "lock_ownership_retested": false,
+      "path": "/tmp/buoy-c1-state/state/github-doctacon-buoy-search/github-doctacon-buoy-search-v1/apply.lock"
+    },
+    "local_lock_exists_after_invocation": true,
+    "other_namespace_or_card": "not attempted",
+    "pending": {
+      "bytes": null,
+      "exists": false,
+      "observation_error": null,
+      "path": "/private/tmp/buoy-c1-state/catalog-pending/plan_b6c5d128295f442f.json",
+      "payload_sha256": null,
+      "sha256": null
+    },
+    "state_root_exists_after_invocation": true,
+    "target_namespace": "observed_unambiguously_absent_by_slot_1; slot_2 unused; no target write attempted"
+  },
+  "executor_evidence": {
+    "approval_a_granted_by_executor": false,
+    "approval_b_granted_by_executor": false,
+    "card_success": false,
+    "delete_attempts": 0,
+    "dollar_cost": "unknown",
+    "execution_mode": "live",
+    "executor": "experimental_buoy_baseline",
+    "limits": {
+      "delete_attempts": 0,
+      "physical_attempts": 26,
+      "returned_row_positions": 1817,
+      "write_row_positions": 904
+    },
+    "local_state_committed": false,
+    "pending_retained": false,
+    "physical_attempts": 2,
+    "provider_attested": true,
+    "raw_card_row_projections": {},
+    "raw_schema_distance_projections": {
+      "catalog_preflight": {
+        "distance_metric": null,
+        "distance_metric_present": false,
+        "namespace_absent": null,
+        "namespace_absent_present": false,
+        "raw_projection_sha256": "5073fd4dcbf9fce0c9337d8c2fb34722cfb7731bfe33b93823108435b07d8ccc",
+        "schema": {
+          "aliases": {
+            "filterable": false,
+            "type": "[]string"
+          },
+          "card_revision": {
+            "filterable": true,
+            "type": "string"
+          },
+          "created_at": {
+            "filterable": false,
+            "type": "string"
+          },
+          "embedding_model": {
+            "filterable": false,
+            "type": "string"
+          },
+          "embedding_precision": {
+            "filterable": true,
+            "type": "string"
+          },
+          "enabled": {
+            "filterable": true,
+            "type": "bool"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_apply_id": {
+            "filterable": false,
+            "type": "string"
+          },
+          "last_plan_id": {
+            "filterable": false,
+            "type": "string"
+          },
+          "namespace": {
+            "filterable": true,
+            "type": "string"
+          },
+          "plan_schema_version": {
+            "filterable": false,
+            "type": "uint"
+          },
+          "ranking_aggregation": {
+            "filterable": false,
+            "type": "string"
+          },
+          "ranking_mode": {
+            "filterable": false,
+            "type": "string"
+          },
+          "ranking_pool": {
+            "filterable": false,
+            "type": "uint"
+          },
+          "ranking_profile": {
+            "filterable": false,
+            "type": "string"
+          },
+          "region": {
+            "filterable": true,
+            "type": "string"
+          },
+          "routing_model": {
+            "filterable": false,
+            "type": "string"
+          },
+          "routing_model_revision": {
+            "filterable": false,
+            "type": "string"
+          },
+          "semantic_hash": {
+            "filterable": false,
+            "type": "string"
+          },
+          "semantic_origin": {
+            "filterable": false,
+            "type": "string"
+          },
+          "site_id": {
+            "filterable": false,
+            "type": "string"
+          },
+          "source_kind": {
+            "filterable": false,
+            "type": "string"
+          },
+          "source_uri": {
+            "filterable": false,
+            "type": "string"
+          },
+          "summary": {
+            "filterable": false,
+            "type": "string"
+          },
+          "tags": {
+            "filterable": false,
+            "type": "[]string"
+          },
+          "title": {
+            "filterable": false,
+            "type": "string"
+          },
+          "updated_at": {
+            "filterable": false,
+            "type": "string"
+          },
+          "vector": {
+            "ann": {
+              "distance_metric": "cosine_distance"
+            },
+            "type": "[384]f32"
+          },
+          "vector_dimensions": {
+            "filterable": false,
+            "type": "uint"
+          },
+          "vector_hash": {
+            "filterable": false,
+            "type": "string"
+          }
+        },
+        "schema_present": true
+      },
+      "target_preflight": {
+        "distance_metric": null,
+        "distance_metric_present": false,
+        "namespace_absent": true,
+        "namespace_absent_present": true,
+        "raw_projection_sha256": "2f41ab62d15091aea29f841802917ff829aa273da15b0db8c5c073b30f1f36ab",
+        "schema": null,
+        "schema_present": false
+      }
+    },
+    "raw_target_row_projections": {},
+    "read_attempts": 2,
+    "reloaded_applied_state_hash": null,
+    "remote_card_verified": false,
+    "required_max_retries": 0,
+    "required_sdk_version": "2.4.0",
+    "returned_row_positions": 0,
+    "simulation": false,
+    "slots": [
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 1,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "metrics": null,
+        "metrics_present": false,
+        "request_identity": null,
+        "request_identity_present": false,
+        "returned_rows": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "slot": {
+          "kind": "read",
+          "number": 1,
+          "operation_number": 1,
+          "phase": "target_preflight_metadata",
+          "requested_rows": null,
+          "resource": "github-doctacon-buoy-search-v1",
+          "returned_rows_ceiling": 0,
+          "top_k": null
+        },
+        "status": "succeeded"
+      },
+      {
+        "kind": "read",
+        "number": 2,
+        "operation_number": 1,
+        "phase": "target_empty_check",
+        "requested_rows": null,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 1,
+        "status": "unused",
+        "top_k": 1
+      },
+      {
+        "affected_ids": null,
+        "affected_ids_present": false,
+        "billing": null,
+        "billing_present": false,
+        "cumulative_physical_attempts": 2,
+        "cumulative_returned_row_positions": 0,
+        "cumulative_write_row_positions": 0,
+        "error": null,
+        "metrics": null,
+        "metrics_present": false,
+        "request_identity": null,
+        "request_identity_present": false,
+        "returned_rows": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "slot": {
+          "kind": "read",
+          "number": 3,
+          "operation_number": 1,
+          "phase": "catalog_preflight_metadata",
+          "requested_rows": null,
+          "resource": "buoy-routing-catalog-v1",
+          "returned_rows_ceiling": 0,
+          "top_k": null
+        },
+        "status": "succeeded"
+      },
+      {
+        "kind": "read",
+        "number": 4,
+        "operation_number": 1,
+        "phase": "catalog_card_preflight",
+        "requested_rows": null,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows_ceiling": 2,
+        "status": "unused",
+        "top_k": 2
+      },
+      {
+        "kind": "read",
+        "number": 5,
+        "operation_number": 2,
+        "phase": "catalog_card_preflight",
+        "requested_rows": null,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows_ceiling": 2,
+        "status": "unused",
+        "top_k": 2
+      },
+      {
+        "kind": "write",
+        "number": 6,
+        "operation_number": 1,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "write",
+        "number": 7,
+        "operation_number": 2,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "write",
+        "number": 8,
+        "operation_number": 3,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "write",
+        "number": 9,
+        "operation_number": 4,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "write",
+        "number": 10,
+        "operation_number": 5,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "write",
+        "number": 11,
+        "operation_number": 6,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "write",
+        "number": 12,
+        "operation_number": 7,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "write",
+        "number": 13,
+        "operation_number": 8,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "write",
+        "number": 14,
+        "operation_number": 9,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "write",
+        "number": 15,
+        "operation_number": 10,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "write",
+        "number": 16,
+        "operation_number": 11,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "write",
+        "number": 17,
+        "operation_number": 12,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "write",
+        "number": 18,
+        "operation_number": 13,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "write",
+        "number": 19,
+        "operation_number": 14,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "write",
+        "number": 20,
+        "operation_number": 15,
+        "phase": "content_write",
+        "requested_rows": 7,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "read",
+        "number": 21,
+        "operation_number": 1,
+        "phase": "target_postwrite_metadata",
+        "requested_rows": null,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "read",
+        "number": 22,
+        "operation_number": 1,
+        "phase": "target_postwrite_verification",
+        "requested_rows": null,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 904,
+        "status": "unused",
+        "top_k": 904
+      },
+      {
+        "kind": "read",
+        "number": 23,
+        "operation_number": 2,
+        "phase": "target_postwrite_verification",
+        "requested_rows": null,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows_ceiling": 904,
+        "status": "unused",
+        "top_k": 904
+      },
+      {
+        "kind": "write",
+        "number": 24,
+        "operation_number": 1,
+        "phase": "catalog_conditional_write",
+        "requested_rows": 1,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows_ceiling": 0,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "kind": "read",
+        "number": 25,
+        "operation_number": 1,
+        "phase": "catalog_postwrite_verification",
+        "requested_rows": null,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows_ceiling": 2,
+        "status": "unused",
+        "top_k": 2
+      },
+      {
+        "kind": "read",
+        "number": 26,
+        "operation_number": 2,
+        "phase": "catalog_postwrite_verification",
+        "requested_rows": null,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows_ceiling": 2,
+        "status": "unused",
+        "top_k": 2
+      }
+    ],
+    "success": false,
+    "write_attempts": 0,
+    "write_row_positions": 0
+  },
+  "host": "local-macos-worktree",
+  "integrated_commit": "0e6b97a0897ac7f7a82d073d851709951e0ea29e",
+  "invocation": {
+    "authority_consumed": true,
+    "count": 1,
+    "credential_access_boundary": "not inspected by caller; credential reader reachable only inside the one public invocation",
+    "credential_read": true,
+    "error": {
+      "message": "catalog namespace distance_metric is missing or mismatched",
+      "type": "ExperimentalBaselineError"
+    },
+    "error_evidence_attached": true,
+    "finished_at": "2026-07-21T03:12:38.841410+00:00",
+    "max_retries": 0,
+    "model_access_boundary": "model import/construction reachable only inside the one public invocation after cache and local gates",
+    "model_imported_constructed_and_loaded": true,
+    "no_second_invocation": true,
+    "occurred": true,
+    "outcome": "aborted_or_failed",
+    "provider_client_constructed": true,
+    "public_entry_point": "execute_experimental_baseline",
+    "result_shape_error": null,
+    "sdk_version": "2.4.0",
+    "started_at": "2026-07-21T03:09:58.038837+00:00"
+  },
+  "operation": "experimental-buoy-baseline-step-2-one-invocation",
+  "preflight": {
+    "actor": "implementation-subagent",
+    "approval": {
+      "approval_text_sha256": "bafc2500292bc8fcfc4aa806873782d43689330c704620f8981684a3796bfa10",
+      "granted_at": "2026-07-20T23:24:06Z",
+      "granted_by": "user",
+      "provenance": {
+        "conversation_id": "runtime-id-not-exposed",
+        "message_id": "sha256:4b066f19c3331b0074d4548b691b293072a50406df6f0557fcdba8e3d3f25d74",
+        "source_system": "pi"
+      },
+      "record_sha256": "46a44e9440425ef73c66e69d64d7e83a7c098ce0fa3f85f2caf7f8d7685cc5ec"
+    },
+    "approval_b_or_c3_retrieval": false,
+    "checks": [
+      {
+        "expected": "0e6b97a0897ac7f7a82d073d851709951e0ea29e",
+        "name": "integrated_commit",
+        "observed": "0e6b97a0897ac7f7a82d073d851709951e0ea29e",
+        "status": "pass"
+      },
+      {
+        "expected": {
+          "develop": "0e6b97a0897ac7f7a82d073d851709951e0ea29e",
+          "origin_develop": "0e6b97a0897ac7f7a82d073d851709951e0ea29e"
+        },
+        "name": "develop_commit",
+        "observed": {
+          "develop": "0e6b97a0897ac7f7a82d073d851709951e0ea29e",
+          "origin_develop": "0e6b97a0897ac7f7a82d073d851709951e0ea29e"
+        },
+        "status": "pass"
+      },
+      {
+        "expected": "clean",
+        "name": "tracked_worktree_clean",
+        "observed": "clean",
+        "status": "pass"
+      },
+      {
+        "expected": {
+          "bytes": 69834,
+          "git_blob": "bce9daf1f7b07b50e5c6bfb34f5e834ff13554d4",
+          "sha256": "044c5362618ae07a93ad832a1f7425174faed273d2907f17110210319cbcd450"
+        },
+        "name": "source_exact_committed_bytes",
+        "observed": {
+          "bytes": 69834,
+          "git_blob": "bce9daf1f7b07b50e5c6bfb34f5e834ff13554d4",
+          "sha256": "044c5362618ae07a93ad832a1f7425174faed273d2907f17110210319cbcd450"
+        },
+        "status": "pass"
+      },
+      {
+        "expected": true,
+        "name": "grant_exact_committed_bytes",
+        "observed": true,
+        "status": "pass"
+      },
+      {
+        "expected": {
+          "bytes": 2627,
+          "sha256": "46a44e9440425ef73c66e69d64d7e83a7c098ce0fa3f85f2caf7f8d7685cc5ec"
+        },
+        "name": "grant_record_bytes_hash",
+        "observed": {
+          "bytes": 2627,
+          "sha256": "46a44e9440425ef73c66e69d64d7e83a7c098ce0fa3f85f2caf7f8d7685cc5ec"
+        },
+        "status": "pass"
+      },
+      {
+        "expected": {
+          "approval_text_bytes": 2206,
+          "approval_text_sha256": "bafc2500292bc8fcfc4aa806873782d43689330c704620f8981684a3796bfa10",
+          "provenance": {
+            "conversation_id": "runtime-id-not-exposed",
+            "message_id": "sha256:4b066f19c3331b0074d4548b691b293072a50406df6f0557fcdba8e3d3f25d74",
+            "source_system": "pi"
+          },
+          "record_sha256": "46a44e9440425ef73c66e69d64d7e83a7c098ce0fa3f85f2caf7f8d7685cc5ec"
+        },
+        "name": "grant_source_pins",
+        "observed": {
+          "approval_text_bytes": 2206,
+          "approval_text_sha256": "bafc2500292bc8fcfc4aa806873782d43689330c704620f8981684a3796bfa10",
+          "provenance": {
+            "conversation_id": "runtime-id-not-exposed",
+            "message_id": "sha256:4b066f19c3331b0074d4548b691b293072a50406df6f0557fcdba8e3d3f25d74",
+            "source_system": "pi"
+          },
+          "record_sha256": "46a44e9440425ef73c66e69d64d7e83a7c098ce0fa3f85f2caf7f8d7685cc5ec"
+        },
+        "status": "pass"
+      },
+      {
+        "expected": {
+          "approval_text_sha256": "bafc2500292bc8fcfc4aa806873782d43689330c704620f8981684a3796bfa10",
+          "granted_at": "2026-07-20T23:24:06Z",
+          "granted_by": "user",
+          "provenance": {
+            "conversation_id": "runtime-id-not-exposed",
+            "message_id": "sha256:4b066f19c3331b0074d4548b691b293072a50406df6f0557fcdba8e3d3f25d74",
+            "source_system": "pi"
+          },
+          "record_sha256": "46a44e9440425ef73c66e69d64d7e83a7c098ce0fa3f85f2caf7f8d7685cc5ec"
+        },
+        "name": "grant_runtime_validation",
+        "observed": {
+          "approval_text_sha256": "bafc2500292bc8fcfc4aa806873782d43689330c704620f8981684a3796bfa10",
+          "granted_at": "2026-07-20T23:24:06Z",
+          "granted_by": "user",
+          "provenance": {
+            "conversation_id": "runtime-id-not-exposed",
+            "message_id": "sha256:4b066f19c3331b0074d4548b691b293072a50406df6f0557fcdba8e3d3f25d74",
+            "source_system": "pi"
+          },
+          "record_sha256": "46a44e9440425ef73c66e69d64d7e83a7c098ce0fa3f85f2caf7f8d7685cc5ec"
+        },
+        "status": "pass"
+      },
+      {
+        "expected": {
+          "chunks.jsonl": {
+            "bytes": 2351065,
+            "sha256": "5fc9a5c14a47552fbfc8cf02d251150db3fbfe521c7c8036a4dee417af269185"
+          },
+          "manifest.json": {
+            "bytes": 2747684,
+            "sha256": "a8e82bd81e5303157691494dfb2f8de50955d072c21cef2e150ec31ae261079c"
+          },
+          "plan.json": {
+            "bytes": 1192285,
+            "sha256": "f1316f233857c59f6467071b95750638276ac364a6994f3b25a0a3a2c42d3b46"
+          }
+        },
+        "name": "retained_plan_artifact_bytes",
+        "observed": {
+          "chunks.jsonl": {
+            "bytes": 2351065,
+            "sha256": "5fc9a5c14a47552fbfc8cf02d251150db3fbfe521c7c8036a4dee417af269185"
+          },
+          "manifest.json": {
+            "bytes": 2747684,
+            "sha256": "a8e82bd81e5303157691494dfb2f8de50955d072c21cef2e150ec31ae261079c"
+          },
+          "plan.json": {
+            "bytes": 1192285,
+            "sha256": "f1316f233857c59f6467071b95750638276ac364a6994f3b25a0a3a2c42d3b46"
+          }
+        },
+        "status": "pass"
+      },
+      {
+        "expected": {
+          "artifact_hash": "b6c5d128295f442fcae21472c9bcb037ecb44101ca648115e8f666ba59a6f0ce",
+          "base_url": "https://github.com/Doctacon/buoy-search",
+          "diff": {
+            "chunks_to_embed": 903,
+            "first_apply": true,
+            "retained_stale": 0,
+            "rows_to_upsert": 903,
+            "stale": 0,
+            "unchanged": 0
+          },
+          "model": "BAAI/bge-small-en-v1.5",
+          "namespace": "github-doctacon-buoy-search-v1",
+          "plan_id": "plan_b6c5d128295f442f",
+          "precision": "float32",
+          "rows": 903,
+          "site_id": "github-doctacon-buoy-search",
+          "source_commits": [
+            "fcb7abbe1652d2eab4ee23816b6d992d893603ac"
+          ],
+          "source_repositories": [
+            "Doctacon/buoy-search"
+          ],
+          "unique_ids": 903
+        },
+        "name": "plan_artifact_source_903_ids",
+        "observed": {
+          "artifact_hash": "b6c5d128295f442fcae21472c9bcb037ecb44101ca648115e8f666ba59a6f0ce",
+          "base_url": "https://github.com/Doctacon/buoy-search",
+          "diff": {
+            "chunks_to_embed": 903,
+            "first_apply": true,
+            "retained_stale": 0,
+            "rows_to_upsert": 903,
+            "stale": 0,
+            "unchanged": 0
+          },
+          "model": "BAAI/bge-small-en-v1.5",
+          "namespace": "github-doctacon-buoy-search-v1",
+          "plan_id": "plan_b6c5d128295f442f",
+          "precision": "float32",
+          "rows": 903,
+          "site_id": "github-doctacon-buoy-search",
+          "source_commits": [
+            "fcb7abbe1652d2eab4ee23816b6d992d893603ac"
+          ],
+          "source_repositories": [
+            "Doctacon/buoy-search"
+          ],
+          "unique_ids": 903
+        },
+        "status": "pass"
+      },
+      {
+        "expected": {
+          "duckdb_exists": false,
+          "lock_exists": false,
+          "pending_exists": false,
+          "state_root_exists": false,
+          "verified_first_apply": true,
+          "verified_state_rows": 0
+        },
+        "name": "local_state_pending_precondition",
+        "observed": {
+          "duckdb_exists": false,
+          "lock_exists": false,
+          "pending_exists": false,
+          "state_root_exists": false,
+          "verified_first_apply": true,
+          "verified_state_rows": 0
+        },
+        "status": "pass"
+      },
+      {
+        "expected": {
+          "authority_bytes": 1430,
+          "authority_matches_actual": true,
+          "authority_sha256": "5f783ebce23b6ac957d2741399b46e19502b1751acfd3c744b8c41103b138f35",
+          "file_count": 12,
+          "license": "mit",
+          "license_statement_present": true,
+          "manifest_sha256": "5f783ebce23b6ac957d2741399b46e19502b1751acfd3c744b8c41103b138f35",
+          "readme_sha256": "ddb964361a55c6e5dfca6361615854b260c9c960205d04c7520151aaa1d75837",
+          "ref": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+          "resolved_bytes": 267599430,
+          "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
+        },
+        "name": "cache_ref_manifest_readme_license",
+        "observed": {
+          "authority_bytes": 1430,
+          "authority_matches_actual": true,
+          "authority_sha256": "5f783ebce23b6ac957d2741399b46e19502b1751acfd3c744b8c41103b138f35",
+          "file_count": 12,
+          "license": "mit",
+          "license_statement_present": true,
+          "manifest_sha256": "5f783ebce23b6ac957d2741399b46e19502b1751acfd3c744b8c41103b138f35",
+          "readme_sha256": "ddb964361a55c6e5dfca6361615854b260c9c960205d04c7520151aaa1d75837",
+          "ref": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+          "resolved_bytes": 267599430,
+          "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
+        },
+        "status": "pass"
+      },
+      {
+        "expected": "5f783ebce23b6ac957d2741399b46e19502b1751acfd3c744b8c41103b138f35",
+        "name": "cache_canonical_serializer",
+        "observed": "5f783ebce23b6ac957d2741399b46e19502b1751acfd3c744b8c41103b138f35",
+        "status": "pass"
+      },
+      {
+        "expected": {
+          "card_writes": 1,
+          "content_write_sizes": [
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            7
+          ],
+          "reads": 10,
+          "resources": [
+            "buoy-routing-catalog-v1",
+            "github-doctacon-buoy-search-v1"
+          ],
+          "returned_positions": 1817,
+          "sequential_numbers": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26
+          ],
+          "slots": 26,
+          "write_positions": 904,
+          "writes": 16
+        },
+        "name": "fixed_26_slot_ledger",
+        "observed": {
+          "card_writes": 1,
+          "content_write_sizes": [
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            64,
+            7
+          ],
+          "reads": 10,
+          "resources": [
+            "buoy-routing-catalog-v1",
+            "github-doctacon-buoy-search-v1"
+          ],
+          "returned_positions": 1817,
+          "sequential_numbers": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26
+          ],
+          "slots": 26,
+          "write_positions": 904,
+          "writes": 16
+        },
+        "status": "pass"
+      },
+      {
+        "expected": {
+          "catalog_namespace": "buoy-routing-catalog-v1",
+          "distance_metric": "cosine_distance",
+          "generated_card_id": "bc_0a4ee01f946cb0779399000a43d0c146601e87c07740819d0ca83e41149a7",
+          "region": "gcp-us-central1",
+          "required_sdk_version": "2.4.0",
+          "sdk_version": "2.4.0",
+          "target_namespace": "github-doctacon-buoy-search-v1"
+        },
+        "name": "locked_sdk_region_namespace_card_distance",
+        "observed": {
+          "catalog_namespace": "buoy-routing-catalog-v1",
+          "distance_metric": "cosine_distance",
+          "generated_card_id": "bc_0a4ee01f946cb0779399000a43d0c146601e87c07740819d0ca83e41149a7",
+          "region": "gcp-us-central1",
+          "required_sdk_version": "2.4.0",
+          "sdk_version": "2.4.0",
+          "target_namespace": "github-doctacon-buoy-search-v1"
+        },
+        "status": "pass"
+      },
+      {
+        "expected": {
+          "literal_max_retries_zero": true,
+          "local_files_only": 2,
+          "offline_controls_before_prepare": true,
+          "provider_delete_calls": 0,
+          "retry_loop_markers": 0
+        },
+        "name": "offline_zero_retry_no_provider_delete_enforceability",
+        "observed": {
+          "literal_max_retries_zero": true,
+          "local_files_only": 2,
+          "offline_controls_before_prepare": true,
+          "provider_delete_calls": 0,
+          "retry_loop_markers": 0
+        },
+        "status": "pass"
+      },
+      {
+        "expected": "(*, approval_record: 'Path', plan_path: 'Path', cache_root: 'Path', state_root: 'Path') -> 'JsonObject'",
+        "name": "public_entry_exact_signature",
+        "observed": "(*, approval_record: 'Path', plan_path: 'Path', cache_root: 'Path', state_root: 'Path') -> 'JsonObject'",
+        "status": "pass"
+      },
+      {
+        "expected": true,
+        "name": "provider_constructor_retry_capability",
+        "observed": true,
+        "status": "pass"
+      },
+      {
+        "expected": {
+          "applied_state_hash_result": true,
+          "free_bytes_at_least_10m": true,
+          "parents_exist": true,
+          "parents_writable": true,
+          "raw_card_row_projections": true,
+          "raw_schema_distance_projections": true,
+          "raw_target_row_projections": true,
+          "slot_attempt_fields": [
+            "slot",
+            "status",
+            "rows_affected",
+            "rows_affected_present",
+            "returned_rows",
+            "billing",
+            "billing_present",
+            "metrics",
+            "metrics_present",
+            "request_identity",
+            "request_identity_present",
+            "affected_ids",
+            "affected_ids_present",
+            "error",
+            "cumulative_physical_attempts",
+            "cumulative_write_row_positions",
+            "cumulative_returned_row_positions"
+          ],
+          "unused_slots": 26
+        },
+        "name": "complete_secret_free_evidence_capacity",
+        "observed": {
+          "applied_state_hash_result": true,
+          "free_bytes_at_least_10m": true,
+          "parents_exist": true,
+          "parents_writable": true,
+          "raw_card_row_projections": true,
+          "raw_schema_distance_projections": true,
+          "raw_target_row_projections": true,
+          "slot_attempt_fields": [
+            "slot",
+            "status",
+            "rows_affected",
+            "rows_affected_present",
+            "returned_rows",
+            "billing",
+            "billing_present",
+            "metrics",
+            "metrics_present",
+            "request_identity",
+            "request_identity_present",
+            "affected_ids",
+            "affected_ids_present",
+            "error",
+            "cumulative_physical_attempts",
+            "cumulative_write_row_positions",
+            "cumulative_returned_row_positions"
+          ],
+          "unused_slots": 26
+        },
+        "status": "pass"
+      }
+    ],
+    "credential_read": false,
+    "host": "local-macos-worktree",
+    "integrated_commit": "0e6b97a0897ac7f7a82d073d851709951e0ea29e",
+    "invocation_occurred": false,
+    "model_imported_or_loaded": false,
+    "observed_at": "2026-07-21T03:08:09.179322+00:00",
+    "operation": "experimental-buoy-baseline-step-2-fresh-preflight",
+    "paths": {
+      "approval_record": "/Users/crlough/Code/personal/turbo-search.worktrees/execute-baseline-approval-a-retry/.10x/evidence/.storage/2026-07-20-experimental-buoy-baseline-approval-a.json",
+      "cache_root": "/Users/crlough/.cache/huggingface/hub/models--BAAI--bge-small-en-v1.5",
+      "plan": "/tmp/buoy-c1-current-plan/plan.json",
+      "state_root": "/tmp/buoy-c1-state"
+    },
+    "preflight_passed": true,
+    "provider_client_constructed": false,
+    "provider_requests": 0,
+    "schema_version": 1,
+    "source": {
+      "bytes": 69834,
+      "git_blob": "bce9daf1f7b07b50e5c6bfb34f5e834ff13554d4",
+      "sha256": "044c5362618ae07a93ad832a1f7425174faed273d2907f17110210319cbcd450"
+    },
+    "stop_reasons": []
+  },
+  "retry_resume_cleanup_performed": false,
+  "schema_version": 1,
+  "source": {
+    "bytes": 69834,
+    "git_blob": "bce9daf1f7b07b50e5c6bfb34f5e834ff13554d4",
+    "sha256": "044c5362618ae07a93ad832a1f7425174faed273d2907f17110210319cbcd450"
+  }
+}
