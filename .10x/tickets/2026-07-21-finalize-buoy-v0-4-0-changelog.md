@@ -39,3 +39,4 @@ None. Verified v0.4.0 GitHub Release publication is complete.
 ## Progress and notes
 
 - 2026-07-21: Opened prospectively. No changelog finalization or release mutation occurred.
+- 2026-07-21: Source finalization is included in the simple-release implementation worktree: hosted date `2026-07-21`, v0.4.0 Release link, and Unreleased compare link match `.10x/evidence/2026-07-21-buoy-v0-4-0-github-release.md`. Focused checks, complete Python 3.11/3.13 suites, links, deterministic artifacts, and diff checks passed without live release mutation. Implementation evidence: `.10x/evidence/2026-07-21-simple-main-release-automation-implementation.md`. Ticket remains open until PR review/integration evidence satisfies its explicit review gate.

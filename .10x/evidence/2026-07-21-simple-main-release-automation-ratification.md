@@ -16,6 +16,7 @@ After independent review, the user selected `Confirm simplest flow (Recommended)
 - serialized non-cancelling deterministic main-push builds;
 - automatic annotated tag, exact provenance, and GitHub Release with no environment/manual approval;
 - exact complete-state no-op only; every partial/mismatched state permanently fails without automated completion, overwrite, move, deletion, cleanup, or repeated mutation;
+- a subsequently approved, narrowly pinned transition exception accepts the already-published v0.4.0 provenance source ref `refs/tags/v0.4.0` only when tag `v0.4.0`, commit `c49dc0582bf3f06a16eafdcca0707d1e64e1c58d`, wheel SHA-256 `89b84c6beba2979ab6ffd0d244d1d0f5c1af938cfbec021a89094a7109e5c4c8`, sdist SHA-256 `9c0469d2fc03b8e03780b06793537736391c21f0ed07c43adab9e674988ffd3a`, repository `Doctacon/buoy-search`, workflow `release.yml`, subjects, and every other Release identity field all match; every future version still requires `refs/heads/main`;
 - mandatory deletion of the unused release environment after zero references/deployments;
 - explicit supersession of old ceremony, truthful v0.4 record reconciliation, preserved history, and a repository-local self-hosted migration path.
 

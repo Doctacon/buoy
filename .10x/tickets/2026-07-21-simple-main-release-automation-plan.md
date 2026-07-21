@@ -36,6 +36,10 @@ The configuration child depends on reviewed integration of repository automation
 - `.10x/specs/main-push-automatic-github-release.md`
 - `.10x/evidence/2026-07-21-simple-main-release-automation-ratification.md`
 
+## Progress and notes
+
+- 2026-07-21: Repository implementation and local validation are complete on `work/implement-simple-release`, including the exact approved v0.4.0 provenance transition. Evidence: `.10x/evidence/2026-07-21-simple-main-release-automation-implementation.md`. Hosted CI and independent review remain before the implementation child can close; hosted configuration remains sequenced after reviewed integration.
+
 ## Blockers
 
 None for repository implementation. Hosted configuration remains blocked on integrated reviewed repository automation.

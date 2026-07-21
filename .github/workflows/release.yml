@@ -2,103 +2,280 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-main
   cancel-in-progress: false
 
 jobs:
-  validate-and-build:
-    name: Validate and build
+  validate:
+    name: Validate Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.11"
+          - "3.13"
     steps:
-      - name: Check out tagged source
+      - name: Check out exact main commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+      - name: Install locked Python
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.11.7"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Validate and test exact main commit
+        run: |
+          uv sync --locked --python ${{ matrix.python-version }}
+          PYTHONDONTWRITEBYTECODE=1 uv run python scripts/release_automation.py validate
+          PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate_ranking_contract.py
+          PYTHONDONTWRITEBYTECODE=1 uv run python scripts/c6_syntax_forecast.py validate
+          PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*.py' -q
+
+  build:
+    name: Build distributions once
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      PYTHONHASHSEED: "0"
+      TZ: UTC
+      LC_ALL: C
+    steps:
+      - name: Check out exact main commit
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Install uv and Python
+      - name: Install locked build Python
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: "0.11.7"
           python-version: "3.13"
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - name: Verify remote annotated tag and package versions
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Build once and inspect distributions
         run: |
-          object_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}" --jq '.object.type')"
-          uv run --no-project python scripts/release_checks.py tag --tag "${GITHUB_REF_NAME}"
-          uv run --no-project python scripts/release_checks.py remote-tag-object --tag "${GITHUB_REF_NAME}" --object-type "${object_type}"
-      - name: Sync locked dependencies
-        run: uv sync --locked --python 3.13
-      - name: Run complete release validation
-        run: PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*.py' -q
-      - name: Build wheel and source distribution
-        run: uv build --out-dir dist
-      - name: Verify release assets
-        run: uv run --no-project python scripts/release_checks.py assets --dist dist
-      - name: Retain release distributions
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$GITHUB_SHA")"
+          uv build --out-dir dist
+          python3 scripts/release_automation.py artifacts --dist dist --output manifest.json
+      - name: Smoke normal clean wheel installation and bundled tokenizer
+        run: |
+          python3 -m venv /tmp/buoy-release-smoke
+          /tmp/buoy-release-smoke/bin/python -m pip install --disable-pip-version-check dist/*.whl
+          /tmp/buoy-release-smoke/bin/buoy --version
+          /tmp/buoy-release-smoke/bin/buoy --help >/dev/null
+          /tmp/buoy-release-smoke/bin/python -m buoy_search --help >/dev/null
+          /tmp/buoy-release-smoke/bin/python - <<'PY'
+          from buoy_search.treatment_token_budget import exact_token_count, load_pinned_tokenizer
+          assert exact_token_count(load_pinned_tokenizer(), "Buoy release tokenizer smoke.") == 9
+          PY
+      - name: Retain immutable distributions and manifest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: buoy-search-${{ github.ref_name }}
-          path: dist/*
+          name: release-build-${{ github.sha }}
+          path: |
+            dist/*
+            manifest.json
           if-no-files-found: error
           retention-days: 14
 
-  release:
-    name: Publish GitHub release
-    needs: validate-and-build
+  state:
+    name: Plan authoritative release state
+    needs: build
     runs-on: ubuntu-latest
-    environment: release
+    permissions:
+      contents: read
+      attestations: read
+    outputs:
+      action: ${{ steps.plan.outputs.action }}
+    steps:
+      - name: Check out state planner only
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+      - name: Download immutable distributions and manifest
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-build-${{ github.sha }}
+          path: validated
+      - name: Inspect authoritative GitHub state and emit immutable plan
+        id: plan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/release_automation.py github-snapshot \
+            --manifest validated/manifest.json --output snapshot.json
+          python3 scripts/release_automation.py state \
+            --snapshot snapshot.json --manifest validated/manifest.json \
+            --sha "$GITHUB_SHA" --output release-plan.json
+          echo "action=$(python3 -c 'import json; print(json.load(open("release-plan.json"))["plan"]["action"])')" >> "$GITHUB_OUTPUT"
+      - name: Retain immutable publication plan
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-plan-${{ github.sha }}
+          path: release-plan.json
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish or confirm GitHub release
+    needs: state
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
       attestations: write
+      actions: read
     steps:
-      - name: Check out tagged source
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Install uv and Python
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
-        with:
-          version: "0.11.7"
-          python-version: "3.13"
-      - name: Download validated distributions
+      - name: Download immutable distributions and manifest
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: buoy-search-${{ github.ref_name }}
-          path: dist
-      - name: Refuse conflicting release state
+          name: release-build-${{ github.sha }}
+          path: validated
+      - name: Download immutable publication plan
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-plan-${{ github.sha }}
+          path: publication
+      - name: Verify immutable plan identity
+        env:
+          EXPECTED_ACTION: ${{ needs.state.outputs.action }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          envelope = json.load(open("publication/release-plan.json"))
+          plan = envelope["plan"]
+          encoded = json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()
+          assert hashlib.sha256(encoded).hexdigest() == envelope["sha256"]
+          assert plan["action"] == os.environ["EXPECTED_ACTION"]
+          assert plan["source_commit"] == os.environ["GITHUB_SHA"]
+          assets = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                    for path in Path("validated/dist").iterdir() if path.is_file()}
+          assert assets == {asset["name"]: asset["sha256"] for asset in plan["assets"]}
+          PY
+      - name: Create immutable annotated tag when absent
+        id: tag_transition
+        if: needs.state.outputs.action == 'create'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            echo "GitHub release ${GITHUB_REF_NAME} already exists; refusing to overwrite it." >&2
-            exit 1
+          plan=publication/release-plan.json
+          tag="$(jq -r '.plan.tag' "$plan")"
+          sha="$(jq -r '.plan.source_commit' "$plan")"
+          tag_object="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/tags" \
+            -f tag="$tag" -f message="$(jq -r '.plan.tag_message' "$plan")" \
+            -f object="$sha" -f type=commit \
+            -f 'tagger[name]=github-actions[bot]' \
+            -f 'tagger[email]=41898282+github-actions[bot]@users.noreply.github.com')"
+          tag_object_sha="$(jq -r .sha <<<"$tag_object")"
+          set +e
+          response="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/$tag" -f sha="$tag_object_sha" 2>&1)"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo 'resolved_action=create' >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-          object_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}" --jq '.object.type')"
-          uv run --no-project python scripts/release_checks.py tag --tag "${GITHUB_REF_NAME}"
-          uv run --no-project python scripts/release_checks.py remote-tag-object --tag "${GITHUB_REF_NAME}" --object-type "${object_type}"
-          uv run --no-project python scripts/release_checks.py assets --dist dist
-      - name: Attest distribution provenance
+          if ! grep -q 'HTTP 422' <<<"$response"; then
+            printf '%s\n' "$response" >&2
+            exit "$status"
+          fi
+
+          # A ref collision is authoritative only after one complete readback.
+          ref="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/$tag")"
+          [ "$(jq -r '.object.type' <<<"$ref")" = tag ]
+          object="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$(jq -r '.object.sha' <<<"$ref")")"
+          [ "$(jq -r '.object.type' <<<"$object")" = commit ]
+          [ "$(jq -r '.object.sha' <<<"$object")" = "$sha" ]
+          release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$tag")"
+          [ "$(jq -r .tag_name <<<"$release")" = "$tag" ]
+          [ "$(jq -r .name <<<"$release")" = "$(jq -r '.plan.release_name' "$plan")" ]
+          [ "$(jq -r .draft <<<"$release")" = false ]
+          [ "$(jq -r .prerelease <<<"$release")" = false ]
+          jq -e --slurpfile plan "$plan" '
+            [.assets[] | {name, sha256: (.digest | strings | sub("^sha256:"; ""))}] |
+            sort_by(.name) == ($plan[0].plan.assets | sort_by(.name))
+          ' <<<"$release" >/dev/null
+          published="$(mktemp -d)"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$published"
+          PUBLISHED="$published" PLAN="$plan" python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          expected = {item["name"]: item["sha256"] for item in json.load(open(os.environ["PLAN"]))["plan"]["assets"]}
+          actual = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in Path(os.environ["PUBLISHED"]).iterdir() if path.is_file()}
+          assert actual == expected
+          PY
+          source_ref="$(jq -r '.plan.provenance | map(.source_ref) | unique | if length == 1 then .[0] else error("mixed provenance refs") end' "$plan")"
+          signer="$(jq -r '.plan.repository + "/.github/workflows/" + .plan.workflow' "$plan")"
+          for asset in "$published"/*; do
+            gh attestation verify "$asset" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$signer" --source-ref "$source_ref" \
+              --source-digest "$sha" >/dev/null
+          done
+          echo 'resolved_action=noop' >> "$GITHUB_OUTPUT"
+      - name: Attest exact validated distributions
+        if: needs.state.outputs.action == 'create' && steps.tag_transition.outputs.resolved_action == 'create'
         uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
         with:
-          subject-path: dist/*
-      - name: Create GitHub release
+          subject-path: validated/dist/*
+      - name: Create immutable GitHub Release
+        if: needs.state.outputs.action == 'create' && steps.tag_transition.outputs.resolved_action == 'create'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "${GITHUB_REF_NAME}" dist/*
-          --repo "${GITHUB_REPOSITORY}"
-          --verify-tag
-          --generate-notes
-          --title "Buoy ${GITHUB_REF_NAME}"
+        run: |
+          tag="$(jq -r '.plan.tag' publication/release-plan.json)"
+          name="$(jq -r '.plan.release_name' publication/release-plan.json)"
+          gh release create "$tag" validated/dist/* --repo "$GITHUB_REPOSITORY" \
+            --verify-tag --generate-notes --title "$name" --target "$tag"
+      - name: Reinspect and verify exact published state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          plan=publication/release-plan.json
+          tag="$(jq -r '.plan.tag' "$plan")"
+          sha="$(jq -r '.plan.source_commit' "$plan")"
+          ref="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/$tag")"
+          [ "$(jq -r '.object.type' <<<"$ref")" = tag ]
+          object="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$(jq -r '.object.sha' <<<"$ref")")"
+          [ "$(jq -r '.object.type' <<<"$object")" = commit ]
+          [ "$(jq -r '.object.sha' <<<"$object")" = "$sha" ]
+          release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$tag")"
+          [ "$(jq -r .tag_name <<<"$release")" = "$tag" ]
+          [ "$(jq -r .name <<<"$release")" = "$(jq -r '.plan.release_name' "$plan")" ]
+          [ "$(jq -r .draft <<<"$release")" = false ]
+          [ "$(jq -r .prerelease <<<"$release")" = false ]
+          jq -e --slurpfile plan "$plan" '
+            [.assets[] | {name, sha256: (.digest | strings | sub("^sha256:"; ""))}] |
+            sort_by(.name) == ($plan[0].plan.assets | sort_by(.name))
+          ' <<<"$release" >/dev/null
+          published="$(mktemp -d)"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$published"
+          PUBLISHED="$published" PLAN="$plan" python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          expected = {item["name"]: item["sha256"] for item in json.load(open(os.environ["PLAN"]))["plan"]["assets"]}
+          actual = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in Path(os.environ["PUBLISHED"]).iterdir() if path.is_file()}
+          assert actual == expected
+          PY
+          source_ref="$(jq -r '.plan.provenance | map(.source_ref) | unique | if length == 1 then .[0] else error("mixed provenance refs") end' "$plan")"
+          signer="$(jq -r '.plan.repository + "/.github/workflows/" + .plan.workflow' "$plan")"
+          for asset in "$published"/*; do
+            gh attestation verify "$asset" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$signer" --source-ref "$source_ref" \
+              --source-digest "$sha" >/dev/null
+          done
