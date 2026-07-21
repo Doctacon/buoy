@@ -41,6 +41,8 @@ Static tests MUST assert the exact push branch set so the checked-in workflow ca
 
 Given a `work/*` branch based on `develop`, when its pull request targets `develop`, then GitHub MUST block merge until all required checks pass on a head that incorporates current `develop`. The integration session MUST squash-merge the task pull request.
 
+The sole exception is the exact one-time v0.4 squash-topology bridge in `.10x/decisions/one-time-v0-4-squash-topology-bridge.md`. That protected, tree-identical bridge PR MUST use a merge commit so exact main ancestry survives integration. This exception is pinned, migration-only, and MUST NOT authorize merge commits for any other `work/* -> develop` task.
+
 ### Release integration
 
 Given a `develop -> main` pull request, GitHub MUST block merge until all four readiness checks validate the exact prospective merge result. Main strict freshness and develop-as-ancestor are not required; no ancestry-sync operation or release-specific merge method is prescribed. The automatic main-push workflow revalidates the resulting exact main commit before mutation.
@@ -59,7 +61,7 @@ Given any ordinary or administrator credential, direct pushes to `develop` MUST 
 
 - Remote `origin/develop` exists at the ratified bootstrap commit before ordinary integration.
 - GitHub reports the ratified common protection plus exact branch-specific checks/freshness/force-push/last-push settings.
-- Task integration uses squash merge; release integration relies on prospective-merge readiness plus exact-main revalidation, not ancestry ceremony.
+- Task integration uses squash merge except for the exact one-time v0.4 tree-identical bridge, whose merge-commit ancestry is independently verified; release integration otherwise relies on prospective-merge readiness plus exact-main revalidation, not ancestry ceremony.
 - Develop strict checks and main non-strict four-check policy, pull requests, zero fixed approvals, administrator enforcement, deletion denial, develop force-push denial, retained main force-push allowance, and last-push approval disabled are observable.
 - CI source and static tests include both push branches.
 - A pull request from the implementation branch to `develop` runs all three required checks and cannot merge until they pass.

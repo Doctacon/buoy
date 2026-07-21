@@ -22,8 +22,8 @@ Exercise the ratified simple release process end to end by preparing stable Buoy
 1. In an isolated `work/*` worktree from current `develop`, update project/module/lock version authorities to exactly 0.4.1 and add the exact pending changelog section/link required by the active readiness spec.
 2. Run repository release-policy checks, complete Python 3.11/3.13 validation, deterministic double-build comparison, artifact inspection, and clean-wheel CLI/tokenizer smoke.
 3. Obtain independent review and integrate only the preparation change to protected `develop` through a passing pull request.
-4. Open one pull request whose head is exact repository branch `develop` and base is `main`; make no ancestry-sync commit.
-5. Require all four exact `Release readiness / ...` checks to pass on GitHub's prospective merge result, obtain independent promotion review, then squash-merge through branch protection.
+4. Open one pull request whose head is exact repository branch `develop` and base is `main`. If the inherited v0.4 squash topology prevents prospective-merge construction, execute only `.10x/tickets/2026-07-21-bridge-v0-4-squash-topology-once.md`, then resume the exact develop-to-main PR.
+5. Require all four exact `Release readiness / ...` checks to pass on GitHub's prospective merge result, obtain independent promotion review, then merge through branch protection using the repository-required release merge commit.
 6. Observe the automatic `main` push workflow to terminal state and verify the new annotated `v0.4.1` tag, GitHub Release `Buoy v0.4.1`, exact two assets/digests, and provenance source ref `refs/heads/main` and exact source commit.
 7. Record raw hosted evidence, independent final review, and coherent closure.
 
@@ -34,7 +34,7 @@ Exercise the ratified simple release process end to end by preparing stable Buoy
 - Preparation validation passes on Python 3.11 and 3.13; deterministic builds and clean-wheel/tokenizer smoke pass.
 - Preparation reaches `develop` only through protected passing CI and independent review.
 - The main PR source is exactly `Doctacon/buoy-search:develop`; all four exact readiness checks pass on the prospective merge commit.
-- Main promotion occurs through the protected PR only; no force push or ancestry-sync ceremony is used.
+- Main promotion occurs through the protected PR only; no force push or recurring ancestry-sync ceremony is used. The sole exact v0.4 migration bridge, if required, satisfies its focused child ticket first.
 - Automatic release run succeeds from the resulting exact main commit.
 - `v0.4.1` is annotated and peels to that commit; Release identity is non-draft/non-prerelease and contains exactly the expected wheel/sdist with recorded SHA-256 digests.
 - `gh attestation verify` passes for both assets with repository `Doctacon/buoy-search`, workflow `release.yml`, source ref `refs/heads/main`, and exact source commit.
@@ -43,7 +43,7 @@ Exercise the ratified simple release process end to end by preparing stable Buoy
 
 ## Explicit exclusions
 
-Product behavior changes; version other than 0.4.1; prerelease/build metadata; manual tag/Release creation; workflow dispatch; release environment recreation; PyPI; Turbopuffer; force push; ancestry sync; mutation of existing releases/tags/assets/provenance; retry or repair after a partial/mismatched release state.
+Product behavior changes; version other than 0.4.1; prerelease/build metadata; manual tag/Release creation; workflow dispatch; release environment recreation; PyPI; Turbopuffer; force push; ancestry sync other than the exact non-repeatable child bridge; mutation of existing releases/tags/assets/provenance; retry or repair after a partial/mismatched release state.
 
 ## References
 
@@ -60,7 +60,7 @@ Exact source/destination commits; changed version/changelog paths; local command
 
 ## Blockers
 
-PR #93 is conflicting before GitHub can construct the prospective merge ref, so the four release-readiness checks cannot run. The user ratified the exact one-time protected content-neutral bridge in `.10x/decisions/one-time-v0-4-squash-topology-bridge.md`; execution remains blocked until that governing record/spec update is independently reviewed and integrated. Evidence: `.10x/evidence/2026-07-21-buoy-v0-4-1-prospective-merge-blocker.md`.
+PR #93 is conflicting before GitHub can construct the prospective merge ref, so the four release-readiness checks cannot run. The user-ratified bridge is owned by `.10x/tickets/2026-07-21-bridge-v0-4-squash-topology-once.md`; both parent and child remain blocked until PR #94's governing records pass review and integrate. Evidence: `.10x/evidence/2026-07-21-buoy-v0-4-1-prospective-merge-blocker.md`.
 
 ## Progress and notes
 
