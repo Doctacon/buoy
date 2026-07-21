@@ -2,7 +2,7 @@ Status: blocked
 Created: 2026-07-21
 Updated: 2026-07-21
 Parent: .10x/tickets/2026-07-21-release-buoy-v0-4-1-through-main-automation.md
-Depends-On: .10x/tickets/2026-07-21-reconcile-github-repository-rename.md
+Depends-On: .10x/tickets/done/2026-07-21-reconcile-github-repository-rename.md
 
 # Bridge v0.4 Squash Topology Once
 
@@ -51,7 +51,7 @@ Exact refs/parents/tree IDs; pre/post protection and release-state observations;
 
 ## Blockers
 
-Blocked until PR #94 integrates these governing records and `.10x/tickets/2026-07-21-reconcile-github-repository-rename.md` completes on protected develop.
+Blocked until PR #94 integrates these governing records and `.10x/tickets/done/2026-07-21-reconcile-github-repository-rename.md` completes on protected develop.
 
 ## Progress and notes
 

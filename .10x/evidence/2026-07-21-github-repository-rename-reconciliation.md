@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-21
 Updated: 2026-07-21
-Relates-To: .10x/tickets/2026-07-21-reconcile-github-repository-rename.md, .10x/decisions/buoy-product-and-repository-identity.md, .10x/specs/develop-to-main-release-readiness.md, .10x/specs/main-push-automatic-github-release.md
+Relates-To: .10x/tickets/done/2026-07-21-reconcile-github-repository-rename.md, .10x/decisions/buoy-product-and-repository-identity.md, .10x/specs/develop-to-main-release-readiness.md, .10x/specs/main-push-automatic-github-release.md
 
 # GitHub Repository Rename Reconciliation
 

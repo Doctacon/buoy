@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-07-21
 Updated: 2026-07-21
 Parent: .10x/tickets/2026-07-21-release-buoy-v0-4-1-through-main-automation.md
@@ -57,4 +57,15 @@ None. PR #94 integrated the governing rename decision/spec changes as exact deve
 - 2026-07-21: During a governance push, GitHub reported the canonical repository had moved to `Doctacon/buoy`. The user confirmed the rename was intentional and authorized reconciliation. No release, branch, protection, provider, or product state changed during shaping.
 - 2026-07-21: Execution began in isolated `work/reconcile-github-repository-rename` from exact develop `0c7f333d45622ff2ffea62e5ac9e0b00a109a4d1`. Local origin fetch/push already resolve directly to `git@github.com:Doctacon/buoy.git`. Initial occurrence classification preserves immutable experimental source pins, historical records/evidence, and exact released-version provenance while updating active release automation/readiness, current project/docs/changelog URLs, and current-identity fixtures.
 - 2026-07-21: Implementation and local validation complete. Current release authority is exact `Doctacon/buoy`; exact legacy v0.4.0 provenance is separately pinned to `Doctacon/buoy-search`; tests fail closed on current/legacy cross-use. Focused tests passed (44), complete locked 3.11 and 3.13 suites passed (535 each), deterministic double build/artifact/clean-wheel/tokenizer checks passed, and exact live read-only v0.4 inspection produced `noop` with every historical pin. Evidence: `.10x/evidence/2026-07-21-github-repository-rename-reconciliation.md`.
-- 2026-07-21: Commit `310d37f27eeef74806356d8925dc5f9f9035ba58` was pushed only to the task branch and opened as protected PR #95 targeting `develop`. Exact-head hosted CI run `29873714541` passed Python 3.11, Python 3.13, and Build distributions. No main, tag, Release, asset, provenance, PyPI, Turbopuffer, protection, or product mutation occurred. Independent review and integration remain pending.
+- 2026-07-21: Commit `310d37f27eeef74806356d8925dc5f9f9035ba58` was pushed only to the task branch and opened as protected PR #95 targeting `develop`. Exact-head hosted CI run `29873714541` passed Python 3.11, Python 3.13, and Build distributions. No main, tag, Release, asset, provenance, PyPI, Turbopuffer, protection, or product mutation occurred.
+- 2026-07-21: Independent review passed after correcting two evidence-only SHA typos; final-head CI `29874589384` passed. PR #95 squash-integrated to develop as `24238e3660446e2108e3b9c142548e66d6c589d5`. Review: `.10x/reviews/2026-07-21-github-repository-rename-implementation-review.md`.
+
+## Closure mapping
+
+- Implementation/validation: `.10x/evidence/2026-07-21-github-repository-rename-reconciliation.md`.
+- Independent review: `.10x/reviews/2026-07-21-github-repository-rename-implementation-review.md`.
+- Integration: PR #95 / `24238e3660446e2108e3b9c142548e66d6c589d5`.
+
+## Retrospective
+
+Repository identity and immutable provenance identity require separate constants; redirects are not exact release authority.
