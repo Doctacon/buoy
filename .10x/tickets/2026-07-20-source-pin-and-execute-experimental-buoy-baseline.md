@@ -1,4 +1,4 @@
-Status: open
+Status: active
 Created: 2026-07-20
 Updated: 2026-07-20
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
@@ -77,6 +77,7 @@ No semantic blocker remains for Step 1 after `.10x/evidence/2026-07-20-experimen
 ## References
 
 - `.10x/evidence/2026-07-20-experimental-buoy-baseline-approval-a-grant.md`
+- `.10x/evidence/2026-07-20-experimental-buoy-baseline-source-pin.md`
 - `.10x/evidence/.storage/2026-07-20-experimental-buoy-baseline-approval-a.json`
 - `.10x/evidence/2026-07-20-c3-buoy-baseline-approval-checkpoint.md`
 - `.10x/specs/experimental-buoy-baseline-executor.md`
@@ -88,3 +89,5 @@ No semantic blocker remains for Step 1 after `.10x/evidence/2026-07-20-experimen
 ## Progress and notes
 
 - 2026-07-20: Opened after the user granted the exact prewritten Approval A contract via `Approve baseline write (Recommended)`. The immutable grant record/text hashes and truthful runtime-limited provenance are recorded. This record-only turn did not set source grant constants, read a credential or retained state, load/download a model, construct a provider client, make a live call, or mutate namespace/card/catalog/pending/DuckDB state. Step 1 awaits execution from an integrated record baseline; Step 2 remains gated on independent review and integration of Step 1. Approval B remains ungranted and C3 remains blocked.
+- 2026-07-20: Step 1 implementation pinned only the exact 2,627-byte Approval A grant SHA-256 and its exact three-field provenance. Deterministic tests validate the checked-in record, reject each possible single-byte mutation across all 2,627 byte positions, and reject provenance/text mutations even with a substituted mutated-record hash. Local CPython 3.11 and 3.13 ranking validation and complete 495-test suites passed; CPython 3.13 distribution build and `git diff --check` passed. Evidence: `.10x/evidence/2026-07-20-experimental-buoy-baseline-source-pin.md`. No live entry point, credential, model, provider, retained plan/cache/state, or domain state was accessed.
+- 2026-07-20: Independent Step 1 review passed exact head `f7694940d3b02e6a59d613270881e8fef29a0af5`; review: `.10x/reviews/2026-07-20-experimental-buoy-baseline-source-pin-review.md`. Step 2 remains blocked until this exact source-pin change integrates through a separate session.

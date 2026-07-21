@@ -3,12 +3,14 @@ from __future__ import annotations
 import copy
 from contextlib import contextmanager
 from dataclasses import replace
+import hashlib
 import inspect
 import json
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
+from unittest import mock
 
 from buoy_search.applied_state import (
     APPLIED_STATE_SCHEMA_VERSION,
@@ -22,7 +24,10 @@ from buoy_search.catalog import (
     prepare_card,
     prepare_prospective_card,
 )
+import buoy_search.experimental_baseline as experimental_baseline
 from buoy_search.experimental_baseline import (
+    APPROVAL_A_GRANTED_PROVENANCE,
+    APPROVAL_A_GRANTED_RECORD_SHA256,
     APPROVAL_A_TEXT,
     APPROVAL_A_TEXT_SHA256,
     ARTIFACT_HASH,
@@ -67,6 +72,16 @@ NOW = "2026-07-20T12:00:00+00:00"
 APPLY_ID = "apply_20260720T120000Z_plan_b6c5d128295f442f"
 SITE_ID = "github-doctacon-buoy-search"
 BASE_URL = "https://github.com/Doctacon/buoy-search"
+APPROVAL_RECORD_PATH = (
+    Path(__file__).resolve().parents[1]
+    / ".10x/evidence/.storage/2026-07-20-experimental-buoy-baseline-approval-a.json"
+)
+APPROVAL_RECORD_SHA256 = "46a44e9440425ef73c66e69d64d7e83a7c098ce0fa3f85f2caf7f8d7685cc5ec"
+APPROVAL_PROVENANCE = {
+    "source_system": "pi",
+    "conversation_id": "runtime-id-not-exposed",
+    "message_id": "sha256:4b066f19c3331b0074d4548b691b293072a50406df6f0557fcdba8e3d3f25d74",
+}
 
 
 def cache_attestation() -> CacheAttestation:
@@ -932,45 +947,71 @@ class ExperimentalBaselineTests(unittest.TestCase):
                 self.assertEqual(harness.attempt_count, 0)
                 self.assertNotIn("prepare-model", harness.events)
 
-    def test_durable_approval_record_exactness_and_live_signature(self) -> None:
-        signature = inspect.signature(__import__(
-            "buoy_search.experimental_baseline", fromlist=["execute_experimental_baseline"]
-        ).execute_experimental_baseline)
+    def test_checked_in_approval_record_exactness_and_live_signature(self) -> None:
+        signature = inspect.signature(experimental_baseline.execute_experimental_baseline)
         self.assertEqual(
             list(signature.parameters),
             ["approval_record", "plan_path", "cache_root", "state_root"],
         )
         self.assertTrue(all(parameter.kind is inspect.Parameter.KEYWORD_ONLY for parameter in signature.parameters.values()))
 
-        record = {
-            "schema_version": 1,
-            "approval": "experimental-buoy-baseline-approval-a",
-            "status": "granted",
-            "approval_text": APPROVAL_A_TEXT,
-            "approval_text_sha256": APPROVAL_A_TEXT_SHA256,
-            "granted_at": "2026-07-20T20:00:00Z",
-            "granted_by": "user",
-            "provenance": {
-                "source_system": "pi",
-                "conversation_id": "conversation",
-                "message_id": "message",
-            },
-        }
+        raw = APPROVAL_RECORD_PATH.read_bytes()
+        result = validate_approval_a_record(APPROVAL_RECORD_PATH)
+        self.assertEqual(len(raw), 2627)
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), APPROVAL_RECORD_SHA256)
+        self.assertEqual(len(APPROVAL_A_TEXT.encode("utf-8")), 2206)
+        self.assertEqual(APPROVAL_A_TEXT_SHA256, "bafc2500292bc8fcfc4aa806873782d43689330c704620f8981684a3796bfa10")
+        self.assertEqual(APPROVAL_A_GRANTED_RECORD_SHA256, APPROVAL_RECORD_SHA256)
+        self.assertEqual(APPROVAL_A_GRANTED_PROVENANCE, APPROVAL_PROVENANCE)
+        self.assertEqual(result["record_sha256"], APPROVAL_RECORD_SHA256)
+        self.assertEqual(result["provenance"], APPROVAL_PROVENANCE)
+
+    def test_every_checked_in_approval_record_byte_mutation_fails_closed(self) -> None:
+        raw = APPROVAL_RECORD_PATH.read_bytes()
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "approval-a.json"
-            path.write_text(json.dumps(record), encoding="utf-8")
-            with self.assertRaisesRegex(ExperimentalBaselineError, "remains ungranted"):
-                validate_approval_a_record(path)
-            for mutation in (
-                {"status": "proposed"},
-                {"approval_text": APPROVAL_A_TEXT + " altered"},
-                {"approval_text_sha256": "0" * 64},
-                {"extra": True},
-                {"provenance": {"source_system": "pi"}},
+            for index in range(len(raw)):
+                with self.subTest(byte_index=index):
+                    mutated = bytearray(raw)
+                    mutated[index] ^= 1
+                    path.write_bytes(mutated)
+                    with self.assertRaises(ExperimentalBaselineError):
+                        validate_approval_a_record(path)
+
+    def test_approval_provenance_and_text_mutations_fail_closed(self) -> None:
+        record = json.loads(APPROVAL_RECORD_PATH.read_bytes())
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "approval-a.json"
+            for field in APPROVAL_PROVENANCE:
+                with self.subTest(provenance_field=field):
+                    mutated = copy.deepcopy(record)
+                    mutated["provenance"][field] += "-altered"
+                    raw = json.dumps(
+                        mutated, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                    ).encode("utf-8")
+                    path.write_bytes(raw)
+                    with mock.patch.object(
+                        experimental_baseline,
+                        "APPROVAL_A_GRANTED_RECORD_SHA256",
+                        hashlib.sha256(raw).hexdigest(),
+                    ):
+                        with self.assertRaises(ExperimentalBaselineError):
+                            validate_approval_a_record(path)
+
+            mutated = copy.deepcopy(record)
+            mutated["approval_text"] += " altered"
+            mutated["approval_text_sha256"] = hashlib.sha256(
+                mutated["approval_text"].encode("utf-8")
+            ).hexdigest()
+            raw = json.dumps(
+                mutated, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+            path.write_bytes(raw)
+            with mock.patch.object(
+                experimental_baseline,
+                "APPROVAL_A_GRANTED_RECORD_SHA256",
+                hashlib.sha256(raw).hexdigest(),
             ):
-                broken = copy.deepcopy(record)
-                broken.update(mutation)
-                path.write_text(json.dumps(broken), encoding="utf-8")
                 with self.assertRaises(ExperimentalBaselineError):
                     validate_approval_a_record(path)
 

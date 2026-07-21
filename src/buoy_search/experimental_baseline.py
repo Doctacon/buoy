@@ -134,10 +134,15 @@ APPROVAL_RECORD_FIELDS = {
     "granted_at", "granted_by", "provenance",
 }
 APPROVAL_PROVENANCE_FIELDS = {"source_system", "conversation_id", "message_id"}
-# Approval A is intentionally ungranted. A later reviewed source change must pin
-# the exact durable grant bytes and provenance before any record can unlock live.
-APPROVAL_A_GRANTED_RECORD_SHA256: str | None = None
-APPROVAL_A_GRANTED_PROVENANCE: JsonObject | None = None
+# Approval A is pinned only to the exact durable grant bytes and provenance.
+APPROVAL_A_GRANTED_RECORD_SHA256: str | None = (
+    "46a44e9440425ef73c66e69d64d7e83a7c098ce0fa3f85f2caf7f8d7685cc5ec"
+)
+APPROVAL_A_GRANTED_PROVENANCE: JsonObject | None = {
+    "source_system": "pi",
+    "conversation_id": "runtime-id-not-exposed",
+    "message_id": "sha256:4b066f19c3331b0074d4548b691b293072a50406df6f0557fcdba8e3d3f25d74",
+}
 
 CONTENT_SCHEMA: JsonObject = {
     **GENERIC_SITE_TURBOPUFFER_SCHEMA,
