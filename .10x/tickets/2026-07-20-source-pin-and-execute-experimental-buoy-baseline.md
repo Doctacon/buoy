@@ -72,12 +72,19 @@ Approval B; C3 raw-candidate retrieval; any ANN/BM25 capture; a second invocatio
 
 ## Blockers
 
-No semantic blocker remains for Step 1 after `.10x/evidence/2026-07-20-experimental-buoy-baseline-approval-a-grant.md` is reviewed and integrated. Step 2 is mechanically blocked until Step 1 independently passes review and CI and a separate integration session merges the exact reviewed pins into `develop`. Approval B remains ungranted and is outside this ticket.
+Step 1 independently passed review and integrated at exact `develop` commit `8c7750d84ebaf846ae519ccf164f2c7b72c9ec1c`. Step 2 preflight then stopped before invocation on two exact mismatches recorded at `.10x/evidence/2026-07-20-experimental-buoy-baseline-step-2-preflight.md`:
+
+- the cache's executor-computed manifest is `af97aa621263b66d6740dc188958660addfa533dc1b289deceed9c3edf8d81f5`, not pinned `5f783ebce23b6ac957d2741399b46e19502b1751acfd3c744b8c41103b138f35`, and the pinned README's Markdown-linked MIT sentence does not satisfy the executor's literal license-statement check;
+- the reviewed public result preserves returned-row counts but not returned target/card row payloads or immutable projections, and success omits the required applied-state hash and observed schema/distance evidence. No extra provider request is allowed to recover those facts.
+
+The live entry point was not invoked, so invocation count remains zero and Approval A's one-invocation authority was not consumed. This ticket remains active pending independent evidence review and an explicitly authorized repair/ratification path; Approval B remains ungranted and outside this ticket.
 
 ## References
 
 - `.10x/evidence/2026-07-20-experimental-buoy-baseline-approval-a-grant.md`
 - `.10x/evidence/2026-07-20-experimental-buoy-baseline-source-pin.md`
+- `.10x/evidence/2026-07-20-experimental-buoy-baseline-step-2-preflight.md`
+- `.10x/evidence/.storage/2026-07-20-experimental-buoy-baseline-step-2-preflight.json`
 - `.10x/evidence/.storage/2026-07-20-experimental-buoy-baseline-approval-a.json`
 - `.10x/evidence/2026-07-20-c3-buoy-baseline-approval-checkpoint.md`
 - `.10x/specs/experimental-buoy-baseline-executor.md`
@@ -91,3 +98,4 @@ No semantic blocker remains for Step 1 after `.10x/evidence/2026-07-20-experimen
 - 2026-07-20: Opened after the user granted the exact prewritten Approval A contract via `Approve baseline write (Recommended)`. The immutable grant record/text hashes and truthful runtime-limited provenance are recorded. This record-only turn did not set source grant constants, read a credential or retained state, load/download a model, construct a provider client, make a live call, or mutate namespace/card/catalog/pending/DuckDB state. Step 1 awaits execution from an integrated record baseline; Step 2 remains gated on independent review and integration of Step 1. Approval B remains ungranted and C3 remains blocked.
 - 2026-07-20: Step 1 implementation pinned only the exact 2,627-byte Approval A grant SHA-256 and its exact three-field provenance. Deterministic tests validate the checked-in record, reject each possible single-byte mutation across all 2,627 byte positions, and reject provenance/text mutations even with a substituted mutated-record hash. Local CPython 3.11 and 3.13 ranking validation and complete 495-test suites passed; CPython 3.13 distribution build and `git diff --check` passed. Evidence: `.10x/evidence/2026-07-20-experimental-buoy-baseline-source-pin.md`. No live entry point, credential, model, provider, retained plan/cache/state, or domain state was accessed.
 - 2026-07-20: Independent Step 1 review passed exact head `f7694940d3b02e6a59d613270881e8fef29a0af5`; review: `.10x/reviews/2026-07-20-experimental-buoy-baseline-source-pin-review.md`. Step 2 remains blocked until this exact source-pin change integrates through a separate session.
+- 2026-07-20: Step 1 integrated into `develop` at pinned commit `8c7750d84ebaf846ae519ccf164f2c7b72c9ec1c`. A fresh Step 2 non-credential/non-model preflight passed source/grant/plan/artifact/source/903-ID/local-state/SDK/region/namespace/card/fixed-slot/destination checks but found the exact cache manifest/license-literal mismatch and an inability to persist the specification's complete returned-row/applied-state-hash evidence from the public result. Per stop conditions, `execute_experimental_baseline` was not invoked: invocation count 0, credentials read 0, models loaded 0, provider clients/requests 0, and `/tmp/buoy-c1-state` remained absent. Evidence: `.10x/evidence/2026-07-20-experimental-buoy-baseline-step-2-preflight.md`. Ticket remains active pending independent evidence review and explicitly authorized repair; Approval B remains ungranted and C3 remains blocked.

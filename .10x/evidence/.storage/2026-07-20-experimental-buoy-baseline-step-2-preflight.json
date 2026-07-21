@@ -1,0 +1,846 @@
+{
+  "approval_b_or_c3_retrieval": false,
+  "checks": [
+    {
+      "expected": "8c7750d84ebaf846ae519ccf164f2c7b72c9ec1c",
+      "name": "integrated_commit",
+      "observed": "8c7750d84ebaf846ae519ccf164f2c7b72c9ec1c",
+      "status": "pass"
+    },
+    {
+      "expected": "8c7750d84ebaf846ae519ccf164f2c7b72c9ec1c",
+      "name": "develop_commit",
+      "observed": {
+        "develop": "8c7750d84ebaf846ae519ccf164f2c7b72c9ec1c",
+        "origin_develop": "8c7750d84ebaf846ae519ccf164f2c7b72c9ec1c"
+      },
+      "status": "pass"
+    },
+    {
+      "expected": "clean",
+      "name": "tracked_worktree_clean",
+      "observed": "clean",
+      "status": "pass"
+    },
+    {
+      "expected": "HEAD source bytes",
+      "name": "source_exact_committed_bytes",
+      "observed": {
+        "bytes": 64892,
+        "git_blob": "22c9610d19ea4aebb718aaab89f7117d2f5a1325",
+        "sha256": "aba10de48c31a4dd4c1d39b3210274f073adecc3aceef66eed5d543826463b96"
+      },
+      "status": "pass"
+    },
+    {
+      "expected": {
+        "bytes": 2627,
+        "sha256": "46a44e9440425ef73c66e69d64d7e83a7c098ce0fa3f85f2caf7f8d7685cc5ec"
+      },
+      "name": "grant_record_bytes_hash",
+      "observed": {
+        "bytes": 2627,
+        "sha256": "46a44e9440425ef73c66e69d64d7e83a7c098ce0fa3f85f2caf7f8d7685cc5ec"
+      },
+      "status": "pass"
+    },
+    {
+      "expected": {
+        "approval_text_bytes": 2206,
+        "approval_text_sha256": "bafc2500292bc8fcfc4aa806873782d43689330c704620f8981684a3796bfa10",
+        "provenance": {
+          "conversation_id": "runtime-id-not-exposed",
+          "message_id": "sha256:4b066f19c3331b0074d4548b691b293072a50406df6f0557fcdba8e3d3f25d74",
+          "source_system": "pi"
+        },
+        "record_sha256": "46a44e9440425ef73c66e69d64d7e83a7c098ce0fa3f85f2caf7f8d7685cc5ec"
+      },
+      "name": "grant_source_pins",
+      "observed": {
+        "approval_text_bytes": 2206,
+        "approval_text_sha256": "bafc2500292bc8fcfc4aa806873782d43689330c704620f8981684a3796bfa10",
+        "provenance": {
+          "conversation_id": "runtime-id-not-exposed",
+          "message_id": "sha256:4b066f19c3331b0074d4548b691b293072a50406df6f0557fcdba8e3d3f25d74",
+          "source_system": "pi"
+        },
+        "record_sha256": "46a44e9440425ef73c66e69d64d7e83a7c098ce0fa3f85f2caf7f8d7685cc5ec"
+      },
+      "status": "pass"
+    },
+    {
+      "expected": {
+        "chunks.jsonl": {
+          "bytes": 2351065,
+          "sha256": "5fc9a5c14a47552fbfc8cf02d251150db3fbfe521c7c8036a4dee417af269185"
+        },
+        "manifest.json": {
+          "bytes": 2747684,
+          "sha256": "a8e82bd81e5303157691494dfb2f8de50955d072c21cef2e150ec31ae261079c"
+        },
+        "plan.json": {
+          "bytes": 1192285,
+          "sha256": "f1316f233857c59f6467071b95750638276ac364a6994f3b25a0a3a2c42d3b46"
+        }
+      },
+      "name": "retained_plan_artifact_bytes",
+      "observed": {
+        "chunks.jsonl": {
+          "bytes": 2351065,
+          "sha256": "5fc9a5c14a47552fbfc8cf02d251150db3fbfe521c7c8036a4dee417af269185"
+        },
+        "manifest.json": {
+          "bytes": 2747684,
+          "sha256": "a8e82bd81e5303157691494dfb2f8de50955d072c21cef2e150ec31ae261079c"
+        },
+        "plan.json": {
+          "bytes": 1192285,
+          "sha256": "f1316f233857c59f6467071b95750638276ac364a6994f3b25a0a3a2c42d3b46"
+        }
+      },
+      "status": "pass"
+    },
+    {
+      "expected": {
+        "artifact_hash": "b6c5d128295f442fcae21472c9bcb037ecb44101ca648115e8f666ba59a6f0ce",
+        "base_url": "https://github.com/Doctacon/buoy-search",
+        "diff": {
+          "chunks_to_embed": 903,
+          "first_apply": true,
+          "retained_stale": 0,
+          "rows_to_upsert": 903,
+          "stale": 0,
+          "unchanged": 0
+        },
+        "model": "BAAI/bge-small-en-v1.5",
+        "namespace": "github-doctacon-buoy-search-v1",
+        "plan_id": "plan_b6c5d128295f442f",
+        "precision": "float32",
+        "rows": 903,
+        "site_id": "github-doctacon-buoy-search",
+        "source_commits": [
+          "fcb7abbe1652d2eab4ee23816b6d992d893603ac"
+        ],
+        "source_repositories": [
+          "Doctacon/buoy-search"
+        ],
+        "unique_ids": 903
+      },
+      "name": "plan_artifact_source_903_ids",
+      "observed": {
+        "artifact_hash": "b6c5d128295f442fcae21472c9bcb037ecb44101ca648115e8f666ba59a6f0ce",
+        "base_url": "https://github.com/Doctacon/buoy-search",
+        "diff": {
+          "chunks_to_embed": 903,
+          "first_apply": true,
+          "retained_stale": 0,
+          "rows_to_upsert": 903,
+          "stale": 0,
+          "unchanged": 0
+        },
+        "model": "BAAI/bge-small-en-v1.5",
+        "namespace": "github-doctacon-buoy-search-v1",
+        "plan_id": "plan_b6c5d128295f442f",
+        "precision": "float32",
+        "rows": 903,
+        "site_id": "github-doctacon-buoy-search",
+        "source_commits": [
+          "fcb7abbe1652d2eab4ee23816b6d992d893603ac"
+        ],
+        "source_repositories": [
+          "Doctacon/buoy-search"
+        ],
+        "unique_ids": 903
+      },
+      "status": "pass"
+    },
+    {
+      "expected": {
+        "file_count": 12,
+        "license": "mit",
+        "license_statement_present": true,
+        "manifest_sha256": "5f783ebce23b6ac957d2741399b46e19502b1751acfd3c744b8c41103b138f35",
+        "readme_sha256": "ddb964361a55c6e5dfca6361615854b260c9c960205d04c7520151aaa1d75837",
+        "resolved_bytes": 267599430,
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
+      },
+      "name": "cache_ref_manifest_readme_license",
+      "observed": {
+        "file_count": 12,
+        "license": "mit",
+        "license_statement_present": false,
+        "manifest_sha256": "af97aa621263b66d6740dc188958660addfa533dc1b289deceed9c3edf8d81f5",
+        "readme_sha256": "ddb964361a55c6e5dfca6361615854b260c9c960205d04c7520151aaa1d75837",
+        "resolved_bytes": 267599430,
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "root": "/Users/crlough/.cache/huggingface/hub/models--BAAI--bge-small-en-v1.5"
+      },
+      "status": "mismatch"
+    },
+    {
+      "expected": {
+        "duckdb_exists": false,
+        "lock_exists": false,
+        "pending_exists": false,
+        "state_root_exists": false,
+        "verified_first_apply": true,
+        "verified_state_rows": 0
+      },
+      "name": "local_state_pending_precondition",
+      "observed": {
+        "duckdb_exists": false,
+        "duckdb_path": "/tmp/buoy-c1-state/state/github-doctacon-buoy-search/github-doctacon-buoy-search-v1/state.duckdb",
+        "lock_exists": false,
+        "lock_path": "/tmp/buoy-c1-state/state/github-doctacon-buoy-search/github-doctacon-buoy-search-v1/apply.lock",
+        "pending_exists": false,
+        "pending_path": "/private/tmp/buoy-c1-state/catalog-pending/plan_b6c5d128295f442f.json",
+        "state_root_exists": false,
+        "verified_first_apply": true,
+        "verified_state_rows": 0
+      },
+      "status": "pass"
+    },
+    {
+      "expected": {
+        "card_writes": 1,
+        "content_write_sizes": [
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          7
+        ],
+        "reads": 10,
+        "resources": [
+          "buoy-routing-catalog-v1",
+          "github-doctacon-buoy-search-v1"
+        ],
+        "returned_positions": 1817,
+        "slots": 26,
+        "write_positions": 904,
+        "writes": 16
+      },
+      "name": "fixed_26_slot_ledger",
+      "observed": {
+        "card_writes": 1,
+        "content_write_sizes": [
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          64,
+          7
+        ],
+        "reads": 10,
+        "resources": [
+          "buoy-routing-catalog-v1",
+          "github-doctacon-buoy-search-v1"
+        ],
+        "returned_positions": 1817,
+        "slots": 26,
+        "write_positions": 904,
+        "writes": 16
+      },
+      "status": "pass"
+    },
+    {
+      "expected": {
+        "catalog_namespace": "buoy-routing-catalog-v1",
+        "distance_metric": "cosine_distance",
+        "max_retries": 0,
+        "region": "gcp-us-central1",
+        "sdk_version": "2.4.0",
+        "target_namespace": "github-doctacon-buoy-search-v1"
+      },
+      "name": "locked_sdk_region_namespace_card_max_retries",
+      "observed": {
+        "catalog_namespace": "buoy-routing-catalog-v1",
+        "constructor_signature": "(*, api_key: 'str | None' = None, region: 'str | None' = None, default_namespace: 'str | None' = None, base_url: 'str | httpx.URL | None' = None, timeout: 'float | Timeout | None | NotGiven' = NOT_GIVEN, max_retries: 'int' = 4, default_headers: 'Mapping[str, str] | None' = None, default_query: 'Mapping[str, object] | None' = None, http_client: 'httpx.Client | None' = None, compression: 'bool' = False, _strict_response_validation: 'bool' = False) -> 'None'",
+        "distance_metric": "cosine_distance",
+        "executor_region": "gcp-us-central1",
+        "generated_card_id": "bc_0a4ee01f946cb0779399000a43d0c146601e87c07740819d0ca83e41149a7",
+        "literal_max_retries_zero": true,
+        "sdk_version": "2.4.0",
+        "target_namespace": "github-doctacon-buoy-search-v1"
+      },
+      "status": "pass"
+    },
+    {
+      "expected": {
+        "delete_call_occurrences": 0,
+        "local_files_only": 2,
+        "offline_controls_before_prepare": true,
+        "retry_loop_marker_occurrences": 0
+      },
+      "name": "offline_zero_delete_retry_fallback_enforceability",
+      "observed": {
+        "delete_call_occurrences": 0,
+        "local_files_only": 2,
+        "offline_controls_before_prepare": true,
+        "retry_loop_marker_occurrences": 0
+      },
+      "status": "pass"
+    },
+    {
+      "expected": "existing writable .10x evidence destinations",
+      "name": "evidence_destination",
+      "observed": {
+        "json": "/Users/crlough/Code/personal/turbo-search.worktrees/execute-baseline-approval-a/.10x/evidence/.storage/2026-07-20-experimental-buoy-baseline-execution.json",
+        "json_parent_exists": true,
+        "json_parent_writable": true,
+        "markdown": "/Users/crlough/Code/personal/turbo-search.worktrees/execute-baseline-approval-a/.10x/evidence/2026-07-20-experimental-buoy-baseline-execution.md",
+        "markdown_parent_exists": true,
+        "markdown_parent_writable": true
+      },
+      "status": "pass"
+    },
+    {
+      "expected": "persist exact returned target/card rows or immutable projections, target/catalog schema+distance, and local applied-state hash from the fixed executor ledger without extra provider requests",
+      "name": "complete_secret_free_evidence_enforceability",
+      "observed": {
+        "attempt_fields": [
+          "slot",
+          "status",
+          "rows_affected",
+          "rows_affected_present",
+          "returned_rows",
+          "billing",
+          "billing_present",
+          "metrics",
+          "metrics_present",
+          "request_identity",
+          "request_identity_present",
+          "affected_ids",
+          "affected_ids_present",
+          "error",
+          "cumulative_physical_attempts",
+          "cumulative_write_row_positions",
+          "cumulative_returned_row_positions"
+        ],
+        "capture_records_returned_row_count": true,
+        "capture_records_returned_row_payload": false,
+        "post_run_provider_requests_allowed": false,
+        "public_signature": "(*, approval_record: 'Path', plan_path: 'Path', cache_root: 'Path', state_root: 'Path') -> 'JsonObject'",
+        "success_records_applied_state_hash": false,
+        "success_records_card_revision": true,
+        "success_records_content_count": true,
+        "success_records_target_schema_distance": false
+      },
+      "status": "mismatch"
+    }
+  ],
+  "credential_read": false,
+  "grant": {
+    "approval_text_sha256": "bafc2500292bc8fcfc4aa806873782d43689330c704620f8981684a3796bfa10",
+    "granted_at": "2026-07-20T23:24:06Z",
+    "granted_by": "user",
+    "provenance": {
+      "conversation_id": "runtime-id-not-exposed",
+      "message_id": "sha256:4b066f19c3331b0074d4548b691b293072a50406df6f0557fcdba8e3d3f25d74",
+      "source_system": "pi"
+    },
+    "record_sha256": "46a44e9440425ef73c66e69d64d7e83a7c098ce0fa3f85f2caf7f8d7685cc5ec"
+  },
+  "host": "local-macos-worktree",
+  "integrated_commit": "8c7750d84ebaf846ae519ccf164f2c7b72c9ec1c",
+  "invocation_evidence": {
+    "delete_attempts": 0,
+    "effects": {
+      "catalog_card": "unobserved_remote_effects_unknown; no request issued by this session",
+      "cleanup_or_rollback": "not attempted",
+      "duckdb_applied_state": "known absent",
+      "local_lock": "known absent",
+      "other_namespace_or_card": "not attempted",
+      "pending": "known absent",
+      "target_namespace": "unobserved_remote_effects_unknown; no request issued by this session"
+    },
+    "max_retries": "not_constructed",
+    "outcome": "stopped_before_invocation",
+    "physical_attempts": 0,
+    "read_attempts": 0,
+    "returned_row_positions": 0,
+    "slots": [
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "read",
+        "number": 1,
+        "operation_number": 1,
+        "phase": "target_preflight_metadata",
+        "requested_rows": null,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "read",
+        "number": 2,
+        "operation_number": 1,
+        "phase": "target_empty_check",
+        "requested_rows": null,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 1,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": 1
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "read",
+        "number": 3,
+        "operation_number": 1,
+        "phase": "catalog_preflight_metadata",
+        "requested_rows": null,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "read",
+        "number": 4,
+        "operation_number": 1,
+        "phase": "catalog_card_preflight",
+        "requested_rows": null,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 2,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": 2
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "read",
+        "number": 5,
+        "operation_number": 2,
+        "phase": "catalog_card_preflight",
+        "requested_rows": null,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 2,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": 2
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 6,
+        "operation_number": 1,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 7,
+        "operation_number": 2,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 8,
+        "operation_number": 3,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 9,
+        "operation_number": 4,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 10,
+        "operation_number": 5,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 11,
+        "operation_number": 6,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 12,
+        "operation_number": 7,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 13,
+        "operation_number": 8,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 14,
+        "operation_number": 9,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 15,
+        "operation_number": 10,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 16,
+        "operation_number": 11,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 17,
+        "operation_number": 12,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 18,
+        "operation_number": 13,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 19,
+        "operation_number": 14,
+        "phase": "content_write",
+        "requested_rows": 64,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 20,
+        "operation_number": 15,
+        "phase": "content_write",
+        "requested_rows": 7,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "read",
+        "number": 21,
+        "operation_number": 1,
+        "phase": "target_postwrite_metadata",
+        "requested_rows": null,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "read",
+        "number": 22,
+        "operation_number": 1,
+        "phase": "target_postwrite_verification",
+        "requested_rows": null,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 904,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": 904
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "read",
+        "number": 23,
+        "operation_number": 2,
+        "phase": "target_postwrite_verification",
+        "requested_rows": null,
+        "resource": "github-doctacon-buoy-search-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 904,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": 904
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "write",
+        "number": 24,
+        "operation_number": 1,
+        "phase": "catalog_conditional_write",
+        "requested_rows": 1,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 0,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": null
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "read",
+        "number": 25,
+        "operation_number": 1,
+        "phase": "catalog_postwrite_verification",
+        "requested_rows": null,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 2,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": 2
+      },
+      {
+        "billing": null,
+        "billing_present": false,
+        "error": null,
+        "kind": "read",
+        "number": 26,
+        "operation_number": 2,
+        "phase": "catalog_postwrite_verification",
+        "requested_rows": null,
+        "resource": "buoy-routing-catalog-v1",
+        "returned_rows": 0,
+        "returned_rows_ceiling": 2,
+        "rows_affected": null,
+        "rows_affected_present": false,
+        "status": "unused",
+        "top_k": 2
+      }
+    ],
+    "write_attempts": 0,
+    "write_row_positions": 0
+  },
+  "invocation_occurred": false,
+  "model_imported_or_loaded": false,
+  "observed_at": "2026-07-21T00:10:16.923772+00:00",
+  "operation": "experimental-buoy-baseline-step-2-preflight",
+  "preflight_passed": false,
+  "provider_client_constructed": false,
+  "provider_requests": 0,
+  "schema_version": 1,
+  "source": {
+    "bytes": 64892,
+    "git_blob": "22c9610d19ea4aebb718aaab89f7117d2f5a1325",
+    "path": "/Users/crlough/Code/personal/turbo-search.worktrees/execute-baseline-approval-a/src/buoy_search/experimental_baseline.py",
+    "sha256": "aba10de48c31a4dd4c1d39b3210274f073adecc3aceef66eed5d543826463b96"
+  },
+  "stop_reasons": [
+    "cache_ref_manifest_readme_license",
+    "complete_secret_free_evidence_enforceability"
+  ]
+}
