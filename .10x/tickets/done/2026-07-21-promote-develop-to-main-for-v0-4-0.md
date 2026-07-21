@@ -1,7 +1,7 @@
 Status: done
 Created: 2026-07-21
 Updated: 2026-07-21
-Parent: .10x/tickets/2026-07-21-buoy-v0-4-0-release-plan.md
+Parent: .10x/tickets/done/2026-07-21-buoy-v0-4-0-release-plan.md
 Depends-On: .10x/tickets/done/2026-07-21-validate-buoy-v0-4-0-release-candidate.md
 
 # Promote Develop to Main for v0.4.0

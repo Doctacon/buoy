@@ -1,7 +1,7 @@
-Status: open
+Status: done
 Created: 2026-07-21
 Updated: 2026-07-21
-Parent: .10x/tickets/2026-07-21-buoy-v0-4-0-release-plan.md
+Parent: .10x/tickets/done/2026-07-21-buoy-v0-4-0-release-plan.md
 Depends-On: .10x/tickets/done/2026-07-21-create-buoy-v0-4-0-github-release.md
 
 # Finalize Buoy v0.4.0 Changelog
@@ -39,4 +39,11 @@ None. Verified v0.4.0 GitHub Release publication is complete.
 ## Progress and notes
 
 - 2026-07-21: Opened prospectively. No changelog finalization or release mutation occurred.
-- 2026-07-21: Source finalization is included in the simple-release implementation worktree: hosted date `2026-07-21`, v0.4.0 Release link, and Unreleased compare link match `.10x/evidence/2026-07-21-buoy-v0-4-0-github-release.md`. Focused checks, complete Python 3.11/3.13 suites, links, deterministic artifacts, and diff checks passed without live release mutation. Implementation evidence: `.10x/evidence/2026-07-21-simple-main-release-automation-implementation.md`. Ticket remains open until PR review/integration evidence satisfies its explicit review gate.
+- 2026-07-21: Source finalization was included in PR #89: hosted date `2026-07-21`, v0.4.0 Release link, and Unreleased compare link match `.10x/evidence/2026-07-21-buoy-v0-4-0-github-release.md`. Focused checks, complete Python 3.11/3.13 suites, links, deterministic artifacts, and diff checks passed without live release mutation. Independent review passed and PR #89 integrated as `7fa4bd726d09a671b76d408e7383e9fbc58c41de`.
+
+## Closure mapping
+
+- Hosted authority: `.10x/evidence/2026-07-21-buoy-v0-4-0-github-release.md`.
+- Source/test validation: `.10x/evidence/2026-07-21-simple-main-release-automation-implementation.md`.
+- Independent acceptance: `.10x/reviews/2026-07-21-simple-main-release-automation-final-review.md`.
+- Integration: PR #89 / `7fa4bd726d09a671b76d408e7383e9fbc58c41de`.

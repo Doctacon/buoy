@@ -1,7 +1,7 @@
-Status: active
+Status: done
 Created: 2026-07-21
 Updated: 2026-07-21
-Parent: .10x/tickets/2026-07-21-simple-main-release-automation-plan.md
+Parent: .10x/tickets/done/2026-07-21-simple-main-release-automation-plan.md
 Depends-On: None
 
 # Implement Simple Main Release Automation
@@ -35,8 +35,9 @@ Hosted protection/environment/PR mutation; choosing or bumping a future version;
 - `.10x/specs/main-push-automatic-github-release.md`
 - `.10x/decisions/simple-main-release-governance.md`
 - `.10x/evidence/2026-07-21-simple-main-release-automation-ratification.md`
-- `.10x/tickets/2026-07-21-finalize-buoy-v0-4-0-changelog.md`
-- `.10x/tickets/2026-07-21-buoy-v0-4-0-release-plan.md`
+- `.10x/tickets/done/2026-07-21-finalize-buoy-v0-4-0-changelog.md`
+- `.10x/tickets/done/2026-07-21-buoy-v0-4-0-release-plan.md`
+- `.10x/reviews/2026-07-21-simple-main-release-automation-final-review.md`
 
 ## Evidence expectations
 
@@ -52,4 +53,15 @@ None.
 - 2026-07-21: Applied the approved sole legacy no-op provenance exception for exact published v0.4.0. The exception pins tag, peeled commit, both subject names/digests, Release identity, repository, workflow, source commit, and historical `refs/tags/v0.4.0`; all future versions require `refs/heads/main`.
 - 2026-07-21: Focused release automation tests passed (24 tests). Final complete locked Python 3.11 and 3.13 validators and suites passed (531 tests on each interpreter). Two deterministic builds produced identical wheel/sdist digests, artifact inspection passed, and a normal clean-wheel install passed CLI/help and exact bundled-tokenizer smoke. Static YAML/state/forbidden-operation, lock, diff, and current-develop ref checks passed. Evidence: `.10x/evidence/2026-07-21-simple-main-release-automation-implementation.md`.
 - 2026-07-21: Pushed implementation commit `af7841a` and opened develop PR #89. Exact implementation-head CI run `29860668978` passed Python 3.11, Python 3.13, and Build distributions. The following evidence-only commit must pass the same checks; independent review remains before closure.
-- 2026-07-21: Repaired only PR #89's four review blockers: strict no-leading-zero SemVer and real calendar dates; exact complete-only full 422 reinspection; unconditional downloaded-asset digest/provenance final verification; and bounded repository-wide release-behavior Policy enforcement. Executable workflow-shell fixtures cover exact and partial 422 states plus both final-verification entries. Focused 27-test and full locked 534-test suites on Python 3.11/3.13, validators, two-build determinism, artifact inspection, clean-wheel smoke, policy scan, YAML parse, compilation, and diff checks passed. Independent rereview and final-head hosted CI remain required.
+- 2026-07-21: Repaired only PR #89's four review blockers: strict no-leading-zero SemVer and real calendar dates; exact complete-only full 422 reinspection; unconditional downloaded-asset digest/provenance final verification; and bounded repository-wide release-behavior Policy enforcement. Executable workflow-shell fixtures cover exact and partial 422 states plus both final-verification entries. Focused 27-test and full locked 534-test suites on Python 3.11/3.13, validators, two-build determinism, artifact inspection, clean-wheel smoke, policy scan, YAML parse, compilation, and diff checks passed.
+- 2026-07-21: Independent final rereview passed exact head `a8c86cd46bc2d0d6a5ca81497fa5f5f843eebe48`; review: `.10x/reviews/2026-07-21-simple-main-release-automation-final-review.md`. PR #89 squash-integrated as develop `7fa4bd726d09a671b76d408e7383e9fbc58c41de`; develop push CI `29864439022` passed. Repository implementation is complete.
+
+## Closure mapping
+
+- Workflow/tooling/docs/tests and local validation: `.10x/evidence/2026-07-21-simple-main-release-automation-implementation.md`.
+- Initial concerns and exact repaired PASS: `.10x/reviews/2026-07-21-simple-main-release-automation-implementation-review.md` and `.10x/reviews/2026-07-21-simple-main-release-automation-final-review.md`.
+- Integration: PR #89 / `7fa4bd726d09a671b76d408e7383e9fbc58c41de` with passing push CI.
+
+## Retrospective
+
+Release state machines require executable race fixtures and artifact-level verification; static YAML assertions alone do not prove mutation suppression.

@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-21
 Updated: 2026-07-21
-Relates-To: .10x/tickets/done/2026-07-21-validate-buoy-v0-4-0-release-candidate.md, .10x/tickets/2026-07-21-buoy-v0-4-0-release-plan.md
+Relates-To: .10x/tickets/done/2026-07-21-validate-buoy-v0-4-0-release-candidate.md, .10x/tickets/done/2026-07-21-buoy-v0-4-0-release-plan.md
 
 # Buoy v0.4.0 Release Candidate Validation
 

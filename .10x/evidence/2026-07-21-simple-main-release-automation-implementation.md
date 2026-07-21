@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-21
 Updated: 2026-07-21
-Relates-To: .10x/tickets/2026-07-21-implement-simple-main-release-automation.md, .10x/specs/develop-to-main-release-readiness.md, .10x/specs/main-push-automatic-github-release.md, .10x/tickets/2026-07-21-finalize-buoy-v0-4-0-changelog.md
+Relates-To: .10x/tickets/done/2026-07-21-implement-simple-main-release-automation.md, .10x/specs/develop-to-main-release-readiness.md, .10x/specs/main-push-automatic-github-release.md, .10x/tickets/done/2026-07-21-finalize-buoy-v0-4-0-changelog.md
 
 # Simple Main Release Automation Implementation
 
@@ -63,7 +63,7 @@ A following record-only evidence commit requires the same checks to rerun at fin
 
 ## What this supports
 
-This supports local implementation and deterministic-validation acceptance for `.10x/tickets/2026-07-21-implement-simple-main-release-automation.md`, including the approved exact v0.4.0 transition. It also supports the source portion of v0.4.0 changelog finalization and hosted CI for the implementation commit.
+This supports local implementation and deterministic-validation acceptance for `.10x/tickets/done/2026-07-21-implement-simple-main-release-automation.md`, including the approved exact v0.4.0 transition. It also supports the source portion of v0.4.0 changelog finalization and hosted CI for the implementation commit.
 
 ## PR #89 blocker repair
 

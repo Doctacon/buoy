@@ -53,7 +53,7 @@ Workflow/source/test implementation; branch protection/environment mutation; PR 
 - `.10x/decisions/simple-main-release-governance.md`
 - `.10x/reviews/2026-07-21-simple-main-release-automation-shaping-review.md`
 - `.10x/evidence/2026-07-21-simple-main-release-automation-ratification.md`
-- `.10x/tickets/2026-07-21-simple-main-release-automation-plan.md`
+- `.10x/tickets/done/2026-07-21-simple-main-release-automation-plan.md`
 
 ## Evidence expectations
 
@@ -74,7 +74,7 @@ None. Independent review concerns were repaired through the exact reviewer check
 - Independent concerns: `.10x/reviews/2026-07-21-simple-main-release-automation-shaping-review.md`.
 - Exact ratification: `.10x/evidence/2026-07-21-simple-main-release-automation-ratification.md`.
 - Active behavior: `.10x/specs/develop-to-main-release-readiness.md`, `.10x/specs/main-push-automatic-github-release.md`, and `.10x/decisions/simple-main-release-governance.md`.
-- Execution ownership: `.10x/tickets/2026-07-21-simple-main-release-automation-plan.md` and its two children.
+- Execution ownership: `.10x/tickets/done/2026-07-21-simple-main-release-automation-plan.md` and its two children.
 
 ## Retrospective
 
