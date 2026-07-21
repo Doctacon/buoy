@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-20
-Updated: 2026-07-20
+Updated: 2026-07-21
 
 # Deterministic Treatment Token-Budget Subdivision
 
@@ -15,7 +15,7 @@ Read-only decomposition found that the headline total contains two different sur
 | Incompatible row class | Exact plan rows | Unique `(repository, row_id)` values | Distinct report `repo_path` strings | Disposition |
 |---|---:|---:|---:|---|
 | Treatment source with exact physical-line ranges | 20,926 | 11,427 | 4,105 | Active source-line subdivision contract below |
-| Unchanged prose path | 366 | 183 | 57 | Remains fail-closed and unresolved; this source specification MUST NOT invent prose subdivision |
+| Unchanged prose path | 366 | 183 | 57 | Active prose Option A preserves bytes and retains every row fail-closed; this source specification MUST NOT invent prose subdivision |
 
 The two row classes have disjoint `repo_path` strings, producing the checkpoint's exact 4,162-path-string union. Source rows represent 4,111 repository-qualified paths because five source path strings occur in more than one repository; `pyproject.toml` occurs in three repositories, so those five shared strings produce six additional repository-qualified occurrences; the preserved report intentionally defines its headline path count from the unqualified `repo_path` field. The 366 prose plan rows are 9 pytest rows per treatment arm and 174 Ruff rows per treatment arm. Therefore this source-only contract cannot by itself make C6 tokenizer-ready.
 
@@ -29,10 +29,10 @@ The two row classes have disjoint `repo_path` strings, producing the checkpoint'
 | Preserve each parent range's exact breadcrumb tuple on every child and never cross an existing parent boundary | User-ratified exactly as independently reviewed |
 | Farthest-feasible exhaustive prefix algorithm rather than binary search or approximate counts | User-ratified exactly as independently reviewed |
 | A one-line rendered candidate above 512 invalidates its complete repository/arm plan | User-ratified exactly as independently reviewed |
-| The 366 prose rows remain an independent C6 stop | Record-backed consequence of source-only scope; prose behavior remains blocked |
+| The 366 prose rows remain an independent C6 stop | Active prose Option A and record-backed consequence of source-only scope |
 | New plan/artifact/namespace/count/storage identities after later implementation | Source-observed consequence of current hash-bound planning; exact values remain blocked on implementation and regeneration |
 
-The source-only semantics became active only after independent PASS and explicit user ratification recorded in `.10x/reviews/2026-07-20-deterministic-token-budget-subdivision-contract-review.md` and `.10x/evidence/2026-07-20-deterministic-token-budget-subdivision-contract-ratification.md`. The 366 prose rows remain blocked under `.10x/tickets/2026-07-20-shape-prose-token-budget-compatibility.md`.
+The source-only semantics became active only after independent PASS and explicit user ratification recorded in `.10x/reviews/2026-07-20-deterministic-token-budget-subdivision-contract-review.md` and `.10x/evidence/2026-07-20-deterministic-token-budget-subdivision-contract-ratification.md`. Subsequent active prose Option A, recorded in `.10x/evidence/2026-07-21-prose-token-budget-option-a-ratification.md`, preserves all prose bytes and retains the 366 rows fail-closed; the completed shaping owner is `.10x/tickets/done/2026-07-20-shape-prose-token-budget-compatibility.md`.
 
 ## Purpose and scope
 
@@ -157,7 +157,7 @@ After passing implementation validation, a separate authorized local forecast ta
 - extend the compact authority and mutation tests to pin algorithm/version, tokenizer identity/options, maximum-child proof, coverage/citation proof, unsplittable-line categories, and unchanged control/header/prose facts; and
 - obtain independent review at the exact regenerated head.
 
-Stop before any write-approval checkpoint if any row is above 512, any line is unsplittable, the 366 prose-row blocker is unresolved, corpus/control/header parity drifts, coverage/citations fail, a pinned input differs, a count exceeds a newly approved bound, or review does not pass. A source-only passing result is descriptive evidence, not authority to ignore failed prose rows. Even a completely passing regenerated forecast would still require the existing separate exact nine-namespace write approval; no prior approval carries forward.
+Stop before any write-approval checkpoint if any row is above 512, any line is unsplittable, active prose Option A retains the 366 incompatible rows, corpus/control/header parity drifts, coverage/citations fail, a pinned input differs, a count exceeds a newly approved bound, or review does not pass. A source-only passing result is descriptive evidence, not authority to ignore failed prose rows. Even a completely passing regenerated forecast would still require the existing separate exact nine-namespace write approval; no prior approval carries forward.
 
 ## Options and tradeoffs
 
@@ -206,7 +206,10 @@ The user ratified this exact source contract unchanged after independent review 
 
 - `.10x/tickets/done/2026-07-20-shape-deterministic-token-budget-subdivision.md`
 - `.10x/tickets/2026-07-20-implement-deterministic-token-budget-source-subdivision.md`
-- `.10x/tickets/2026-07-20-shape-prose-token-budget-compatibility.md`
+- `.10x/tickets/done/2026-07-20-shape-prose-token-budget-compatibility.md`
+- `.10x/specs/deterministic-repository-prose-token-budget-compatibility.md`
+- `.10x/evidence/2026-07-21-prose-token-budget-option-a-ratification.md`
+- `.10x/reviews/2026-07-21-prose-token-budget-compatibility-contract-review.md`
 - `.10x/evidence/2026-07-20-deterministic-token-budget-subdivision-contract-ratification.md`
 - `.10x/reviews/2026-07-20-deterministic-token-budget-subdivision-contract-review.md`
 - `.10x/tickets/2026-07-19-evaluate-python-syntax-chunking.md`

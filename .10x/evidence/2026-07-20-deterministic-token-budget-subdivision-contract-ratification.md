@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-20
 Updated: 2026-07-20
-Relates-To: .10x/specs/deterministic-treatment-token-budget-subdivision.md, .10x/tickets/done/2026-07-20-shape-deterministic-token-budget-subdivision.md, .10x/tickets/2026-07-20-implement-deterministic-token-budget-source-subdivision.md, .10x/tickets/2026-07-20-shape-prose-token-budget-compatibility.md, .10x/tickets/2026-07-19-evaluate-python-syntax-chunking.md, .10x/reviews/2026-07-20-deterministic-token-budget-subdivision-contract-review.md
+Relates-To: .10x/specs/deterministic-treatment-token-budget-subdivision.md, .10x/tickets/done/2026-07-20-shape-deterministic-token-budget-subdivision.md, .10x/tickets/2026-07-20-implement-deterministic-token-budget-source-subdivision.md, .10x/tickets/done/2026-07-20-shape-prose-token-budget-compatibility.md, .10x/tickets/2026-07-19-evaluate-python-syntax-chunking.md, .10x/reviews/2026-07-20-deterministic-token-budget-subdivision-contract-review.md
 
 # Deterministic Token-Budget Subdivision Contract Ratification
 
@@ -11,7 +11,7 @@ PR #76 pre-ratification head `581d9ec79ed5426dbc174e0373805c674d79184c` contains
 
 On 2026-07-20 the user explicitly ratified the exact reviewed source-only subdivision contract unchanged and directed its activation. The ratification preserves the exact pinned offline tokenizer identity/options, complete rendered-payload accounting, exhaustive farthest-feasible physical-line prefixes inside existing treatment parents, inherited breadcrumbs/ownership/fallback, exact LF reconstruction and citations, deterministic identity/order, complete-plan one-line failure, control/header/prose isolation, downstream regeneration gates, and no-live-operation boundary.
 
-The user also explicitly preserved the checkpoint’s incomplete C6 effect. Exactly 366 incompatible unchanged prose plan rows remain outside this source contract under separate blocked shaping owner `.10x/tickets/2026-07-20-shape-prose-token-budget-compatibility.md`. C6 remains blocked; the ratification neither accepts those rows nor authorizes prose semantics, forecast regeneration, namespace writes, or any live operation.
+The user also explicitly preserved the checkpoint’s incomplete C6 effect. Exactly 366 incompatible unchanged prose plan rows remain outside this source contract under separate blocked shaping owner `.10x/tickets/done/2026-07-20-shape-prose-token-budget-compatibility.md`. C6 remains blocked; the ratification neither accepts those rows nor authorizes prose semantics, forecast regeneration, namespace writes, or any live operation.
 
 ## Procedure
 
@@ -19,7 +19,7 @@ The user also explicitly preserved the checkpoint’s incomplete C6 effect. Exac
 2. Changed `.10x/specs/deterministic-treatment-token-budget-subdivision.md` from `draft` to `active` and replaced only obsolete proposal/activation-gate wording; the reviewed behavioral contract stayed unchanged.
 3. Closed and moved the shaping ticket to `done` with acceptance mapping and retrospective.
 4. Opened exactly one bounded executable source/test implementation owner at `.10x/tickets/2026-07-20-implement-deterministic-token-budget-source-subdivision.md`.
-5. Opened separate blocked shaping owner `.10x/tickets/2026-07-20-shape-prose-token-budget-compatibility.md` for the 366 prose plan rows without inventing prose behavior.
+5. Opened separate blocked shaping owner `.10x/tickets/done/2026-07-20-shape-prose-token-budget-compatibility.md` for the 366 prose plan rows without inventing prose behavior.
 6. Kept C6 blocked and repaired parent/ticket/spec/evidence references to the terminal shaping path and new owners.
 
 ## What this supports

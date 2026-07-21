@@ -41,7 +41,7 @@ Implement and validate only the active source-range subdivision behavior in `.10
 
 ## Blockers
 
-None. The exact source-only contract passed independent review and was user-ratified unchanged. The separate blocked prose owner and blocked C6 checkpoint do not prevent local source/test implementation, but they prohibit widening this ticket or claiming C6 readiness.
+None. The exact source-only contract passed independent review and was user-ratified unchanged. The completed Option A prose owner resolves prose semantics as no action; its 366 preserved incompatibilities and the blocked C6 checkpoint do not prevent local source/test implementation, but they prohibit widening this ticket or claiming C6 readiness.
 
 ## Explicit exclusions
 
@@ -59,7 +59,7 @@ Focused and full CPython 3.11/3.13 results; exact golden tokenizer/payload/bound
 - `.10x/evidence/2026-07-20-deterministic-token-budget-subdivision-shaping.md`
 - `.10x/reviews/2026-07-20-deterministic-token-budget-subdivision-contract-review.md`
 - `.10x/tickets/done/2026-07-20-shape-deterministic-token-budget-subdivision.md`
-- `.10x/tickets/2026-07-20-shape-prose-token-budget-compatibility.md`
+- `.10x/tickets/done/2026-07-20-shape-prose-token-budget-compatibility.md`
 - `.10x/tickets/2026-07-19-evaluate-python-syntax-chunking.md`
 - `src/buoy_search/repo_syntax_chunking.py`
 - `src/buoy_search/github_repo.py`
@@ -68,4 +68,4 @@ Focused and full CPython 3.11/3.13 results; exact golden tokenizer/payload/bound
 
 ## Progress and notes
 
-- 2026-07-20: Opened after independent PASS and exact user ratification activated the source-only contract. This ticket owns only the bounded local source/test implementation. The 366 incompatible prose plan rows remain under a separate blocked shaping owner, C6 remains blocked, and no source/test implementation, artifact regeneration, model/live operation, or write occurred in the ratification turn.
+- 2026-07-20: Opened after independent PASS and exact user ratification activated the source-only contract. This ticket owns only the bounded local source/test implementation. The 366 incompatible prose plan rows were assigned a separate shaping owner; that owner later resolved semantics as byte-preserving Option A while retaining the incompatibilities, so C6 remains blocked. No source/test implementation, artifact regeneration, model/live operation, or write occurred in the ratification turn.

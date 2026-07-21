@@ -10,7 +10,7 @@ Depends-On: None
 
 Completed a precise source-only deterministic token-budget subdivision contract for the two active Python-aware treatment arms. Independent review passed PR #76 pre-ratification head `581d9ec79ed5426dbc174e0373805c674d79184c`; the user ratified the exact reviewed contract unchanged, and `.10x/specs/deterministic-treatment-token-budget-subdivision.md` is active. One bounded source/test implementation ticket is open. No implementation, plan regeneration, model/live operation, or write occurred.
 
-Exactly 366 incompatible unchanged prose plan rows remain outside the active source contract under separate blocked shaping owner `.10x/tickets/2026-07-20-shape-prose-token-budget-compatibility.md`. C6 remains blocked.
+Exactly 366 incompatible unchanged prose plan rows remain outside the active source contract under the completed no-action shaping outcome `.10x/tickets/done/2026-07-20-shape-prose-token-budget-compatibility.md`. Their semantics are resolved as byte-preserving Option A; the rows remain incompatible and C6 remains blocked.
 
 ## Scope completed
 
@@ -32,7 +32,7 @@ Exactly 366 incompatible unchanged prose plan rows remain outside the active sou
 
 ## Blockers
 
-None for this completed shaping outcome. Source implementation is separately owned by `.10x/tickets/2026-07-20-implement-deterministic-token-budget-source-subdivision.md`. Prose semantics remain separately blocked and do not reopen or widen this closed source-contract shaping ticket.
+None for this completed shaping outcome. Source implementation is separately owned by `.10x/tickets/2026-07-20-implement-deterministic-token-budget-source-subdivision.md`. Prose semantics are resolved by the completed Option A no-action contract; the preserved incompatibilities block C6 but do not reopen or widen this closed source-contract shaping ticket.
 
 ## Explicit exclusions
 
@@ -54,7 +54,7 @@ Satisfied by the active focused specification, provenance-classified shaping evi
 - `.10x/evidence/2026-07-20-deterministic-token-budget-subdivision-contract-ratification.md`
 - `.10x/reviews/2026-07-20-deterministic-token-budget-subdivision-contract-review.md`
 - `.10x/tickets/2026-07-20-implement-deterministic-token-budget-source-subdivision.md`
-- `.10x/tickets/2026-07-20-shape-prose-token-budget-compatibility.md`
+- `.10x/tickets/done/2026-07-20-shape-prose-token-budget-compatibility.md`
 - `scripts/c6_syntax_forecast.py`
 
 ## Progress and notes
@@ -68,12 +68,12 @@ Satisfied by the active focused specification, provenance-classified shaping evi
 - **Provenance and decomposition:** `.10x/evidence/2026-07-20-deterministic-token-budget-subdivision-shaping.md` records the exact tokenizer checkpoint, 20,926/366 row-class decomposition, source/rendering/identity authority, and bounded Buoy one-line probe limits.
 - **Complete active contract:** `.10x/specs/deterministic-treatment-token-budget-subdivision.md` defines exact tokenizer payload accounting, exhaustive parent-bounded line prefixes, coverage/citations, inherited ownership, identity/order, fail-closed behavior, isolation, validation, and downstream regeneration gates.
 - **Review and ratification:** `.10x/reviews/2026-07-20-deterministic-token-budget-subdivision-contract-review.md` records independent PASS at `581d9ec79ed5426dbc174e0373805c674d79184c`; `.10x/evidence/2026-07-20-deterministic-token-budget-subdivision-contract-ratification.md` records the user's unchanged ratification and activation.
-- **Bounded next work:** `.10x/tickets/2026-07-20-implement-deterministic-token-budget-source-subdivision.md` is the only executable source/test owner. `.10x/tickets/2026-07-20-shape-prose-token-budget-compatibility.md` separately owns the unresolved 366 prose plan rows and remains blocked.
+- **Bounded next work:** `.10x/tickets/2026-07-20-implement-deterministic-token-budget-source-subdivision.md` is the only executable source/test owner. `.10x/tickets/done/2026-07-20-shape-prose-token-budget-compatibility.md` records the resolved Option A no-action semantics for the 366 still-incompatible prose plan rows.
 - **Safety and C6:** Preserved forecast/token/validator validation remains unchanged. `.10x/tickets/2026-07-19-evaluate-python-syntax-chunking.md` remains blocked on source implementation, prose compatibility, complete regenerated exact readiness, independent review, and separate exact write approval.
 
 ## Residual risk
 
-No implementation or full-corpus subdivision result exists. The shaping probe did not have pinned pytest/Ruff source, so their individually unsplittable-line counts remain unknown. Exact regenerated identities/counts cannot be projected. The 366 prose plan rows remain unresolved and independently block C6.
+No implementation or full-corpus subdivision result exists. The shaping probe did not have pinned pytest/Ruff source, so their individually unsplittable-line counts remain unknown. Exact regenerated identities/counts cannot be projected. The 366 prose plan rows remain intentionally unchanged and incompatible under active Option A, independently blocking C6.
 
 ## Retrospective
 
