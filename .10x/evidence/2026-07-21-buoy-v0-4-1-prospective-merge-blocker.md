@@ -30,6 +30,10 @@ The new readiness workflow is fail-closed: it cannot run without a GitHub prospe
 
 The smallest bounded recovery is one protected, content-neutral ancestry bridge making exact main `c49dc05` a parent of exact develop `8694afc`, preserving the develop tree. After protected integration and revalidation, PR #93 can be refreshed or recreated from exact develop and the new process can run normally. This bridge is a one-time migration exception, not recurring release ceremony.
 
+## Ratification
+
+After the conflict and recovery boundary were explained, the user explicitly authorized the recommended one-time protected ancestry bridge on 2026-07-21. The exact non-repeatable contract is recorded in `.10x/decisions/one-time-v0-4-squash-topology-bridge.md` and `.10x/specs/develop-to-main-release-readiness.md`.
+
 ## Limits
 
-No branch, source, protection, tag, Release, asset, registry, provider, or user state was mutated during diagnosis. No merge, retry, repair, or cleanup was attempted.
+No branch, source, protection, tag, Release, asset, registry, provider, or user state was mutated during diagnosis or ratification. No merge, retry, repair, or cleanup was attempted.

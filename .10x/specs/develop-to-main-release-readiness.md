@@ -62,6 +62,14 @@ Implementation order is mandatory:
 
 No passing release-readiness run is expected until a future version-bump `develop -> main` PR. Protection may name the four contexts before that first release PR; that PR is the first end-to-end proof.
 
+## One-time v0.4 squash-topology transition
+
+The accepted v0.4.0 squash promotion left exact main `c49dc0582bf3f06a16eafdcca0707d1e64e1c58d` outside develop ancestry. PR #93 proved GitHub cannot construct the first prospective merge ref because both lineages independently changed release files.
+
+Before PR #93 may proceed, the repository MUST perform the sole exception defined by `.10x/decisions/one-time-v0-4-squash-topology-bridge.md`: one protected merge-commit-preserving bridge of that exact main commit into then-current develop whose tree is byte-identical to its develop parent. It MUST make no source/version/changelog/workflow/product/release/provider/configuration change, use no direct/force push or protection weakening, and prove exact tree identity plus main ancestry after integration.
+
+This is migration cleanup for the already-accepted v0.4 topology, not release ceremony. It MUST NOT be repeated or generalized. After the bridge, PR #93 and all future releases follow the normal exact `develop -> main` readiness flow.
+
 ## Failure behavior
 
 Any missing/skipped/cancelled/stale/failed check blocks merge. Failure is diagnostic-only and never modifies tag, Release, branch, protection, environment, registry, Turbopuffer, or user state.
@@ -78,4 +86,4 @@ GitHub Actions is the explicit user-required managed-platform exception. Release
 
 ## Explicit exclusions
 
-Choosing/bumping the next version; merging main; creating a tag/Release; PyPI; Turbopuffer; force push; release environment; ancestry-sync mechanics; product changes.
+Choosing/bumping the next version; merging main; creating a tag/Release; PyPI; Turbopuffer; force push; release environment; recurring ancestry-sync mechanics beyond the exact one-time v0.4 transition above; product changes.
