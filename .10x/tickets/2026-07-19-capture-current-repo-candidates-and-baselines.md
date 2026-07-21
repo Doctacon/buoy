@@ -1,6 +1,6 @@
 Status: blocked
 Created: 2026-07-19
-Updated: 2026-07-20
+Updated: 2026-07-21
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
 Depends-On: .10x/tickets/done/2026-07-19-freeze-repo-ranking-experiment-contract.md, .10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md, .10x/tickets/done/2026-07-20-implement-experimental-buoy-baseline-executor.md, .10x/tickets/2026-07-20-source-pin-and-execute-experimental-buoy-baseline.md
 
@@ -40,9 +40,9 @@ Approval provenance; exact request count; proof that the cache/schema contains a
 
 ## Blockers
 
-- The ratified internal-judgment removal/rehash is complete under `.10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md`, and all remaining paths resolve. Buoy remains `insufficient`: the exact baseline write is now granted, but no reviewed integrated source contains its pins, no live operation has occurred, and contents/model compatibility remain unverified.
-- The fail-closed baseline executor contract at `.10x/specs/experimental-buoy-baseline-executor.md` is active, and its bounded implementation independently passed review and closed at `.10x/tickets/done/2026-07-20-implement-experimental-buoy-baseline-executor.md`. The user separately granted exact Approval A at `.10x/evidence/2026-07-20-experimental-buoy-baseline-approval-a-grant.md`; however, both source-pinned grant constants remain `None`, so current source still provides no live authority.
-- `.10x/tickets/2026-07-20-source-pin-and-execute-experimental-buoy-baseline.md` owns the required exact source-pin change, independent review/integration, one live invocation from that reviewed integrated source, complete slot/accounting/partial-state evidence, and compatible-baseline review. Approval B remains ungranted and explicitly excluded. C3 stays blocked until that owner produces independently reviewed compatible-baseline evidence and Approval B is then separately granted.
+- The ratified internal-judgment removal/rehash is complete under `.10x/tickets/done/2026-07-20-remove-buoy-internal-ranking-judgment.md`, and all remaining paths resolve. The exact Approval A source pins independently passed review and integrated at `8c7750d84ebaf846ae519ccf164f2c7b72c9ec1c`; the ratified bounded repair independently passed review and integrated at `0e6b97a0897ac7f7a82d073d851709951e0ea29e`.
+- Approval A was irrevocably consumed by exactly one aborted public executor invocation after exactly 2 metadata reads and 0 writes because the executor redundantly required a top-level `distance_metric` while raw provider authority returned `schema.vector.ann.distance_metric=cosine_distance`. It performed no content/card write, established no compatible baseline, and authorizes no retry, resume, cleanup, replacement approval, or second invocation.
+- `.10x/tickets/2026-07-20-source-pin-and-execute-experimental-buoy-baseline.md` is blocked, not done. Separate open shaping owner `.10x/tickets/2026-07-21-shape-provider-metadata-interpretation.md` owns provider-metadata interpretation and prerequisites for any possible future operation; it grants neither repair nor operation authority. Approval B remains ungranted and explicitly excluded. C3 stays blocked until a future independently reviewed compatible-baseline outcome exists and Approval B is then separately granted.
 
 ## Explicit exclusions
 
@@ -62,6 +62,10 @@ Namespace writes/deletes; candidate re-indexing; source/tests implementation bef
 - `.10x/evidence/2026-07-20-experimental-buoy-baseline-approval-a-grant.md`
 - `.10x/evidence/.storage/2026-07-20-experimental-buoy-baseline-approval-a.json`
 - `.10x/tickets/2026-07-20-source-pin-and-execute-experimental-buoy-baseline.md`
+- `.10x/evidence/2026-07-21-experimental-buoy-baseline-execution.md`
+- `.10x/evidence/.storage/2026-07-21-experimental-buoy-baseline-execution.json`
+- `.10x/reviews/2026-07-21-experimental-buoy-baseline-execution-review.md`
+- `.10x/tickets/2026-07-21-shape-provider-metadata-interpretation.md`
 
 ## Progress and notes
 
@@ -74,3 +78,4 @@ Namespace writes/deletes; candidate re-indexing; source/tests implementation bef
 - 2026-07-20: The user ratified the independently reviewed executor specification exactly as reviewed. It is now active, and `.10x/tickets/done/2026-07-20-implement-experimental-buoy-baseline-executor.md` was the one executable source/test owner. No implementation or live/model/domain operation occurred in that ratification turn. Approval A and Approval B remained ungranted, Buoy compatibility unverified, and C3 blocked/non-executable.
 - 2026-07-20: The bounded executor implementation independently passed review at PR #70 head `f6cd38dba1bc7cf8fbcb542133ca264e6cb3d61c` and its ticket closed. This satisfies only C3's implementation/review prerequisite. Approval A and Approval B remain ungranted, the source-pinned Approval A grant constants remain `None`, no baseline/model/provider/domain-state operation occurred, Buoy compatibility remains unverified, and C3 remains blocked/non-executable.
 - 2026-07-20: The user granted the checkpoint's exact Approval A text via `Approve baseline write (Recommended)`. `.10x/evidence/2026-07-20-experimental-buoy-baseline-approval-a-grant.md` records the exact text, actor/timestamp/provenance, immutable JSON bytes, and source-pin hashes. The new bounded sequential owner `.10x/tickets/2026-07-20-source-pin-and-execute-experimental-buoy-baseline.md` must first pin/review/integrate the exact grant and only then invoke live once from reviewed integrated source with complete slot/accounting/partial-state evidence. Current grant constants remain `None`; no credential/model/provider/domain-state operation occurred. Approval B remains ungranted, Buoy compatibility remains unverified, and C3 remains blocked.
+- 2026-07-21: Reconciled C3 after PR #77 independent review. The exact source pins and ratified bounded repair are integrated. Approval A was irrevocably consumed by exactly one invocation that aborted after exactly 2 metadata reads and 0 writes; no compatible baseline was established. The execution owner is blocked, separate provider-metadata shaping owner `.10x/tickets/2026-07-21-shape-provider-metadata-interpretation.md` grants neither repair nor operation authority, Approval B remains ungranted, and C3 remains blocked. No implementation, evidence JSON, live operation, or cleanup changed in this reconciliation.
