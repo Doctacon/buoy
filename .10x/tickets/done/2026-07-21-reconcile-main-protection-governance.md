@@ -37,6 +37,10 @@ None for this record-only reconciliation. GitHub may still require an eligible l
 
 Hosted protection mutation; approval fabrication; force/direct push; source/runtime changes; tag/Release/PyPI/Turbopuffer operations.
 
+## Progress and notes
+
+- 2026-07-21: Initial independent review confirmed the exact user-selected branch settings and no hosted mutation, then blocked integration on superseded status, one historical evidence-path rewrite, stale PR #80 state, missing parent graph membership, and consumed bootstrap-authority wording. Repaired all five record-only defects: the old decision is superseded, historical output is verbatim, PR #80 is accurately closed/stale with a replacement PR required, this child is in the parent sequence, and bootstrap/configuration authority is explicitly consumed. No hosted protection, source, branch, tag, Release, or product state changed.
+
 ## Retrospective
 
-When the user elects to retain observed service configuration rather than restore a prior contract, the durable record must distinguish configuration acceptance from permission to use its riskiest capability.
+When the user elects to retain observed service configuration rather than restore a prior contract, the durable record must distinguish configuration acceptance from permission to use its riskiest capability. Historical command output must remain verbatim when its referenced file later moves.

@@ -60,9 +60,9 @@ Rejected because concurrent Pi sessions would share one integration boundary wit
 
 Rejected because direct writes to `develop` would bypass the same integration and CI guarantees intended for concurrent worktrees.
 
-### Require one approval
+### Require a fixed approving-review count of one
 
-Rejected for now because the repository has one maintainer and self-authored pull requests cannot provide an independent approval. CI remains mandatory.
+Rejected because the repository remains configured with zero fixed approving reviews. Main's separately retained last-push approval may still require one eligible reviewer who did not make the latest push; that hosted rule is narrower than a fixed approval count and may mechanically block a solo-authored release PR.
 
 ### Permit administrator bypass
 

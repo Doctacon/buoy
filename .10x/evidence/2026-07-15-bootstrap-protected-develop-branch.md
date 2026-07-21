@@ -82,7 +82,7 @@ Sanitized independent `GET` readback for `develop` was identical except `"branch
 SHA-256 checks after the external mutations matched the preflight digests for every non-ticket shaping record:
 
 ```text
-c50c48130ee15f40e90e818a50e9f04e7407f36739ee55155b1cb4bfd96c39b3  .10x/decisions/superseded/protected-development-and-github-release-governance.md
+c50c48130ee15f40e90e818a50e9f04e7407f36739ee55155b1cb4bfd96c39b3  .10x/decisions/protected-development-and-github-release-governance.md
 932306a5a9b25a7cd1fb56650e33e343d535451ed65c55196c68fbc876ff9708  .10x/decisions/superseded/github-only-release-automation-v0-2-1.md
 e9a02b1575c80b486fd0aabf134fe40090a55cbc24b50b120ef7c62e3f82b67f  .10x/specs/pi-worktree-development-flow.md
 1272001a1d59ae6e213f14e03663ab0fcd4b3cc2ce436732a243bb84c2cc9ae4  .10x/specs/protected-github-branches.md

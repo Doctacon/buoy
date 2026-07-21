@@ -8,11 +8,11 @@ Updated: 2026-07-21
 
 Define GitHub and CI enforcement for the long-lived `develop` integration branch and `main` release branch in `Doctacon/buoy-search`.
 
-## Branch bootstrap
+## Completed branch bootstrap
 
-- `develop` MUST be created from exact current `main` commit `78d255b6e54567018e4ea7ad565a67224ee9c4bf` and pushed to `origin`.
-- The initial branch creation is the only direct-push bootstrap exception.
-- Branch protection MUST be installed before ordinary work is merged.
+- `develop` was created from exact then-current `main` commit `78d255b6e54567018e4ea7ad565a67224ee9c4bf` and pushed to `origin`.
+- The initial direct-push bootstrap exception is consumed historical authority and MUST NOT be reused.
+- Branch protection was installed before ordinary work merged.
 
 ## Required protection
 
@@ -72,10 +72,4 @@ Given any ordinary or administrator credential, direct pushes to `develop` MUST 
 
 ## External side effects
 
-This specification authorizes only the following repository mutations:
-
-- create and push `develop` at the ratified commit;
-- configure protection on `main` and `develop`;
-- push bounded `work/*` branches and create/merge the governing pull requests.
-
-It does not authorize tags, releases, package publication, repository transfer/rename, secrets, environment changes, or Turbopuffer operations.
+The historical bootstrap authority to create/push `develop` and configure initial protection is consumed. Current authority permits only bounded `work/*` branch pushes and creation/merge of governing pull requests under the active branch-specific settings. It does not authorize direct or force pushes to long-lived branches, protection mutation, bypass, tags, releases, package publication, repository transfer/rename, secrets, environment changes, or Turbopuffer operations.
