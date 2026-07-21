@@ -51,9 +51,19 @@ Two builds used the same commit timestamp as `SOURCE_DATE_EPOCH` and `PYTHONHASH
 
 A normal fresh virtual environment installed the wheel with dependencies. `buoy --version` returned `buoy 0.4.0`; `buoy --help` and `python -m buoy_search --help` succeeded; mandatory loading of the bundled tokenizer returned exact smoke count 9.
 
+### Hosted exact-head CI
+
+Commit `af7841a` was pushed to `work/implement-simple-release` and opened as PR #89 targeting `develop`: `https://github.com/Doctacon/buoy-search/pull/89`. CI run `29860668978` passed all ordinary protected checks on that implementation commit:
+
+- Python 3.11 job `88736249196`: passed in 1m52s;
+- Python 3.13 job `88736249170`: passed in 1m41s;
+- Build distributions job `88736713496`: passed in 11s.
+
+A following record-only evidence commit requires the same checks to rerun at final PR head before handoff.
+
 ## What this supports
 
-This supports local implementation and deterministic-validation acceptance for `.10x/tickets/2026-07-21-implement-simple-main-release-automation.md`, including the approved exact v0.4.0 transition. It also supports the source portion of v0.4.0 changelog finalization.
+This supports local implementation and deterministic-validation acceptance for `.10x/tickets/2026-07-21-implement-simple-main-release-automation.md`, including the approved exact v0.4.0 transition. It also supports the source portion of v0.4.0 changelog finalization and hosted CI for the implementation commit.
 
 ## Limits
 
