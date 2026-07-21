@@ -43,7 +43,7 @@ Create a bounded `work/establish-protected-development-flow` branch from bootstr
 
 ## References
 
-- `.10x/decisions/protected-development-and-github-release-governance.md`
+- `.10x/decisions/superseded/protected-development-and-github-release-governance.md`
 - `.10x/specs/pi-worktree-development-flow.md`
 - `.10x/specs/protected-github-branches.md`
 - `.10x/specs/buoy-ci-and-github-releases.md`

@@ -34,7 +34,7 @@ Tag/release creation, version changes, branch-protection changes, force push, sq
 ## References
 
 - `.10x/specs/protected-github-branches.md`
-- `.10x/decisions/protected-development-and-github-release-governance.md`
+- `.10x/decisions/superseded/protected-development-and-github-release-governance.md`
 
 ## Evidence expectations
 

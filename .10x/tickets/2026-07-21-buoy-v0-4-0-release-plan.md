@@ -12,6 +12,7 @@ Release reviewed `develop` as GitHub-only Buoy v0.4.0 while preserving protected
 
 ## Child sequence
 
+0. `.10x/tickets/done/2026-07-21-reconcile-main-protection-governance.md` (completed record-only release-governance reconciliation)
 1. `.10x/tickets/done/2026-07-21-validate-buoy-v0-4-0-release-candidate.md`
 2. `.10x/tickets/2026-07-21-promote-develop-to-main-for-v0-4-0.md`
 3. `.10x/tickets/2026-07-21-create-buoy-v0-4-0-github-release.md`
@@ -25,7 +26,7 @@ Children are strictly sequential. No child may infer completion from a later chi
 - The changelog has a pending 0.4.0 section derived from the complete v0.3.0-to-candidate range before release.
 - Candidate distributions pass `.10x/specs/buoy-release-validation.md`, including clean install, digest-verified 0.3.0 upgrade, removed launcher/environment aliases, retained compatibility, complete Python 3.11/3.13 tests, eval validation, links, inventory, and independent review.
 - Current `main` ancestry is incorporated into release-ready `develop` through a protected ancestry-only sync PR with content-neutral merge commit; protection is not weakened.
-- PR #80 is refreshed, passes all required checks, and merges `develop` to `main` using a merge commit, never squash/rebase.
+- Historical PR #80 remains closed as stale/conflicting; one replacement `develop -> main` PR passes all required checks and any mechanically required approval, then merges using a merge commit, never squash/rebase.
 - Annotated `v0.4.0` points to the exact reviewed `main` commit and authoritative remote metadata reports a tag object.
 - The exact approval-gated workflow publishes the wheel/sdist, generated notes, and verifiable provenance; no PyPI publication occurs.
 - Changelog release date/links are finalized only after hosted Release verification, through a separate reviewed task PR.
@@ -37,7 +38,7 @@ New product behavior; reopening C3/C4/C6-C9; retrying Approval A or Crow-Plus; T
 
 ## References
 
-- `.10x/decisions/protected-development-and-github-release-governance.md`
+- `.10x/decisions/protected-development-and-github-release-governance-v2.md`
 - `.10x/specs/protected-github-branches.md`
 - `.10x/specs/buoy-release-validation.md`
 - `.10x/specs/buoy-ci-and-github-releases.md`

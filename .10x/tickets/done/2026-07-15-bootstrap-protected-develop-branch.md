@@ -36,7 +36,7 @@ This ticket owns only branch bootstrap and GitHub configuration. It MUST preserv
 
 ## References
 
-- `.10x/decisions/protected-development-and-github-release-governance.md`
+- `.10x/decisions/superseded/protected-development-and-github-release-governance.md`
 - `.10x/specs/protected-github-branches.md`
 - `.10x/tickets/done/2026-07-15-establish-protected-development-workflow.md`
 

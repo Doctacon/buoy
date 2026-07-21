@@ -30,4 +30,4 @@ Version 0.2.0 remains an annotated tag without a Release. Version 0.2.1 becomes 
 
 ## Supersession
 
-Superseded by `.10x/decisions/protected-development-and-github-release-governance.md`, which retains the release contract but replaces the no-branch-protection choice with the ratified protected `develop`/`main` workflow.
+Superseded by `.10x/decisions/superseded/protected-development-and-github-release-governance.md`, which retains the release contract but replaces the no-branch-protection choice with the ratified protected `develop`/`main` workflow.

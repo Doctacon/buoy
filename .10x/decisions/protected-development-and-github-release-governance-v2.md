@@ -1,22 +1,16 @@
 Status: active
-Created: 2026-07-15
-Updated: 2026-07-15
+Created: 2026-07-21
+Updated: 2026-07-21
 
-# Protected Development and GitHub Release Governance
+# Protected Development and GitHub Release Governance v2
 
 ## Context
 
-Buoy previously used one Pi session directly on unprotected `main`. The active release decision deliberately omitted branch protection. The maintainer is moving to concurrent Pi sessions in Git worktrees, with a long-lived integration branch and periodic releases to `main`. Concurrent integration makes direct writes to shared branches and CI results from stale branch bases materially riskier.
+Buoy uses concurrent Pi sessions in Git worktrees, a protected long-lived `develop` integration branch, and periodic releases to protected `main`. The original governance decision required identical protection details on both long-lived branches.
 
-At ratification time:
+During the v0.4.0 release, hosted inspection found that `develop` still matched that contract while `main` allowed force pushes and required approval from someone other than the last pusher. The user explicitly chose `Keep current rules` after being shown the exact consequences and later clarified that release execution should proceed without restoring the old settings.
 
-- local and remote `main` are clean and point to `78d255b6e54567018e4ea7ad565a67224ee9c4bf`;
-- no `develop` branch exists;
-- GitHub reports no protection on `main` and no repository rulesets;
-- the authenticated maintainer has repository administration permission;
-- current CI check names are `Python 3.11`, `Python 3.13`, and `Build distributions`.
-
-The maintainer explicitly selected protection on both long-lived branches, pull requests with all three CI checks, zero human approvals, strict base freshness, no administrator bypass, and no launcher, Git hook, or Pi extension. Task pull requests are squash-merged into `develop`; release pull requests use merge commits from `develop` into `main` so release ancestry remains coherent.
+This decision retains protected pull requests, all three CI checks, strict base freshness, administrator enforcement, deletion denial, branch roles, task squash merges, release merge commits, and GitHub-only annotated-tag publication. It ratifies only the two observed `main` exceptions: force pushes remain enabled and last-push approval remains enabled. `develop` retains force-push denial and no last-push approval requirement.
 
 ## Decision
 
@@ -34,14 +28,16 @@ The maintainer explicitly selected protection on both long-lived branches, pull 
 - Create `develop` from exact current `main` commit `78d255b6e54567018e4ea7ad565a67224ee9c4bf`.
 - Protect both `main` and `develop`.
 - Both branches require a pull request before merge.
-- Required approving review count is zero because this is currently a solo-maintained repository.
+- Required approving review count is zero.
 - The `Python 3.11`, `Python 3.13`, and `Build distributions` GitHub Actions checks must pass.
 - Required checks use strict base freshness: a pull request must incorporate the current target branch before merge.
 - Protection applies to administrators with no bypass.
-- Force pushes and branch deletion remain disallowed.
+- Branch deletion remains disallowed on both branches.
+- `develop` disallows force pushes and does not require last-push approval.
+- `main` retains its observed settings: force pushes are allowed and last-push approval is required.
 - CI runs for all pull requests and pushes to both `main` and `develop`.
 
-The unavoidable initial creation/push of `develop` from current `main` occurs before protection is installed. This is a one-time bootstrap operation, not an ongoing direct-push exception.
+No direct push, force push, protection mutation, or bypass is authorized by this decision. Allowing force pushes on `main` records hosted configuration; release work still proceeds only by protected pull request.
 
 ### Pi enforcement posture
 
@@ -64,9 +60,9 @@ Rejected because concurrent Pi sessions would share one integration boundary wit
 
 Rejected because direct writes to `develop` would bypass the same integration and CI guarantees intended for concurrent worktrees.
 
-### Require one approval
+### Require a fixed approving-review count of one
 
-Rejected for now because the repository has one maintainer and self-authored pull requests cannot provide an independent approval. CI remains mandatory.
+Rejected because the repository remains configured with zero fixed approving reviews. Main's separately retained last-push approval may still require one eligible reviewer who did not make the latest push; that hosted rule is narrower than a fixed approval count and may mechanically block a solo-authored release PR.
 
 ### Permit administrator bypass
 
@@ -90,6 +86,6 @@ Not selected. No release-stabilization or hotfix behavior was ratified, so those
 
 ## Consequences
 
-Concurrent tasks gain isolated worktrees and a serialized, tested integration path. Pull requests may need updating after another task lands, increasing merge friction in exchange for stronger integration assurance. The maintainer cannot bypass protections without first changing GitHub configuration. `main` remains compatible with the existing tag-triggered GitHub-only release process.
+Concurrent tasks retain isolated worktrees and a serialized, tested integration path. `main`'s last-push approval may require an eligible reviewer before a release PR can merge; if no eligible reviewer exists, release remains mechanically blocked rather than weakening the setting. Enabled force pushes increase destructive-history risk, but this decision does not authorize using them. `main` remains compatible with the existing tag-triggered GitHub-only release process.
 
-This decision supersedes `.10x/decisions/superseded/github-only-release-automation-v0-2-1.md`; all retained release constraints are restated here.
+This decision supersedes `.10x/decisions/superseded/protected-development-and-github-release-governance.md`. The older GitHub-only release decision remains superseded history at `.10x/decisions/superseded/github-only-release-automation-v0-2-1.md`.

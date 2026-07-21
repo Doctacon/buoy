@@ -14,7 +14,7 @@ This is a parent plan, not an executable ticket.
 
 ## Governing records
 
-- `.10x/decisions/protected-development-and-github-release-governance.md`
+- `.10x/decisions/superseded/protected-development-and-github-release-governance.md`
 - `.10x/specs/pi-worktree-development-flow.md`
 - `.10x/specs/protected-github-branches.md`
 - `.10x/specs/buoy-ci-and-github-releases.md`

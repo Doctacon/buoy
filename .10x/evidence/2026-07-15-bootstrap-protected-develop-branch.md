@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-15
 Updated: 2026-07-15
-Relates-To: .10x/tickets/done/2026-07-15-bootstrap-protected-develop-branch.md, .10x/specs/protected-github-branches.md, .10x/decisions/protected-development-and-github-release-governance.md
+Relates-To: .10x/tickets/done/2026-07-15-bootstrap-protected-develop-branch.md, .10x/specs/protected-github-branches.md, .10x/decisions/superseded/protected-development-and-github-release-governance.md
 
 # Bootstrap Protected Develop Branch
 
