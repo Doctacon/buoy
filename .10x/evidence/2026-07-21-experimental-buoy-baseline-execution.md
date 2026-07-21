@@ -7,11 +7,11 @@ Relates-To: .10x/tickets/2026-07-20-source-pin-and-execute-experimental-buoy-bas
 
 ## Outcome
 
-A fresh complete Step 2 preflight passed at exact integrated `develop` commit `0e6b97a0897ac7f7a82d073d851709951e0ea29e`. The public `execute_experimental_baseline` entry point was then invoked exactly once, from `2026-07-21T03:09:58.038837+00:00` through `2026-07-21T03:12:38.841410+00:00`, by the implementation subagent in the local macOS worktree. Approval A is now consumed and MUST NOT be invoked again regardless of this abort.
+A fresh complete Step 2 preflight passed at exact integrated `develop` commit `0e6b97a0897ac7f7a82d073d851709951e0ea29e`. The public `execute_experimental_baseline` entry point was then invoked exactly once, from `2026-07-21T03:09:58.038837+00:00` through `2026-07-21T03:12:38.841410+00:00`, by the implementation subagent in the local macOS worktree. Approval A is irrevocably consumed and MUST NOT be invoked again regardless of this abort.
 
-The invocation constructed and loaded the exact offline model, read the provider credential only inside the public executor, and constructed the locked `turbopuffer==2.4.0` client with `max_retries=0`. It made exactly two provider metadata attempts and then failed closed with `ExperimentalBaselineError: catalog namespace distance_metric is missing or mismatched`.
+The invocation constructed and loaded the exact offline model, read the provider credential only inside the public executor, and constructed the locked `turbopuffer==2.4.0` client with `max_retries=0`. It made exactly two provider metadata attempts. The raw catalog provider projection proves `schema.vector.ann.distance_metric=cosine_distance`. The executor then failed closed with `ExperimentalBaselineError: catalog namespace distance_metric is missing or mismatched` because it redundantly required a top-level `distance_metric` field that the provider response did not contain. This is an executor metadata-shape assumption, not provider cosine incompatibility.
 
-No content or card write was attempted. No delete, retry, pagination, fallback, cleanup, rollback, resume, Approval B, or C3 request occurred.
+No content or card write was attempted. No delete, retry, pagination, fallback, cleanup, rollback, resume, Approval B, or C3 request occurred or is authorized.
 
 Complete secret-free structured preflight, raw schema/distance projections, result/error evidence, all 26 normalized slots, billing/`rows_affected` presence markers, counters, local observations, and effect classifications are preserved at `.10x/evidence/.storage/2026-07-21-experimental-buoy-baseline-execution.json`.
 
@@ -43,11 +43,11 @@ No preflight read the credential, imported or loaded the model, constructed a pr
 Attempted slots:
 
 1. Slot 1, `target_preflight_metadata`, `github-doctacon-buoy-search-v1`: succeeded. It returned the SDK's unambiguous namespace-absent projection. Returned rows `0`; `rows_affected_present=false`, value `null`; `billing_present=false`, value `null`; metrics/request identity/affected IDs absent; no error.
-2. Slot 3, `catalog_preflight_metadata`, `buoy-routing-catalog-v1`: the physical metadata request succeeded and returned schema, but semantic validation aborted because the response had no top-level `distance_metric`. Returned rows `0`; `rows_affected_present=false`, value `null`; `billing_present=false`, value `null`; metrics/request identity/affected IDs absent; no transport/response-shape error.
+2. Slot 3, `catalog_preflight_metadata`, `buoy-routing-catalog-v1`: the physical metadata request succeeded and returned schema with `schema.vector.ann.distance_metric=cosine_distance`. The executor then aborted because its redundant metadata-shape check required a separate top-level `distance_metric`, which was absent. Returned rows `0`; `rows_affected_present=false`, value `null`; `billing_present=false`, value `null`; metrics/request identity/affected IDs absent; no transport/response-shape error and no observed provider cosine incompatibility.
 
 Unused slots are exactly 2 and 4–26. Each is explicitly represented as `unused` in the structured record with its immutable resource, operation number, kind, requested rows or `top_k`, returned-row ceiling, `rows_affected_present=false`/`null`, `billing_present=false`/`null`, returned rows `0`, absent metrics/request identity/affected IDs/error, and zero unused-slot cumulative counters. Unused capacity was not reassigned.
 
-The raw catalog projection proves that the returned schema's vector `ann.distance_metric` was `cosine_distance`, but the required top-level `distance_metric` marker was absent. The exact sanitized projection hashes are:
+The raw provider authority proves that the returned catalog `schema.vector.ann.distance_metric` was `cosine_distance`. It separately records that no top-level `distance_metric` field was present. The executor, rather than the provider, imposed that redundant top-level metadata-shape assumption. The exact sanitized projection hashes are:
 
 - target preflight: `2f41ab62d15091aea29f841802917ff829aa273da15b0db8c5c073b30f1f36ab`;
 - catalog preflight: `5073fd4dcbf9fce0c9337d8c2fb34722cfb7731bfe33b93823108435b07d8ccc`.
@@ -57,7 +57,7 @@ No target-row or card-row projection exists because the corresponding fixed slot
 ## Known and indeterminate effects
 
 - Target namespace: slot 1 observed it unambiguously absent at that time; slot 2 was correctly unused; no target write or delete was attempted.
-- Catalog namespace/card: slot 3 observed the catalog schema and missing top-level distance marker. The exact generated card itself was not read because slots 4 and 5 were not reached. Slot 24 was unused, so no card mutation was attempted; slots 25 and 26 were unused.
+- Catalog namespace/card: slot 3 observed `schema.vector.ann.distance_metric=cosine_distance` and no separate top-level distance field. The executor rejected that metadata shape before reading the exact generated card, so slots 4 and 5 were not reached. Slot 24 was unused, so no card mutation was attempted; slots 25 and 26 were unused.
 - Pending: known absent after invocation. No pending record was created.
 - DuckDB applied state: known absent after invocation. No local applied-state commit was attempted and no applied-state hash exists.
 - Lock/state root: lock acquisition created the exact local state-root/lock-file path. The executor's lock context exited; the persistent `apply.lock` file remains. Lock ownership was not retested and the file was not deleted because cleanup is forbidden.
@@ -73,12 +73,16 @@ No target-row or card-row projection exists because the corresponding fixed slot
 5. Caught the fail-closed error and immediately persisted its attached executor evidence, complete 26-slot accounting, and local-only pending/DuckDB observations. No extra provider request was made.
 6. Performed record-only secret scanning, accounting validation, and diff validation. The live entry point was not and will not be invoked again under Approval A.
 
+## Independent review disposition
+
+Independent review recorded concerns with the original provider-compatibility characterization. The raw JSON, fixed slots, effects, and lock observations remain unchanged and authoritative: the provider returned nested cosine authority, while the executor stopped on its own redundant top-level metadata-shape assumption. The review is recorded at `.10x/reviews/2026-07-21-experimental-buoy-baseline-execution-review.md`; separate shaping is owned by `.10x/tickets/2026-07-21-shape-provider-metadata-interpretation.md`.
+
 ## What this supports
 
-This supports that Approval A was consumed by exactly one bounded invocation and that the executor failed closed after two metadata reads with no remote or durable applied-state mutation. It supports the exact catalog metadata compatibility blocker and complete bounded accounting for independent review.
+This supports that Approval A was irrevocably consumed by exactly one bounded invocation and that the executor failed closed after two metadata reads with no remote or durable applied-state mutation. It supports complete bounded accounting, proves the returned catalog schema's nested cosine metric, and identifies an executor/provider-metadata interpretation blocker.
 
-It does not establish a compatible Buoy baseline, grant Approval B, authorize another baseline attempt, or unblock C3.
+It does not establish a compatible Buoy baseline, grant or authorize Approval B, authorize another baseline attempt, or unblock C3. Retry, resume, cleanup, Approval B, and C3 remain prohibited under the consumed authority.
 
 ## Limits
 
-Provider/account dollar pricing remains unknown. The exact generated card and target rows were not observed because their fixed slots were unused. No post-abort provider observation is available or permitted. Independent review remains required; the owning ticket stays active and C3 remains blocked.
+Provider/account dollar pricing remains unknown. The exact generated card and target rows were not observed because their fixed slots were unused. No post-abort provider observation is available or permitted. The owning ticket is blocked, not done: no compatible baseline exists, and the separate shaping owner implies neither repair authority nor a new operation approval.
