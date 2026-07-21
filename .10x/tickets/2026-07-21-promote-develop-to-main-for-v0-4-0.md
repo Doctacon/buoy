@@ -33,6 +33,7 @@ Candidate source changes after review; tag or Release creation; publication; bra
 - `.10x/decisions/protected-development-and-github-release-governance.md`
 - PR #80: `https://github.com/Doctacon/buoy-search/pull/80`
 - `.10x/tickets/done/2026-07-15-promote-develop-to-main-for-v0-3-0.md`
+- `.10x/evidence/2026-07-21-buoy-v0-4-0-ancestry-sync-readiness.md`
 
 ## Evidence expectations
 
@@ -45,3 +46,4 @@ None. Candidate validation and independent review are complete; integration iden
 ## Progress and notes
 
 - 2026-07-21: Opened after PR #80 reported conflicts between `main` `820b8ab` and `develop` `ce262d4`. The established protected ancestry-only sync mechanism is record-backed from v0.3.0. No branch, PR, ancestry, tag, release, or product state changed.
+- 2026-07-21: Reviewed candidate PR #82 integrated as exact release-ready develop `47a0c33c412062f6467b1858e411179bfca60dcf`. Dedicated ancestry merge `1abd9f587d3e188fa19be11755c786d81df3d455` has exact second parent current main `820b8abba4308481eace728203d98f3365154956` and exact tree equality `4c6395c330bb14ab75012d4b82c78f8b9a739aa8` with release-ready develop. Evidence: `.10x/evidence/2026-07-21-buoy-v0-4-0-ancestry-sync-readiness.md`. No direct protected-branch mutation, tag, Release, PyPI, Turbopuffer, or user-state operation occurred. Sync remains pending protected PR checks and independent review.
