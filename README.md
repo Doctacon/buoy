@@ -71,6 +71,10 @@ Remote `plan` and `crawl` authenticate only to the selected source warehouse and
 
 Plans live under `artifacts/`; new applied state lives under `.buoy/`. Both are generated, local, and gitignored. Existing users should read [Migrating from turbo-search](docs/migrating-to-buoy.md).
 
+## Optional Command Center
+
+Run `uv sync --extra ui && uv run buoy serve` for a loopback-only, read-only console. It inspects local plans and state without reconnecting to sources; remote refresh and search run only when explicitly requested. It cannot apply, delete, mutate catalogs, or extract graphs. See the [Command Center guide](docs/command-center.md).
+
 ## Details on demand
 
 - [Index sources safely](docs/indexing.md) — source support, crawl controls, plan artifacts, incremental state, approved apply, and stale deletion.

@@ -870,6 +870,47 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evals_parser.set_defaults(func=_run_evals)
 
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="run the local read-only Command Center",
+        description=(
+            "Run the optional read-only Command Center on an explicitly loopback-only address. "
+            "Remote reads occur only when requested through the interface."
+        ),
+    )
+    serve_parser.add_argument(
+        "--host",
+        type=loopback_host,
+        default="127.0.0.1",
+        help="Loopback bind host: 127.0.0.1, localhost, or ::1 (default: 127.0.0.1).",
+    )
+    serve_parser.add_argument(
+        "--port",
+        type=tcp_port,
+        default=8765,
+        help="Loopback TCP port (default: 8765).",
+    )
+    serve_parser.add_argument(
+        "--artifacts-root",
+        type=Path,
+        default=Path("artifacts/site-crawls"),
+        help="Root containing saved plan artifacts (default: artifacts/site-crawls).",
+    )
+    serve_parser.add_argument(
+        "--state-root",
+        type=Path,
+        default=None,
+        help="Local applied-state root. Defaults to .buoy, with in-place .turbo-search fallback for existing projects.",
+    )
+    serve_parser.add_argument(
+        "--no-browser",
+        action="store_false",
+        dest="browser",
+        default=True,
+        help="Do not open the Command Center in the default browser.",
+    )
+    serve_parser.set_defaults(func=_run_serve)
+
     return parser
 
 
@@ -969,6 +1010,19 @@ def positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
+def loopback_host(value: str) -> str:
+    if value not in {"127.0.0.1", "localhost", "::1"}:
+        raise argparse.ArgumentTypeError("must be one of: 127.0.0.1, localhost, ::1")
+    return value
+
+
+def tcp_port(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1 or parsed > 65_535:
+        raise argparse.ArgumentTypeError("must be between 1 and 65535")
     return parsed
 
 
@@ -1206,6 +1260,28 @@ def crawl_source_with_plan(source: object, options: CrawlOptions) -> CrawlExecut
     if isinstance(source, (PdfSource, LocalFileSource)):
         return crawl_local_document_with_plan(source, options)
     return crawl_site_with_plan(options)
+
+
+def _run_serve(args: argparse.Namespace) -> int:
+    if not resolve_cli_state_root(args):
+        return 2
+    from buoy_search.command_center_server import (
+        CommandCenterDependencyError,
+        run_server,
+    )
+
+    try:
+        run_server(
+            host=args.host,
+            port=args.port,
+            artifacts_root=args.artifacts_root,
+            state_root=args.state_root,
+            open_browser=args.browser,
+        )
+    except CommandCenterDependencyError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    return 0
 
 
 def _run_crawl(args: argparse.Namespace) -> int:

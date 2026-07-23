@@ -45,6 +45,93 @@ jobs:
       - name: Run tests and documentation checks
         run: PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*.py' -q
 
+  frontend:
+    name: Frontend (Node 24 LTS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out source
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+      - name: Install pinned Node LTS
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24.18.0"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Test frontend
+        run: npm test -- --run
+      - name: Build packaged frontend
+        run: npm run build
+      - name: Verify committed assets are synchronized
+        working-directory: .
+        run: git diff --exit-code -- src/buoy_search/command_center_static
+
+  command-center-package:
+    name: Command Center Python and package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.11.7"
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Sync locked UI dependencies
+        run: uv sync --locked --extra ui --python 3.13
+      - name: Run Command Center Python tests
+        run: PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest tests/test_command_center_local.py tests/test_command_center_remote.py tests/test_command_center_api.py tests/test_command_center_cli.py -q
+      - name: Build wheel and source distribution
+        run: uv build --out-dir dist
+      - name: Verify packaged assets and frontend sources
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import tarfile
+          import zipfile
+
+          wheel, = Path("dist").glob("*.whl")
+          sdist, = Path("dist").glob("*.tar.gz")
+          with zipfile.ZipFile(wheel) as archive:
+              wheel_names = archive.namelist()
+          with tarfile.open(sdist) as archive:
+              sdist_names = archive.getnames()
+          assert "buoy_search/command_center_static/index.html" in wheel_names
+          for suffix in ("js", "css"):
+              assert any(re.fullmatch(rf"buoy_search/command_center_static/assets/index-[A-Za-z0-9_-]+\.{suffix}", name) for name in wheel_names)
+          required_sources = {
+              "web/index.html",
+              "web/package-lock.json",
+              "web/package.json",
+              "web/src/App.test.tsx",
+              "web/src/App.tsx",
+              "web/src/api.ts",
+              "web/src/main.tsx",
+              "web/src/setupTests.ts",
+              "web/src/styles.css",
+              "web/src/types.ts",
+              "web/tsconfig.app.json",
+              "web/tsconfig.json",
+              "web/tsconfig.node.json",
+              "web/vite.config.ts",
+              "images/buoy.svg",
+          }
+          assert all(any(name.endswith(f"/{source}") for name in sdist_names) for source in required_sources)
+          assert not any("/web/node_modules/" in name for name in sdist_names)
+          PY
+
   build:
     name: Build distributions
     needs: test

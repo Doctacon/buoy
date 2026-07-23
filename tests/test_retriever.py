@@ -9,6 +9,7 @@ from buoy_search.evals import hit_summary
 from buoy_search.retriever import (
     RETRIEVAL_ATTRIBUTES,
     HybridRetriever,
+    ProviderCallError,
     RetrievalOptions,
     SearchHit,
     bm25_rank_by,
@@ -1025,7 +1026,7 @@ class RetrieverTests(unittest.TestCase):
 
                 self.assertEqual(len(namespace.calls), 1)
 
-    def test_live_retriever_propagates_malformed_tags_without_fallback(self) -> None:
+    def test_live_retriever_marks_post_response_normalization_failure_as_provider_call(self) -> None:
         namespace = MalformedTagsNamespace()
         retriever = HybridRetriever(
             namespace=namespace,
@@ -1033,7 +1034,7 @@ class RetrieverTests(unittest.TestCase):
             config=RuntimeConfig(),
         )
 
-        with self.assertRaisesRegex(RuntimeError, "tags must be a list of strings"):
+        with self.assertRaisesRegex(ProviderCallError, "tags must be a list of strings"):
             retriever.retrieve("website docs", RetrievalOptions(top_k=1, candidates=10))
 
         self.assertEqual(len(namespace.calls), 1)

@@ -35,6 +35,7 @@ dependencies = [
 [project.optional-dependencies]
 bigquery = ["google-cloud-bigquery>=3.25,<4"]
 snowflake = ["snowflake-connector-python>=3.12,<5"]
+ui = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1"]
 
 [project.urls]
 Repository = "https://github.com/Doctacon/buoy"
@@ -53,13 +54,27 @@ build-backend = "hatchling.build"
 source = "vcs"
 
 [tool.hatch.build]
-exclude = ["/.10x/**"]
+exclude = ["/.10x/**", "/web/node_modules/**"]
 
 [tool.hatch.build.hooks.vcs]
 version-file = "src/buoy_search/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/buoy_search"]
+artifacts = ["src/buoy_search/command_center_static/**"]
+
+[tool.hatch.build.targets.sdist]
+artifacts = [
+    "images/buoy.svg",
+    "web/index.html",
+    "web/package-lock.json",
+    "web/package.json",
+    "web/src/**",
+    "web/tsconfig.app.json",
+    "web/tsconfig.json",
+    "web/tsconfig.node.json",
+    "web/vite.config.ts",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
