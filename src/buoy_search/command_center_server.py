@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Callable
 import webbrowser
@@ -48,8 +49,6 @@ def run_server(
         from buoy_search.command_center_api import create_app
         if uvicorn_runner is None:
             import uvicorn
-
-            uvicorn_runner = uvicorn.run
     except ModuleNotFoundError as exc:
         if exc.name and exc.name.split(".", 1)[0] in {
             "fastapi",
@@ -70,4 +69,33 @@ def run_server(
             browser_opener(_browser_url(host, port))
         except (OSError, webbrowser.Error):
             pass
-    uvicorn_runner(app, host=host, port=port)
+    if uvicorn_runner is None:
+        def run_uvicorn(application: object, **kwargs: object) -> None:
+            server = uvicorn.Server(uvicorn.Config(application, **kwargs))
+            default_handle_exit = server.handle_exit
+
+            def handle_exit(sig: int, frame: object) -> None:
+                service = application.state.plan_job_service  # type: ignore[attr-defined]
+                if service is not None:
+                    service.announce_shutdown()
+                default_handle_exit(sig, frame)
+
+            server.handle_exit = handle_exit
+            server.run()
+
+        uvicorn_runner = run_uvicorn
+    job_logger = logging.getLogger("buoy_search.command_center_jobs")
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.WARNING)
+    handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    previous_level = job_logger.level
+    previous_propagate = job_logger.propagate
+    job_logger.addHandler(handler)
+    job_logger.setLevel(logging.WARNING)
+    job_logger.propagate = False
+    try:
+        uvicorn_runner(app, host=host, port=port)
+    finally:
+        job_logger.removeHandler(handler)
+        job_logger.setLevel(previous_level)
+        job_logger.propagate = previous_propagate

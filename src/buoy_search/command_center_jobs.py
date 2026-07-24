@@ -1214,6 +1214,7 @@ class PlanJobService:
         self._closed = False
         self._shutdown_complete = Event()
         self._shutdown_error: BaseException | None = None
+        self._shutdown_warning_job_id: str | None = None
 
     def start(self, request: PlanJobRequest) -> PlanJob:
         source = _validate_request(request)
@@ -1404,12 +1405,7 @@ class PlanJobService:
                     (job_id, future) for job_id, future in futures if not future.done()
                 )
                 if not wait and active_futures:
-                    active = self._shutdown_job_state(active_futures[0][0])
-                    _LOGGER.warning(
-                        "Waiting for active plan job %s (%s) during shutdown; cancellation is not supported in Phase 2A.",
-                        active[0],
-                        active[1],
-                    )
+                    self._log_shutdown_wait(active_futures[0][0])
                     raise ServiceOwnershipError(
                         "Cannot release service ownership while a plan worker is still active."
                     )
@@ -1427,12 +1423,7 @@ class PlanJobService:
             return
 
         if active_futures:
-            active = self._shutdown_job_state(active_futures[0][0])
-            _LOGGER.warning(
-                "Waiting for active plan job %s (%s) during shutdown; cancellation is not supported in Phase 2A.",
-                active[0],
-                active[1],
-            )
+            self._log_shutdown_wait(active_futures[0][0])
         operation_error: BaseException | None = None
         try:
             if self._owns_executor:
@@ -1447,6 +1438,29 @@ class PlanJobService:
         shutdown_complete.set()
         if self._shutdown_error is not None:
             raise self._shutdown_error
+
+    def announce_shutdown(self) -> None:
+        """Log the non-cancellable active worker when the server receives shutdown."""
+
+        with self._start_lock:
+            active_job_id = next(
+                (job_id for job_id, future in self._futures.items() if not future.done()),
+                None,
+            )
+        if active_job_id is not None:
+            self._log_shutdown_wait(active_job_id)
+
+    def _log_shutdown_wait(self, job_id: str) -> None:
+        with self._start_lock:
+            if self._shutdown_warning_job_id == job_id:
+                return
+            self._shutdown_warning_job_id = job_id
+        active = self._shutdown_job_state(job_id)
+        _LOGGER.warning(
+            "Waiting for active plan job %s (%s) during shutdown; cancellation is not supported in Phase 2A.",
+            active[0],
+            active[1],
+        )
 
     def _release_service_resources(self) -> BaseException | None:
         """Attempt every shutdown cleanup step and return the first failure."""
