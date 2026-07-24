@@ -14,7 +14,7 @@ import time
 from typing import TextIO, Sequence
 
 from buoy_search import __version__
-from buoy_search.applied_state import AppliedStateError, load_applied_state, resolve_state_root
+from buoy_search.applied_state import AppliedStateError, resolve_state_root
 from buoy_search.apply import (
     ApplyPlanError,
     apply_preflight_summary,
@@ -22,11 +22,7 @@ from buoy_search.apply import (
     load_verified_apply_plan,
     run_approved_apply,
 )
-from buoy_search.catalog import (
-    CatalogError,
-    generated_semantics,
-    load_routing_embedder,
-)
+from buoy_search.catalog import CatalogError, load_routing_embedder
 from buoy_search.catalog_pending import CatalogCommitPartialSuccess
 from buoy_search.catalog_cli import configure_catalog_parser
 from buoy_search.config import (
@@ -55,18 +51,13 @@ from buoy_search.crawler import (
     GitHubRepoSource,
     LocalFileSource,
     PdfSource,
-    CrawlExecution,
     CrawlOptions,
     crawl_local_document,
-    crawl_local_document_with_plan,
     crawl_site,
-    crawl_site_with_plan,
-    elapsed_since,
-    observe_monotonic,
     default_out_dir,
     detect_source,
 )
-from buoy_search.github_repo import GitHubRepoError, crawl_github_repo, crawl_github_repo_with_plan
+from buoy_search.github_repo import GitHubRepoError, crawl_github_repo
 from buoy_search.database_relation import DatabaseRelationError
 from buoy_search.repo_syntax_chunking import REPO_CHUNKING_ARMS
 from buoy_search.evals import (
@@ -78,14 +69,9 @@ from buoy_search.chunker import (
     DEFAULT_OVERLAP_SENTENCES,
     DEFAULT_TARGET_TOKENS,
 )
-from buoy_search.plan_artifacts import (
-    DEFAULT_PLAN_EMBEDDING_MODEL,
-    PlanArtifacts,
-    build_plan_artifacts,
-    write_plan_artifacts,
-)
-from buoy_search.plan_cleanup import cleanup_applied_plan_directory, cleanup_superseded_plan_directories
-from buoy_search.plan_diff import IncrementalPlanDiff, PlanDiffError, diff_manifest_against_state
+from buoy_search.plan_cleanup import cleanup_applied_plan_directory
+from buoy_search.plan_diff import PlanDiffError
+from buoy_search.planning_service import PlanProgress, PlanningRequest, PlanningService
 from buoy_search.namespaces import list_namespace_ids
 from buoy_search.remote_catalog import (
     REMOTE_CATALOG_NAMESPACE,
@@ -870,6 +856,48 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evals_parser.set_defaults(func=_run_evals)
 
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="run local Command Center reviews and public-source planning",
+        description=(
+            "Run Command Center on an explicitly loopback-only address. Reviews remain read-only; "
+            "one managed public website or public GitHub plan may run at a time and writes only local "
+            "plan artifacts. Apply remains an explicit CLI action."
+        ),
+    )
+    serve_parser.add_argument(
+        "--host",
+        type=loopback_host,
+        default="127.0.0.1",
+        help="Loopback bind host: 127.0.0.1, localhost, or ::1 (default: 127.0.0.1).",
+    )
+    serve_parser.add_argument(
+        "--port",
+        type=tcp_port,
+        default=8765,
+        help="Loopback TCP port (default: 8765).",
+    )
+    serve_parser.add_argument(
+        "--artifacts-root",
+        type=Path,
+        default=Path("artifacts/site-crawls"),
+        help="Root containing saved plans and managed command-center/plans artifacts (default: artifacts/site-crawls).",
+    )
+    serve_parser.add_argument(
+        "--state-root",
+        type=Path,
+        default=None,
+        help="Local applied-state and durable command-center/jobs root. Defaults to .buoy, with in-place .turbo-search fallback for existing projects.",
+    )
+    serve_parser.add_argument(
+        "--no-browser",
+        action="store_false",
+        dest="browser",
+        default=True,
+        help="Do not open the Command Center in the default browser.",
+    )
+    serve_parser.set_defaults(func=_run_serve)
+
     return parser
 
 
@@ -969,6 +997,19 @@ def positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
+def loopback_host(value: str) -> str:
+    if value not in {"127.0.0.1", "localhost", "::1"}:
+        raise argparse.ArgumentTypeError("must be one of: 127.0.0.1, localhost, ::1")
+    return value
+
+
+def tcp_port(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1 or parsed > 65_535:
+        raise argparse.ArgumentTypeError("must be between 1 and 65535")
     return parsed
 
 
@@ -1187,25 +1228,26 @@ def crawl_source(source: object, options: CrawlOptions) -> dict[str, object]:
     return crawl_site(options)
 
 
-def crawl_source_with_plan(source: object, options: CrawlOptions) -> CrawlExecution:
-    source_kind = getattr(source, "kind", None)
-    if source_kind == "duckdb_relation":
-        from buoy_search.duckdb_relation import crawl_duckdb_relation_with_plan
+def _run_serve(args: argparse.Namespace) -> int:
+    if not resolve_cli_state_root(args):
+        return 2
+    from buoy_search.command_center_server import (
+        CommandCenterDependencyError,
+        run_server,
+    )
 
-        return crawl_duckdb_relation_with_plan(source, options)  # type: ignore[arg-type,return-value]
-    if source_kind == "bigquery_relation":
-        from buoy_search.bigquery_relation import crawl_bigquery_relation_with_plan
-
-        return crawl_bigquery_relation_with_plan(source, options)  # type: ignore[arg-type,return-value]
-    if source_kind == "snowflake_relation":
-        from buoy_search.snowflake_relation import crawl_snowflake_relation_with_plan
-
-        return crawl_snowflake_relation_with_plan(source, options)  # type: ignore[arg-type,return-value]
-    if isinstance(source, GitHubRepoSource):
-        return crawl_github_repo_with_plan(source, options)
-    if isinstance(source, (PdfSource, LocalFileSource)):
-        return crawl_local_document_with_plan(source, options)
-    return crawl_site_with_plan(options)
+    try:
+        run_server(
+            host=args.host,
+            port=args.port,
+            artifacts_root=args.artifacts_root,
+            state_root=args.state_root,
+            open_browser=args.browser,
+        )
+    except CommandCenterDependencyError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    return 0
 
 
 def _run_crawl(args: argparse.Namespace) -> int:
@@ -1272,33 +1314,15 @@ def _run_plan(args: argparse.Namespace) -> int:
     if args.url and args.base_url and args.url != args.base_url:
         print("Provide either positional URL or --base-url, not conflicting values.", file=sys.stderr)
         return 2
-    requested_source = args.base_url or args.url
-    try:
-        source = source_from_cli_args(args, requested_source)
-        base_url = source.base_url
-    except ValueError as exc:
-        message = str(exc)
-        if message == "source URL/path is required.":
-            message = "source URL/path is required; pass it as `buoy plan <source>` or with --base-url."
-        print(message, file=sys.stderr)
-        return 2
     if not resolve_cli_state_root(args):
         return 2
-    if args.repo_chunking_arm and not isinstance(source, GitHubRepoSource):
-        print("--repo-chunking-arm is supported only for GitHub repositories.", file=sys.stderr)
-        return 2
 
-    _apply_source_cap_defaults(args, source)
-    out_dir = args.out_dir if args.out_dir is not None else (
-        source.default_out_dir
-        if _is_database_source(source)
-        else default_out_dir(base_url).with_name(f"{default_out_dir(base_url).name}-plan")
-    )
-    progress = OneLineProgress(enabled=should_show_progress(args))
-    progress.update(f"plan: preparing {base_url}", force=True)
-    options = CrawlOptions(
-        base_url=base_url,
-        out_dir=out_dir,
+    request = PlanningRequest(
+        source=args.base_url or args.url,
+        state_root=args.state_root,
+        out_dir=args.out_dir,
+        namespace=args.namespace,
+        embedding_precision=args.embedding_precision,
         max_pages=args.max_pages,
         max_chunks=args.max_chunks,
         repo_max_file_bytes=args.repo_max_file_bytes,
@@ -1318,51 +1342,30 @@ def _run_plan(args: argparse.Namespace) -> int:
         css_selector=args.css_selector,
         target_tokens=args.target_tokens,
         overlap_sentences=args.overlap_sentences,
-        progress_callback=progress.update if progress.enabled else None,
+        database_backend=args.database_backend,
+        relation=args.relation,
+        database_source_id=args.source_id,
+        id_column=args.id_column,
+        content_column=args.content_column,
+        title_column=args.title_column,
+        bigquery_project=args.bigquery_project,
+        bigquery_location=args.bigquery_location,
+        bigquery_maximum_bytes_billed=args.bigquery_maximum_bytes_billed,
+        snowflake_connection=args.snowflake_connection,
+        source_query_timeout=args.source_query_timeout,
     )
-    plan_started_at = observe_monotonic()
+    progress = OneLineProgress(enabled=should_show_progress(args))
+
+    def update_progress(event: PlanProgress) -> None:
+        if event.stage != "complete":
+            progress.update(event.message, force=event.message.startswith("plan:"))
+
+    service = PlanningService()
     try:
-        crawl_execution = crawl_source_with_plan(source, options)
-        crawl_summary = crawl_execution.summary
-        indexing_plan = crawl_execution.indexing_plan
-        namespace = args.namespace or str(crawl_summary["namespace_candidate"])
-        progress.update("plan: building artifacts", force=True)
-        artifact_started_at = observe_monotonic()
-        initial_artifacts = build_plan_artifacts(
-            indexing_plan=indexing_plan,
-            base_url=base_url,
-            out_dir=out_dir,
-            namespace=namespace,
-            crawl_options=plan_crawl_options(args, crawl_summary),
-            chunk_options=plan_chunk_options(args),
-            embedding_model=DEFAULT_PLAN_EMBEDDING_MODEL,
-            embedding_precision=args.embedding_precision,
-            state_root=args.state_root,
+        result = service.plan(
+            request,
+            progress_callback=update_progress if progress.enabled else None,
         )
-        artifact_seconds = elapsed_since(artifact_started_at)
-        state = load_applied_state(
-            site_id=initial_artifacts.manifest.site_id,
-            namespace=initial_artifacts.manifest.namespace,
-            base_url=base_url,
-            state_root=args.state_root,
-        )
-        progress.update("plan: diffing against local state", force=True)
-        diff_started_at = observe_monotonic()
-        diff = diff_manifest_against_state(initial_artifacts.manifest, state)
-        diff_seconds = elapsed_since(diff_started_at)
-        artifacts = PlanArtifacts(
-            plan=replace(initial_artifacts.plan, diff=diff.to_dict()),
-            manifest=initial_artifacts.manifest,
-            chunks_jsonl=initial_artifacts.chunks_jsonl,
-        )
-        catalog_preview = plan_catalog_registration_preview(
-            artifacts,
-            region=os.environ.get("TURBOPUFFER_REGION", DEFAULT_REGION),
-        )
-        progress.update("plan: writing review artifacts", force=True)
-        publication_started_at = observe_monotonic()
-        write_plan_artifacts(artifacts, out_dir)
-        publication_seconds = elapsed_since(publication_started_at)
     except (
         RuntimeError,
         GitHubRepoError,
@@ -1371,180 +1374,24 @@ def _run_plan(args: argparse.Namespace) -> int:
         ValueError,
         AppliedStateError,
         PlanDiffError,
+        ApplyPlanError,
         json.JSONDecodeError,
     ) as exc:
         progress.finish()
-        print(str(exc), file=sys.stderr)
+        message = str(exc)
+        if message == "source URL/path is required.":
+            message = "source URL/path is required; pass it as `buoy plan <source>` or with --base-url."
+        print(message, file=sys.stderr)
         return 2
 
     progress.finish()
-    source_timing = crawl_summary.get("timing")
-    timing = dict(source_timing) if isinstance(source_timing, dict) else {}
-    for stage in ("sitemap_policy_seconds", "crawl_seconds", "corpus_write_seconds", "chunking_seconds"):
-        timing.setdefault(stage, 0.0)
-    timing.update(
-        {
-            "elapsed_seconds": elapsed_since(plan_started_at),
-            "diff_seconds": diff_seconds,
-            "artifact_seconds": artifact_seconds,
-            "publication_seconds": publication_seconds,
-        }
-    )
-    crawl_summary["timing"] = timing
-    summary = plan_summary(
-        crawl_summary=crawl_summary,
-        artifacts=artifacts,
-        diff=diff,
-        state_first_apply=state.first_apply,
-        catalog_registration=catalog_preview,
-    )
-    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
-    for warning in cleanup_superseded_plan_directories(
-        out_dir / "plan.json",
-        namespace=namespace,
-        state_root=args.state_root,
-    ):
+    for warning in result.cleanup_warnings:
         print(f"Warning: {warning}", file=sys.stderr)
     if args.json:
-        _print_json(summary)
+        _print_json(result.summary)
     else:
-        print_plan_text(summary)
+        print_plan_text(result.summary)
     return 0
-
-
-def plan_crawl_options(args: argparse.Namespace, crawl_summary: dict[str, object] | None = None) -> dict[str, object]:
-    options = {
-        "max_pages": args.max_pages,
-        "max_chunks": args.max_chunks,
-        "repo_max_file_bytes": args.repo_max_file_bytes,
-        "repo_search_metadata": args.repo_search_metadata,
-        "repo_file_cards": args.repo_file_cards,
-        "repo_oversize_file_cards": args.repo_oversize_file_cards,
-        "concurrent_requests": args.concurrent_requests,
-        "concurrent_requests_per_domain": args.concurrent_requests_per_domain,
-        "download_delay": args.download_delay,
-        "crawl_strategy": args.crawl_strategy,
-        "docs_version_policy": getattr(args, "docs_version_policy", DEFAULT_DOCS_VERSION_POLICY),
-        "language_policy": getattr(args, "language_policy", DEFAULT_LANGUAGE_POLICY),
-        "include_paths": list(crawl_summary.get("include_paths", args.include_path)) if crawl_summary else list(args.include_path),
-        "exclude_paths": list(crawl_summary.get("exclude_paths", args.exclude_path)) if crawl_summary else list(args.exclude_path),
-        "strip_trailing_slash": args.strip_trailing_slash,
-        "css_selector": args.css_selector,
-    }
-    if args.repo_chunking_arm is not None:
-        options["repo_chunking_arm"] = args.repo_chunking_arm
-    if crawl_summary and crawl_summary.get("source_kind") in {
-        "duckdb_relation",
-        "bigquery_relation",
-        "snowflake_relation",
-    }:
-        options.update(
-            {
-                "source_kind": crawl_summary["source_kind"],
-                "database_backend": crawl_summary["database_backend"],
-                "database_source_id": crawl_summary["database_source_id"],
-                "database_relation": crawl_summary["database_relation"],
-                "id_column": crawl_summary["id_column"],
-                "content_column": crawl_summary["content_column"],
-                "title_column": crawl_summary["title_column"],
-            }
-        )
-        if crawl_summary.get("source_kind") == "duckdb_relation":
-            options.update(
-                {
-                    "duckdb_source_id": crawl_summary["duckdb_source_id"],
-                    "duckdb_relation": crawl_summary["duckdb_relation"],
-                }
-            )
-    return options
-
-
-def plan_chunk_options(args: argparse.Namespace) -> dict[str, object]:
-    return {
-        "target_tokens": args.target_tokens,
-        "overlap_sentences": args.overlap_sentences,
-    }
-
-
-def plan_summary(
-    *,
-    crawl_summary: dict[str, object],
-    artifacts: PlanArtifacts,
-    diff: IncrementalPlanDiff,
-    state_first_apply: bool,
-    catalog_registration: dict[str, object] | None = None,
-) -> dict[str, object]:
-    plan_dict = artifacts.plan_dict()
-    diff_summary = diff.summary_dict()
-    summary = dict(crawl_summary)
-    summary.update(
-        {
-            "command": "plan",
-            "dry_run": True,
-            "credentials_required": bool(crawl_summary.get("source_credentials_required", False)),
-            "source_credentials_required": bool(
-                crawl_summary.get("source_credentials_required", False)
-            ),
-            "source_api_calls_occurred": bool(
-                crawl_summary.get("source_api_calls_occurred", False)
-            ),
-            "turbopuffer_credentials_required": False,
-            "turbopuffer_api_calls": False,
-            "api_calls_occurred": bool(crawl_summary.get("source_api_calls_occurred", False)),
-            "namespace": plan_dict["namespace"],
-            "namespace_candidate": plan_dict["namespace_candidate"],
-            "site_id": plan_dict["site_id"],
-            "plan_id": plan_dict["plan_id"],
-            "plan_path": str(Path(str(plan_dict["manifest_path"])).with_name("plan.json")),
-            "manifest_path": plan_dict["manifest_path"],
-            "chunks_path": plan_dict["chunks_path"],
-            "pages_dir": plan_dict["pages_dir"],
-            "state_backend": plan_dict["state_backend"],
-            "state_path": plan_dict["state_path"],
-            "state_first_apply": state_first_apply,
-            "embedding_model": plan_dict["embedding_model"],
-            "embedding_precision": plan_dict["embedding_precision"],
-            "artifact_hash": plan_dict["artifact_hash"],
-            "diff": diff_summary,
-            **diff_summary,
-        }
-    )
-    if catalog_registration is not None:
-        summary["catalog_registration"] = catalog_registration
-    return summary
-
-
-def plan_catalog_registration_preview(
-    artifacts: PlanArtifacts,
-    *,
-    region: str,
-) -> dict[str, object]:
-    manifest = artifacts.manifest
-    metadata = [
-        dict(record.source_metadata)
-        for record in [*manifest.pages, *manifest.chunks]
-        if record.source_metadata
-    ]
-    semantics = generated_semantics(
-        base_url=manifest.base_url,
-        site_id=manifest.site_id,
-        plan_schema_version=artifacts.plan.schema_version,
-        source_metadata=metadata,
-    )
-    ranking = ranking_defaults_for_namespace(
-        manifest.namespace, source_kind=semantics.source_kind
-    )
-    return {
-        "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
-        "namespace": manifest.namespace,
-        "action": "unknown_until_approved",
-        "remote_catalog_state": "unknown_until_approved",
-        "manual_semantics_preservation": "unknown_until_approved",
-        "source_kind": semantics.source_kind,
-        "region": region,
-        "vector_dimensions": 384,
-        **ranking,
-    }
 
 
 def _stdin_is_interactive() -> bool:

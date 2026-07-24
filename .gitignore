@@ -34,6 +34,7 @@ sentence_transformers/
 outputs/
 generated/
 artifacts/
+web/node_modules/
 autoresearch/runs/*
 !autoresearch/runs/semantic-routing-representative-20260715/
 !autoresearch/runs/semantic-routing-representative-20260715/**
