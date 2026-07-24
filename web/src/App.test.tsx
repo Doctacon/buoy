@@ -71,7 +71,9 @@ const namespaces = {
 }
 
 const capabilities = {
-  api_version: 'v1', buoy_version: 'test', loopback_only: true, review_routes_read_only: true, local_plan_job_creation: true, remote_mutations: false, remote_snapshot: true, search: true,
+  api_version: 'v1', buoy_version: 'test', loopback_only: true, review_routes_read_only: true, local_plan_job_creation: true,
+  managed_public_planning_available: true, managed_public_planning_unavailable_reason: null, durable_plan_job_history_available: true,
+  remote_mutations: false, remote_snapshot: true, search: true,
   artifacts_root_available: true, state_root_available: true, turbopuffer_credentials_available: true,
   ui_build_available: true, bigquery_extra_installed: false, snowflake_extra_installed: false,
 }
@@ -92,7 +94,7 @@ function planJob(overrides: Record<string, unknown> = {}) {
     event_sequence: 2,
     started_at: '2026-07-23T12:00:01Z',
     completed_at: null,
-    latest_progress: { stage: 'crawl', message: 'Crawling public website content.', counts: { pages: 3 } },
+    latest_progress: { stage: 'crawl', message: 'Crawling credential-free HTTP(S) website content.', counts: { pages: 3 } },
     error: null,
     request_summary: { max_pages_or_files: 20, max_chunks: 100, namespace: 'docs-one', include_path_count: 1, exclude_path_count: 1 },
     ...overrides,
@@ -134,10 +136,13 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
-function mockApi(handler: (path: string, init?: RequestInit) => unknown | Promise<unknown>) {
+function mockApi(
+  handler: (path: string, init?: RequestInit) => unknown | Promise<unknown>,
+  capabilityPayload: unknown = capabilities,
+) {
   const mock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
-    const result = path.includes('/capabilities') ? capabilities : await handler(path, init)
+    const result = path.includes('/capabilities') ? capabilityPayload : await handler(path, init)
     return result instanceof Response ? result : json(result)
   })
   vi.stubGlobal('fetch', mock)
@@ -192,7 +197,7 @@ describe('Command Center', () => {
     const mock = mockApi((path) => path.includes('/remote/snapshot') ? remote : dashboard)
     renderRoute('/')
     await screen.findByText('plan-1')
-    for (const label of ['Review routes read only', 'Local plan job creation', 'Remote mutations', 'Artifacts root available', 'State root available', 'turbopuffer credentials configured', 'UI build available', 'BigQuery extra installed', 'Snowflake extra installed', 'Pending changes', 'Artifact errors']) {
+    for (const label of ['Review routes read only', 'Managed public planning', 'Durable plan-job history', 'Unavailable reason', 'Remote mutations', 'Artifacts root available', 'State root available', 'turbopuffer credentials configured', 'UI build available', 'BigQuery extra installed', 'Snowflake extra installed', 'Pending changes', 'Artifact errors']) {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
     expect(mock).toHaveBeenCalledTimes(2)
@@ -373,7 +378,7 @@ describe('Command Center', () => {
     await user.type(screen.getByLabelText('Query'), 'How does it work?')
     await user.click(screen.getByRole('button', { name: 'Run search' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Enter at least one explicit namespace')
-    expect(mock).not.toHaveBeenCalled()
+    expect(mock.mock.calls.every(([path]) => String(path).includes('/capabilities'))).toBe(true)
   })
 
   it('submits bounded explicit search and renders escaped citation-rich results with activity disclosure', async () => {
@@ -400,8 +405,9 @@ describe('Command Center', () => {
     expect(screen.getByText(/Routing: Explicit\. Credentials required: Yes\. API calls occurred: Yes\. Writes occurred: No/)).toBeInTheDocument()
     expect(screen.getByLabelText('Search diagnostics')).toHaveTextContent('"fusion": "rrf"')
     expect(screen.getByLabelText('Score for Anchored answer')).toHaveTextContent('"rank": 1')
-    expect(mock.mock.calls[0][1]?.headers).toMatchObject({ 'X-Buoy-Command-Center': '1' })
-    expect(mock).toHaveBeenCalledTimes(1)
+    const searchCall = mock.mock.calls.find(([path]) => String(path).includes('/search'))
+    expect(searchCall?.[1]?.headers).toMatchObject({ 'X-Buoy-Command-Center': '1' })
+    expect(mock).toHaveBeenCalledTimes(2)
   })
 
   it('shows a missing-credentials search failure with accurate no-call activity', async () => {
@@ -584,6 +590,39 @@ describe('Command Center', () => {
     expect(screen.queryByText('old plan preview')).not.toBeInTheDocument()
   })
 
+  it('keeps read-only routes available and makes managed routes inert when planning is unsupported', async () => {
+    const unavailable = {
+      ...capabilities,
+      local_plan_job_creation: false,
+      managed_public_planning_available: false,
+      managed_public_planning_unavailable_reason: 'platform_unsupported',
+      durable_plan_job_history_available: false,
+    }
+    const mock = mockApi((path) => {
+      if (path.includes('/dashboard')) return dashboard
+      if (path.includes('/plans?')) return { items: [plan], total: 1, offset: 0, limit: 100, errors: [] }
+      throw new Error(`Managed request was not expected: ${path}`)
+    }, unavailable)
+
+    const dashboardView = renderRoute('/')
+    expect(await screen.findByText(/Read-only Command Center features remain available on this platform/i)).toBeInTheDocument()
+    dashboardView.unmount()
+
+    for (const route of ['/plans/new', '/plan-jobs', `/plan-jobs/${jobId}`]) {
+      const view = renderRoute(route)
+      expect(await screen.findByRole('heading', { name: 'Managed planning unavailable' })).toBeInTheDocument()
+      expect(screen.getByText('Managed public-source planning is unavailable on this platform.')).toBeInTheDocument()
+      expect(screen.getByText(/saved plan review, namespace inventory/i)).toBeInTheDocument()
+      expect(screen.queryByRole('form')).not.toBeInTheDocument()
+      view.unmount()
+    }
+
+    expect(mock.mock.calls.some(([path]) => String(path).includes('/csrf-token'))).toBe(false)
+    expect(mock.mock.calls.some(([path]) => String(path).includes('/plan-jobs'))).toBe(false)
+    expect(mock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+    expect(FakeEventSource.instances).toHaveLength(0)
+  })
+
   it('submits website and GitHub requests with a fresh in-memory CSRF token and same-origin JSON', async () => {
     const user = userEvent.setup()
     const payloads: Array<Record<string, unknown>> = []
@@ -598,8 +637,8 @@ describe('Command Center', () => {
     })
 
     const websiteView = renderRoute('/plans/new')
-    expect(screen.getByText(/does not embed content, call turbopuffer, or modify a namespace/i)).toBeInTheDocument()
-    await user.type(screen.getByLabelText(/Public website or GitHub repository URL/), 'https://example.test/docs')
+    expect(await screen.findByText(/does not embed content, call turbopuffer, or modify a namespace/i)).toBeInTheDocument()
+    await user.type(await screen.findByLabelText(/Credential-free HTTP\(S\) website or public GitHub repository root URL/), 'https://example.test/docs')
     await user.type(screen.getByLabelText('Maximum pages or files'), '20')
     await user.type(screen.getByLabelText('Maximum chunks'), '100')
     await user.type(screen.getByLabelText(/^Namespace/), 'docs-one')
@@ -610,7 +649,7 @@ describe('Command Center', () => {
     websiteView.unmount()
 
     renderRoute('/plans/new')
-    await user.type(screen.getByLabelText(/Public website or GitHub repository URL/), 'https://github.com/owner/repository')
+    await user.type(await screen.findByLabelText(/Credential-free HTTP\(S\) website or public GitHub repository root URL/), 'https://github.com/owner/repository')
     await user.click(screen.getByRole('button', { name: 'Start plan' }))
     expect(await screen.findByRole('heading', { name: jobId })).toBeInTheDocument()
 
@@ -635,18 +674,18 @@ describe('Command Center', () => {
       throw new Error(`Unexpected path ${path}`)
     })
     renderRoute('/plans/new')
-    await user.type(screen.getByLabelText(/Public website or GitHub repository URL/), 'file:///tmp/private')
+    await user.type(await screen.findByLabelText(/Credential-free HTTP\(S\) website or public GitHub repository root URL/), 'file:///tmp/private')
     await user.click(screen.getByRole('button', { name: 'Start plan' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('public HTTP(S) URL')
-    expect(mock).not.toHaveBeenCalled()
+    expect(await screen.findByRole('alert')).toHaveTextContent('credential-free HTTP(S) URL')
+    expect(mock.mock.calls.every(([path]) => String(path).includes('/capabilities'))).toBe(true)
 
-    await user.clear(screen.getByLabelText(/Public website or GitHub repository URL/))
-    await user.type(screen.getByLabelText(/Public website or GitHub repository URL/), 'https://example.test')
+    await user.clear(screen.getByLabelText(/Credential-free HTTP\(S\) website or public GitHub repository root URL/))
+    await user.type(screen.getByLabelText(/Credential-free HTTP\(S\) website or public GitHub repository root URL/), 'https://example.test')
     await user.clear(screen.getByLabelText('Maximum chunks'))
     await user.type(screen.getByLabelText('Maximum chunks'), '0')
     await user.click(screen.getByRole('button', { name: 'Start plan' }))
     expect(screen.getByRole('alert')).toHaveTextContent('Maximum chunks must be a whole number')
-    expect(mock).not.toHaveBeenCalled()
+    expect(mock.mock.calls.every(([path]) => String(path).includes('/capabilities'))).toBe(true)
 
     await user.clear(screen.getByLabelText('Maximum chunks'))
     await user.click(screen.getByRole('button', { name: 'Start plan' }))
@@ -657,12 +696,12 @@ describe('Command Center', () => {
   it('rejects an oversized UTF-8 serialized request before fetching CSRF', async () => {
     const mock = mockApi(() => { throw new Error('No request expected') })
     renderRoute('/plans/new')
-    fireEvent.change(screen.getByLabelText(/Public website or GitHub repository URL/), { target: { value: 'https://example.test' } })
+    fireEvent.change(await screen.findByLabelText(/Credential-free HTTP\(S\) website or public GitHub repository root URL/), { target: { value: 'https://example.test' } })
     fireEvent.change(screen.getByLabelText(/^Include paths/), { target: { value: Array.from({ length: 40 }, () => 'é'.repeat(400)).join('\n') } })
     await userEvent.click(screen.getByRole('button', { name: 'Start plan' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('at most 16 KiB of UTF-8 JSON')
-    expect(mock).not.toHaveBeenCalled()
+    expect(mock.mock.calls.every(([path]) => String(path).includes('/capabilities'))).toBe(true)
   })
 
   it('renders bounded recent job history with progress and review links', async () => {
@@ -690,8 +729,8 @@ describe('Command Center', () => {
     expect(stream.close).not.toHaveBeenCalled()
 
     stream.emit('plan-job-event', { sequence: 1, timestamp: '2026-07-23T12:00:00Z', stage: 'queued', message: '<img src=x onerror=alert(1)> queued', counts: { queued: 1 } })
-    stream.emit('plan-job-event', { sequence: 2, timestamp: '2026-07-23T12:00:01Z', stage: 'crawl', message: 'Crawling public website content.', counts: { pages: 3 } })
-    stream.emit('plan-job-event', { sequence: 2, timestamp: '2026-07-23T12:00:01Z', stage: 'crawl', message: 'Crawling public website content.', counts: { pages: 3 } })
+    stream.emit('plan-job-event', { sequence: 2, timestamp: '2026-07-23T12:00:01Z', stage: 'crawl', message: 'Crawling credential-free HTTP(S) website content.', counts: { pages: 3 } })
+    stream.emit('plan-job-event', { sequence: 2, timestamp: '2026-07-23T12:00:01Z', stage: 'crawl', message: 'Crawling credential-free HTTP(S) website content.', counts: { pages: 3 } })
     current = planJob({ state: 'succeeded', plan_id: 'plan-1', completed_at: '2026-07-23T12:00:03Z', event_sequence: 3, latest_progress: { stage: 'succeeded', message: 'Plan artifacts verified successfully.', counts: {} } })
     stream.emit('plan-job-event', { sequence: 3, timestamp: '2026-07-23T12:00:03Z', stage: 'succeeded', message: 'Plan artifacts verified successfully.', counts: {} })
 

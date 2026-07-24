@@ -322,8 +322,8 @@ class ReleaseAutomationTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text()
         guide = (ROOT / "docs" / "command-center.md").read_text()
         for expected in (
-            "public HTTP(S) website",
-            "public GitHub repository",
+            "credential-free HTTP(S) website",
+            "public GitHub repository root",
             "one active",
             "durable",
             "interrupted",
@@ -336,6 +336,11 @@ class ReleaseAutomationTests(unittest.TestCase):
             "database",
             "cancel",
             "resume",
+            "not a public-routability or SSRF firewall",
+            "5,000",
+            "managed_public_planning_available",
+            "shutdown waits for an active job",
+            "GHSA-qwww-vcr4-c8h2",
         ):
             self.assertIn(expected.casefold(), guide.casefold())
         self.assertIn("Phase 2A is implemented", guide)
@@ -980,6 +985,32 @@ class ReleaseAutomationTests(unittest.TestCase):
             "removes the `TURBO_SEARCH_EMBEDDING_MODEL` and `TURBO_SEARCH_EMBEDDING_PRECISION` fallbacks",
             (ROOT / "CHANGELOG.md").read_text(),
         )
+
+    def test_command_center_router_remains_declarative_without_rsc_entrypoints(self) -> None:
+        main = (ROOT / "web" / "src" / "main.tsx").read_text()
+        self.assertIn("import { BrowserRouter } from 'react-router-dom'", main)
+        self.assertIn("<BrowserRouter>", main)
+        inspected = "\n".join(
+            path.read_text()
+            for path in [
+                *(ROOT / "web" / "src").rglob("*.ts"),
+                *(ROOT / "web" / "src").rglob("*.tsx"),
+                ROOT / "web" / "vite.config.ts",
+                ROOT / "web" / "package.json",
+            ]
+        )
+        for affected_surface in (
+            "createBrowserRouter",
+            "RouterProvider",
+            "HydratedRouter",
+            "ServerRouter",
+            "unstable_",
+            "@react-router/dev",
+            "@vitejs/plugin-rsc",
+            "react-router/rsc",
+            "react-router/dom/server",
+        ):
+            self.assertNotIn(affected_surface, inspected)
 
     def test_legacy_release_check_cli_fails_closed_without_override_or_git_side_effects(self) -> None:
         before = subprocess.run(

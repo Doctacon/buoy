@@ -1,7 +1,7 @@
-Status: open
+Status: done
 Created: 2026-07-24
 Updated: 2026-07-24
-Parent: None
+Parent: .10x/tickets/done/2026-07-24-command-center-phase-2a-stabilization.md
 Depends-On: None
 
 # Review React Router RSC CSRF Advisory
@@ -22,6 +22,7 @@ Record the installed dependency graph, advisory applicability, selected action, 
 
 ## References
 
+- `.10x/specs/phase-2a-stabilization.md`
 - `web/package.json`
 - `web/package-lock.json`
 - GHSA-qwww-vcr4-c8h2
@@ -30,6 +31,7 @@ Record the installed dependency graph, advisory applicability, selected action, 
 ## Progress and notes
 
 - 2026-07-24: Opened after `npm audit --omit=dev --audit-level=high` reported the advisory in the existing React Router dependency. Phase 2A uses a Vite SPA and does not intentionally add RSC/action routing, but applicability and a compatible patch path require focused verification outside the frontend feature ticket.
+- 2026-07-24: Closed as source-backed no action. Installed `react-router-dom@7.18.1 -> react-router@7.18.1` is numerically affected, but the official advisory is limited to unstable RSC document-request/action execution. Buoy uses declarative `BrowserRouter` in a client Vite SPA with none of the affected framework/RSC/server-action APIs. A breaking forced downgrade/major migration is not justified; a narrow repository guard now fails if affected entrypoints are adopted. Vitest (40 tests) and production build pass. Reevaluate on framework mode, RSC, server actions, unstable RSC APIs, or advisory-scope change. Evidence: `.10x/evidence/2026-07-24-react-router-advisory-no-action.md`.
 
 ## Blockers
 

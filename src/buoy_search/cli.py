@@ -252,7 +252,7 @@ def build_parser() -> argparse.ArgumentParser:
         "crawl",
         help="crawl a website, repository, local document, or one DuckDB/BigQuery/Snowflake relation; always dry-run",
         description=(
-            "Crawl a public website, ingest a public GitHub repository or local document, or read "
+            "Crawl an HTTP(S) website, ingest a public GitHub repository or local document, or read "
             "one document-shaped DuckDB, BigQuery, or Snowflake table/view. Remote database sources "
             "use source credentials and APIs only; this command never reads turbopuffer credentials "
             "or writes to turbopuffer."
@@ -858,11 +858,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     serve_parser = subparsers.add_parser(
         "serve",
-        help="run local Command Center reviews and public-source planning",
+        help="run local Command Center reviews and credential-free HTTP(S)/public GitHub planning",
         description=(
             "Run Command Center on an explicitly loopback-only address. Reviews remain read-only; "
-            "one managed public website or public GitHub plan may run at a time and writes only local "
-            "plan artifacts. Apply remains an explicit CLI action."
+            "one managed credential-free HTTP(S) website or public GitHub repository-root plan may run "
+            "at a time and writes only local plan artifacts. Website syntax validation is not a "
+            "public-routability or SSRF firewall. Apply remains an explicit CLI action."
         ),
     )
     serve_parser.add_argument(
