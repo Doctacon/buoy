@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import hashlib
 import math
 import re
 import time
 from typing import TYPE_CHECKING, Literal, Any
 
 from buoy_search.database_relation import (
-    DatabaseDocument,
     DatabaseRelationError,
     DatabaseRelationExecution,
     DatabaseScanResult,
@@ -21,6 +21,7 @@ from buoy_search.database_relation import (
     database_document_url,
     database_namespace_candidate,
     database_site_id,
+    validate_selected_database_rows,
     validate_source_id,
 )
 
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 DEFAULT_QUERY_TIMEOUT_SECONDS = 300.0
 DEFAULT_FETCH_BATCH_SIZE = 500
+SNOWFLAKE_QUERY_TAG_MAX_LENGTH = 2000
 
 
 class SnowflakeRelationError(DatabaseRelationError):
@@ -157,6 +159,25 @@ def _execute(cursor: object, sql: str, *, timeout: float) -> object:
     return cursor.execute(sql, timeout=timeout)  # type: ignore[attr-defined]
 
 
+def build_snowflake_query_tag(source_id: str, operation: str) -> str:
+    """Return a readable query tag bounded by Snowflake's 2,000-character limit."""
+
+    prefix = f"buoy:{operation}:database-relation:"
+    query_tag = f"{prefix}{source_id}"
+    if len(query_tag) <= SNOWFLAKE_QUERY_TAG_MAX_LENGTH:
+        return query_tag
+    source_digest = hashlib.sha256(source_id.encode("utf-8")).hexdigest()
+    suffix = f"-sha256-{source_digest}"
+    source_prefix_length = SNOWFLAKE_QUERY_TAG_MAX_LENGTH - len(prefix) - len(suffix)
+    if source_prefix_length >= 0:
+        return f"{prefix}{source_id[:source_prefix_length]}{suffix}"
+    operation_digest = hashlib.sha256(operation.encode("utf-8")).hexdigest()
+    return (
+        f"buoy:operation-sha256-{operation_digest}:database-relation:"
+        f"source-sha256-{source_digest}"
+    )
+
+
 def scan_snowflake_relation(
     source: SnowflakeRelationSource,
     *,
@@ -172,7 +193,7 @@ def scan_snowflake_relation(
     cursor = None
     started_at = time.monotonic()
     try:
-        query_tag = f"buoy:{source.operation}:database-relation:{source.source_id}"
+        query_tag = build_snowflake_query_tag(source.source_id, source.operation)
         connection = connector.connect(
             connection_name=source.connection_name,
             autocommit=False,
@@ -251,26 +272,27 @@ def scan_snowflake_relation(
             )
         documents_sql = (
             f"SELECT {id_expression}, {content_expression}, {title_expression} "
-            f"FROM {relation_sql} WHERE {nonblank_content} "
+            f"FROM {relation_sql} WHERE ({valid_id}) AND ({nonblank_content}) "
             f"ORDER BY {id_expression} LIMIT {int(max_documents)}"
         )
         _execute(cursor, documents_sql, timeout=source.query_timeout)
         query_id = getattr(cursor, "sfqid", None)
-        documents: list[DatabaseDocument] = []
+        selected_rows: list[tuple[object, object, object]] = []
         while True:
             rows = cursor.fetchmany(batch_size)
             if not rows:
                 break
-            for raw_id, raw_content, raw_title in rows:
-                document_id = str(raw_id)
-                title = "" if raw_title is None else str(raw_title)
-                documents.append(
-                    DatabaseDocument(
-                        document_id=document_id,
-                        content=str(raw_content),
-                        title=title if title.strip() else document_id,
-                    )
-                )
+            selected_rows.extend(rows)
+        documents = validate_selected_database_rows(
+            selected_rows,
+            backend="Snowflake",
+            relation=source.relation,
+            error_type=SnowflakeRelationError,
+        )
+        if not documents:
+            raise SnowflakeRelationError(
+                f"Snowflake relation {source.relation!r} returned no valid selected documents."
+            )
         diagnostics: dict[str, object] = {
             "source_query_elapsed_seconds": max(0.0, time.monotonic() - started_at),
         }

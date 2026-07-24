@@ -18,6 +18,7 @@ from buoy_search.database_relation import (
     database_site_id,
     stable_page_filename,
     validate_database_base_url,
+    validate_selected_database_rows,
     write_database_corpus,
 )
 from buoy_search.plan_artifacts import GENERIC_SITE_TURBOPUFFER_SCHEMA, SOURCE_METADATA_ROW_FIELDS
@@ -113,6 +114,17 @@ class DatabaseRelationTests(unittest.TestCase):
             self.assertEqual(parsed.metadata["source_kind"], "bigquery_relation")
             self.assertEqual(parsed.metadata["fetcher"], "bigquery-read-only")
             self.assertEqual(parsed.body, document.content)
+
+    def test_shared_selected_row_validation_falls_back_title_without_changing_ids(self) -> None:
+        rows = [
+            ('call/ü"quoted\\path', "Body one", None),
+            ("雪/meeting\\notes", "Body two", "\u3000"),
+        ]
+        documents = validate_selected_database_rows(
+            rows, backend="BigQuery", relation="project.dataset.documents"
+        )
+        self.assertEqual([document.document_id for document in documents], [row[0] for row in rows])
+        self.assertEqual([document.title for document in documents], [row[0] for row in rows])
 
     def test_shared_execution_reports_document_and_chunk_limits(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

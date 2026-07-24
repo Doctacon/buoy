@@ -382,6 +382,8 @@ class DatabaseRelationCliTests(unittest.TestCase):
             self.assertIn("--bigquery-project", help_text)
             self.assertIn("--snowflake-connection", help_text)
             self.assertIn("one", help_text.lower())
+            self.assertIn("websites and database relations", help_text)
+            self.assertNotIn("websites and DuckDB relations", help_text)
 
 
 if __name__ == "__main__":

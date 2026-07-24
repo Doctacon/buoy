@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import re
 import time
-from typing import TYPE_CHECKING, Callable, Mapping, Protocol
+from typing import TYPE_CHECKING, Callable, Iterable, Mapping, Protocol
 from urllib.parse import quote, urlparse
 
 from buoy_search.chunker import IndexingPlan, process_corpus, sha256_text
@@ -86,6 +86,56 @@ class DatabaseScanResult:
 class DatabaseRelationExecution:
     summary: dict[str, object]
     indexing_plan: IndexingPlan
+
+
+def validate_selected_database_rows(
+    rows: Iterable[tuple[object, object, object]],
+    *,
+    backend: str,
+    relation: str,
+    error_type: type[DatabaseRelationError] = DatabaseRelationError,
+) -> list[DatabaseDocument]:
+    """Validate the bounded acquired rows before any Markdown is materialized."""
+
+    backend_name = backend
+    documents: list[DatabaseDocument] = []
+    document_ids: set[str] = set()
+    for raw_id, raw_content, raw_title in rows:
+        if raw_id is None:
+            raise error_type(
+                f"{backend_name} relation {relation!r} selected a null document ID."
+            )
+        document_id = str(raw_id)
+        if not document_id.strip():
+            raise error_type(
+                f"{backend_name} relation {relation!r} selected a blank document ID."
+            )
+        if document_id in document_ids:
+            raise error_type(
+                f"{backend_name} relation {relation!r} selected duplicate document ID "
+                f"{document_id!r} after text conversion."
+            )
+        if raw_content is None:
+            raise error_type(
+                f"{backend_name} relation {relation!r} selected null content for document ID "
+                f"{document_id!r}."
+            )
+        content = str(raw_content)
+        if not content.strip():
+            raise error_type(
+                f"{backend_name} relation {relation!r} selected blank content for document ID "
+                f"{document_id!r}."
+            )
+        title = "" if raw_title is None else str(raw_title)
+        document_ids.add(document_id)
+        documents.append(
+            DatabaseDocument(
+                document_id=document_id,
+                content=content,
+                title=title if title.strip() else document_id,
+            )
+        )
+    return documents
 
 
 def validate_source_id(value: str) -> str:

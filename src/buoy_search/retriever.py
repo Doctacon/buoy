@@ -49,6 +49,10 @@ MISSING_SCHEMA_ATTRIBUTE_RE = re.compile(
 )
 
 
+class ProviderCallError(RuntimeError):
+    """A retrieval failure after a provider query was attempted."""
+
+
 def namespace_uses_website_defaults(namespace: str) -> bool:
     """Return true when a namespace should use document/page ranking defaults."""
 
@@ -409,27 +413,30 @@ class HybridRetriever:
                     missing_attribute not in OPTIONAL_RETRIEVAL_ATTRIBUTES
                     or missing_attribute not in include_attributes
                 ):
-                    raise RuntimeError(user_friendly_query_error(exc)) from exc
+                    raise ProviderCallError(user_friendly_query_error(exc)) from exc
                 include_attributes = [
                     attribute
                     for attribute in include_attributes
                     if attribute != missing_attribute
                 ]
 
-        result_lists = extract_result_lists(response)
-        if not result_lists:
-            hits: list[SearchHit] = []
-        else:
-            ranking_pool = options.effective_ranking_pool
-            if fusion == "client_rrf" or len(result_lists) > 1:
-                hits = client_side_rrf(result_lists, top_k=ranking_pool)
-                fusion = "client_rrf"
+        try:
+            result_lists = extract_result_lists(response)
+            if not result_lists:
+                hits: list[SearchHit] = []
             else:
-                hits = [
-                    row_to_hit(row, score_info={"fusion": "server_rrf", "source_rank": rank})
-                    for rank, row in enumerate(result_lists[0], start=1)
-                ][:ranking_pool]
-            hits = rank_hits(hits, options=options, query=query)[: options.top_k]
+                ranking_pool = options.effective_ranking_pool
+                if fusion == "client_rrf" or len(result_lists) > 1:
+                    hits = client_side_rrf(result_lists, top_k=ranking_pool)
+                    fusion = "client_rrf"
+                else:
+                    hits = [
+                        row_to_hit(row, score_info={"fusion": "server_rrf", "source_rank": rank})
+                        for rank, row in enumerate(result_lists[0], start=1)
+                    ][:ranking_pool]
+                hits = rank_hits(hits, options=options, query=query)[: options.top_k]
+        except Exception as exc:
+            raise ProviderCallError(user_friendly_query_error(exc)) from exc
         return RetrievalResult(
             query=query,
             hits=hits,
@@ -503,6 +510,8 @@ class MultiNamespaceRetriever:
             namespace = retriever._config.namespace
             try:
                 result = retriever.retrieve_embedded(cleaned_query, vectors[0], namespace_options)
+            except ProviderCallError as exc:
+                raise ProviderCallError(f"Retrieval failed for namespace {namespace!r}: {exc}") from exc
             except RuntimeError as exc:
                 raise RuntimeError(f"Retrieval failed for namespace {namespace!r}: {exc}") from exc
             for hit in result.hits:

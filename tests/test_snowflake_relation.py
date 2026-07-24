@@ -9,7 +9,9 @@ from unittest.mock import patch
 
 from buoy_search.crawler import CrawlOptions
 from buoy_search.snowflake_relation import (
+    SNOWFLAKE_QUERY_TAG_MAX_LENGTH,
     SnowflakeRelationError,
+    build_snowflake_query_tag,
     canonicalize_snowflake_identifier,
     crawl_snowflake_relation,
     scan_snowflake_relation,
@@ -163,6 +165,8 @@ class SnowflakeRelationTests(unittest.TestCase):
         self.assertTrue(all(timeout == 12.25 for _, timeout in cursor.executions))
         sql = "\n".join(query for query, _ in cursor.executions)
         self.assertIn('FROM "ANALYTICS"."CORPUS"."DOCUMENTS"', sql)
+        self.assertIn("WHERE (CAST(\"DOCUMENT_ID\" AS VARCHAR) IS NOT NULL", sql)
+        self.assertIn("AND (CAST(\"CONTENT\" AS VARCHAR) IS NOT NULL", sql)
         self.assertIn("ORDER BY CAST(\"DOCUMENT_ID\" AS VARCHAR) LIMIT 2", sql)
         self.assertIn("CHR(9)", sql)
         self.assertIn("CHR(12288)", sql)
@@ -173,6 +177,38 @@ class SnowflakeRelationTests(unittest.TestCase):
         self.assertEqual(result.documents_skipped_empty, 1)
         self.assertEqual(result.documents_skipped_limit, 1)
         self.assertEqual(result.diagnostics["snowflake_query_id"], "snow-query-123")
+
+    def test_query_tag_is_deterministically_bounded(self) -> None:
+        self.assertEqual(
+            build_snowflake_query_tag("gong-calls", "crawl"),
+            "buoy:crawl:database-relation:gong-calls",
+        )
+        shared_prefix = "a" * 2500
+        first = build_snowflake_query_tag(f"{shared_prefix}-one", "plan")
+        second = build_snowflake_query_tag(f"{shared_prefix}-two", "plan")
+        self.assertLessEqual(len(first), SNOWFLAKE_QUERY_TAG_MAX_LENGTH)
+        self.assertLessEqual(len(second), SNOWFLAKE_QUERY_TAG_MAX_LENGTH)
+        self.assertTrue(first.startswith("buoy:plan:database-relation:"))
+        self.assertIn("-sha256-", first)
+        self.assertNotEqual(first, second)
+        self.assertNotIn("secret-profile", first)
+        self.assertNotIn("analytics-account", first)
+
+        long_source_id = "a" * 2501
+        source = snowflake_relation_source(
+            relation="DB.SCHEMA.DOCS",
+            source_id=long_source_id,
+            connection_name="secret-profile",
+        )
+        with patch(
+            "buoy_search.snowflake_relation._load_connector",
+            return_value=FakeSnowflakeConnector,
+        ):
+            scan_snowflake_relation(source, max_documents=2)
+        configured_tag = FakeSnowflakeConnector.calls[-1]["session_parameters"]["QUERY_TAG"]
+        self.assertEqual(configured_tag, build_snowflake_query_tag(long_source_id, "plan"))
+        self.assertLessEqual(len(configured_tag), SNOWFLAKE_QUERY_TAG_MAX_LENGTH)
+        self.assertNotIn("secret-profile", configured_tag)
 
     def test_custom_mapping_and_title_auto_detection(self) -> None:
         FakeSnowflakeCursor.schema = ["CALL_ID", "TRANSCRIPT"]
@@ -230,6 +266,66 @@ class SnowflakeRelationTests(unittest.TestCase):
         with patch("buoy_search.snowflake_relation._load_connector", return_value=FakeSnowflakeConnector):
             with self.assertRaisesRegex(SnowflakeRelationError, "no nonblank documents"):
                 scan_snowflake_relation(source, max_documents=1)
+
+    def test_selected_rows_are_revalidated_after_global_validation(self) -> None:
+        source = snowflake_relation_source(
+            relation="DB.SCHEMA.DOCS", source_id="docs", connection_name="analytics"
+        )
+        cases = (
+            ([(None, "body", None)], "null document ID"),
+            ([("\u3000", "body", None)], "blank document ID"),
+            ([('same', "one", None), ('same', "two", None)], "selected duplicate document ID 'same'"),
+            ([("a", None, None)], "null content"),
+            ([("a", "\u2003", None)], "blank content"),
+        )
+        for documents, message in cases:
+            with self.subTest(message=message):
+                FakeSnowflakeConnector.calls.clear()
+                FakeSnowflakeConnector.connections.clear()
+                FakeSnowflakeCursor.documents = documents
+                with patch(
+                    "buoy_search.snowflake_relation._load_connector",
+                    return_value=FakeSnowflakeConnector,
+                ):
+                    with self.assertRaisesRegex(SnowflakeRelationError, message):
+                        scan_snowflake_relation(source, max_documents=2)
+                connection = FakeSnowflakeConnector.connections[-1]
+                self.assertTrue(connection.rolled_back)
+                self.assertTrue(connection.cursor_instance.closed)
+                self.assertTrue(connection.closed)
+
+    def test_selected_validation_fails_before_markdown_materialization(self) -> None:
+        FakeSnowflakeCursor.documents = [(None, "body", None)]
+        source = snowflake_relation_source(
+            relation="DB.SCHEMA.DOCS", source_id="docs", connection_name="analytics"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            options = CrawlOptions(
+                base_url=source.base_url, out_dir=Path(tmp) / "out", max_pages=1
+            )
+            with patch(
+                "buoy_search.snowflake_relation._load_connector",
+                return_value=FakeSnowflakeConnector,
+            ):
+                with self.assertRaises(SnowflakeRelationError):
+                    crawl_snowflake_relation(source, options)
+            self.assertFalse((Path(tmp) / "out" / "pages").exists())
+
+    def test_selected_valid_complex_ids_round_trip(self) -> None:
+        complex_ids = ['call/ü"quoted\\path', "雪/meeting\\notes"]
+        FakeSnowflakeCursor.documents = [
+            (value, f"Body {index}", "\u3000") for index, value in enumerate(complex_ids)
+        ]
+        source = snowflake_relation_source(
+            relation="DB.SCHEMA.DOCS", source_id="docs", connection_name="analytics"
+        )
+        with patch(
+            "buoy_search.snowflake_relation._load_connector",
+            return_value=FakeSnowflakeConnector,
+        ):
+            result = scan_snowflake_relation(source, max_documents=2)
+        self.assertEqual([document.document_id for document in result.documents], complex_ids)
+        self.assertEqual([document.title for document in result.documents], complex_ids)
 
     def test_connector_failure_closes_cursor_and_connection(self) -> None:
         source = snowflake_relation_source(

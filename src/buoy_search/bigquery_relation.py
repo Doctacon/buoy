@@ -9,7 +9,6 @@ import re
 from typing import TYPE_CHECKING, Literal, Any
 
 from buoy_search.database_relation import (
-    DatabaseDocument,
     DatabaseRelationError,
     DatabaseRelationExecution,
     DatabaseScanResult,
@@ -19,6 +18,7 @@ from buoy_search.database_relation import (
     database_document_url,
     database_namespace_candidate,
     database_site_id,
+    validate_selected_database_rows,
     validate_source_id,
 )
 
@@ -177,7 +177,7 @@ def _query_config(bigquery: Any, source: BigQueryRelationSource, *, dry_run: boo
         "use_query_cache": False if dry_run else True,
         "labels": {"buoy": "database-relation", "buoy-operation": source.operation},
     }
-    if source.maximum_bytes_billed is not None:
+    if not dry_run and source.maximum_bytes_billed is not None:
         kwargs["maximum_bytes_billed"] = source.maximum_bytes_billed
     if not dry_run:
         # Official server-side best-effort timeout bounds warehouse execution in addition
@@ -199,6 +199,90 @@ def _job_result(job: object, *, timeout: float) -> object:
                 "BigQuery source query exceeded --source-query-timeout and cancellation was requested."
             ) from exc
         raise
+
+
+def _build_source_query(
+    *,
+    relation_sql: str,
+    id_expression: str,
+    content_expression: str,
+    title_expression: str,
+    max_documents: int,
+) -> str:
+    """Build one read-only statement containing summary, duplicate, and document rows."""
+
+    return f"""WITH converted AS (
+  SELECT
+    {id_expression} AS document_id,
+    {content_expression} AS content,
+    {title_expression} AS title
+  FROM {relation_sql}
+), source_rows AS (
+  SELECT
+    document_id,
+    content,
+    title,
+    document_id IS NOT NULL AND LENGTH(TRIM(document_id)) > 0 AS valid_id,
+    content IS NOT NULL AND LENGTH(TRIM(content)) > 0 AS nonblank_content
+  FROM converted
+), summary AS (
+  SELECT
+    COUNT(*) AS rows_discovered,
+    COUNTIF(NOT valid_id) AS invalid_ids,
+    COUNTIF(NOT nonblank_content) AS skipped_empty,
+    COUNTIF(nonblank_content) AS nonblank_documents
+  FROM source_rows
+), duplicate_ids AS (
+  SELECT document_id
+  FROM source_rows
+  WHERE valid_id
+  GROUP BY document_id
+  HAVING COUNT(*) > 1
+  ORDER BY document_id
+  LIMIT 1
+), documents AS (
+  SELECT document_id, content, title
+  FROM source_rows
+  WHERE valid_id AND nonblank_content
+  ORDER BY document_id
+  LIMIT {int(max_documents)}
+)
+SELECT
+  0 AS result_order,
+  'summary' AS result_kind,
+  rows_discovered,
+  invalid_ids,
+  skipped_empty,
+  nonblank_documents,
+  CAST(NULL AS STRING) AS document_id,
+  CAST(NULL AS STRING) AS content,
+  CAST(NULL AS STRING) AS title
+FROM summary
+UNION ALL
+SELECT
+  1,
+  'duplicate',
+  CAST(NULL AS INT64),
+  CAST(NULL AS INT64),
+  CAST(NULL AS INT64),
+  CAST(NULL AS INT64),
+  document_id,
+  CAST(NULL AS STRING),
+  CAST(NULL AS STRING)
+FROM duplicate_ids
+UNION ALL
+SELECT
+  2,
+  'document',
+  CAST(NULL AS INT64),
+  CAST(NULL AS INT64),
+  CAST(NULL AS INT64),
+  CAST(NULL AS INT64),
+  document_id,
+  content,
+  title
+FROM documents
+ORDER BY result_order, document_id"""
 
 
 def scan_bigquery_relation(
@@ -229,67 +313,41 @@ def scan_bigquery_relation(
             if title_column is not None
             else "CAST(NULL AS STRING)"
         )
-        valid_id = f"{id_expression} IS NOT NULL AND LENGTH(TRIM({id_expression})) > 0"
-        nonblank_content = (
-            f"{content_expression} IS NOT NULL AND LENGTH(TRIM({content_expression})) > 0"
+        query_sql = _build_source_query(
+            relation_sql=relation_sql,
+            id_expression=id_expression,
+            content_expression=content_expression,
+            title_expression=title_expression,
+            max_documents=max_documents,
         )
-        validation_sql = (
-            f"SELECT COUNT(*) AS rows_discovered, "
-            f"COUNTIF(NOT ({valid_id})) AS invalid_ids, "
-            f"COUNTIF(NOT ({nonblank_content})) AS skipped_empty, "
-            f"COUNTIF({nonblank_content}) AS nonblank_documents FROM {relation_sql}"
+        dry_job = client.query(
+            query_sql, job_config=_query_config(bigquery, source, dry_run=True)
         )
-        duplicate_sql = (
-            f"SELECT {id_expression} AS document_id, COUNT(*) AS duplicate_count "
-            f"FROM {relation_sql} WHERE {valid_id} GROUP BY document_id "
-            f"HAVING COUNT(*) > 1 ORDER BY document_id LIMIT 1"
-        )
-        documents_sql = (
-            f"SELECT {id_expression} AS document_id, {content_expression} AS content, "
-            f"{title_expression} AS title FROM {relation_sql} WHERE {nonblank_content} "
-            f"ORDER BY document_id LIMIT {int(max_documents)}"
-        )
-        queries = (validation_sql, duplicate_sql, documents_sql)
-        estimated_bytes = 0
-        for sql in queries:
-            dry_job = client.query(sql, job_config=_query_config(bigquery, source, dry_run=True))
-            estimated_bytes += int(getattr(dry_job, "total_bytes_processed", 0) or 0)
+        estimated_bytes = int(getattr(dry_job, "total_bytes_processed", 0) or 0)
         if (
             source.maximum_bytes_billed is not None
             and estimated_bytes > source.maximum_bytes_billed
         ):
             raise BigQueryRelationError(
-                "BigQuery dry-run estimate exceeds --bigquery-maximum-bytes-billed: "
+                "BigQuery aggregate dry-run estimate exceeds --bigquery-maximum-bytes-billed: "
                 f"estimated {estimated_bytes} bytes; cap {source.maximum_bytes_billed} bytes."
             )
 
-        jobs: list[object] = []
-        validation_job = client.query(
-            validation_sql, job_config=_query_config(bigquery, source, dry_run=False)
+        query_job = client.query(
+            query_sql, job_config=_query_config(bigquery, source, dry_run=False)
         )
-        jobs.append(validation_job)
-        validation_rows = _job_result(validation_job, timeout=source.query_timeout)
-        validation = next(iter(validation_rows))
-        rows_discovered = int(_row_value(validation, "rows_discovered", 0))
-        invalid_ids = int(_row_value(validation, "invalid_ids", 1))
-        skipped_empty = int(_row_value(validation, "skipped_empty", 2))
-        nonblank_documents = int(_row_value(validation, "nonblank_documents", 3))
+        result_rows = iter(_job_result(query_job, timeout=source.query_timeout))
+        summary = next(result_rows, None)
+        if summary is None or _row_value(summary, "result_kind", 1) != "summary":
+            raise BigQueryRelationError("BigQuery source query returned no summary result.")
+        rows_discovered = int(_row_value(summary, "rows_discovered", 2))
+        invalid_ids = int(_row_value(summary, "invalid_ids", 3))
+        skipped_empty = int(_row_value(summary, "skipped_empty", 4))
+        nonblank_documents = int(_row_value(summary, "nonblank_documents", 5))
         if invalid_ids:
             raise BigQueryRelationError(
                 f"BigQuery relation {source.relation!r} contains a null or blank document ID "
                 f"in column {source.id_column!r}."
-            )
-
-        duplicate_job = client.query(
-            duplicate_sql, job_config=_query_config(bigquery, source, dry_run=False)
-        )
-        jobs.append(duplicate_job)
-        duplicate = next(iter(_job_result(duplicate_job, timeout=source.query_timeout)), None)
-        if duplicate is not None:
-            duplicate_id = str(_row_value(duplicate, "document_id", 0))
-            raise BigQueryRelationError(
-                f"BigQuery relation {source.relation!r} contains duplicate document ID "
-                f"{duplicate_id!r} after text conversion."
             )
         if not nonblank_documents:
             raise BigQueryRelationError(
@@ -297,32 +355,42 @@ def scan_bigquery_relation(
                 f"content column {source.content_column!r}."
             )
 
-        documents_job = client.query(
-            documents_sql, job_config=_query_config(bigquery, source, dry_run=False)
-        )
-        jobs.append(documents_job)
-        documents: list[DatabaseDocument] = []
-        for row in _job_result(documents_job, timeout=source.query_timeout):
-            raw_id = _row_value(row, "document_id", 0)
-            raw_content = _row_value(row, "content", 1)
-            raw_title = _row_value(row, "title", 2)
-            document_id = str(raw_id)
-            title = "" if raw_title is None else str(raw_title)
-            documents.append(
-                DatabaseDocument(
-                    document_id=document_id,
-                    content=str(raw_content),
-                    title=title if title.strip() else document_id,
+        selected_rows: list[tuple[object, object, object]] = []
+        for row in result_rows:
+            result_kind = _row_value(row, "result_kind", 1)
+            if result_kind == "duplicate":
+                duplicate_id = str(_row_value(row, "document_id", 6))
+                raise BigQueryRelationError(
+                    f"BigQuery relation {source.relation!r} contains duplicate document ID "
+                    f"{duplicate_id!r} after text conversion."
+                )
+            if result_kind != "document":
+                raise BigQueryRelationError("BigQuery source query returned an unknown result kind.")
+            selected_rows.append(
+                (
+                    _row_value(row, "document_id", 6),
+                    _row_value(row, "content", 7),
+                    _row_value(row, "title", 8),
                 )
             )
-        total_bytes = sum(int(getattr(job, "total_bytes_processed", 0) or 0) for job in jobs)
-        cache_values = [getattr(job, "cache_hit", None) for job in jobs]
+        documents = validate_selected_database_rows(
+            selected_rows,
+            backend="BigQuery",
+            relation=source.relation,
+            error_type=BigQueryRelationError,
+        )
+        if not documents:
+            raise BigQueryRelationError(
+                f"BigQuery relation {source.relation!r} returned no valid selected documents."
+            )
         diagnostics: dict[str, object] = {
             "bigquery_estimated_bytes_processed": estimated_bytes,
-            "bigquery_total_bytes_processed": total_bytes,
-            "bigquery_cache_hit": bool(cache_values) and all(value is True for value in cache_values),
+            "bigquery_total_bytes_processed": int(
+                getattr(query_job, "total_bytes_processed", 0) or 0
+            ),
+            "bigquery_cache_hit": getattr(query_job, "cache_hit", None) is True,
         }
-        job_id = getattr(documents_job, "job_id", None)
+        job_id = getattr(query_job, "job_id", None)
         if job_id:
             diagnostics["bigquery_query_job_id"] = str(job_id)
     except BigQueryRelationError:

@@ -729,8 +729,8 @@ class CliTests(unittest.TestCase):
 
         stdout = StringIO()
         with patch(__name__ + ".process_corpus", wraps=process_corpus) as process_mock, patch(
-            "buoy_search.cli.crawl_site_with_plan", side_effect=fake_crawl
-        ) as crawl_mock, patch("buoy_search.cli.build_plan_artifacts", wraps=build_plan_artifacts) as artifacts_mock:
+            "buoy_search.crawler.crawl_site_with_plan", side_effect=fake_crawl
+        ) as crawl_mock:
             with redirect_stdout(stdout):
                 result = main(
                     [
@@ -811,7 +811,6 @@ class CliTests(unittest.TestCase):
         )
         crawl_mock.assert_called_once()
         process_mock.assert_called_once()
-        artifacts_mock.assert_called_once()
 
     def test_plan_command_removes_verified_superseded_same_namespace_plan(self) -> None:
         tmp = tempfile.TemporaryDirectory()
@@ -835,7 +834,7 @@ class CliTests(unittest.TestCase):
             return CrawlExecution(summary=fake_plan_crawl_summary(options), indexing_plan=process_corpus(options.out_dir / "pages"))
 
         stdout = StringIO()
-        with patch("buoy_search.cli.crawl_site_with_plan", side_effect=fake_crawl):
+        with patch("buoy_search.crawler.crawl_site_with_plan", side_effect=fake_crawl):
             with redirect_stdout(stdout):
                 result = main(
                     [
@@ -904,9 +903,9 @@ class CliTests(unittest.TestCase):
 
         stdout = StringIO()
         with patch(__name__ + ".process_corpus", wraps=process_corpus) as process_mock, patch(
-            "buoy_search.cli.crawl_github_repo_with_plan", side_effect=fake_github_crawl
-        ) as github_mock, patch("buoy_search.cli.build_plan_artifacts", wraps=build_plan_artifacts) as artifacts_mock:
-            with patch("buoy_search.cli.crawl_site_with_plan") as site_mock:
+            "buoy_search.github_repo.crawl_github_repo_with_plan", side_effect=fake_github_crawl
+        ) as github_mock:
+            with patch("buoy_search.crawler.crawl_site_with_plan") as site_mock:
                 with redirect_stdout(stdout):
                     result = main(
                         [
@@ -950,7 +949,6 @@ class CliTests(unittest.TestCase):
         github_mock.assert_called_once()
         site_mock.assert_not_called()
         process_mock.assert_called_once()
-        artifacts_mock.assert_called_once()
 
     def test_plan_command_propagates_repo_chunking_arm_into_bounded_artifacts(self) -> None:
         tmp = tempfile.TemporaryDirectory()
@@ -1038,11 +1036,9 @@ class CliTests(unittest.TestCase):
         with patch(
             "buoy_search.crawler.markitdown_pdf_to_markdown",
             return_value="# Research Notes\n\nUseful PDF text for retrieval and planning.",
-        ), patch("buoy_search.crawler.process_corpus", wraps=process_corpus) as process_mock, patch(
-            "buoy_search.cli.build_plan_artifacts", wraps=build_plan_artifacts
-        ) as artifacts_mock:
-            with patch("buoy_search.cli.crawl_site_with_plan") as site_mock:
-                with patch("buoy_search.cli.crawl_github_repo_with_plan") as github_mock:
+        ), patch("buoy_search.crawler.process_corpus", wraps=process_corpus) as process_mock:
+            with patch("buoy_search.crawler.crawl_site_with_plan") as site_mock:
+                with patch("buoy_search.github_repo.crawl_github_repo_with_plan") as github_mock:
                     with redirect_stdout(stdout):
                         result = main(
                             [
@@ -1091,7 +1087,6 @@ class CliTests(unittest.TestCase):
         site_mock.assert_not_called()
         github_mock.assert_not_called()
         process_mock.assert_called_once()
-        artifacts_mock.assert_called_once()
 
     def test_plan_command_writes_local_file_artifacts_without_source_path(self) -> None:
         tmp = tempfile.TemporaryDirectory()
@@ -1110,8 +1105,8 @@ class CliTests(unittest.TestCase):
             "buoy_search.crawler.markitdown_file_to_markdown",
             return_value="| topic | value |\n| --- | --- |\n| onboarding | ready |",
         ):
-            with patch("buoy_search.cli.crawl_site_with_plan") as site_mock:
-                with patch("buoy_search.cli.crawl_github_repo_with_plan") as github_mock:
+            with patch("buoy_search.crawler.crawl_site_with_plan") as site_mock:
+                with patch("buoy_search.github_repo.crawl_github_repo_with_plan") as github_mock:
                     with redirect_stdout(stdout):
                         result = main(
                             [
@@ -1206,7 +1201,7 @@ class CliTests(unittest.TestCase):
             return CrawlExecution(summary=fake_plan_crawl_summary(options), indexing_plan=process_corpus(options.out_dir / "pages"))
 
         stdout = StringIO()
-        with patch("buoy_search.cli.crawl_site_with_plan", side_effect=fake_crawl):
+        with patch("buoy_search.crawler.crawl_site_with_plan", side_effect=fake_crawl):
             with redirect_stdout(stdout):
                 result = main(
                     [

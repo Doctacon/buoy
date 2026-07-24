@@ -20,7 +20,23 @@ PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*
 uv build --out-dir /tmp/buoy-build
 ```
 
-Keep changes narrow, update tests for behavior changes, and update the focused document that owns any affected user contract. `README.md` stays a short landing page; detailed indexing, retrieval, evaluation, migration, and release material belongs under `docs/`.
+Keep changes narrow, update tests for behavior changes, and update the focused document that owns any affected user contract. `README.md` stays a short landing page; detailed indexing, retrieval, evaluation, migration, release, and Command Center material belongs under `docs/`.
+
+For Command Center work, use the pinned frontend lockfile and verify that generated assets stay synchronized:
+
+```bash
+cd web
+npm ci
+npm test -- --run
+npm run build
+cd ..
+git diff --exit-code -- src/buoy_search/command_center_static
+uv sync --locked --extra ui
+PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest tests/test_planning_service.py tests/test_command_center_jobs.py tests/test_command_center_local.py tests/test_command_center_remote.py tests/test_command_center_api.py tests/test_command_center_cli.py -q
+uv sync --locked
+```
+
+Commit the hashed output under `src/buoy_search/command_center_static/` with its matching `web/` source changes. Do not commit `web/node_modules/` or hand-edit generated assets. Node is a frontend development dependency only; the commands above test the optional Python UI runtime and then restore the locked core environment.
 
 ## Safety boundaries
 

@@ -44,6 +44,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PINNED_ACTION = re.compile(r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
 EXPECTED_ACTION_MAJORS = {
     "actions/checkout": "v5",
+    "actions/setup-node": "v6",
     "astral-sh/setup-uv": "v7",
     "actions/upload-artifact": "v4",
     "actions/download-artifact": "v4",
@@ -261,11 +262,98 @@ class ReleaseAutomationTests(unittest.TestCase):
         jobs = payload["jobs"]
         self.assertEqual(jobs["test"]["strategy"]["matrix"]["python-version"], ["3.11", "3.13"])
         self.assertEqual(jobs["build"]["needs"], "test")
+        self.assertEqual(jobs["frontend"]["name"], "Frontend (Node 24 LTS)")
+        self.assertEqual(
+            jobs["frontend"]["steps"][1]["with"]["node-version"],
+            "24.18.0",
+        )
         text = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
         self.assertIn("uv sync --locked", text)
+        self.assertIn("uv sync --locked --extra ui", text)
         self.assertIn("unittest discover", text)
-        self.assertEqual(text.count("uv build --out-dir dist"), 1)
+        self.assertIn("npm ci", text)
+        self.assertIn("npm test -- --run", text)
+        self.assertIn("npm run build", text)
+        self.assertIn("command_center_static/index.html", text)
+        self.assertIn("tests/test_planning_service.py", text)
+        self.assertIn("tests/test_command_center_jobs.py", text)
+        for source in (
+            "images/buoy.svg",
+            "web/src/App.test.tsx",
+            "web/src/api.ts",
+            "web/src/setupTests.ts",
+            "web/src/styles.css",
+            "web/src/types.ts",
+            "web/tsconfig.app.json",
+            "web/tsconfig.json",
+            "web/tsconfig.node.json",
+        ):
+            self.assertIn(source, text)
+        self.assertEqual(text.count("uv build --out-dir dist"), 2)
         self.assertNotIn("secrets.", text)
+
+    def test_command_center_contributor_workflow_checks_assets_and_ui_runtime(self) -> None:
+        text = (ROOT / "CONTRIBUTING.md").read_text()
+        self.assertIn("git diff --exit-code -- src/buoy_search/command_center_static", text)
+        self.assertIn("uv sync --locked --extra ui", text)
+        self.assertIn("tests/test_planning_service.py", text)
+        self.assertIn("tests/test_command_center_jobs.py", text)
+        self.assertIn("tests/test_command_center_api.py", text)
+        self.assertIn("uv sync --locked\n", text)
+
+    def test_command_center_metadata_describes_local_planning_and_assets_resolve(self) -> None:
+        description = (
+            "Buoy local operator console for review and bounded public-source planning"
+        )
+        source_index = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+        static_root = ROOT / "src" / "buoy_search" / "command_center_static"
+        packaged_index = (static_root / "index.html").read_text(encoding="utf-8")
+        for index in (source_index, packaged_index):
+            self.assertIn(description, index)
+            self.assertNotIn("read-only operator console", index)
+        references = re.findall(r'(?:src|href)="(/(?:assets/)?[^\"]+)"', packaged_index)
+        self.assertTrue(references)
+        self.assertEqual(
+            [reference for reference in references if not (static_root / reference[1:]).is_file()],
+            [],
+        )
+
+    def test_command_center_phase_2a_documentation_keeps_the_bounded_handoff(self) -> None:
+        readme = (ROOT / "README.md").read_text()
+        guide = (ROOT / "docs" / "command-center.md").read_text()
+        for expected in (
+            "public HTTP(S) website",
+            "public GitHub repository",
+            "one active",
+            "durable",
+            "interrupted",
+            "CSRF",
+            "loopback",
+            "ordinary",
+            "buoy apply --plan",
+            "source definitions",
+            "local-file",
+            "database",
+            "cancel",
+            "resume",
+        ):
+            self.assertIn(expected.casefold(), guide.casefold())
+        self.assertIn("Phase 2A is implemented", guide)
+        self.assertIn("Broader Phase 2 remains **unratified**", guide)
+        self.assertIn("explicit `buoy apply --plan", readme)
+
+    def test_command_center_primary_palette_meets_normal_text_contrast(self) -> None:
+        css = (ROOT / "web" / "src" / "styles.css").read_text()
+        match = re.search(r"--orange:\s*(#[0-9a-fA-F]{6})", css)
+        self.assertIsNotNone(match)
+        color = match.group(1)  # type: ignore[union-attr]
+        channels = [int(color[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+        linear = [
+            value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4
+            for value in channels
+        ]
+        luminance = sum(value * weight for value, weight in zip(linear, (0.2126, 0.7152, 0.0722), strict=True))
+        self.assertGreaterEqual(1.05 / (luminance + 0.05), 4.5)
 
     def test_release_readiness_exposes_exact_four_main_pr_checks(self) -> None:
         payload = load_workflow("release-readiness.yml")
@@ -815,7 +903,19 @@ class ReleaseAutomationTests(unittest.TestCase):
             config["tool"]["hatch"]["build"]["hooks"]["vcs"],
             {"version-file": "src/buoy_search/_version.py"},
         )
-        self.assertEqual(config["tool"]["hatch"]["build"]["exclude"], ["/.10x/**"])
+        self.assertEqual(
+            config["tool"]["hatch"]["build"]["exclude"],
+            ["/.10x/**", "/web/node_modules/**"],
+        )
+        self.assertEqual(
+            project["optional-dependencies"]["ui"],
+            ["fastapi>=0.115,<1", "uvicorn>=0.30,<1"],
+        )
+        wheel = config["tool"]["hatch"]["build"]["targets"]["wheel"]
+        self.assertIn("src/buoy_search/command_center_static/**", wheel["artifacts"])
+        sdist = config["tool"]["hatch"]["build"]["targets"]["sdist"]
+        self.assertIn("web/package-lock.json", sdist["artifacts"])
+        self.assertIn("web/src/**", sdist["artifacts"])
         self.assertIn("src/buoy_search/_version.py", (ROOT / ".gitignore").read_text().splitlines())
         self.assertIn(
             "from ._version import __version__",
