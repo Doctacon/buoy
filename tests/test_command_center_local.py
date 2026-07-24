@@ -396,6 +396,7 @@ class LocalInventorySourceMappingTests(unittest.TestCase):
                 summary={
                     "source_credentials_required": True,
                     "source_api_calls_occurred": True,
+                    "originating_job_id": f"planjob_{'a' * 32}",
                     "connection_name": "secret-profile",
                     "catalog_registration": {
                         "ranking_mode": "page",
@@ -416,9 +417,32 @@ class LocalInventorySourceMappingTests(unittest.TestCase):
         self.assertTrue(detail.summary.source_activity.api_calls_occurred)
         self.assertEqual(detail.retrieval.ranking_pool, 20)
         self.assertEqual(detail.retrieval.region, "aws-us-east-1")
+        self.assertEqual(detail.originating_job_id, f"planjob_{'a' * 32}")
         serialized = json.dumps(asdict(detail))
         self.assertNotIn("secret-profile", serialized)
         self.assertNotIn("/private/", serialized)
+
+    def test_plan_detail_omits_unavailable_or_unsafe_origin_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_plan(root / "artifacts" / "missing", plan_id="plan_missing")
+            write_plan(
+                root / "artifacts" / "unsafe",
+                plan_id="plan_unsafe",
+                summary={"originating_job_id": "../../../job"},
+            )
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts", state_root=root / "state"
+            )
+            missing = service.get_plan("plan_missing")
+            unsafe = service.get_plan("plan_unsafe")
+
+        self.assertIsNone(missing.originating_job_id)
+        self.assertIsNone(unsafe.originating_job_id)
+        self.assertIn(
+            "invalid_originating_job_id",
+            [warning.code for warning in unsafe.summary.warnings],
+        )
 
 
 class LocalInventoryNamespaceTests(unittest.TestCase):

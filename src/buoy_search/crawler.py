@@ -38,8 +38,8 @@ from buoy_search.database_relation import (
     DatabaseRelationSource,
     database_identity_from_url,
     is_database_base_url,
-    validate_database_base_url,
 )
+from buoy_search.source_url import validate_base_url
 
 DEFAULT_CRAWL_MAX_PAGES = 3000
 DEFAULT_CRAWL_MAX_CHUNKS = 120000
@@ -412,38 +412,6 @@ class CrawledPage:
             source_hash=sha256_text(self.markdown),
             fetcher=self.fetcher,
         )
-
-
-def validate_base_url(url: str) -> str:
-    """Return the normalized source base URL or raise ``ValueError``."""
-
-    parsed = urlparse(url)
-    if parsed.scheme in {"duckdb", "bigquery", "snowflake"}:
-        return validate_database_base_url(url)
-    if parsed.scheme == "pdf":
-        if (
-            not parsed.netloc
-            or parsed.path not in {"", "/"}
-            or parsed.params
-            or parsed.query
-        ):
-            raise ValueError("PDF base URL must be an internal pdf://<source-id> URI")
-        return urlunparse(parsed._replace(path="", params="", query="", fragment=""))
-    if parsed.scheme == "file":
-        if (
-            not parsed.netloc
-            or parsed.path not in {"", "/"}
-            or parsed.params
-            or parsed.query
-        ):
-            raise ValueError(
-                "local file base URL must be an internal file://<source-id> URI"
-            )
-        return urlunparse(parsed._replace(path="", params="", query="", fragment=""))
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError("base URL must be an absolute http(s) URL")
-    normalized = parsed._replace(fragment="")
-    return urlunparse(normalized)
 
 
 def host_from_url(url: str) -> str:

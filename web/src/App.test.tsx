@@ -1,5 +1,5 @@
-import { MemoryRouter } from 'react-router-dom'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { Link, MemoryRouter } from 'react-router-dom'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -71,9 +71,54 @@ const namespaces = {
 }
 
 const capabilities = {
-  api_version: 'v1', buoy_version: 'test', loopback_only: true, read_only: true, remote_snapshot: true, search: true, mutations: false,
+  api_version: 'v1', buoy_version: 'test', loopback_only: true, review_routes_read_only: true, local_plan_job_creation: true, remote_mutations: false, remote_snapshot: true, search: true,
   artifacts_root_available: true, state_root_available: true, turbopuffer_credentials_available: true,
   ui_build_available: true, bigquery_extra_installed: false, snowflake_extra_installed: false,
+}
+
+const jobId = `planjob_${'b'.repeat(32)}`
+const activeJobId = `planjob_${'a'.repeat(32)}`
+
+function planJob(overrides: Record<string, unknown> = {}) {
+  return {
+    job_id: jobId,
+    state: 'running',
+    source_kind: 'website',
+    source_url: 'https://example.test/docs',
+    namespace: 'docs-one',
+    plan_id: null,
+    created_at: '2026-07-23T12:00:00Z',
+    updated_at: '2026-07-23T12:00:01Z',
+    event_sequence: 2,
+    started_at: '2026-07-23T12:00:01Z',
+    completed_at: null,
+    latest_progress: { stage: 'crawl', message: 'Crawling public website content.', counts: { pages: 3 } },
+    error: null,
+    request_summary: { max_pages_or_files: 20, max_chunks: 100, namespace: 'docs-one', include_path_count: 1, exclude_path_count: 1 },
+    ...overrides,
+  }
+}
+
+class FakeEventSource {
+  static instances: FakeEventSource[] = []
+  url: string
+  onopen: (() => void) | null = null
+  onerror: (() => void) | null = null
+  close = vi.fn()
+  private listeners = new Map<string, (event: MessageEvent<string>) => void>()
+
+  constructor(url: string | URL) {
+    this.url = String(url)
+    FakeEventSource.instances.push(this)
+  }
+
+  addEventListener(name: string, listener: EventListenerOrEventListenerObject) {
+    this.listeners.set(name, listener as (event: MessageEvent<string>) => void)
+  }
+
+  emit(name: string, data: unknown) {
+    this.listeners.get(name)?.(new MessageEvent(name, { data: JSON.stringify(data) }))
+  }
 }
 
 const remote = {
@@ -103,8 +148,26 @@ function renderRoute(route: string) {
   return render(<MemoryRouter initialEntries={[route]}><App /></MemoryRouter>)
 }
 
+function renderRouteWithLink(route: string, target: string, label = 'Test route change') {
+  return render(
+    <MemoryRouter initialEntries={[route]}>
+      <Link to={target}>{label}</Link>
+      <App />
+    </MemoryRouter>,
+  )
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((next, fail) => { resolve = next; reject = fail })
+  return { promise, resolve, reject }
+}
+
 afterEach(() => {
   cleanup()
+  FakeEventSource.instances = []
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
@@ -129,7 +192,7 @@ describe('Command Center', () => {
     const mock = mockApi((path) => path.includes('/remote/snapshot') ? remote : dashboard)
     renderRoute('/')
     await screen.findByText('plan-1')
-    for (const label of ['Artifacts root available', 'State root available', 'turbopuffer credentials configured', 'UI build available', 'BigQuery extra installed', 'Snowflake extra installed', 'Pending changes', 'Artifact errors']) {
+    for (const label of ['Review routes read only', 'Local plan job creation', 'Remote mutations', 'Artifacts root available', 'State root available', 'turbopuffer credentials configured', 'UI build available', 'BigQuery extra installed', 'Snowflake extra installed', 'Pending changes', 'Artifact errors']) {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
     expect(mock).toHaveBeenCalledTimes(2)
@@ -289,6 +352,8 @@ describe('Command Center', () => {
     })
     renderRoute('/plans/plan-1')
     expect(await screen.findByText(/reviewed without reconnecting to the source warehouse/i)).toBeInTheDocument()
+    expect(screen.getByText('Local command center')).toBeInTheDocument()
+    expect(screen.getByText(/Read-only review/)).toBeInTheDocument()
     expect(screen.getByText('<script>alert("unsafe")</script> **plain text**')).toBeInTheDocument()
     expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument()
     expect(document.querySelector('script')).toBeNull()
@@ -464,6 +529,429 @@ describe('Command Center', () => {
     expect(screen.queryByText(/Old preview failed/)).not.toBeInTheDocument()
   })
 
+  it('keeps the newest page preview when page clicks resolve out of order', async () => {
+    const pages = [0, 1].map((index) => ({ index, title: `Page ${index + 1}`, canonical_url: `https://example.test/${index + 1}`, status: 200, content_type: 'text/markdown' }))
+    const stale = deferred<unknown>()
+    const latest = deferred<unknown>()
+    let initialLoaded = false
+    mockApi((path) => {
+      if (path.endsWith('/plans/plan-1')) return { summary: plan, namespace_candidate: 'docs-one', artifact_hash: 'a'.repeat(64), originating_job_id: null, retrieval: null, source_activity: { credentials_required: false, api_calls_occurred: false } }
+      if (path.endsWith('/pages/0')) {
+        if (!initialLoaded) {
+          initialLoaded = true
+          return { page: pages[0], markdown: 'initial preview', truncated: false }
+        }
+        return latest.promise
+      }
+      if (path.endsWith('/pages/1')) return stale.promise
+      if (path.includes('/pages')) return { items: pages, total: 2, offset: 0, limit: 100 }
+      if (path.includes('/chunks')) return { items: [], total: 0, offset: 0, limit: 10 }
+      throw new Error(`Unexpected path ${path}`)
+    })
+    renderRoute('/plans/plan-1')
+    expect(await screen.findByText('initial preview')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '2. Page 2' }))
+    await userEvent.click(screen.getByRole('button', { name: '1. Page 1' }))
+    latest.resolve({ page: pages[0], markdown: 'newest preview', truncated: false })
+    expect(await screen.findByText('newest preview')).toBeInTheDocument()
+    stale.resolve({ page: pages[1], markdown: 'stale preview', truncated: false })
+    await act(async () => { await stale.promise })
+
+    expect(screen.getByText('newest preview')).toBeInTheDocument()
+    expect(screen.queryByText('stale preview')).not.toBeInTheDocument()
+  })
+
+  it('ignores an old plan preview after the plan route changes', async () => {
+    const oldPreview = deferred<unknown>()
+    mockApi((path) => {
+      const planId = path.includes('plan-2') ? 'plan-2' : 'plan-1'
+      if (path.endsWith(`/plans/${planId}`)) return { summary: { ...plan, plan_id: planId }, namespace_candidate: 'docs-one', artifact_hash: 'a'.repeat(64), originating_job_id: null, retrieval: null, source_activity: { credentials_required: false, api_calls_occurred: false } }
+      if (path.endsWith('/plans/plan-1/pages/0')) return oldPreview.promise
+      if (path.endsWith('/plans/plan-2/pages/0')) return { page: { index: 0, title: 'Plan 2 page', canonical_url: '', status: 200, content_type: 'text/markdown' }, markdown: 'current plan preview', truncated: false }
+      if (path.includes('/pages')) return { items: [{ index: 0, title: `${planId} page`, canonical_url: '', status: 200, content_type: 'text/markdown' }], total: 1, offset: 0, limit: 100 }
+      if (path.includes('/chunks')) return { items: [], total: 0, offset: 0, limit: 10 }
+      throw new Error(`Unexpected path ${path}`)
+    })
+    renderRouteWithLink('/plans/plan-1', '/plans/plan-2')
+    await screen.findByRole('button', { name: '1. plan-1 page' })
+    await userEvent.click(screen.getByRole('link', { name: 'Test route change' }))
+    expect(await screen.findByText('current plan preview')).toBeInTheDocument()
+
+    oldPreview.resolve({ page: { index: 0, title: 'Old page', canonical_url: '', status: 200, content_type: 'text/markdown' }, markdown: 'old plan preview', truncated: false })
+    await act(async () => { await oldPreview.promise })
+    expect(screen.getByText('current plan preview')).toBeInTheDocument()
+    expect(screen.queryByText('old plan preview')).not.toBeInTheDocument()
+  })
+
+  it('submits website and GitHub requests with a fresh in-memory CSRF token and same-origin JSON', async () => {
+    const user = userEvent.setup()
+    const payloads: Array<Record<string, unknown>> = []
+    const mock = mockApi((path, init) => {
+      if (path.endsWith('/csrf-token')) return { csrf_token: 'process-token' }
+      if (path.endsWith('/plan-jobs') && init?.method === 'POST') {
+        payloads.push(JSON.parse(String(init.body)))
+        return planJob({ state: 'queued', event_sequence: 1, latest_progress: { stage: 'queued', message: 'Plan job queued.', counts: {} } })
+      }
+      if (path.includes(`/plan-jobs/${jobId}`)) return planJob()
+      throw new Error(`Unexpected path ${path}`)
+    })
+
+    const websiteView = renderRoute('/plans/new')
+    expect(screen.getByText(/does not embed content, call turbopuffer, or modify a namespace/i)).toBeInTheDocument()
+    await user.type(screen.getByLabelText(/Public website or GitHub repository URL/), 'https://example.test/docs')
+    await user.type(screen.getByLabelText('Maximum pages or files'), '20')
+    await user.type(screen.getByLabelText('Maximum chunks'), '100')
+    await user.type(screen.getByLabelText(/^Namespace/), 'docs-one')
+    await user.type(screen.getByLabelText(/^Include paths/), 'docs/\napi/')
+    await user.type(screen.getByLabelText(/^Exclude paths/), 'private/')
+    await user.click(screen.getByRole('button', { name: 'Start plan' }))
+    expect(await screen.findByRole('heading', { name: jobId })).toBeInTheDocument()
+    websiteView.unmount()
+
+    renderRoute('/plans/new')
+    await user.type(screen.getByLabelText(/Public website or GitHub repository URL/), 'https://github.com/owner/repository')
+    await user.click(screen.getByRole('button', { name: 'Start plan' }))
+    expect(await screen.findByRole('heading', { name: jobId })).toBeInTheDocument()
+
+    expect(payloads).toEqual([
+      { source_url: 'https://example.test/docs', max_pages_or_files: 20, max_chunks: 100, namespace: 'docs-one', include_paths: ['docs/', 'api/'], exclude_paths: ['private/'] },
+      { source_url: 'https://github.com/owner/repository' },
+    ])
+    const posts = mock.mock.calls.filter(([, init]) => init?.method === 'POST')
+    expect(posts).toHaveLength(2)
+    for (const [, init] of posts) {
+      expect(init?.headers).toMatchObject({ 'Content-Type': 'application/json', 'X-Buoy-CSRF-Token': 'process-token' })
+      expect(String(posts[0][0])).toMatch(/^\/api\/v1\//)
+    }
+    expect(mock.mock.calls.filter(([path]) => String(path).endsWith('/csrf-token'))).toHaveLength(2)
+  })
+
+  it('validates plan fields before CSRF fetch and links a 409 conflict to the active job', async () => {
+    const user = userEvent.setup()
+    const mock = mockApi((path) => {
+      if (path.endsWith('/csrf-token')) return { csrf_token: 'process-token' }
+      if (path.endsWith('/plan-jobs')) return json({ error: { code: 'active_job_conflict', message: 'Another plan job is already active.', details: { active_job_id: activeJobId } } }, 409)
+      throw new Error(`Unexpected path ${path}`)
+    })
+    renderRoute('/plans/new')
+    await user.type(screen.getByLabelText(/Public website or GitHub repository URL/), 'file:///tmp/private')
+    await user.click(screen.getByRole('button', { name: 'Start plan' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('public HTTP(S) URL')
+    expect(mock).not.toHaveBeenCalled()
+
+    await user.clear(screen.getByLabelText(/Public website or GitHub repository URL/))
+    await user.type(screen.getByLabelText(/Public website or GitHub repository URL/), 'https://example.test')
+    await user.clear(screen.getByLabelText('Maximum chunks'))
+    await user.type(screen.getByLabelText('Maximum chunks'), '0')
+    await user.click(screen.getByRole('button', { name: 'Start plan' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Maximum chunks must be a whole number')
+    expect(mock).not.toHaveBeenCalled()
+
+    await user.clear(screen.getByLabelText('Maximum chunks'))
+    await user.click(screen.getByRole('button', { name: 'Start plan' }))
+    const conflictLink = await screen.findByRole('link', { name: 'View active plan job' })
+    expect(conflictLink).toHaveAttribute('href', `/plan-jobs/${activeJobId}`)
+  })
+
+  it('rejects an oversized UTF-8 serialized request before fetching CSRF', async () => {
+    const mock = mockApi(() => { throw new Error('No request expected') })
+    renderRoute('/plans/new')
+    fireEvent.change(screen.getByLabelText(/Public website or GitHub repository URL/), { target: { value: 'https://example.test' } })
+    fireEvent.change(screen.getByLabelText(/^Include paths/), { target: { value: Array.from({ length: 40 }, () => 'é'.repeat(400)).join('\n') } })
+    await userEvent.click(screen.getByRole('button', { name: 'Start plan' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('at most 16 KiB of UTF-8 JSON')
+    expect(mock).not.toHaveBeenCalled()
+  })
+
+  it('renders bounded recent job history with progress and review links', async () => {
+    mockApi(() => ({ items: [planJob({ state: 'succeeded', plan_id: 'plan-1', completed_at: '2026-07-23T12:00:03Z', latest_progress: { stage: 'succeeded', message: 'Done.', counts: {} } }), planJob({ job_id: activeJobId, source_kind: 'github_repo', source_url: 'https://github.com/owner/repository' })], total: 72, offset: 0, limit: 50 }))
+    renderRoute('/plan-jobs')
+    expect(await screen.findByLabelText('2 recent plan jobs of 72')).toBeInTheDocument()
+    expect(screen.getByText('GitHub repository')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Review plan' })).toHaveAttribute('href', '/plans/plan-1')
+    expect(screen.getAllByRole('link', { name: 'Progress' })).toHaveLength(2)
+  })
+
+  it('replays escaped persisted events, keeps native EventSource for Last-Event-ID reconnect, and closes on success', async () => {
+    let current = planJob()
+    mockApi((path) => {
+      if (path.includes(`/plan-jobs/${jobId}`)) return current
+      throw new Error(`Unexpected path ${path}`)
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    renderRoute(`/plan-jobs/${jobId}`)
+    expect(await screen.findByRole('heading', { name: jobId })).toBeInTheDocument()
+    const stream = FakeEventSource.instances[0]
+    expect(stream.url).toBe(`/api/v1/plan-jobs/${jobId}/events`)
+    stream.onerror?.()
+    expect(await screen.findByText('reconnecting')).toBeInTheDocument()
+    expect(stream.close).not.toHaveBeenCalled()
+
+    stream.emit('plan-job-event', { sequence: 1, timestamp: '2026-07-23T12:00:00Z', stage: 'queued', message: '<img src=x onerror=alert(1)> queued', counts: { queued: 1 } })
+    stream.emit('plan-job-event', { sequence: 2, timestamp: '2026-07-23T12:00:01Z', stage: 'crawl', message: 'Crawling public website content.', counts: { pages: 3 } })
+    stream.emit('plan-job-event', { sequence: 2, timestamp: '2026-07-23T12:00:01Z', stage: 'crawl', message: 'Crawling public website content.', counts: { pages: 3 } })
+    current = planJob({ state: 'succeeded', plan_id: 'plan-1', completed_at: '2026-07-23T12:00:03Z', event_sequence: 3, latest_progress: { stage: 'succeeded', message: 'Plan artifacts verified successfully.', counts: {} } })
+    stream.emit('plan-job-event', { sequence: 3, timestamp: '2026-07-23T12:00:03Z', stage: 'succeeded', message: 'Plan artifacts verified successfully.', counts: {} })
+
+    expect(await screen.findByText('<img src=x onerror=alert(1)> queued')).toBeInTheDocument()
+    expect(document.querySelector('img[src="x"]')).toBeNull()
+    expect(await screen.findByRole('link', { name: 'Review plan' })).toHaveAttribute('href', '/plans/plan-1')
+    expect(screen.getByText('3 persisted/live events')).toBeInTheDocument()
+    expect(stream.close).toHaveBeenCalled()
+  })
+
+  it('falls back to polling after repeated SSE errors and exposes failed terminal recovery without replay', async () => {
+    let calls = 0
+    mockApi((path) => {
+      if (path.includes(`/plan-jobs/${jobId}`)) {
+        calls += 1
+        return calls === 1 ? planJob() : planJob({ state: 'failed', completed_at: '2026-07-23T12:00:02Z', event_sequence: 3, latest_progress: { stage: 'failed', message: '<script>safe failure</script>', counts: {} }, error: { code: 'source_failed', message: '<script>safe failure</script>' } })
+      }
+      throw new Error(`Unexpected path ${path}`)
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    renderRoute(`/plan-jobs/${jobId}`)
+    expect(await screen.findByRole('heading', { name: jobId })).toBeInTheDocument()
+    const stream = FakeEventSource.instances[0]
+    stream.onerror?.()
+    stream.onerror?.()
+
+    expect(await screen.findByRole('link', { name: 'Start a new plan' })).toHaveAttribute('href', '/plans/new')
+    expect(screen.getAllByText('<script>safe failure</script>').length).toBeGreaterThan(0)
+    expect(document.querySelector('script')).toBeNull()
+    expect(stream.close).toHaveBeenCalled()
+    expect(screen.getByText('closed')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument()
+  })
+
+  it('ignores callbacks queued by an old EventSource after a job route switch', async () => {
+    mockApi((path) => {
+      if (path.includes(`/plan-jobs/${jobId}`)) return planJob()
+      if (path.includes(`/plan-jobs/${activeJobId}`)) return planJob({ job_id: activeJobId, source_url: 'https://example.test/current' })
+      throw new Error(`Unexpected path ${path}`)
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    renderRouteWithLink(`/plan-jobs/${jobId}`, `/plan-jobs/${activeJobId}`)
+    expect(await screen.findByRole('heading', { name: jobId })).toBeInTheDocument()
+    const oldSource = FakeEventSource.instances[0]
+
+    await userEvent.click(screen.getByRole('link', { name: 'Test route change' }))
+    expect(await screen.findByRole('heading', { name: activeJobId })).toBeInTheDocument()
+    expect(FakeEventSource.instances).toHaveLength(2)
+    expect(oldSource.close).toHaveBeenCalled()
+    oldSource.onopen?.()
+    oldSource.emit('plan-job-event', { sequence: 99, timestamp: '2026-07-23T12:00:09Z', stage: 'succeeded', message: 'Old source event', counts: {} })
+    oldSource.onerror?.()
+
+    expect(screen.getByText('connecting')).toBeInTheDocument()
+    expect(screen.queryByText('Old source event')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Review plan' })).not.toBeInTheDocument()
+  })
+
+  it('clears the polling interval on unmount', async () => {
+    vi.useFakeTimers()
+    mockApi((path) => {
+      if (path.includes(`/plan-jobs/${jobId}`)) return planJob()
+      throw new Error(`Unexpected path ${path}`)
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    const clearInterval = vi.spyOn(window, 'clearInterval')
+    const view = renderRoute(`/plan-jobs/${jobId}`)
+    await act(async () => { await Promise.resolve() })
+    const stream = FakeEventSource.instances[0]
+    act(() => { stream.onerror?.(); stream.onerror?.() })
+    expect(screen.getByText('polling')).toBeInTheDocument()
+
+    view.unmount()
+    expect(clearInterval).toHaveBeenCalled()
+  })
+
+  it('clears a transient polling error after a successful refresh', async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    mockApi((path) => {
+      if (path.includes(`/plan-jobs/${jobId}`)) {
+        calls += 1
+        if (calls === 2) return json({ error: { code: 'temporary', message: 'Temporary polling failure.' } }, 500)
+        return planJob({ event_sequence: calls, latest_progress: { stage: 'crawl', message: `Poll ${calls}`, counts: { pages: calls } } })
+      }
+      throw new Error(`Unexpected path ${path}`)
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    renderRoute(`/plan-jobs/${jobId}`)
+    await act(async () => { await Promise.resolve() })
+    const stream = FakeEventSource.instances[0]
+    await act(async () => { stream.onerror?.(); stream.onerror?.(); await Promise.resolve() })
+    expect(screen.getByRole('alert')).toHaveTextContent('Temporary polling failure')
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000) })
+    expect(screen.queryByText('Temporary polling failure.')).not.toBeInTheDocument()
+    expect(screen.getByText('Poll 3')).toBeInTheDocument()
+  })
+
+  it('keeps the newest polling error when deferred errors settle in reverse order', async () => {
+    let poll: () => void = () => undefined
+    vi.spyOn(window, 'setInterval').mockImplementation((handler: TimerHandler) => {
+      poll = handler as () => void
+      return 1
+    })
+    const olderError = deferred<unknown>()
+    const newerError = deferred<unknown>()
+    let calls = 0
+    mockApi((path) => {
+      if (path.includes(`/plan-jobs/${jobId}`)) {
+        calls += 1
+        if (calls === 1) return planJob()
+        if (calls === 2) return olderError.promise
+        if (calls === 3) return newerError.promise
+      }
+      throw new Error(`Unexpected path ${path}`)
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    renderRoute(`/plan-jobs/${jobId}`)
+    await act(async () => { await Promise.resolve() })
+    const stream = FakeEventSource.instances[0]
+    act(() => { stream.onerror?.(); stream.onerror?.() })
+    act(() => { poll() })
+    expect(calls).toBe(3)
+
+    newerError.resolve(json({ error: { code: 'newer_failure', message: 'Newer polling failure.' } }, 500))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Newer polling failure.')
+
+    olderError.resolve(json({ error: { code: 'older_failure', message: 'Older polling failure.' } }, 500))
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(screen.getByRole('alert')).toHaveTextContent('Newer polling failure.')
+    expect(screen.queryByText('Older polling failure.')).not.toBeInTheDocument()
+  })
+
+  it('uses one request-order marker across deferred polling errors and successes', async () => {
+    let poll: () => void = () => undefined
+    vi.spyOn(window, 'setInterval').mockImplementation((handler: TimerHandler) => {
+      poll = handler as () => void
+      return 1
+    })
+    const olderSuccess = deferred<unknown>()
+    const newerError = deferred<unknown>()
+    let calls = 0
+    mockApi((path) => {
+      if (path.includes(`/plan-jobs/${jobId}`)) {
+        calls += 1
+        if (calls === 1) return planJob()
+        if (calls === 2) return olderSuccess.promise
+        if (calls === 3) return newerError.promise
+      }
+      throw new Error(`Unexpected path ${path}`)
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    renderRoute(`/plan-jobs/${jobId}`)
+    await act(async () => { await Promise.resolve() })
+    const stream = FakeEventSource.instances[0]
+    act(() => { stream.onerror?.(); stream.onerror?.() })
+    act(() => { poll() })
+    expect(calls).toBe(3)
+
+    newerError.resolve(json({ error: { code: 'newer_failure', message: 'Newest mixed polling failure.' } }, 500))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Newest mixed polling failure.')
+
+    olderSuccess.resolve(planJob({
+      event_sequence: 9,
+      latest_progress: { stage: 'crawl', message: 'Older mixed success.', counts: { pages: 9 } },
+    }))
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(screen.getByRole('alert')).toHaveTextContent('Newest mixed polling failure.')
+    expect(screen.queryByText('Older mixed success.')).not.toBeInTheDocument()
+  })
+
+  it('keeps terminal polling state sticky against deferred stale successes and errors', async () => {
+    let poll: () => void = () => undefined
+    vi.spyOn(window, 'setInterval').mockImplementation((handler: TimerHandler) => {
+      poll = handler as () => void
+      return 1
+    })
+    const staleSuccess = deferred<unknown>()
+    const staleError = deferred<unknown>()
+    const terminal = deferred<unknown>()
+    let calls = 0
+    mockApi((path) => {
+      if (path.includes(`/plan-jobs/${jobId}`)) {
+        calls += 1
+        if (calls === 1) return planJob()
+        if (calls === 2) return staleSuccess.promise
+        if (calls === 3) return staleError.promise
+        if (calls === 4) return terminal.promise
+      }
+      throw new Error(`Unexpected path ${path}`)
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    renderRoute(`/plan-jobs/${jobId}`)
+    await act(async () => { await Promise.resolve() })
+    const stream = FakeEventSource.instances[0]
+    act(() => { stream.onerror?.(); stream.onerror?.() })
+    act(() => { poll(); poll() })
+    expect(calls).toBe(4)
+
+    terminal.resolve(planJob({
+      state: 'succeeded',
+      plan_id: 'plan-1',
+      completed_at: '2026-07-23T12:00:05Z',
+      event_sequence: 5,
+      latest_progress: { stage: 'succeeded', message: 'Terminal result.', counts: {} },
+    }))
+    await act(async () => { await Promise.resolve() })
+    expect(await screen.findByRole('link', { name: 'Review plan' })).toHaveAttribute('href', '/plans/plan-1')
+    expect(screen.getByText('Terminal result.')).toBeInTheDocument()
+    expect(screen.getByText('closed')).toBeInTheDocument()
+
+    staleSuccess.resolve(planJob({
+      event_sequence: 3,
+      latest_progress: { stage: 'crawl', message: 'Stale running result.', counts: { pages: 3 } },
+    }))
+    staleError.reject(new Error('Stale polling failure.'))
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(screen.getByRole('link', { name: 'Review plan' })).toHaveAttribute('href', '/plans/plan-1')
+    expect(screen.getByText('Terminal result.')).toBeInTheDocument()
+    expect(screen.queryByText('Stale running result.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Stale polling failure.')).not.toBeInTheDocument()
+  })
+
+  it('shows the new-plan link for an interrupted terminal job without automatic replay controls', async () => {
+    mockApi((path) => {
+      if (path.includes(`/plan-jobs/${jobId}`)) return planJob({ state: 'interrupted', completed_at: '2026-07-23T12:00:02Z', latest_progress: { stage: 'interrupted', message: 'Planning was interrupted by a local service restart.', counts: {} }, error: { code: 'job_interrupted', message: 'Planning was interrupted by a local service restart.' } })
+      throw new Error(`Unexpected path ${path}`)
+    })
+    renderRoute(`/plan-jobs/${jobId}`)
+    expect(await screen.findByRole('link', { name: 'Start a new plan' })).toHaveAttribute('href', '/plans/new')
+    expect(screen.queryByRole('button', { name: /retry|resume|replay/i })).not.toBeInTheDocument()
+  })
+
+  it('shows a durable originating job even when it is older than any history list window', async () => {
+    const mock = mockApi((path) => {
+      if (path.endsWith('/plans/plan-1')) return { summary: plan, namespace_candidate: 'docs-one', artifact_hash: 'a'.repeat(64), originating_job_id: jobId, retrieval: null, source_activity: { credentials_required: false, api_calls_occurred: false } }
+      if (path.includes('/pages/0')) return { page: { index: 0, title: 'Page', canonical_url: '', status: 200, content_type: 'text/markdown' }, markdown: 'preview', truncated: false }
+      if (path.includes('/pages')) return { items: [{ index: 0, title: 'Page', canonical_url: '', status: 200, content_type: 'text/markdown' }], total: 1, offset: 0, limit: 100 }
+      if (path.includes('/chunks')) return { items: [], total: 0, offset: 0, limit: 10 }
+      throw new Error(`Unexpected path ${path}`)
+    })
+    renderRoute('/plans/plan-1')
+    expect(await screen.findByText('Originating plan job')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: jobId })).toHaveAttribute('href', `/plan-jobs/${jobId}`)
+    expect(mock.mock.calls.some(([path]) => String(path).includes('/plan-jobs?'))).toBe(false)
+  })
+
+  it('omits the originating-job row when artifact metadata is unavailable', async () => {
+    mockApi((path) => {
+      if (path.endsWith('/plans/plan-1')) return { summary: plan, namespace_candidate: 'docs-one', artifact_hash: 'a'.repeat(64), originating_job_id: null, retrieval: null, source_activity: { credentials_required: false, api_calls_occurred: false } }
+      if (path.includes('/pages')) return { items: [], total: 0, offset: 0, limit: 100 }
+      if (path.includes('/chunks')) return { items: [], total: 0, offset: 0, limit: 10 }
+      throw new Error(`Unexpected path ${path}`)
+    })
+    renderRoute('/plans/plan-1')
+    await screen.findByRole('heading', { name: 'plan-1' })
+    expect(screen.queryByText('Originating plan job')).not.toBeInTheDocument()
+  })
+
   it('provides a keyboard skip link to the main content', () => {
     renderRoute('/graphs')
     expect(screen.getByRole('link', { name: 'Skip to main content' })).toHaveAttribute('href', '#main-content')
@@ -479,10 +967,28 @@ describe('Command Center', () => {
     expect(screen.getByText(/No graph data exists/)).toBeInTheDocument()
   })
 
-  it('exposes no mutation controls across every review route', async () => {
+  it('keeps managed-route read reloads distinct from plan-job execution or replay controls', async () => {
+    const mock = mockApi(() => json({ error: { code: 'temporary_read_failure', message: 'Temporary read failure.' } }, 500))
+    for (const route of ['/plan-jobs', `/plan-jobs/${jobId}`, '/plans/plan-1']) {
+      const view = renderRoute(route)
+      expect(await screen.findByRole('alert')).toHaveTextContent('Temporary read failure')
+      const controls = [...screen.queryAllByRole('button'), ...screen.queryAllByRole('link')]
+      expect(controls.map((control) => control.textContent ?? '')).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/retry plan job|replay|resume|re-execute/i)]),
+      )
+      expect(mock.mock.calls.every(([, init]) => !init?.method || init.method === 'GET')).toBe(true)
+      view.unmount()
+    }
+    expect(mock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+  })
+
+  it('exposes no prohibited controls or browser storage across every route', async () => {
+    const storageSet = vi.spyOn(Storage.prototype, 'setItem')
     mockApi((path) => {
       if (path.includes('/dashboard')) return dashboard
       if (path === '/api/v1/namespaces/docs-one') return { summary: namespaces.items[0], plans: [plan], state: null, retrieval: null }
+      if (path === `/api/v1/plan-jobs/${jobId}`) return planJob({ state: 'interrupted', completed_at: '2026-07-23T12:00:02Z', latest_progress: { stage: 'interrupted', message: 'Interrupted.', counts: {} } })
+      if (path.includes('/plan-jobs')) return { items: [planJob()], total: 1, offset: 0, limit: 50 }
       if (path.includes('/namespaces')) return namespaces
       if (path.endsWith('/plans/plan-1')) return { summary: plan, namespace_candidate: 'docs-one', artifact_hash: 'a'.repeat(64), retrieval: null, source_activity: { credentials_required: false, api_calls_occurred: false } }
       if (path.includes('/pages/0')) return { page: { index: 0, title: 'Page', canonical_url: '', status: 200, content_type: 'text/markdown' }, markdown: 'preview', truncated: false }
@@ -491,12 +997,13 @@ describe('Command Center', () => {
       if (path.includes('/plans')) return { items: [plan], total: 1, offset: 0, limit: 100, errors: [] }
       throw new Error(`Unexpected path ${path}`)
     })
-    for (const route of ['/', '/namespaces', '/namespaces/docs-one', '/plans', '/plans/plan-1', '/search', '/graphs']) {
+    for (const route of ['/', '/namespaces', '/namespaces/docs-one', '/plans', '/plans/new', '/plans/plan-1', '/plan-jobs', `/plan-jobs/${jobId}`, '/search', '/graphs']) {
       const view = renderRoute(route)
-      await screen.findByText('Read only')
+      await screen.findByText('Local command center')
       const controls = [...screen.queryAllByRole('button'), ...screen.queryAllByRole('link')]
-      expect(controls.map((control) => control.textContent ?? '')).not.toEqual(expect.arrayContaining([expect.stringMatching(/^(apply|delete|register catalog|crawl source)$/i)]))
+      expect(controls.map((control) => control.textContent ?? '')).not.toEqual(expect.arrayContaining([expect.stringMatching(/^(apply|approve|cancel|delete|retry plan job|replay|resume|register catalog|crawl source|manage namespace|manage source)$/i)]))
       view.unmount()
     }
+    expect(storageSet).not.toHaveBeenCalled()
   })
 })

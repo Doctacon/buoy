@@ -2,8 +2,64 @@ export interface ApiError {
   error: {
     code: string
     message: string
-    details?: { phase?: string; issues?: Array<{ location: string; message: string }> }
+    details?: {
+      phase?: string
+      active_job_id?: string
+      issues?: Array<{ location: string; message: string }>
+    }
   }
+}
+
+export type PlanJobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted'
+
+export interface PlanJobProgress {
+  stage: string
+  message: string
+  counts: Record<string, number>
+}
+
+export interface PlanJobEvent extends PlanJobProgress {
+  sequence: number
+  timestamp: string
+}
+
+export interface PlanJob {
+  job_id: string
+  state: PlanJobState
+  source_kind: 'website' | 'github_repo'
+  source_url: string
+  namespace: string | null
+  plan_id: string | null
+  created_at: string
+  updated_at: string
+  event_sequence: number
+  started_at: string | null
+  completed_at: string | null
+  latest_progress: PlanJobProgress
+  error: { code: string; message: string } | null
+  request_summary: {
+    max_pages_or_files: number | null
+    max_chunks: number | null
+    namespace: string | null
+    include_path_count: number
+    exclude_path_count: number
+  }
+}
+
+export interface PlanJobInventory {
+  items: PlanJob[]
+  total: number
+  offset: number
+  limit: number
+}
+
+export interface PlanJobRequest {
+  source_url: string
+  max_pages_or_files?: number
+  max_chunks?: number
+  namespace?: string
+  include_paths?: string[]
+  exclude_paths?: string[]
 }
 
 export interface Warning {
@@ -69,6 +125,7 @@ export interface PlanDetail {
   summary: PlanSummary
   namespace_candidate: string
   artifact_hash: string | null
+  originating_job_id: string | null
   retrieval: RetrievalSettings
   source_activity: {
     credentials_required: boolean | null
@@ -144,10 +201,11 @@ export interface Capabilities {
   api_version: string
   buoy_version: string
   loopback_only: boolean
-  read_only: boolean
+  review_routes_read_only: boolean
+  local_plan_job_creation: boolean
+  remote_mutations: boolean
   remote_snapshot: boolean
   search: boolean
-  mutations: boolean
   artifacts_root_available: boolean
   state_root_available: boolean
   turbopuffer_credentials_available: boolean

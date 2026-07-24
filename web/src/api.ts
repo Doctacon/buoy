@@ -9,17 +9,22 @@ import type {
   PagePreview,
   PlanDetail,
   PlanInventory,
+  PlanJob,
+  PlanJobInventory,
+  PlanJobRequest,
   RemoteSnapshot,
   SearchResponse,
 } from './types'
 
 export class RequestError extends Error {
   code: string
+  details: ApiError['error']['details']
 
-  constructor(message: string, code = 'request_failed') {
+  constructor(message: string, code = 'request_failed', details?: ApiError['error']['details']) {
     super(message)
     this.name = 'RequestError'
     this.code = code
+    this.details = details
   }
 }
 
@@ -42,7 +47,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!response.ok) {
     const error = (payload as ApiError).error
-    throw new RequestError(error?.message || 'The request could not be completed.', error?.code)
+    throw new RequestError(error?.message || 'The request could not be completed.', error?.code, error?.details)
   }
   return payload as T
 }
@@ -71,10 +76,21 @@ export const api = {
     request<NamespaceDetail>(`/namespaces/${encodeURIComponent(namespace)}`),
   plans: () => allPages<PlanInventory['items'][number], PlanInventory>('/plans'),
   plan: (planId: string) => request<PlanDetail>(`/plans/${encodeURIComponent(planId)}`),
+  planJobs: () => request<PlanJobInventory>('/plan-jobs?offset=0&limit=50'),
+  planJob: (jobId: string) => request<PlanJob>(`/plan-jobs/${encodeURIComponent(jobId)}`),
+  startPlanJob: async (payload: PlanJobRequest) => {
+    // The process-local token remains scoped to this submission and is never persisted.
+    const token = await request<{ csrf_token: string }>('/csrf-token')
+    return request<PlanJob>('/plan-jobs', {
+      method: 'POST',
+      headers: { 'X-Buoy-CSRF-Token': token.csrf_token },
+      body: JSON.stringify(payload),
+    })
+  },
   pages: (planId: string) =>
     allPages<PageInventory['items'][number], PageInventory>(`/plans/${encodeURIComponent(planId)}/pages`),
-  page: (planId: string, index: number) =>
-    request<PagePreview>(`/plans/${encodeURIComponent(planId)}/pages/${index}`),
+  page: (planId: string, index: number, signal?: AbortSignal) =>
+    request<PagePreview>(`/plans/${encodeURIComponent(planId)}/pages/${index}`, { signal }),
   chunks: (planId: string, offset: number) =>
     request<ChunkInventory>(`/plans/${encodeURIComponent(planId)}/chunks?offset=${offset}&limit=10`),
   refreshRemote: () => request<RemoteSnapshot>('/remote/snapshot', guardedPost),

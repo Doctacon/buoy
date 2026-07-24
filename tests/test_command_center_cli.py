@@ -22,6 +22,11 @@ class CommandCenterCliTests(unittest.TestCase):
         self.assertIn("--no-browser", help_text)
         self.assertIn("--artifacts-root", help_text)
         self.assertIn("--state-root", help_text)
+        self.assertIn("one managed public website or public GitHub plan", help_text)
+        self.assertIn("Apply remains an explicit CLI action", help_text)
+        option_help = {action.dest: action.help for action in serve._actions}
+        self.assertIn("command-center/plans", option_help["artifacts_root"])
+        self.assertIn("command-center/jobs", option_help["state_root"])
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

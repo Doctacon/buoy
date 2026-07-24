@@ -275,6 +275,8 @@ class ReleaseAutomationTests(unittest.TestCase):
         self.assertIn("npm test -- --run", text)
         self.assertIn("npm run build", text)
         self.assertIn("command_center_static/index.html", text)
+        self.assertIn("tests/test_planning_service.py", text)
+        self.assertIn("tests/test_command_center_jobs.py", text)
         for source in (
             "images/buoy.svg",
             "web/src/App.test.tsx",
@@ -294,8 +296,51 @@ class ReleaseAutomationTests(unittest.TestCase):
         text = (ROOT / "CONTRIBUTING.md").read_text()
         self.assertIn("git diff --exit-code -- src/buoy_search/command_center_static", text)
         self.assertIn("uv sync --locked --extra ui", text)
+        self.assertIn("tests/test_planning_service.py", text)
+        self.assertIn("tests/test_command_center_jobs.py", text)
         self.assertIn("tests/test_command_center_api.py", text)
         self.assertIn("uv sync --locked\n", text)
+
+    def test_command_center_metadata_describes_local_planning_and_assets_resolve(self) -> None:
+        description = (
+            "Buoy local operator console for review and bounded public-source planning"
+        )
+        source_index = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+        static_root = ROOT / "src" / "buoy_search" / "command_center_static"
+        packaged_index = (static_root / "index.html").read_text(encoding="utf-8")
+        for index in (source_index, packaged_index):
+            self.assertIn(description, index)
+            self.assertNotIn("read-only operator console", index)
+        references = re.findall(r'(?:src|href)="(/(?:assets/)?[^\"]+)"', packaged_index)
+        self.assertTrue(references)
+        self.assertEqual(
+            [reference for reference in references if not (static_root / reference[1:]).is_file()],
+            [],
+        )
+
+    def test_command_center_phase_2a_documentation_keeps_the_bounded_handoff(self) -> None:
+        readme = (ROOT / "README.md").read_text()
+        guide = (ROOT / "docs" / "command-center.md").read_text()
+        for expected in (
+            "public HTTP(S) website",
+            "public GitHub repository",
+            "one active",
+            "durable",
+            "interrupted",
+            "CSRF",
+            "loopback",
+            "ordinary",
+            "buoy apply --plan",
+            "source definitions",
+            "local-file",
+            "database",
+            "cancel",
+            "resume",
+        ):
+            self.assertIn(expected.casefold(), guide.casefold())
+        self.assertIn("Phase 2A is implemented", guide)
+        self.assertIn("Broader Phase 2 remains **unratified**", guide)
+        self.assertIn("explicit `buoy apply --plan", readme)
 
     def test_command_center_primary_palette_meets_normal_text_contrast(self) -> None:
         css = (ROOT / "web" / "src" / "styles.css").read_text()

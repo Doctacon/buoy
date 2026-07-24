@@ -32,7 +32,7 @@ npm run build
 cd ..
 git diff --exit-code -- src/buoy_search/command_center_static
 uv sync --locked --extra ui
-PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest tests/test_command_center_local.py tests/test_command_center_remote.py tests/test_command_center_api.py tests/test_command_center_cli.py -q
+PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest tests/test_planning_service.py tests/test_command_center_jobs.py tests/test_command_center_local.py tests/test_command_center_remote.py tests/test_command_center_api.py tests/test_command_center_cli.py -q
 uv sync --locked
 ```
 

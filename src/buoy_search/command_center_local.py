@@ -33,6 +33,7 @@ MAX_PAGE_SIZE = 100
 MAX_PREVIEW_CHARS = 20_000
 MAX_CITATION_CHARS = 2_000
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+SAFE_MANAGED_JOB_ID = re.compile(r"^planjob_[0-9a-f]{32}$")
 SAFE_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SAFE_DATABASE_SOURCE_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 SAFE_DATABASE_RELATION = re.compile(
@@ -151,6 +152,7 @@ class PlanDetail:
     artifact_hash: str | None
     retrieval: RetrievalSettings
     source_activity: SourceActivity
+    originating_job_id: str | None
 
 
 @dataclass(frozen=True)
@@ -274,6 +276,7 @@ class _PlanRecord:
     artifact_hash: str | None
     retrieval: RetrievalSettings
     source_activity: SourceActivity
+    originating_job_id: str | None
     pages: list[dict[str, Any]]
     chunks: list[dict[str, Any]]
     directory: Path = field(repr=False)
@@ -314,6 +317,7 @@ class LocalInventoryService:
             artifact_hash=record.artifact_hash,
             retrieval=record.retrieval,
             source_activity=record.source_activity,
+            originating_job_id=record.originating_job_id,
         )
 
     def list_plan_pages(
@@ -546,6 +550,7 @@ def _read_plan(root: Path, plan_path: Path) -> _PlanRecord:
     diff = _diff_summary(plan.get("diff"))
     retrieval = _retrieval_settings(plan, summary_payload)
     activity = _source_activity(summary_payload)
+    originating_job_id = _originating_job_id(summary_payload, warnings)
     artifact_hash = plan.get("artifact_hash")
     if not isinstance(artifact_hash, str) or re.fullmatch(r"[0-9a-f]{64}", artifact_hash) is None:
         artifact_hash = None
@@ -569,6 +574,7 @@ def _read_plan(root: Path, plan_path: Path) -> _PlanRecord:
         artifact_hash=artifact_hash,
         retrieval=retrieval,
         source_activity=activity,
+        originating_job_id=originating_job_id,
         pages=pages,
         chunks=chunks,
         directory=directory,
@@ -847,6 +853,23 @@ def _source_activity(summary: dict[str, Any] | None) -> SourceActivity:
     )
 
 
+def _originating_job_id(
+    summary: dict[str, Any] | None, warnings: list[InventoryWarning]
+) -> str | None:
+    if summary is None or "originating_job_id" not in summary:
+        return None
+    job_id = summary.get("originating_job_id")
+    if isinstance(job_id, str) and SAFE_MANAGED_JOB_ID.fullmatch(job_id):
+        return job_id
+    warnings.append(
+        InventoryWarning(
+            "invalid_originating_job_id",
+            "Plan origin metadata is missing or invalid.",
+        )
+    )
+    return None
+
+
 def _optional_summary(
     path: Path, plan_id: str, warnings: list[InventoryWarning]
 ) -> dict[str, Any] | None:
@@ -1089,6 +1112,7 @@ def _replace_record_warnings(
         artifact_hash=record.artifact_hash,
         retrieval=record.retrieval,
         source_activity=record.source_activity,
+        originating_job_id=record.originating_job_id,
         pages=record.pages,
         chunks=record.chunks,
         directory=record.directory,

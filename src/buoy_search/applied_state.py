@@ -16,7 +16,7 @@ from typing import Iterator, Literal
 import duckdb
 import portalocker
 
-from buoy_search.crawler import validate_base_url
+from buoy_search.source_url import validate_base_url
 
 APPLIED_STATE_SCHEMA_VERSION = 1
 DUCKDB_STATE_SCHEMA_VERSION = 1

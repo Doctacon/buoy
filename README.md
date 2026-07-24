@@ -73,7 +73,7 @@ Plans live under `artifacts/`; new applied state lives under `.buoy/`. Both are 
 
 ## Optional Command Center
 
-Run `uv sync --extra ui && uv run buoy serve` for a loopback-only, read-only console. It inspects local plans and state without reconnecting to sources; remote refresh and search run only when explicitly requested. It cannot apply, delete, mutate catalogs, or extract graphs. See the [Command Center guide](docs/command-center.md).
+Run `uv sync --extra ui && uv run buoy serve` for a loopback-only local console. Reviews remain read-only; **Start plan** may fetch one public HTTP(S) website or public GitHub repository at a time and writes ordinary local plan artifacts. Durable jobs become `interrupted` after a server restart and never resume automatically. Applying a successful plan remains a separate explicit `buoy apply --plan …` CLI action; the console has no apply, cancel, retry/resume, source-definition, local-file, database-source, delete, catalog-mutation, or graph authority. Remote refresh and search also run only when explicitly requested. See the [Command Center guide](docs/command-center.md).
 
 ## Details on demand
 

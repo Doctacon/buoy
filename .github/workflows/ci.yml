@@ -91,7 +91,7 @@ jobs:
       - name: Sync locked UI dependencies
         run: uv sync --locked --extra ui --python 3.13
       - name: Run Command Center Python tests
-        run: PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest tests/test_command_center_local.py tests/test_command_center_remote.py tests/test_command_center_api.py tests/test_command_center_cli.py -q
+        run: PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest tests/test_planning_service.py tests/test_command_center_jobs.py tests/test_command_center_local.py tests/test_command_center_remote.py tests/test_command_center_api.py tests/test_command_center_cli.py -q
       - name: Build wheel and source distribution
         run: uv build --out-dir dist
       - name: Verify packaged assets and frontend sources

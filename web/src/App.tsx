@@ -5,6 +5,7 @@ import {
   Navigate,
   Route,
   Routes,
+  useNavigate,
   useParams,
   useSearchParams,
 } from 'react-router-dom'
@@ -21,6 +22,9 @@ import type {
   PagePreview,
   PlanDetail,
   PlanInventory,
+  PlanJob,
+  PlanJobEvent,
+  PlanJobRequest,
   PlanSummary,
   RemoteNamespaceStatus,
   RemoteSnapshot,
@@ -90,17 +94,19 @@ function App() {
           <img src="/buoy.svg" alt="" width="52" height="52" />
           <span><strong>Buoy</strong><small>Command Center</small></span>
         </Link>
-        <span className="read-only-badge">Read only</span>
+        <span className="read-only-badge">Local command center</span>
       </header>
       <nav className="primary-nav" aria-label="Primary navigation">
         {[
           ['/', 'Dashboard'],
           ['/namespaces', 'Namespaces'],
           ['/plans', 'Plans'],
+          ['/plans/new', 'Start plan'],
+          ['/plan-jobs', 'Plan jobs'],
           ['/search', 'Search'],
           ['/graphs', 'Graphs'],
         ].map(([to, label]) => (
-          <NavLink key={to} to={to} end={to === '/'}>{label}</NavLink>
+          <NavLink key={to} to={to} end={to === '/' || to === '/plans' || to === '/plan-jobs'}>{label}</NavLink>
         ))}
       </nav>
       <main id="main-content">
@@ -109,7 +115,10 @@ function App() {
           <Route path="/namespaces" element={<Namespaces remote={remote} />} />
           <Route path="/namespaces/:namespace" element={<NamespaceScreen remote={remote} />} />
           <Route path="/plans" element={<Plans />} />
+          <Route path="/plans/new" element={<StartPlan />} />
           <Route path="/plans/:planId" element={<PlanScreen />} />
+          <Route path="/plan-jobs" element={<PlanJobs />} />
+          <Route path="/plan-jobs/:jobId" element={<PlanJobScreen />} />
           <Route path="/search" element={<Search />} />
           <Route path="/graphs" element={<Graphs />} />
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -259,6 +268,9 @@ function DashboardContent({ data, capabilities }: { data: DashboardData; capabil
       <section className="panel" aria-labelledby="readiness-heading">
         <h2 id="readiness-heading">Local readiness</h2>
         <dl className="details-grid">
+          <div><dt>Review routes read only</dt><dd>{value(capabilities.review_routes_read_only)}</dd></div>
+          <div><dt>Local plan job creation</dt><dd>{value(capabilities.local_plan_job_creation)}</dd></div>
+          <div><dt>Remote mutations</dt><dd>{value(capabilities.remote_mutations)}</dd></div>
           <div><dt>Artifacts root available</dt><dd>{value(capabilities.artifacts_root_available)}</dd></div>
           <div><dt>State root available</dt><dd>{value(capabilities.state_root_available)}</dd></div>
           <div><dt>turbopuffer credentials configured</dt><dd>{value(capabilities.turbopuffer_credentials_available)}</dd></div>
@@ -382,6 +394,295 @@ function Diff({ diff }: { diff: DiffSummary }) {
   return <dl className="diff-grid">{rows.map(([label, count]) => <div key={label}><dt>{label}</dt><dd>{value(count)}</dd></div>)}</dl>
 }
 
+const TERMINAL_JOB_STATES = new Set(['succeeded', 'failed', 'interrupted'])
+const MAX_PLAN_ITEMS = 120_000
+const MAX_PLAN_JOB_BODY_BYTES = 16 * 1024
+const MAX_TIMELINE_EVENTS = 200
+
+function pathLines(input: string) {
+  return input.split('\n').map((item) => item.trim()).filter(Boolean)
+}
+
+function optionalInteger(input: string, label: string) {
+  if (!input) return undefined
+  const parsed = Number(input)
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_PLAN_ITEMS) {
+    throw new Error(`${label} must be a whole number between 1 and ${MAX_PLAN_ITEMS.toLocaleString()}.`)
+  }
+  return parsed
+}
+
+function validatePlanRequest(fields: {
+  sourceUrl: string
+  maxPages: string
+  maxChunks: string
+  namespace: string
+  includePaths: string
+  excludePaths: string
+}): PlanJobRequest {
+  const sourceUrl = fields.sourceUrl.trim()
+  let parsed: URL
+  try { parsed = new URL(sourceUrl) }
+  catch { throw new Error('Enter a valid public HTTP(S) website or GitHub repository URL.') }
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error('Enter a public HTTP(S) URL without credentials.')
+  }
+  if (sourceUrl.length > 2_048) throw new Error('The source URL must contain at most 2,048 characters.')
+  const namespace = fields.namespace.trim()
+  if (namespace.length > 128) throw new Error('Namespace must contain at most 128 characters.')
+  const includePaths = pathLines(fields.includePaths)
+  const excludePaths = pathLines(fields.excludePaths)
+  if (includePaths.length > 100 || excludePaths.length > 100) {
+    throw new Error('Include and exclude paths may each contain at most 100 lines.')
+  }
+  if ([...includePaths, ...excludePaths].some((item) => item.length > 500)) {
+    throw new Error('Each include or exclude path must contain at most 500 characters.')
+  }
+  const payload: PlanJobRequest = { source_url: sourceUrl }
+  const maxPages = optionalInteger(fields.maxPages, 'Maximum pages or files')
+  const maxChunks = optionalInteger(fields.maxChunks, 'Maximum chunks')
+  if (maxPages !== undefined) payload.max_pages_or_files = maxPages
+  if (maxChunks !== undefined) payload.max_chunks = maxChunks
+  if (namespace) payload.namespace = namespace
+  if (includePaths.length) payload.include_paths = includePaths
+  if (excludePaths.length) payload.exclude_paths = excludePaths
+  if (new TextEncoder().encode(JSON.stringify(payload)).byteLength > MAX_PLAN_JOB_BODY_BYTES) {
+    throw new Error('The serialized plan request must contain at most 16 KiB of UTF-8 JSON.')
+  }
+  return payload
+}
+
+function StartPlan() {
+  const navigate = useNavigate()
+  const [sourceUrl, setSourceUrl] = useState('')
+  const [maxPages, setMaxPages] = useState('')
+  const [maxChunks, setMaxChunks] = useState('')
+  const [namespace, setNamespace] = useState('')
+  const [includePaths, setIncludePaths] = useState('')
+  const [excludePaths, setExcludePaths] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    setError(null)
+    setActiveJobId(null)
+    let payload: PlanJobRequest
+    try {
+      payload = validatePlanRequest({ sourceUrl, maxPages, maxChunks, namespace, includePaths, excludePaths })
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Check the plan request fields.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const job = await api.startPlanJob(payload)
+      navigate(`/plan-jobs/${encodeURIComponent(job.job_id)}`)
+    } catch (reason) {
+      if (reason instanceof RequestError) {
+        setError(reason.message)
+        if (reason.code === 'active_job_conflict') setActiveJobId(reason.details?.active_job_id ?? null)
+      } else {
+        setError('The plan job could not be started.')
+      }
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <PageTitle eyebrow="Managed local workflow" title="Start plan">Create a reviewable local plan from one public website or public GitHub repository.</PageTitle>
+      <p className="notice"><strong>Local reviewed plan only.</strong> This creates a local reviewed plan only. It does not embed content, call turbopuffer, or modify a namespace.</p>
+      <form className="panel plan-form" onSubmit={submit} noValidate>
+        <label className="full-width">Public website or GitHub repository URL
+          <input type="url" required maxLength={2048} value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} aria-describedby="source-url-help" placeholder="https://example.org/docs or https://github.com/owner/repository" />
+          <small id="source-url-help">Use a public HTTP(S) website URL or the root of a public GitHub repository. Private repositories and credentials are not supported; the server classifies and validates the source.</small>
+        </label>
+        <label>Maximum pages or files <input type="number" min="1" max={MAX_PLAN_ITEMS} inputMode="numeric" value={maxPages} onChange={(event) => setMaxPages(event.target.value)} /></label>
+        <label>Maximum chunks <input type="number" min="1" max={MAX_PLAN_ITEMS} inputMode="numeric" value={maxChunks} onChange={(event) => setMaxChunks(event.target.value)} /></label>
+        <label>Namespace <input maxLength={128} value={namespace} onChange={(event) => setNamespace(event.target.value)} aria-describedby="namespace-plan-help" /><small id="namespace-plan-help">Optional candidate namespace. No namespace is created or changed.</small></label>
+        <label>Include paths <textarea rows={4} value={includePaths} onChange={(event) => setIncludePaths(event.target.value)} aria-describedby="include-help" /><small id="include-help">Optional, one public-source-relative path per line.</small></label>
+        <label>Exclude paths <textarea rows={4} value={excludePaths} onChange={(event) => setExcludePaths(event.target.value)} aria-describedby="exclude-help" /><small id="exclude-help">Optional, one public-source-relative path per line.</small></label>
+        <div className="full-width action-row"><button type="submit" disabled={submitting}>{submitting ? 'Starting plan…' : 'Start plan'}</button><Link className="secondary-link" to="/plan-jobs">View recent plan jobs</Link></div>
+      </form>
+      {error && <div className="state-card error-state" role="alert"><strong>Plan job was not started.</strong><p>{error}</p>{activeJobId && <Link to={`/plan-jobs/${encodeURIComponent(activeJobId)}`}>View active plan job</Link>}</div>}
+    </>
+  )
+}
+
+function PlanJobs() {
+  const resource = useResource(api.planJobs)
+  return (
+    <>
+      <PageTitle eyebrow="Local job history" title="Plan jobs">Review the 50 most recent managed public-source plan jobs and their durable progress.</PageTitle>
+      {resource.error ? <div className="state-card error-state" role="alert"><strong>Plan jobs could not be loaded.</strong><p>{resource.error}</p></div> : !resource.data ? <Loading label="Loading recent plan jobs…" /> : !resource.data.items.length ? <Empty>No managed plan jobs have been started.</Empty> : <PlanJobTable jobs={resource.data.items} total={resource.data.total} />}
+    </>
+  )
+}
+
+function PlanJobTable({ jobs, total }: { jobs: PlanJob[]; total: number }) {
+  return (
+    <section className="table-wrap" aria-label={`${jobs.length} recent plan jobs of ${total}`}>
+      <table><thead><tr><th>Job</th><th>Source</th><th>Type</th><th>State</th><th>Created</th><th>Current stage</th><th>Plan</th><th>Links</th></tr></thead>
+        <tbody>{jobs.map((job) => <tr key={job.job_id}><th scope="row"><Link to={`/plan-jobs/${encodeURIComponent(job.job_id)}`}>{job.job_id}</Link></th><td className="break-word"><SafeLink href={job.source_url}>{job.source_url}</SafeLink></td><td>{job.source_kind === 'github_repo' ? 'GitHub repository' : 'Website'}</td><td><JobStateBadge state={job.state} /></td><td>{timestamp(job.created_at)}</td><td>{job.latest_progress.stage.replaceAll('-', ' ')}</td><td>{value(job.plan_id)}</td><td><Link to={`/plan-jobs/${encodeURIComponent(job.job_id)}`}>Progress</Link>{job.plan_id && <> · <Link to={`/plans/${encodeURIComponent(job.plan_id)}`}>Review plan</Link></>}</td></tr>)}</tbody></table>
+    </section>
+  )
+}
+
+function JobStateBadge({ state }: { state: PlanJob['state'] }) {
+  const tone = state === 'succeeded' ? 'good' : state === 'failed' || state === 'interrupted' ? 'bad' : 'warn'
+  return <Badge tone={tone}>{state}</Badge>
+}
+
+function mergeTimeline(events: PlanJobEvent[], event: PlanJobEvent) {
+  const merged = new Map(events.map((item) => [item.sequence, item]))
+  merged.set(event.sequence, event)
+  return [...merged.values()].sort((left, right) => left.sequence - right.sequence).slice(-MAX_TIMELINE_EVENTS)
+}
+
+function PlanJobScreen() {
+  const { jobId = '' } = useParams()
+  const [job, setJob] = useState<PlanJob | null>(null)
+  const [events, setEvents] = useState<PlanJobEvent[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [streamNotice, setStreamNotice] = useState<string | null>(null)
+  const [pollingError, setPollingError] = useState<string | null>(null)
+  const [streamState, setStreamState] = useState<'connecting' | 'live' | 'reconnecting' | 'polling' | 'closed'>('connecting')
+
+  useEffect(() => {
+    let current = true
+    setJob(null); setEvents([]); setError(null); setStreamNotice(null); setPollingError(null); setStreamState('connecting')
+    api.planJob(jobId).then(
+      (value) => current && setJob(value),
+      (reason: unknown) => current && setError(reason instanceof Error ? reason.message : 'Plan job could not be loaded.'),
+    )
+    return () => { current = false }
+  }, [jobId])
+
+  const ready = job?.job_id === jobId
+  useEffect(() => {
+    if (!ready) return
+    let active = true
+    let source: EventSource | null = null
+    let pollTimer: number | null = null
+    let streamErrors = 0
+    let refreshSequence = 0
+    let acceptedRefresh = 0
+    let latestEventSequence = job.event_sequence
+    let terminalState = TERMINAL_JOB_STATES.has(job.state)
+
+    const refresh = async () => {
+      const requestSequence = ++refreshSequence
+      try {
+        const next = await api.planJob(jobId)
+        if (
+          !active
+          || terminalState
+          || requestSequence < acceptedRefresh
+          || next.event_sequence < latestEventSequence
+        ) return
+        acceptedRefresh = requestSequence
+        latestEventSequence = next.event_sequence
+        setJob(next)
+        setPollingError(null)
+        const sequence = next.event_sequence
+        if (sequence > 0) {
+          setEvents((current) => mergeTimeline(current, { sequence, timestamp: next.updated_at, ...next.latest_progress }))
+        }
+        if (TERMINAL_JOB_STATES.has(next.state)) {
+          terminalState = true
+          if (pollTimer !== null) {
+            window.clearInterval(pollTimer)
+            pollTimer = null
+          }
+          source?.close()
+          setStreamState('closed')
+        }
+      } catch (reason) {
+        if (active && !terminalState && requestSequence >= acceptedRefresh) {
+          acceptedRefresh = requestSequence
+          setPollingError(reason instanceof Error ? reason.message : 'Plan job progress could not be refreshed.')
+        }
+      }
+    }
+
+    const startPolling = () => {
+      source?.close()
+      if (pollTimer !== null) return
+      setStreamState('polling')
+      void refresh()
+      pollTimer = window.setInterval(() => { void refresh() }, 2_000)
+    }
+
+    if (terminalState) {
+      setStreamState('closed')
+    } else if (typeof EventSource === 'undefined') {
+      startPolling()
+    } else {
+      source = new EventSource(`/api/v1/plan-jobs/${encodeURIComponent(jobId)}/events`)
+      source.onopen = () => {
+        if (!active) return
+        streamErrors = 0
+        setStreamState('live')
+      }
+      source.addEventListener('plan-job-event', (rawEvent) => {
+        if (!active) return
+        try {
+          const event = JSON.parse((rawEvent as MessageEvent<string>).data) as PlanJobEvent
+          if (!Number.isInteger(event.sequence) || event.sequence < 1 || typeof event.message !== 'string') throw new Error('invalid event')
+          latestEventSequence = Math.max(latestEventSequence, event.sequence)
+          setEvents((current) => mergeTimeline(current, event))
+          if (TERMINAL_JOB_STATES.has(event.stage)) {
+            source?.close()
+            setStreamState('closed')
+            void refresh()
+          }
+        } catch {
+          setStreamNotice('Live progress returned an unreadable event. Current job state will be polled instead.')
+          startPolling()
+        }
+      })
+      source.onerror = () => {
+        if (!active) return
+        streamErrors += 1
+        if (streamErrors === 1) {
+          // Keep this EventSource so the browser reconnects with its managed Last-Event-ID.
+          setStreamState('reconnecting')
+        } else {
+          startPolling()
+        }
+      }
+    }
+
+    return () => {
+      active = false
+      source?.close()
+      if (pollTimer !== null) window.clearInterval(pollTimer)
+    }
+  }, [jobId, ready])
+
+  if (error && !job) return <><PageTitle eyebrow="Plan job" title={jobId}>Review durable managed-plan progress.</PageTitle><div className="state-card error-state" role="alert"><strong>Plan job could not be loaded.</strong><p>{error}</p></div></>
+  if (!job) return <Loading label="Loading plan job…" />
+  return <PlanJobContent job={job} events={events} streamState={streamState} progressErrors={[streamNotice, pollingError].filter((item): item is string => item !== null)} />
+}
+
+function PlanJobContent({ job, events, streamState, progressErrors }: { job: PlanJob; events: PlanJobEvent[]; streamState: string; progressErrors: string[] }) {
+  const terminalWithoutPlan = job.state === 'failed' || job.state === 'interrupted'
+  return (
+    <>
+      <PageTitle eyebrow="Managed plan job" title={job.job_id}>Review persisted and live progress for this local public-source plan request.</PageTitle>
+      <div className="action-row"><Link className="secondary-link" to="/plan-jobs">Recent plan jobs</Link>{job.plan_id && <Link className="button-link" to={`/plans/${encodeURIComponent(job.plan_id)}`}>Review plan</Link>}{terminalWithoutPlan && <Link className="button-link" to="/plans/new">Start a new plan</Link>}</div>
+      <section className="metric-grid" aria-label="Plan job overview"><article className="metric"><span>State</span><strong><JobStateBadge state={job.state} /></strong></article><article className="metric"><span>Source type</span><strong>{job.source_kind === 'github_repo' ? 'GitHub repository' : 'Website'}</strong></article><article className="metric"><span>Current stage</span><strong>{job.latest_progress.stage.replaceAll('-', ' ')}</strong></article><article className="metric"><span>Live updates</span><strong>{streamState}</strong></article></section>
+      <section className="panel"><h2>Request and result</h2><dl className="details-grid"><div><dt>Safe source</dt><dd><SafeLink href={job.source_url}>{job.source_url}</SafeLink></dd></div><div><dt>Namespace</dt><dd>{value(job.namespace)}</dd></div><div><dt>Created</dt><dd>{timestamp(job.created_at)}</dd></div><div><dt>Updated</dt><dd>{timestamp(job.updated_at)}</dd></div><div><dt>Plan ID</dt><dd>{job.plan_id ? <Link to={`/plans/${encodeURIComponent(job.plan_id)}`}>{job.plan_id}</Link> : 'Unknown'}</dd></div><div><dt>Maximum pages or files</dt><dd>{value(job.request_summary.max_pages_or_files)}</dd></div><div><dt>Maximum chunks</dt><dd>{value(job.request_summary.max_chunks)}</dd></div><div><dt>Path filters</dt><dd>{job.request_summary.include_path_count} included / {job.request_summary.exclude_path_count} excluded</dd></div></dl></section>
+      {job.error && <p className="state-card error-state" role="alert"><strong>{job.error.code}</strong> {job.error.message}</p>}
+      {progressErrors.map((message) => <p className="inline-error" role="alert" key={message}>{message}</p>)}
+      <section className="panel" aria-labelledby="timeline-heading"><div className="section-heading"><h2 id="timeline-heading">Progress timeline</h2><span aria-live="polite">{events.length} persisted/live events</span></div>{events.length ? <ol className="timeline">{events.map((event) => <li key={event.sequence}><div><strong>{event.stage.replaceAll('-', ' ')}</strong><span>{timestamp(event.timestamp)}</span></div><p>{event.message}</p>{Object.keys(event.counts).length > 0 && <dl className="event-counts">{Object.entries(event.counts).map(([label, count]) => <div key={label}><dt>{label}</dt><dd>{count}</dd></div>)}</dl>}</li>)}</ol> : <Loading label="Waiting for persisted progress…" />}</section>
+    </>
+  )
+}
+
 function Plans() {
   const resource = useResource(api.plans)
   return (
@@ -409,9 +710,13 @@ function PlanScreen() {
   const [error, setError] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const selectedPage = useRef<{ planId: string; index: number } | null>(null)
+  const previewGeneration = useRef(0)
+  const previewController = useRef<AbortController | null>(null)
 
   useEffect(() => {
     let current = true
+    const generation = ++previewGeneration.current
+    previewController.current?.abort()
     setDetail(null); setPages(null); setChunks(null); setPreview(null); setError(null); setPreviewError(null)
     Promise.all([api.plan(planId), api.pages(planId), api.chunks(planId, chunkOffset)]).then(async ([nextDetail, nextPages, nextChunks]) => {
       if (!current) return
@@ -425,24 +730,55 @@ function PlanScreen() {
           ? retainedIndex
           : nextPages.items[0].index
         selectedPage.current = { planId, index: previewIndex }
+        const controller = new AbortController()
+        previewController.current = controller
         try {
-          const nextPreview = await api.page(planId, previewIndex)
-          if (current) setPreview(nextPreview)
+          const nextPreview = await api.page(planId, previewIndex, controller.signal)
+          if (
+            current
+            && generation === previewGeneration.current
+            && selectedPage.current?.planId === planId
+            && selectedPage.current.index === previewIndex
+          ) setPreview(nextPreview)
         } catch (reason) {
-          if (current) setPreviewError(reason instanceof Error ? reason.message : 'Page preview could not be loaded.')
+          if (
+            current
+            && generation === previewGeneration.current
+            && selectedPage.current?.planId === planId
+            && selectedPage.current.index === previewIndex
+          ) setPreviewError(reason instanceof Error ? reason.message : 'Page preview could not be loaded.')
         }
       }
     }, (reason: unknown) => current && setError(reason instanceof Error ? reason.message : 'Plan detail could not be loaded.'))
-    return () => { current = false }
+    return () => {
+      current = false
+      if (generation === previewGeneration.current) previewController.current?.abort()
+    }
   }, [planId, chunkOffset, attempt])
 
   useEffect(() => { setPageOffset(0); setChunkOffset(0) }, [planId])
 
   async function loadPreview(index: number) {
+    const generation = ++previewGeneration.current
+    previewController.current?.abort()
+    const controller = new AbortController()
+    previewController.current = controller
     selectedPage.current = { planId, index }
     setPreviewError(null)
-    try { setPreview(await api.page(planId, index)) }
-    catch (reason) { setPreviewError(reason instanceof Error ? reason.message : 'Page preview could not be loaded.') }
+    try {
+      const nextPreview = await api.page(planId, index, controller.signal)
+      if (
+        generation === previewGeneration.current
+        && selectedPage.current?.planId === planId
+        && selectedPage.current.index === index
+      ) setPreview(nextPreview)
+    } catch (reason) {
+      if (
+        generation === previewGeneration.current
+        && selectedPage.current?.planId === planId
+        && selectedPage.current.index === index
+      ) setPreviewError(reason instanceof Error ? reason.message : 'Page preview could not be loaded.')
+    }
   }
 
   if (error) return <><PageTitle eyebrow="Plan" title={planId}>Review this saved plan artifact.</PageTitle><ErrorState message={error} retry={() => setAttempt((value) => value + 1)} /></>
@@ -459,7 +795,7 @@ function PlanContent({ detail, pages, chunks, preview, previewError, loadPreview
       <PageTitle eyebrow="Plan artifact" title={plan.plan_id}>Review identity, provenance, proposed diff, and bounded plain-text evidence. Phase 1 is read only.</PageTitle>
       <p className="notice"><strong>Read-only review.</strong> This screen cannot apply a plan, change a namespace, or contact the source.</p>
       {warehouse && <p className="notice"><strong>Remote-source plan.</strong> This saved plan can be reviewed without reconnecting to the source warehouse.</p>}
-      <section className="panel"><h2>Identity and provenance</h2><dl className="details-grid"><div><dt>Namespace</dt><dd><Link to={`/namespaces/${encodeURIComponent(plan.namespace)}`}>{plan.namespace}</Link></dd></div><div><dt>Candidate</dt><dd>{detail.namespace_candidate}</dd></div><div><dt>Site ID</dt><dd>{plan.site_id}</dd></div><div><dt>Created</dt><dd>{timestamp(plan.created_at)}</dd></div><div><dt>Artifact hash</dt><dd className="break-word">{value(detail.artifact_hash)}</dd></div><div><dt>Pages / chunks</dt><dd>{value(plan.page_count)} / {value(plan.chunk_count)}</dd></div></dl><Source source={plan.source} /></section>
+      <section className="panel"><h2>Identity and provenance</h2><dl className="details-grid"><div><dt>Namespace</dt><dd><Link to={`/namespaces/${encodeURIComponent(plan.namespace)}`}>{plan.namespace}</Link></dd></div><div><dt>Candidate</dt><dd>{detail.namespace_candidate}</dd></div><div><dt>Site ID</dt><dd>{plan.site_id}</dd></div><div><dt>Created</dt><dd>{timestamp(plan.created_at)}</dd></div>{detail.originating_job_id && <div><dt>Originating plan job</dt><dd><Link to={`/plan-jobs/${encodeURIComponent(detail.originating_job_id)}`}>{detail.originating_job_id}</Link></dd></div>}<div><dt>Artifact hash</dt><dd className="break-word">{value(detail.artifact_hash)}</dd></div><div><dt>Pages / chunks</dt><dd>{value(plan.page_count)} / {value(plan.chunk_count)}</dd></div></dl><Source source={plan.source} /></section>
       <div className="two-column"><section className="panel"><h2>Source activity when this plan was created</h2><dl className="details-grid"><div><dt>Source credentials required</dt><dd>{value(detail.source_activity.credentials_required)}</dd></div><div><dt>Source API calls occurred</dt><dd>{value(detail.source_activity.api_calls_occurred)}</dd></div></dl><p className="muted">These fields describe recorded plan creation activity, not activity from opening this page.</p></section><section className="panel"><h2>Embedding and retrieval contract</h2><Retrieval settings={detail.retrieval} /></section></div>
       <section className="panel"><h2>Proposed diff</h2><Diff diff={plan.diff} /></section>
       <section className="panel"><div className="section-heading"><h2>Pages and plain-text Markdown preview</h2><span>{pages.total ? `${pageOffset + 1}–${Math.min(pageOffset + visiblePages.length, pages.total)} of ${pages.total}` : '0 pages'}</span></div>{pages.items.length ? <><div className="page-selector" role="group" aria-label="Select page preview">{visiblePages.map((page) => <button className="secondary-button" type="button" key={page.index} onClick={() => loadPreview(page.index)}>{page.index + 1}. {page.title}</button>)}</div><div className="pagination"><button type="button" className="secondary-button" disabled={pageOffset === 0} onClick={() => setPageOffset(Math.max(0, pageOffset - 20))}>Previous pages</button><button type="button" className="secondary-button" disabled={pageOffset + visiblePages.length >= pages.total} onClick={() => setPageOffset(pageOffset + 20)}>Next pages</button></div>{previewError && <p role="alert" className="inline-error">{previewError} Select the page again to retry.</p>}{preview && <article className="preview"><h3>{preview.page.title}</h3><p><SafeLink href={preview.page.canonical_url}>{preview.page.canonical_url || 'Citation unavailable'}</SafeLink></p><pre>{preview.markdown}</pre>{preview.truncated && <p className="muted">Preview truncated by the server limit.</p>}</article>}</> : <Empty>This plan contains no page previews.</Empty>}</section>
