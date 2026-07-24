@@ -38,6 +38,7 @@ if UI_AVAILABLE:
         PlanJobEvent,
         PlanJobService,
         PlanJobStore,
+        ServiceOwnershipError,
     )
     from buoy_search.command_center_local import InventoryLookupError
     from buoy_search.command_center_server import run_server
@@ -429,13 +430,16 @@ class CommandCenterApiTests(unittest.TestCase):
         self.assertEqual(app.title, "Buoy local command center")
         self.assertEqual(
             app.description,
-            "Read-only reviews plus bounded local public-source planning.",
+            "Read-only reviews plus bounded local credential-free HTTP(S) and public GitHub planning.",
         )
         self.assertEqual(health.status_code, 200)
         self.assertEqual(health.json()["status"], "ok")
         self.assertEqual(health.json()["api_version"], "v1")
         self.assertTrue(capabilities.json()["review_routes_read_only"])
         self.assertTrue(capabilities.json()["local_plan_job_creation"])
+        self.assertTrue(capabilities.json()["managed_public_planning_available"])
+        self.assertIsNone(capabilities.json()["managed_public_planning_unavailable_reason"])
+        self.assertTrue(capabilities.json()["durable_plan_job_history_available"])
         self.assertFalse(capabilities.json()["remote_mutations"])
         self.assertNotIn("read_only", capabilities.json())
         self.assertNotIn("mutations", capabilities.json())
@@ -469,6 +473,179 @@ class CommandCenterApiTests(unittest.TestCase):
         }
         self.assertNotIn(("/api/v1/plans", "POST"), methods)
         self.assertNotIn(("/api/v1/namespaces", "POST"), methods)
+
+    def test_unsupported_managed_planning_keeps_read_only_app_and_returns_uniform_503(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            factory = Mock()
+            remote = FakeRemote()
+            search = FakeSearch()
+            before_modules = set(sys.modules)
+            app = create_app(
+                artifacts_root=root / "artifacts",
+                state_root=root / "state",
+                local_inventory=FakeInventory(),
+                remote_snapshot_service=remote,
+                search_service=search,
+                plan_job_service_factory=factory,
+            )
+            with patch.object(os, "O_NOFOLLOW", None), self.assertLogs("buoy_search.command_center_api", level="WARNING") as logs:
+                with TestClient(app, base_url="http://localhost") as client:
+                    capabilities = client.get("/api/v1/capabilities")
+                    dashboard = client.get("/api/v1/dashboard")
+                    namespaces = client.get("/api/v1/namespaces")
+                    plans = client.get("/api/v1/plans")
+                    responses = [
+                        client.post("/api/v1/plan-jobs", json={"source_url": "https://example.com"}),
+                        client.get("/api/v1/plan-jobs"),
+                        client.get("/api/v1/plan-jobs?offset=not-an-integer"),
+                        client.get("/api/v1/plan-jobs?limit=not-an-integer"),
+                        client.get("/api/v1/plan-jobs/not-a-job"),
+                        client.get("/api/v1/plan-jobs/not-a-job/events"),
+                    ]
+                    startup_imported = set(sys.modules) - before_modules
+                    remote_response = client.post(
+                        "/api/v1/remote/snapshot",
+                        headers={POST_GUARD_HEADER: POST_GUARD_VALUE},
+                    )
+                    search_response = client.post(
+                        "/api/v1/search",
+                        headers={POST_GUARD_HEADER: POST_GUARD_VALUE},
+                        json={"query": "q", "namespaces": []},
+                    )
+            payload = capabilities.json()
+            self.assertFalse(payload["local_plan_job_creation"])
+            self.assertFalse(payload["managed_public_planning_available"])
+            self.assertEqual(
+                payload["managed_public_planning_unavailable_reason"],
+                "platform_unsupported",
+            )
+            self.assertFalse(payload["durable_plan_job_history_available"])
+            self.assertEqual(dashboard.status_code, 200)
+            self.assertEqual(namespaces.status_code, 200)
+            self.assertEqual(plans.status_code, 200)
+            for response in responses:
+                self.assertEqual(response.status_code, 503, response.text)
+                self.assertEqual(
+                    response.json(),
+                    {
+                        "error": {
+                            "code": "managed_planning_unavailable",
+                            "message": "Managed public-source planning is unavailable on this platform.",
+                        }
+                    },
+                )
+                for header, expected in SECURITY_HEADERS.items():
+                    self.assertEqual(response.headers[header], expected)
+            self.assertEqual(remote_response.status_code, 200)
+            self.assertEqual(search_response.status_code, 200)
+            factory.assert_not_called()
+            self.assertFalse((root / "state/command-center/jobs").exists())
+            self.assertFalse((root / "artifacts/command-center/plans").exists())
+            for forbidden in (
+                "turbopuffer",
+                "sentence_transformers",
+                "transformers",
+                "buoy_search.command_center_remote",
+                "buoy_search.github_repo",
+            ):
+                self.assertNotIn(forbidden, startup_imported)
+            rendered_logs = "\n".join(logs.output)
+            self.assertEqual(rendered_logs.count("Managed public-source planning is unavailable"), 1)
+            self.assertNotIn("O_NOFOLLOW", rendered_logs)
+
+    def test_same_app_recovers_managed_planning_after_an_unsupported_lifespan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            services: list[FakePlanJobService] = []
+
+            def factory() -> FakePlanJobService:
+                service = FakePlanJobService()
+                services.append(service)
+                return service
+
+            app = create_app(
+                artifacts_root=root / "artifacts",
+                state_root=root / "state",
+                local_inventory=FakeInventory(),
+                plan_job_service_factory=factory,
+            )
+            with patch.object(os, "O_NOFOLLOW", None):
+                with TestClient(app, base_url="http://localhost") as client:
+                    unavailable = client.get("/api/v1/capabilities").json()
+                    self.assertFalse(unavailable["managed_public_planning_available"])
+                    self.assertEqual(
+                        unavailable["managed_public_planning_unavailable_reason"],
+                        "platform_unsupported",
+                    )
+                    self.assertEqual(client.get("/api/v1/plan-jobs").status_code, 503)
+            self.assertEqual(services, [])
+
+            with TestClient(app, base_url="http://localhost") as client:
+                available = client.get("/api/v1/capabilities").json()
+                self.assertTrue(available["managed_public_planning_available"])
+                self.assertIsNone(
+                    available["managed_public_planning_unavailable_reason"]
+                )
+                self.assertTrue(available["durable_plan_job_history_available"])
+                listing = client.get("/api/v1/plan-jobs")
+                token = client.get("/api/v1/csrf-token").json()["csrf_token"]
+                created = client.post(
+                    "/api/v1/plan-jobs",
+                    headers={CSRF_HEADER: token, "Origin": "http://localhost"},
+                    json={"source_url": "https://example.com/docs"},
+                )
+            self.assertEqual(listing.status_code, 200)
+            self.assertEqual(listing.json()["items"], [])
+            self.assertEqual(created.status_code, 202)
+            self.assertEqual(len(services), 1)
+            self.assertEqual(services[0].shutdowns, [True])
+
+    def test_each_missing_primitive_still_starts_health_and_read_only_inventory(self) -> None:
+        primitive_patches = (
+            ("O_DIRECTORY", lambda: patch.object(os, "O_DIRECTORY", None)),
+            ("descriptor-relative", lambda: patch.object(os, "supports_dir_fd", set())),
+            ("descriptor-enumeration", lambda: patch.object(os, "supports_fd", set())),
+        )
+        for label, make_patch in primitive_patches:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp, make_patch():
+                root = Path(tmp)
+                factory = Mock()
+                app = create_app(
+                    artifacts_root=root / "artifacts",
+                    state_root=root / "state",
+                    local_inventory=FakeInventory(),
+                    plan_job_service_factory=factory,
+                )
+                with TestClient(app, base_url="http://localhost") as client:
+                    self.assertEqual(client.get("/api/v1/health").status_code, 200)
+                    self.assertEqual(client.get("/api/v1/dashboard").status_code, 200)
+                    self.assertFalse(
+                        client.get("/api/v1/capabilities").json()[
+                            "managed_public_planning_available"
+                        ]
+                    )
+                factory.assert_not_called()
+                self.assertFalse((root / "state/command-center/jobs").exists())
+                self.assertFalse((root / "artifacts/command-center/plans").exists())
+
+    def test_non_platform_startup_failures_remain_fail_closed(self) -> None:
+        for failure in (
+            JobIntegrityError("tampered durable state"),
+            ServiceOwnershipError("another service owns the lock"),
+            PermissionError("permission denied"),
+        ):
+            with self.subTest(failure=type(failure).__name__), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                app = create_app(
+                    artifacts_root=root / "artifacts",
+                    state_root=root / "state",
+                    local_inventory=FakeInventory(),
+                    plan_job_service_factory=Mock(side_effect=failure),
+                )
+                with self.assertRaises(type(failure)):
+                    with TestClient(app, base_url="http://localhost"):
+                        pass
 
     def test_non_empty_local_service_contract_is_serialized_through_fastapi(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

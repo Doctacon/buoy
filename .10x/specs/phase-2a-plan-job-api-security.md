@@ -16,13 +16,13 @@ Plan-job lists MUST order records by record filesystem `mtime_ns` descending, ti
 
 ## Request authority and protection
 
-A loopback process may start a local public website/GitHub planning job. Creation MUST retain Host validation, require same-origin semantics, reject conflicting/cross-origin `Origin`, require JSON, reject oversized bodies before parsing, validate bounded HTTP(S) URLs, and require a server-issued CSRF token tied to the local server process. The token is never persisted or logged. Existing guarded read-only POST protections remain.
+A loopback process may start a local credential-free HTTP(S) website or public GitHub repository-root planning job. Creation MUST retain Host validation, require same-origin semantics, reject conflicting/cross-origin `Origin`, require JSON, reject oversized bodies before parsing, validate bounded HTTP(S) URLs, and require a server-issued CSRF token tied to the local server process. The token is never persisted or logged. Existing guarded read-only POST protections remain.
 
 The browser obtains the token from the local API and submits it in a non-simple header. No permissive CORS. Non-HTTP(S), userinfo-bearing, overlength, local-document, database, and unsupported source forms fail before worker submission. Website crawl containment remains unchanged.
 
 ## Startup and operation
 
-Startup loads local job records and marks active persisted jobs interrupted but performs no crawl, clone, retry, remote call, model load, or source-adapter import. The SSE endpoint only observes one existing job. Provider/source exceptions are logged safely and returned as bounded structured errors without raw exception representations.
+On supported platforms, startup loads local job records and marks active persisted jobs interrupted but performs no crawl, clone, retry, remote call, model load, or source-adapter import. If required safe filesystem primitives are absent, a dedicated unsupported-platform result leaves the worker and managed roots absent while read-only routes start; capabilities report `platform_unsupported`, and every plan-job route returns a sanitized HTTP 503. Integrity/tamper, malformed state, permissions/durability, and service-lock failures remain fail-closed. The SSE endpoint only observes one existing job. Provider/source exceptions are logged safely and returned as bounded structured errors without raw exception representations.
 
 ## Acceptance criteria
 

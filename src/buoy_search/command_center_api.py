@@ -38,6 +38,9 @@ MAX_PATH_FILTERS = 100
 MAX_PATH_FILTER_LENGTH = 500
 MAX_NAMESPACE_LENGTH = 128
 MAX_PLAN_ITEMS = 120_000
+MANAGED_PLANNING_UNAVAILABLE_MESSAGE = (
+    "Managed public-source planning is unavailable on this platform."
+)
 _SAFE_JOB_ID = re.compile(r"planjob_[0-9a-f]{32}")
 _LOGGER = logging.getLogger(__name__)
 _LOGGER.addHandler(logging.NullHandler())
@@ -404,10 +407,30 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
+        from buoy_search.command_center_jobs import (
+            ManagedPlanningUnsupportedError,
+            require_managed_planning_platform,
+        )
+
         service: object | None = None
         try:
-            service = make_plan_job_service()
-            application.state.plan_job_service = service
+            try:
+                # Probe before constructing the service so unsupported platforms
+                # create neither a worker nor managed job/artifact directories.
+                require_managed_planning_platform()
+                service = make_plan_job_service()
+            except ManagedPlanningUnsupportedError:
+                application.state.managed_public_planning_available = False
+                application.state.managed_public_planning_unavailable_reason = (
+                    "platform_unsupported"
+                )
+                _LOGGER.warning(
+                    "Managed public-source planning is unavailable on this platform; read-only Command Center features remain available."
+                )
+            else:
+                application.state.managed_public_planning_available = True
+                application.state.managed_public_planning_unavailable_reason = None
+                application.state.plan_job_service = service
             yield
         finally:
             application.state.plan_job_service = None
@@ -416,13 +439,15 @@ def create_app(
 
     app = FastAPI(
         title="Buoy local command center",
-        description="Read-only reviews plus bounded local public-source planning.",
+        description="Read-only reviews plus bounded local credential-free HTTP(S) and public GitHub planning.",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
         lifespan=lifespan,
     )
     app.state.plan_job_service = None
+    app.state.managed_public_planning_available = True
+    app.state.managed_public_planning_unavailable_reason = None
     csrf_token = secrets.token_urlsafe(32)
     inventory = local_inventory or LocalInventoryService(
         artifacts_root=artifacts_root,
@@ -439,6 +464,20 @@ def create_app(
                 "invalid_host",
                 "Command Center accepts requests only through a loopback host.",
                 status_code=400,
+            )
+        elif (
+            not app.state.managed_public_planning_available
+            and (
+                request.url.path == creation_path
+                or request.url.path.startswith(f"{creation_path}/")
+            )
+        ):
+            # Intercept before request parsing and route validation so every managed
+            # job route has one unavailable response and constructs no service.
+            response = _error(
+                "managed_planning_unavailable",
+                MANAGED_PLANNING_UNAVAILABLE_MESSAGE,
+                status_code=503,
             )
         elif request.method == "POST" and request.url.path == creation_path:
             origin_values = _header_values(request, "origin")
@@ -541,6 +580,15 @@ def create_app(
             status_code=500,
         )
 
+    def managed_planning_unavailable() -> JSONResponse | None:
+        if app.state.managed_public_planning_available:
+            return None
+        return _error(
+            "managed_planning_unavailable",
+            MANAGED_PLANNING_UNAVAILABLE_MESSAGE,
+            status_code=503,
+        )
+
     def plan_job_service() -> object:
         service = app.state.plan_job_service
         if service is None:
@@ -564,7 +612,10 @@ def create_app(
             "buoy_version": __version__,
             "loopback_only": True,
             "review_routes_read_only": True,
-            "local_plan_job_creation": True,
+            "local_plan_job_creation": app.state.managed_public_planning_available,
+            "managed_public_planning_available": app.state.managed_public_planning_available,
+            "managed_public_planning_unavailable_reason": app.state.managed_public_planning_unavailable_reason,
+            "durable_plan_job_history_available": app.state.managed_public_planning_available,
             "remote_mutations": False,
             "remote_snapshot": True,
             "search": True,
@@ -578,6 +629,9 @@ def create_app(
 
     @app.post(f"{API_PREFIX}/plan-jobs", status_code=202)
     async def create_plan_job(request: Request) -> Any:
+        unavailable = managed_planning_unavailable()
+        if unavailable is not None:
+            return unavailable
         try:
             plan_request = _parse_plan_job_request(await request.body())
             return plan_job_service().start(plan_request).to_dict()  # type: ignore[attr-defined]
@@ -586,6 +640,9 @@ def create_app(
 
     @app.get(f"{API_PREFIX}/plan-jobs")
     async def list_plan_jobs(offset: int = 0, limit: int = 50) -> Any:
+        unavailable = managed_planning_unavailable()
+        if unavailable is not None:
+            return unavailable
         if (
             offset < 0
             or offset > MAX_JOB_LIST_OFFSET
@@ -612,6 +669,9 @@ def create_app(
 
     @app.get(f"{API_PREFIX}/plan-jobs/{{job_id}}")
     async def plan_job_detail(job_id: str) -> Any:
+        unavailable = managed_planning_unavailable()
+        if unavailable is not None:
+            return unavailable
         if not _valid_job_id(job_id):
             return _error("job_not_found", "Plan job was not found.", status_code=404)
         try:
@@ -621,6 +681,9 @@ def create_app(
 
     @app.get(f"{API_PREFIX}/plan-jobs/{{job_id}}/events")
     async def plan_job_events(request: Request, job_id: str, after_sequence: str | None = None) -> Any:
+        unavailable = managed_planning_unavailable()
+        if unavailable is not None:
+            return unavailable
         if not _valid_job_id(job_id):
             return _error("job_not_found", "Plan job was not found.", status_code=404)
         try:

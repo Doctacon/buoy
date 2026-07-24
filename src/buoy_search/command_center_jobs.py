@@ -14,7 +14,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
-from threading import Condition, RLock
+from threading import Condition, Event, RLock
 import time
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, Mapping
 
@@ -37,7 +37,11 @@ MAX_PROGRESS_STAGE_LENGTH = 64
 MAX_PROGRESS_MESSAGE_LENGTH = 500
 MAX_EVENT_REPLAY_SIZE = 1_000
 MAX_JOB_LIST_OFFSET = 1_000
+MAX_DURABLE_EVENTS_PER_JOB = 5_000
 MAX_EVENT_LINE_BYTES = 8 * 1024
+COALESCED_PROGRESS_MESSAGE = (
+    "Additional progress updates are being coalesced while planning continues."
+)
 _LOGGER = logging.getLogger(__name__)
 _LOGGER.addHandler(logging.NullHandler())
 JobState = Literal["queued", "running", "succeeded", "failed", "interrupted"]
@@ -143,6 +147,10 @@ class PlanJobError(ValueError):
 
 class JobNotFoundError(PlanJobError):
     """Raised when a job ID has no durable record."""
+
+
+class ManagedPlanningUnsupportedError(PlanJobError):
+    """Raised only when required managed-planning platform primitives are absent."""
 
 
 class JobIntegrityError(PlanJobError):
@@ -559,14 +567,22 @@ class PlanJobStore:
         self._append_event(job_id, event)
         return updated
 
-    def record_progress(self, job_id: str, progress: PlanProgress) -> PlanJob:
+    def record_progress(self, job_id: str, progress: PlanProgress) -> PlanJob | None:
+        """Persist bounded progress, returning ``None`` when the callback is coalesced."""
+
         with self._lock, self._mutation_lock():
             current = self._get_locked(job_id)
             if current.state != "running":
                 raise InvalidJobTransitionError(
                     "Progress can be recorded only while a plan job is running."
                 )
-            safe_progress = progress_from_service(progress)
+            if current.event_sequence >= MAX_DURABLE_EVENTS_PER_JOB - 1:
+                return None
+            safe_progress = (
+                JobProgress("processing", COALESCED_PROGRESS_MESSAGE, {})
+                if current.event_sequence == MAX_DURABLE_EVENTS_PER_JOB - 2
+                else progress_from_service(progress)
+            )
             now = self._clock()
             sequence = current.event_sequence + 1
             event = PlanJobEvent(
@@ -1196,15 +1212,17 @@ class PlanJobService:
         self._start_lock = RLock()
         self._futures: dict[str, Future[Any]] = {}
         self._closed = False
+        self._shutdown_complete = Event()
+        self._shutdown_error: BaseException | None = None
 
     def start(self, request: PlanJobRequest) -> PlanJob:
-        if self._closed:
-            raise ServiceOwnershipError("The command-center plan service is closed.")
         source = _validate_request(request)
         source_kind = getattr(source, "kind", None)
         if source_kind not in {"website", "github_repo"}:
             raise ValueError("managed source_url is unsupported")
         with self._start_lock:
+            if self._closed:
+                raise ServiceOwnershipError("The command-center plan service is closed.")
             active = self.store.active_job()
             if active is not None:
                 raise ActiveJobConflict(active.job_id)
@@ -1376,27 +1394,91 @@ class PlanJobService:
             pass
 
     def shutdown(self, *, wait: bool = True) -> None:
-        if self._closed:
+        with self._start_lock:
+            if self._closed:
+                shutdown_complete = self._shutdown_complete
+                already_started = True
+            else:
+                futures = tuple(self._futures.items())
+                active_futures = tuple(
+                    (job_id, future) for job_id, future in futures if not future.done()
+                )
+                if not wait and active_futures:
+                    active = self._shutdown_job_state(active_futures[0][0])
+                    _LOGGER.warning(
+                        "Waiting for active plan job %s (%s) during shutdown; cancellation is not supported in Phase 2A.",
+                        active[0],
+                        active[1],
+                    )
+                    raise ServiceOwnershipError(
+                        "Cannot release service ownership while a plan worker is still active."
+                    )
+                # Prevent a validated start from submitting work after the shutdown
+                # snapshot. Running futures retain authority to finish normally.
+                self._closed = True
+                shutdown_complete = self._shutdown_complete
+                already_started = False
+
+        if already_started:
+            if wait:
+                shutdown_complete.wait()
+                if self._shutdown_error is not None:
+                    raise self._shutdown_error
             return
-        if not wait and any(not future.done() for future in self._futures.values()):
-            raise ServiceOwnershipError(
-                "Cannot release service ownership while a plan worker is still active."
+
+        if active_futures:
+            active = self._shutdown_job_state(active_futures[0][0])
+            _LOGGER.warning(
+                "Waiting for active plan job %s (%s) during shutdown; cancellation is not supported in Phase 2A.",
+                active[0],
+                active[1],
             )
+        operation_error: BaseException | None = None
         try:
             if self._owns_executor:
                 self._executor.shutdown(wait=wait)
             elif wait:
-                for future in tuple(self._futures.values()):
+                for _job_id, future in futures:
                     future.result()
-        finally:
-            if self._artifact_directory_fds is not None:
-                for descriptor in reversed(self._artifact_directory_fds):
-                    os.close(descriptor)
-                self._artifact_directory_fds = None
-            portalocker.unlock(self._owner_handle)
-            self._owner_handle.close()
-            self._closed = True
-            self._notify()
+        except BaseException as exc:
+            operation_error = exc
+        cleanup_error = self._release_service_resources()
+        self._shutdown_error = cleanup_error or operation_error
+        shutdown_complete.set()
+        if self._shutdown_error is not None:
+            raise self._shutdown_error
+
+    def _release_service_resources(self) -> BaseException | None:
+        """Attempt every shutdown cleanup step and return the first failure."""
+
+        first_error: BaseException | None = None
+
+        def attempt(operation: Callable[[], None]) -> None:
+            nonlocal first_error
+            try:
+                operation()
+            except BaseException as exc:
+                if first_error is None:
+                    first_error = exc
+
+        descriptors = self._artifact_directory_fds
+        self._artifact_directory_fds = None
+        if descriptors is not None:
+            for descriptor in reversed(descriptors):
+                attempt(lambda descriptor=descriptor: os.close(descriptor))
+        attempt(lambda: portalocker.unlock(self._owner_handle))
+        attempt(self._owner_handle.close)
+        attempt(self._notify)
+        return first_error
+
+    def _shutdown_job_state(self, job_id: str) -> tuple[str, str]:
+        try:
+            state = self.store.get(job_id).state
+        except Exception:
+            # Shutdown and ownership release must not be bypassed by a damaged
+            # audit record. Never log the exception or source-bearing data.
+            state = "unknown"
+        return job_id, state
 
     def _execute(self, job_id: str, request: ManagedPublicPlanningRequest) -> None:
         from buoy_search.planning_service import PlanningService, validate_precreated_output
@@ -1458,8 +1540,8 @@ class PlanJobService:
                 os.close(descriptor)
 
     def _record_progress(self, job_id: str, progress: PlanProgress) -> None:
-        self.store.record_progress(job_id, progress)
-        self._notify()
+        if self.store.record_progress(job_id, progress) is not None:
+            self._notify()
 
     def _notify(self) -> None:
         with self._condition:
@@ -1469,7 +1551,7 @@ class PlanJobService:
 _STAGE_MESSAGES: Mapping[JobStage, str] = {
     "source-acquisition": "Acquiring public source content.",
     "source-discovery": "Discovering public source content.",
-    "crawl": "Crawling public website content.",
+    "crawl": "Crawling credential-free HTTP(S) website content.",
     "clone": "Cloning public repository content.",
     "processing": "Processing source content.",
     "chunk": "Chunking source content.",
@@ -1883,11 +1965,13 @@ def _open_managed_artifact_directories(artifacts_root: Path) -> tuple[int, int, 
     return root_fd, command_center_fd, plans_fd
 
 
-def _require_safe_filesystem_primitives() -> None:
+def require_managed_planning_platform() -> None:
+    """Fail only when the platform lacks mandatory safe filesystem primitives."""
+
     required = ("O_NOFOLLOW", "O_DIRECTORY")
-    if any(not hasattr(os, name) for name in required):
-        raise JobIntegrityError(
-            "Plan-job safety is unsupported on this platform (no no-follow directory opens)."
+    if any(getattr(os, name, None) is None for name in required):
+        raise ManagedPlanningUnsupportedError(
+            "Managed planning requires no-follow directory opens."
         )
     if (
         os.open not in os.supports_dir_fd
@@ -1900,9 +1984,13 @@ def _require_safe_filesystem_primitives() -> None:
         or os.listdir not in os.supports_fd
         or os.scandir not in os.supports_fd
     ):
-        raise JobIntegrityError(
-            "Plan-job safety is unsupported on this platform (no descriptor-relative filesystem access)."
+        raise ManagedPlanningUnsupportedError(
+            "Managed planning requires descriptor-relative filesystem access."
         )
+
+
+def _require_safe_filesystem_primitives() -> None:
+    require_managed_planning_platform()
 
 
 def _fsync_directory(directory_fd: int) -> None:

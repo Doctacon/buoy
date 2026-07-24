@@ -66,7 +66,10 @@ function useResource<T>(loader: () => Promise<T>, dependencies: unknown[] = []) 
   return { data, error, retry: () => setAttempt((value) => value + 1) }
 }
 
+type Resource<T> = { data: T | null; error: string | null; retry: () => void }
+
 function App() {
+  const capabilities = useResource(api.capabilities)
   const [snapshot, setSnapshot] = useState<RemoteSnapshot | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
@@ -111,14 +114,14 @@ function App() {
       </nav>
       <main id="main-content">
         <Routes>
-          <Route path="/" element={<Dashboard remote={remote} />} />
+          <Route path="/" element={<Dashboard remote={remote} capabilities={capabilities} />} />
           <Route path="/namespaces" element={<Namespaces remote={remote} />} />
           <Route path="/namespaces/:namespace" element={<NamespaceScreen remote={remote} />} />
           <Route path="/plans" element={<Plans />} />
-          <Route path="/plans/new" element={<StartPlan />} />
+          <Route path="/plans/new" element={<ManagedPlanningRoute capabilities={capabilities}><StartPlan /></ManagedPlanningRoute>} />
           <Route path="/plans/:planId" element={<PlanScreen />} />
-          <Route path="/plan-jobs" element={<PlanJobs />} />
-          <Route path="/plan-jobs/:jobId" element={<PlanJobScreen />} />
+          <Route path="/plan-jobs" element={<ManagedPlanningRoute capabilities={capabilities}><PlanJobs /></ManagedPlanningRoute>} />
+          <Route path="/plan-jobs/:jobId" element={<ManagedPlanningRoute capabilities={capabilities}><PlanJobScreen /></ManagedPlanningRoute>} />
           <Route path="/search" element={<Search />} />
           <Route path="/graphs" element={<Graphs />} />
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -229,11 +232,28 @@ function RemoteNotice({ snapshot, refreshError = null }: { snapshot: RemoteSnaps
   )
 }
 
-function Dashboard({ remote }: { remote: RemoteState }) {
-  const resource = useResource(async () => {
-    const [dashboard, capabilities] = await Promise.all([api.dashboard(), api.capabilities()])
-    return { dashboard, capabilities }
-  })
+function ManagedPlanningUnavailable() {
+  return (
+    <>
+      <PageTitle eyebrow="Managed planning" title="Managed planning unavailable">Read-only Command Center features remain available on this platform.</PageTitle>
+      <div className="state-card" role="status">
+        <strong>Managed public-source planning is unavailable on this platform.</strong>
+        <p>Read-only Command Center features remain available, including saved plan review, namespace inventory, applied-state inspection, explicit remote refresh, and search.</p>
+        <Link to="/plans">Review saved plans</Link>
+      </div>
+    </>
+  )
+}
+
+function ManagedPlanningRoute({ capabilities, children }: { capabilities: Resource<Capabilities>; children: ReactNode }) {
+  if (capabilities.error) return <ErrorState message={capabilities.error} retry={capabilities.retry} />
+  if (!capabilities.data) return <Loading label="Checking managed planning availability…" />
+  if (!capabilities.data.managed_public_planning_available) return <ManagedPlanningUnavailable />
+  return children
+}
+
+function Dashboard({ remote, capabilities }: { remote: RemoteState; capabilities: Resource<Capabilities> }) {
+  const resource = useResource(api.dashboard)
   return (
     <>
       <PageTitle eyebrow="Local overview" title="Command Center">Review local plans, searchable applied snapshots, and operational attention without changing data.</PageTitle>
@@ -247,7 +267,7 @@ function Dashboard({ remote }: { remote: RemoteState }) {
         <RemoteNotice snapshot={remote.snapshot} refreshError={remote.refreshError} />
         <p className="muted">Refresh reads live namespaces and catalog cards from turbopuffer. It never writes or persists a snapshot.</p>
       </section>
-      {resource.error ? <ErrorState message={resource.error} retry={resource.retry} /> : !resource.data ? <Loading label="Loading local dashboard…" /> : <DashboardContent data={resource.data.dashboard} capabilities={resource.data.capabilities} />}
+      {resource.error ? <ErrorState message={resource.error} retry={resource.retry} /> : capabilities.error ? <ErrorState message={capabilities.error} retry={capabilities.retry} /> : !resource.data || !capabilities.data ? <Loading label="Loading local dashboard…" /> : <DashboardContent data={resource.data} capabilities={capabilities.data} />}
     </>
   )
 }
@@ -255,6 +275,7 @@ function Dashboard({ remote }: { remote: RemoteState }) {
 function DashboardContent({ data, capabilities }: { data: DashboardData; capabilities: Capabilities }) {
   return (
     <>
+      {!capabilities.managed_public_planning_available && <p className="notice"><strong>Managed planning unavailable.</strong> Read-only Command Center features remain available on this platform.</p>}
       <section className="metric-grid" aria-label="Local inventory counts">
         {[
           ['Plans', data.plan_count],
@@ -269,7 +290,9 @@ function DashboardContent({ data, capabilities }: { data: DashboardData; capabil
         <h2 id="readiness-heading">Local readiness</h2>
         <dl className="details-grid">
           <div><dt>Review routes read only</dt><dd>{value(capabilities.review_routes_read_only)}</dd></div>
-          <div><dt>Local plan job creation</dt><dd>{value(capabilities.local_plan_job_creation)}</dd></div>
+          <div><dt>Managed public planning</dt><dd>{value(capabilities.managed_public_planning_available)}</dd></div>
+          <div><dt>Durable plan-job history</dt><dd>{value(capabilities.durable_plan_job_history_available)}</dd></div>
+          <div><dt>Unavailable reason</dt><dd>{value(capabilities.managed_public_planning_unavailable_reason)}</dd></div>
           <div><dt>Remote mutations</dt><dd>{value(capabilities.remote_mutations)}</dd></div>
           <div><dt>Artifacts root available</dt><dd>{value(capabilities.artifacts_root_available)}</dd></div>
           <div><dt>State root available</dt><dd>{value(capabilities.state_root_available)}</dd></div>
@@ -423,9 +446,9 @@ function validatePlanRequest(fields: {
   const sourceUrl = fields.sourceUrl.trim()
   let parsed: URL
   try { parsed = new URL(sourceUrl) }
-  catch { throw new Error('Enter a valid public HTTP(S) website or GitHub repository URL.') }
+  catch { throw new Error('Enter a valid credential-free HTTP(S) website or public GitHub repository root URL.') }
   if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
-    throw new Error('Enter a public HTTP(S) URL without credentials.')
+    throw new Error('Enter a credential-free HTTP(S) URL.')
   }
   if (sourceUrl.length > 2_048) throw new Error('The source URL must contain at most 2,048 characters.')
   const namespace = fields.namespace.trim()
@@ -493,12 +516,12 @@ function StartPlan() {
 
   return (
     <>
-      <PageTitle eyebrow="Managed local workflow" title="Start plan">Create a reviewable local plan from one public website or public GitHub repository.</PageTitle>
+      <PageTitle eyebrow="Managed local workflow" title="Start plan">Create a reviewable local plan from one credential-free HTTP(S) website or public GitHub repository root.</PageTitle>
       <p className="notice"><strong>Local reviewed plan only.</strong> This creates a local reviewed plan only. It does not embed content, call turbopuffer, or modify a namespace.</p>
       <form className="panel plan-form" onSubmit={submit} noValidate>
-        <label className="full-width">Public website or GitHub repository URL
+        <label className="full-width">Credential-free HTTP(S) website or public GitHub repository root URL
           <input type="url" required maxLength={2048} value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} aria-describedby="source-url-help" placeholder="https://example.org/docs or https://github.com/owner/repository" />
-          <small id="source-url-help">Use a public HTTP(S) website URL or the root of a public GitHub repository. Private repositories and credentials are not supported; the server classifies and validates the source.</small>
+          <small id="source-url-help">Website URLs are syntax-validated and accept no credentials; this is not a public-routability or SSRF firewall. GitHub URLs must identify a public repository root.</small>
         </label>
         <label>Maximum pages or files <input type="number" min="1" max={MAX_PLAN_ITEMS} inputMode="numeric" value={maxPages} onChange={(event) => setMaxPages(event.target.value)} /></label>
         <label>Maximum chunks <input type="number" min="1" max={MAX_PLAN_ITEMS} inputMode="numeric" value={maxChunks} onChange={(event) => setMaxChunks(event.target.value)} /></label>

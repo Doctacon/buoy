@@ -203,6 +203,9 @@ export interface Capabilities {
   loopback_only: boolean
   review_routes_read_only: boolean
   local_plan_job_creation: boolean
+  managed_public_planning_available: boolean
+  managed_public_planning_unavailable_reason: 'platform_unsupported' | null
+  durable_plan_job_history_available: boolean
   remote_mutations: boolean
   remote_snapshot: boolean
   search: boolean
