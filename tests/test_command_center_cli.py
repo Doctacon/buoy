@@ -22,8 +22,9 @@ class CommandCenterCliTests(unittest.TestCase):
         self.assertIn("--no-browser", help_text)
         self.assertIn("--artifacts-root", help_text)
         self.assertIn("--state-root", help_text)
-        self.assertIn("one managed public website or public GitHub plan", help_text)
-        self.assertIn("Apply remains an explicit CLI action", help_text)
+        self.assertIn("one managed credential-free HTTP(S) website or public GitHub", help_text)
+        self.assertIn("public-routability or SSRF firewall", help_text)
+        self.assertIn("Apply remains an explicit CLI action", " ".join(help_text.split()))
         option_help = {action.dest: action.help for action in serve._actions}
         self.assertIn("command-center/plans", option_help["artifacts_root"])
         self.assertIn("command-center/jobs", option_help["state_root"])

@@ -132,7 +132,7 @@ class PlanningRequest:
 
 @dataclass(frozen=True)
 class ManagedPublicPlanningRequest:
-    """Narrow command-center-capable request for one public source."""
+    """Narrow request for one credential-free HTTP(S) or public GitHub source."""
 
     source_url: str
     out_dir: Path
@@ -678,7 +678,7 @@ def _fsync_directory_descriptor(descriptor: int) -> None:
 
 
 def validate_managed_public_source(source_url: str) -> object:
-    """Validate the narrow credential-free public source accepted by managed jobs."""
+    """Validate a credential-free HTTP(S) website or public GitHub repository root."""
 
     if not isinstance(source_url, str) or not source_url.strip():
         raise ValueError("source_url must be a non-empty HTTP(S) URL")
@@ -693,7 +693,9 @@ def validate_managed_public_source(source_url: str) -> object:
     ):
         raise ValueError("managed GitHub source_url must be a repository root URL")
     if getattr(source, "kind", None) not in {"website", "github_repo"}:
-        raise ValueError("managed source_url must identify a public website or GitHub repository")
+        raise ValueError(
+            "managed source_url must identify a credential-free HTTP(S) website or public GitHub repository root"
+        )
     return source
 
 

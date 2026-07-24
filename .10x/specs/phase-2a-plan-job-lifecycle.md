@@ -6,7 +6,7 @@ Updated: 2026-07-23
 
 ## Purpose and scope
 
-Define the local audit record, state machine, single-worker execution, restart behavior, event stream, and failure semantics for ephemeral public-source plan requests.
+Define the local audit record, state machine, single-worker execution, restart behavior, event stream, and failure semantics for credential-free HTTP(S) website and public GitHub repository-root plan requests.
 
 ## State machine
 
@@ -24,11 +24,13 @@ A record contains schema version, job ID, operation, `local-operator`, state, so
 
 Events contain monotonically increasing `sequence`, timestamp, bounded stage, bounded escaped message, and optional safe counts. Stages cover queued, validation, source acquisition/discovery/crawl/clone/processing, chunk/artifact/diff/write phases, and terminal outcomes by mapping existing callbacks into sanitized events.
 
+New jobs persist at most 5,000 total lifecycle/progress events. Normal progress stops at the reserved threshold, exactly one safe coalescing event is persisted, skipped callbacks cause no record/event/timestamp/sequence/observer mutation, and exactly one terminal event remains reserved. Existing schema-v1 histories above the bound remain readable and are not rewritten, compacted, or deleted.
+
 SSE replays persisted events after the requested sequence/`Last-Event-ID`, then streams new events without starting work, emits stable event IDs, and closes after terminal state. Polling job detail is a supported fallback. Event-log appends are durable and never expose raw provider/source output.
 
 ## Failure semantics
 
-Failure preserves the job record/events and incomplete managed directory when safe, records a sanitized code/message, produces no plan ID unless complete normal artifacts passed integrity verification, and performs no applied-state, turbopuffer, namespace, or catalog mutation.
+Graceful shutdown waits for an active in-process job because Phase 2A has no cancellation and logs only its safe job ID/state. Failure preserves the job record/events and incomplete managed directory when safe, records a sanitized code/message, produces no plan ID unless complete normal artifacts passed integrity verification, and performs no applied-state, turbopuffer, namespace, or catalog mutation.
 
 ## Acceptance criteria
 

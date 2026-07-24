@@ -9,18 +9,25 @@ import subprocess
 import sys
 from types import SimpleNamespace
 import tempfile
+import time
 from threading import Barrier, Event, Thread
 import unittest
 from unittest.mock import patch
+
+import portalocker
 
 from buoy_search.command_center_jobs import (
     ACTIVE_STATES,
     ALLOWED_TRANSITIONS,
     ActiveJobConflict,
     InvalidJobTransitionError,
+    COALESCED_PROGRESS_MESSAGE,
     JobDurabilityError,
     JobIntegrityError,
+    JobProgress,
     JobRequestSummary,
+    ManagedPlanningUnsupportedError,
+    MAX_DURABLE_EVENTS_PER_JOB,
     MAX_EVENT_REPLAY_SIZE,
     MAX_JOB_LIST_OFFSET,
     PlanJobEvent,
@@ -29,6 +36,7 @@ from buoy_search.command_center_jobs import (
     PlanJobStore,
     SafeJobError,
     ServiceOwnershipError,
+    require_managed_planning_platform,
 )
 from buoy_search.chunker import process_corpus
 from buoy_search.crawler import CrawlExecution, CrawlOptions
@@ -178,6 +186,19 @@ class CapturingExecutor:
 
 
 class PlanJobStoreTests(unittest.TestCase):
+    def test_missing_platform_primitives_raise_only_the_dedicated_exception(self) -> None:
+        self.assertEqual(MAX_DURABLE_EVENTS_PER_JOB, 5_000)
+        for primitive in ("O_NOFOLLOW", "O_DIRECTORY"):
+            with self.subTest(primitive=primitive), patch.object(os, primitive, None):
+                with self.assertRaises(ManagedPlanningUnsupportedError):
+                    require_managed_planning_platform()
+        with patch.object(os, "supports_dir_fd", set()):
+            with self.assertRaises(ManagedPlanningUnsupportedError):
+                require_managed_planning_platform()
+        with patch.object(os, "supports_fd", set()):
+            with self.assertRaises(ManagedPlanningUnsupportedError):
+                require_managed_planning_platform()
+
     def test_every_allowed_transition_and_terminal_immutability(self) -> None:
         self.assertEqual(
             ALLOWED_TRANSITIONS,
@@ -764,8 +785,370 @@ elif operation == "restart":
             with self.assertRaisesRegex(JobIntegrityError, "private regular file"):
                 store.get(second.job_id)
 
+    def test_progress_coalescing_preserves_terminal_events_and_skips_durable_writes(self) -> None:
+        for terminal in ("failed", "interrupted"):
+            with self.subTest(terminal=terminal), tempfile.TemporaryDirectory() as tmp, patch(
+                "buoy_search.command_center_jobs.MAX_DURABLE_EVENTS_PER_JOB", 8
+            ):
+                store = PlanJobStore(Path(tmp).resolve())
+                job = create_job(store)
+                store.transition(job.job_id, "running")
+                for index in range(6_000):
+                    store.record_progress(
+                        job.job_id,
+                        PlanProgress("crawl", f"raw secret {index}", {"pages": index}),
+                    )
+                before = store.get(job.job_id)
+                record_path = store.jobs_root / f"{job.job_id}.json"
+                event_path = store.jobs_root / f"{job.job_id}.events.jsonl"
+                record_bytes = record_path.read_bytes()
+                event_bytes = event_path.read_bytes()
+                record_mtime = record_path.stat().st_mtime_ns
+                self.assertIsNone(
+                    store.record_progress(
+                        job.job_id,
+                        PlanProgress("crawl", "raw skipped secret", {"pages": 99_999}),
+                    )
+                )
+                self.assertEqual(store.get(job.job_id), before)
+                self.assertEqual(record_path.read_bytes(), record_bytes)
+                self.assertEqual(event_path.read_bytes(), event_bytes)
+                self.assertEqual(record_path.stat().st_mtime_ns, record_mtime)
+                completed = store.transition(
+                    job.job_id,
+                    terminal,  # type: ignore[arg-type]
+                    error=(
+                        SafeJobError("planning_failed", "Planning failed safely.")
+                        if terminal == "failed"
+                        else None
+                    ),
+                )
+                events = store.events_after(job.job_id, 0, limit=MAX_EVENT_REPLAY_SIZE)
+                self.assertEqual(len(events), 8)
+                self.assertEqual([event.sequence for event in events], list(range(1, 9)))
+                self.assertEqual(
+                    [event.message for event in events].count(COALESCED_PROGRESS_MESSAGE),
+                    1,
+                )
+                self.assertEqual(events[-1].stage, terminal)
+                self.assertEqual(completed.event_sequence, 8)
+                self.assertNotIn("raw skipped secret", event_path.read_text(encoding="utf-8"))
+
+    def test_existing_over_limit_schema_v1_history_remains_readable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = PlanJobStore(Path(tmp).resolve())
+            job = create_job(store)
+            store.transition(job.job_id, "running")
+            for index in range(7):
+                store.record_progress(
+                    job.job_id,
+                    PlanProgress("processing", "raw", {"pages": index}),
+                )
+            self.assertEqual(store.get(job.job_id).event_sequence, 9)
+            with patch("buoy_search.command_center_jobs.MAX_DURABLE_EVENTS_PER_JOB", 8):
+                self.assertIsNone(
+                    store.record_progress(
+                        job.job_id, PlanProgress("processing", "ignored", {})
+                    )
+                )
+                interrupted = store.transition(job.job_id, "interrupted")
+            self.assertEqual(interrupted.event_sequence, 10)
+            self.assertEqual(store.events_after(job.job_id)[-1].stage, "interrupted")
+
 
 class PlanJobServiceTests(unittest.TestCase):
+    def test_large_progress_burst_coalesces_once_notifies_only_on_durable_changes_and_succeeds(self) -> None:
+        class BurstPlanningService:
+            def plan(self, request, *, progress_callback=None):  # noqa: ANN001
+                assert progress_callback is not None
+                for index in range(6_000):
+                    progress_callback(
+                        PlanProgress("crawl", f"raw secret {index}", {"pages": index})
+                    )
+                return SimpleNamespace(
+                    summary={"plan_id": "plan_verified", "namespace": "docs-v1"},
+                    out_dir=request.out_dir,
+                )
+
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "buoy_search.command_center_jobs.MAX_DURABLE_EVENTS_PER_JOB", 8
+        ):
+            root = Path(tmp).resolve()
+            executor = CapturingExecutor()
+            service = PlanJobService(
+                state_root=root / "state",
+                artifacts_root=root / "artifacts",
+                planning_service=BurstPlanningService(),  # type: ignore[arg-type]
+                executor=executor,  # type: ignore[arg-type]
+                job_id_factory=lambda: JOB_IDS[0],
+            )
+            try:
+                job = service.start(
+                    PlanJobRequest("https://example.com/docs", namespace="docs-v1")
+                )
+                with patch.object(service, "_notify", wraps=service._notify) as notify:
+                    executor.run()
+                completed = service.wait(job.job_id, timeout=1)
+                events = service.events_after(job.job_id)
+                self.assertEqual(completed.state, "succeeded")
+                self.assertEqual(len(events), 8)
+                self.assertEqual([event.sequence for event in events], list(range(1, 9)))
+                self.assertEqual(
+                    [event.message for event in events].count(COALESCED_PROGRESS_MESSAGE),
+                    1,
+                )
+                self.assertEqual(events[-1].stage, "succeeded")
+                self.assertEqual(notify.call_count, 7)
+                self.assertEqual(
+                    [event.sequence for event in service.events_after(job.job_id, 6)],
+                    [7, 8],
+                )
+                self.assertEqual(
+                    [
+                        event.sequence
+                        for event in service.observe_events(
+                            job.job_id, after_sequence=7
+                        )
+                    ],
+                    [8],
+                )
+            finally:
+                service.shutdown()
+
+    def test_shutdown_logs_safe_active_job_and_waits_without_cancellation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            executor = CapturingExecutor()
+            service = PlanJobService(
+                state_root=root / "state",
+                artifacts_root=root / "artifacts",
+                planning_service=SuccessfulPlanningService(),  # type: ignore[arg-type]
+                executor=executor,  # type: ignore[arg-type]
+                job_id_factory=lambda: JOB_IDS[0],
+            )
+            job = service.start(PlanJobRequest("https://example.com/private-source"))
+            shutdown_read = Event()
+            real_get = service.store.get
+
+            def signaling_get(job_id: str):
+                result = real_get(job_id)
+                shutdown_read.set()
+                return result
+
+            with self.assertLogs("buoy_search.command_center_jobs", level="WARNING") as logs, patch.object(
+                service.store, "get", side_effect=signaling_get
+            ):
+                thread = Thread(target=service.shutdown, kwargs={"wait": True})
+                thread.start()
+                self.assertTrue(shutdown_read.wait(5))
+                self.assertTrue(thread.is_alive())
+                executor.run()
+                thread.join(5)
+            self.assertFalse(thread.is_alive())
+            rendered = "\n".join(logs.output)
+            self.assertIn(job.job_id, rendered)
+            self.assertIn("queued", rendered)
+            self.assertIn("cancellation is not supported in Phase 2A", rendered)
+            self.assertNotIn("private-source", rendered)
+
+    def test_shutdown_state_lookup_failure_still_waits_and_releases_ownership(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            executor = CapturingExecutor()
+            service = PlanJobService(
+                state_root=root / "state",
+                artifacts_root=root / "artifacts",
+                planning_service=SuccessfulPlanningService(),  # type: ignore[arg-type]
+                executor=executor,  # type: ignore[arg-type]
+                job_id_factory=lambda: JOB_IDS[0],
+            )
+            job = service.start(PlanJobRequest("https://example.com/docs"))
+            real_get = service.store.get
+            calls = 0
+
+            def fail_once(job_id: str):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    raise JobIntegrityError("damaged audit record")
+                return real_get(job_id)
+
+            with self.assertLogs("buoy_search.command_center_jobs", level="WARNING") as logs, patch.object(
+                service.store, "get", side_effect=fail_once
+            ):
+                thread = Thread(target=service.shutdown, kwargs={"wait": True})
+                thread.start()
+                deadline = time.monotonic() + 5
+                while not service._closed and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(service._closed)
+                self.assertTrue(thread.is_alive())
+                executor.run()
+                thread.join(5)
+            self.assertFalse(thread.is_alive())
+            self.assertIn(f"{job.job_id} (unknown)", "\n".join(logs.output))
+            replacement = PlanJobService(
+                state_root=root / "state",
+                artifacts_root=root / "artifacts",
+                planning_service=SuccessfulPlanningService(),  # type: ignore[arg-type]
+                executor=CapturingExecutor(),  # type: ignore[arg-type]
+                job_id_factory=lambda: JOB_IDS[1],
+            )
+            replacement.shutdown()
+
+    def test_start_cannot_submit_after_shutdown_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            executor = CapturingExecutor()
+            service = PlanJobService(
+                state_root=root / "state",
+                artifacts_root=root / "artifacts",
+                planning_service=SuccessfulPlanningService(),  # type: ignore[arg-type]
+                executor=executor,  # type: ignore[arg-type]
+                job_id_factory=lambda: JOB_IDS[0],
+            )
+            service.start(PlanJobRequest("https://example.com/docs"))
+            with self.assertLogs("buoy_search.command_center_jobs", level="WARNING"):
+                thread = Thread(target=service.shutdown, kwargs={"wait": True})
+                thread.start()
+                deadline = time.monotonic() + 5
+                while not service._closed and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(service._closed)
+                with self.assertRaisesRegex(ServiceOwnershipError, "closed"):
+                    service.start(PlanJobRequest("https://example.org/other"))
+                self.assertEqual(len(service._futures), 1)
+                executor.run()
+                thread.join(5)
+            self.assertFalse(thread.is_alive())
+
+    def test_concurrent_waiting_shutdown_callers_return_only_after_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            executor = CapturingExecutor()
+            service = PlanJobService(
+                state_root=root / "state",
+                artifacts_root=root / "artifacts",
+                planning_service=SuccessfulPlanningService(),  # type: ignore[arg-type]
+                executor=executor,  # type: ignore[arg-type]
+                job_id_factory=lambda: JOB_IDS[0],
+            )
+            service.start(PlanJobRequest("https://example.com/docs"))
+            second_started = Event()
+            second_returned = Event()
+
+            def second_shutdown() -> None:
+                second_started.set()
+                service.shutdown(wait=True)
+                second_returned.set()
+
+            with self.assertLogs("buoy_search.command_center_jobs", level="WARNING"):
+                first = Thread(target=service.shutdown, kwargs={"wait": True})
+                first.start()
+                deadline = time.monotonic() + 5
+                while not service._closed and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(service._closed)
+                second = Thread(target=second_shutdown)
+                second.start()
+                self.assertTrue(second_started.wait(5))
+                self.assertFalse(second_returned.wait(0.1))
+                self.assertTrue(first.is_alive())
+                self.assertTrue(second.is_alive())
+                executor.run()
+                first.join(5)
+                second.join(5)
+            self.assertFalse(first.is_alive())
+            self.assertFalse(second.is_alive())
+            self.assertTrue(second_returned.is_set())
+            replacement = PlanJobService(
+                state_root=root / "state",
+                artifacts_root=root / "artifacts",
+                planning_service=SuccessfulPlanningService(),  # type: ignore[arg-type]
+                executor=CapturingExecutor(),  # type: ignore[arg-type]
+                job_id_factory=lambda: JOB_IDS[1],
+            )
+            replacement.shutdown()
+
+    def test_artifact_close_failure_attempts_all_cleanup_and_releases_ownership(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            service = PlanJobService(
+                state_root=root / "state",
+                artifacts_root=root / "artifacts",
+                planning_service=SuccessfulPlanningService(),  # type: ignore[arg-type]
+                executor=CapturingExecutor(),  # type: ignore[arg-type]
+                job_id_factory=lambda: JOB_IDS[0],
+            )
+            descriptors = service._artifact_directory_fds
+            assert descriptors is not None
+            target = descriptors[-1]
+            closed: list[int] = []
+            real_close = os.close
+
+            def close_then_fail(descriptor: int) -> None:
+                real_close(descriptor)
+                closed.append(descriptor)
+                if descriptor == target:
+                    raise OSError("injected artifact close failure")
+
+            with patch(
+                "buoy_search.command_center_jobs.os.close",
+                side_effect=close_then_fail,
+            ), patch.object(service, "_notify") as notify:
+                with self.assertRaisesRegex(OSError, "injected artifact close failure"):
+                    service.shutdown()
+                notify.assert_called_once_with()
+            self.assertEqual(closed[: len(descriptors)], list(reversed(descriptors)))
+            self.assertIsNone(service._artifact_directory_fds)
+            self.assertTrue(service._owner_handle.closed)
+            with self.assertRaisesRegex(OSError, "injected artifact close failure"):
+                service.shutdown(wait=True)
+
+            replacement = PlanJobService(
+                state_root=root / "state",
+                artifacts_root=root / "artifacts",
+                planning_service=SuccessfulPlanningService(),  # type: ignore[arg-type]
+                executor=CapturingExecutor(),  # type: ignore[arg-type]
+                job_id_factory=lambda: JOB_IDS[1],
+            )
+            replacement.shutdown()
+
+    def test_owner_unlock_failure_still_closes_handle_and_releases_ownership(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            service = PlanJobService(
+                state_root=root / "state",
+                artifacts_root=root / "artifacts",
+                planning_service=SuccessfulPlanningService(),  # type: ignore[arg-type]
+                executor=CapturingExecutor(),  # type: ignore[arg-type]
+                job_id_factory=lambda: JOB_IDS[0],
+            )
+            real_unlock = portalocker.unlock
+
+            def unlock_then_fail(handle: object) -> None:
+                real_unlock(handle)
+                raise OSError("injected owner unlock failure")
+
+            with patch(
+                "buoy_search.command_center_jobs.portalocker.unlock",
+                side_effect=unlock_then_fail,
+            ), patch.object(service, "_notify") as notify:
+                with self.assertRaisesRegex(OSError, "injected owner unlock failure"):
+                    service.shutdown()
+                notify.assert_called_once_with()
+            self.assertIsNone(service._artifact_directory_fds)
+            self.assertTrue(service._owner_handle.closed)
+
+            replacement = PlanJobService(
+                state_root=root / "state",
+                artifacts_root=root / "artifacts",
+                planning_service=SuccessfulPlanningService(),  # type: ignore[arg-type]
+                executor=CapturingExecutor(),  # type: ignore[arg-type]
+                job_id_factory=lambda: JOB_IDS[1],
+            )
+            replacement.shutdown()
+
     def test_malformed_http_authorities_fail_before_job_output_record_or_executor(self) -> None:
         malformed_urls = (
             "https://example.com:bad/docs",
@@ -953,7 +1336,7 @@ class PlanJobServiceTests(unittest.TestCase):
                 self.assertEqual(events[1].stage, "validation")
                 self.assertEqual(events[-1].stage, "succeeded")
                 crawl = next(event for event in events if event.stage == "crawl")
-                self.assertEqual(crawl.message, "Crawling public website content.")
+                self.assertEqual(crawl.message, "Crawling credential-free HTTP(S) website content.")
                 self.assertEqual(crawl.counts, {"pages": 2, "chunks": 4})
                 serialized = "\n".join(
                     path.read_text(encoding="utf-8")

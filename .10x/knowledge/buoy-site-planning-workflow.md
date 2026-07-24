@@ -4,7 +4,7 @@ Updated: 2026-07-18
 
 # Buoy Site Planning Workflow
 
-For a new public website, the shortest Turbopuffer-local planning command is:
+For a new credential-free HTTP(S) website, the shortest Turbopuffer-local planning command is:
 
 ```bash
 uv run buoy plan "https://example.com/"
