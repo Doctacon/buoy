@@ -12,12 +12,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from buoy_search.apply import ApplyPlanError, load_verified_apply_plan
+import duckdb
 from buoy_search.chunker import process_corpus
 from buoy_search.cli import main
 from buoy_search.crawler import CrawlExecution, CrawlOptions
 from buoy_search.database_relation import DatabaseRelationError
-from buoy_search.plan_artifacts import PLAN_SCHEMA_VERSION, write_plan_artifacts
+from buoy_search.plan_artifacts import PLAN_SCHEMA_VERSION, verify_plan_artifacts, write_plan_artifacts
 from buoy_search.planning_service import (
     MAX_MANAGED_SOURCE_URL_LENGTH,
     MAX_PROGRESS_MESSAGE_LENGTH,
@@ -159,18 +159,19 @@ class PlanningServiceTests(unittest.TestCase):
             self.assertEqual(events[-1].stage, "complete")
             self.assertTrue(all(len(event.stage) <= 64 and len(event.message) <= 500 for event in events))
             self.assertEqual(
-                {"plan.json", "manifest.json", "chunks.jsonl", "summary.json", "pages"},
+                {"plan.json", "delta.duckdb"},
                 {path.name for path in out_dir.iterdir()},
             )
             plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
-            persisted_summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(plan["schema_version"], PLAN_SCHEMA_VERSION)
-            self.assertNotIn("originating_job_id", plan)
-            self.assertEqual(persisted_summary["originating_job_id"], f"planjob_{'a' * 32}")
-            verified = load_verified_apply_plan(
-                plan_path=out_dir / "plan.json", namespace=None, state_root=state_root
-            )
+            self.assertEqual(plan["originating_job_id"], f"planjob_{'a' * 32}")
+            self.assertEqual(result.summary["originating_job_id"], f"planjob_{'a' * 32}")
+            verified = verify_plan_artifacts(out_dir / "plan.json")
             self.assertEqual(verified.plan["plan_id"], result.summary["plan_id"])
+            self.assertEqual(verified.plan["source"], {
+                "kind": "website", "uri": "https://example.com/docs/",
+                "title": "example.com", "attributes": {},
+            })
             self.assertFalse((state_root / "state").exists())
             embedder.assert_not_called()
             self.assertFalse(forbidden_adapters & (set(sys.modules) - before_modules))
@@ -223,20 +224,21 @@ class PlanningServiceTests(unittest.TestCase):
             self.assertIn("buoy-managed-plan-", write_dirs[0].name)
             self.assertFalse(write_dirs[0].exists())
             plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
-            summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
-            self.assertEqual(plan["manifest_path"], str(out_dir / "manifest.json"))
-            self.assertEqual(plan["chunks_path"], str(out_dir / "chunks.jsonl"))
-            self.assertEqual(plan["pages_dir"], str(out_dir / "pages"))
-            self.assertEqual(summary["out_dir"], str(out_dir))
+            self.assertEqual({path.name for path in out_dir.iterdir()}, {"plan.json", "delta.duckdb"})
+            self.assertNotIn("manifest_path", plan)
+            self.assertNotIn("chunks_path", plan)
+            self.assertNotIn("pages_dir", plan)
+            self.assertNotIn("state_path", plan)
+            self.assertEqual(result.summary["out_dir"], str(out_dir))
             self.assertEqual(result.out_dir, out_dir)
-            persisted = "\n".join(
-                path.read_text(encoding="utf-8")
+            persisted = b"\n".join(
+                path.read_bytes()
                 for path in out_dir.rglob("*")
                 if path.is_file()
             )
-            self.assertNotIn("buoy-managed-plan-", persisted)
-            self.assertNotIn("/dev/fd/", persisted)
-            self.assertNotIn("/proc/", persisted)
+            self.assertNotIn(b"buoy-managed-plan-", persisted)
+            self.assertNotIn(b"/dev/fd/", persisted)
+            self.assertNotIn(b"/proc/", persisted)
 
     def test_managed_github_request_uses_current_defaults_and_rejects_advanced_forms(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -364,20 +366,21 @@ class PlanningServiceTests(unittest.TestCase):
 
             def corrupt_writer(artifacts, out_dir: Path) -> None:  # noqa: ANN001
                 write_plan_artifacts(artifacts, out_dir)
-                (out_dir / "chunks.jsonl").write_text("{}\n", encoding="utf-8")
+                with duckdb.connect(str(out_dir / "delta.duckdb")) as connection:
+                    connection.execute("UPDATE upsert_rows SET content = 'tampered'")
 
             request = ManagedPublicPlanningRequest(
                 source_url="https://example.com/docs/",
                 out_dir=root / "job",
                 state_root=root / "state",
             )
-            with self.assertRaisesRegex(ApplyPlanError, "chunks.jsonl does not match"):
+            with self.assertRaisesRegex(ValueError, "logical hash does not match"):
                 PlanningService(
                     crawl_runner=fake_crawl, artifact_writer=corrupt_writer
                 ).plan(request, progress_callback=events.append)
             self.assertNotIn("complete", [event.stage for event in events])
 
-    def test_page_content_corruption_prevents_service_success(self) -> None:
+    def test_unexpected_retained_output_prevents_service_success(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             events: list[PlanProgress] = []
@@ -391,18 +394,14 @@ class PlanningServiceTests(unittest.TestCase):
 
             def corrupt_writer(artifacts, out_dir: Path) -> None:  # noqa: ANN001
                 write_plan_artifacts(artifacts, out_dir)
-                page_path = out_dir / "pages/page.md"
-                page_path.write_text(
-                    page_path.read_text(encoding="utf-8") + "CORRUPTED AFTER MANIFEST BUILD\n",
-                    encoding="utf-8",
-                )
+                (out_dir / "unexpected.txt").write_text("must not persist", encoding="utf-8")
 
             request = ManagedPublicPlanningRequest(
                 source_url="https://example.com/docs/",
                 out_dir=root / "job",
                 state_root=root / "state",
             )
-            with self.assertRaisesRegex(ValueError, "page artifact content hash does not match"):
+            with self.assertRaisesRegex(ValueError, "must contain exactly"):
                 PlanningService(
                     crawl_runner=fake_crawl, artifact_writer=corrupt_writer
                 ).plan(request, progress_callback=events.append)

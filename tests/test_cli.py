@@ -15,7 +15,7 @@ from buoy_search.cli import OneLineProgress, build_parser, main, print_eval_text
 from buoy_search.crawler import CrawlExecution, CrawlOptions, parse_github_repo_url
 from buoy_search.chunker import process_corpus
 from buoy_search.github_repo import GitHubRepoAcquisition, GitHubRepoMetadata
-from buoy_search.plan_artifacts import build_plan_artifacts, write_plan_artifacts
+from buoy_search.plan_artifacts import build_plan_artifacts, verify_plan_artifacts, write_plan_artifacts
 
 
 def file_snapshot(path: Path) -> tuple[int, int, int, int, bytes]:
@@ -339,7 +339,9 @@ class CliTests(unittest.TestCase):
                 )
 
             self.assertEqual(result, 0)
-            self.assertEqual(json.loads(stdout.getvalue())["state_path"], str(explicit / "state/example-com/site-example-com-v1/state.duckdb"))
+            payload = json.loads(stdout.getvalue())
+            self.assertFalse(payload["applied_state"]["present"])
+            self.assertFalse((explicit / "state/example-com/site-example-com-v1/state.duckdb").exists())
             self.assertNotIn("legacy state root", stderr.getvalue())
             self.assertFalse((current / "state").exists())
             self.assertFalse((legacy / "state").exists())
@@ -776,16 +778,11 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["include_paths"], ["/docs/**"])
         self.assertEqual(payload["exclude_paths"], ["/llms-full.txt"])
         self.assertTrue(payload["strip_trailing_slash"])
-        self.assertTrue((out_dir / "plan.json").exists())
-        self.assertTrue((out_dir / "manifest.json").exists())
-        self.assertTrue((out_dir / "chunks.jsonl").exists())
-        self.assertTrue((out_dir / "summary.json").exists())
-        self.assertEqual(len(list((out_dir / "pages").glob("*.md"))), 1)
+        self.assertEqual({path.name for path in out_dir.iterdir()}, {"plan.json", "delta.duckdb"})
         self.assertEqual({path: file_snapshot(path) for path in obsolete_paths}, obsolete_before)
         self.assertFalse(state_paths.database_path.exists())
         plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
-        manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
-        chunks = [json.loads(line) for line in (out_dir / "chunks.jsonl").read_text(encoding="utf-8").splitlines()]
+        verified = verify_plan_artifacts(out_dir / "plan.json")
         self.assertEqual(plan["diff"]["rows_to_upsert"], 1)
         self.assertEqual(plan["crawl_options"]["crawl_strategy"], "sitemap")
         self.assertEqual(plan["crawl_options"]["docs_version_policy"], "latest")
@@ -793,9 +790,9 @@ class CliTests(unittest.TestCase):
         self.assertEqual(plan["crawl_options"]["include_paths"], ["/docs/**"])
         self.assertEqual(plan["crawl_options"]["exclude_paths"], ["/llms-full.txt"])
         self.assertTrue(plan["crawl_options"]["strip_trailing_slash"])
-        self.assertEqual(plan["state_path"], str(state_root / "state/example-com/site-example-com-v1/state.duckdb"))
-        self.assertEqual(len(manifest["pages"]), 1)
-        self.assertEqual(len(chunks), 1)
+        self.assertFalse(plan["applied_state"]["present"])
+        self.assertEqual(len(verified.upsert_rows), 1)
+        self.assertEqual(verified.stale_rows, ())
         self.assertEqual(
             set(payload["timing"]),
             {
@@ -930,17 +927,14 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["base_url"], "https://github.com/Doctacon/open-streaming-lab")
         self.assertEqual(payload["namespace"], "github-doctacon-open-streaming-lab-v1")
         self.assertEqual(payload["site_id"], "github-doctacon-open-streaming-lab")
-        self.assertEqual(
-            payload["state_path"],
-            str(state_root / "state/github-doctacon-open-streaming-lab/github-doctacon-open-streaming-lab-v1/state.duckdb"),
-        )
+        self.assertFalse(payload["applied_state"]["present"])
         self.assertEqual(payload["files_selected"], 1)
         self.assertTrue((out_dir / "plan.json").exists())
-        manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
-        chunk = manifest["chunks"][0]
-        self.assertEqual(chunk["source_metadata"]["source_kind"], "github_repo")
-        self.assertEqual(chunk["source_metadata"]["repo_path"], "README.md")
-        plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
+        verified = verify_plan_artifacts(out_dir / "plan.json")
+        chunk = verified.upsert_rows[0]
+        self.assertEqual(chunk["source_metadata_json"]["source_kind"], "github_repo")
+        self.assertEqual(chunk["source_metadata_json"]["repo_path"], "README.md")
+        plan = verified.plan
         self.assertEqual(plan["crawl_options"]["repo_max_file_bytes"], 123456)
         self.assertNotIn("repo_chunking_arm", plan["crawl_options"])
         self.assertTrue(plan["crawl_options"]["repo_search_metadata"])
@@ -1007,7 +1001,7 @@ class CliTests(unittest.TestCase):
 
         payload = json.loads(stdout.getvalue())
         plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
-        manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+        verified = verify_plan_artifacts(out_dir / "plan.json")
         self.assertEqual(result, 0)
         self.assertEqual(payload["repo_chunking_arm"], "python-ast")
         self.assertEqual(payload["selected_files"], ["src/app.py"])
@@ -1016,7 +1010,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(plan["crawl_options"]["max_pages"], 1)
         self.assertEqual(plan["crawl_options"]["max_chunks"], 10)
         self.assertFalse(payload["api_calls_occurred"])
-        app_rows = [row for row in manifest["chunks"] if row["source_metadata"]["repo_path"] == "src/app.py"]
+        app_rows = [row for row in verified.upsert_rows if row["source_metadata_json"]["repo_path"] == "src/app.py"]
         self.assertEqual(app_rows[0]["section_path"], "src/app.py")
         self.assertTrue(all(" > Lines " in row["section_path"] for row in app_rows[1:]))
 
@@ -1064,26 +1058,17 @@ class CliTests(unittest.TestCase):
         self.assertFalse(payload["credentials_required"])
         self.assertFalse(payload["turbopuffer_api_calls"])
         self.assertEqual(payload["diff"]["rows_to_upsert"], 1)
-        self.assertEqual(payload["state_path"], str(state_root / "state" / source_id / f"{source_id}-v1" / "state.duckdb"))
-        self.assertTrue((out_dir / "plan.json").exists())
-        self.assertTrue((out_dir / "manifest.json").exists())
-        self.assertTrue((out_dir / "chunks.jsonl").exists())
-        manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
-        chunk = manifest["chunks"][0]
-        self.assertEqual(manifest["base_url"], f"pdf://{source_id}")
-        self.assertEqual(manifest["pages"][0]["canonical_url"], f"pdf://{source_id}/Research%20Notes.pdf")
-        self.assertEqual(chunk["source_metadata"]["source_kind"], "pdf")
-        self.assertEqual(chunk["source_metadata"]["pdf_filename"], "Research Notes.pdf")
-        self.assertEqual(chunk["source_metadata"]["pdf_sha256"], pdf_sha256)
-        serialized_artifacts = "\n".join(
-            [
-                (out_dir / "plan.json").read_text(encoding="utf-8"),
-                (out_dir / "manifest.json").read_text(encoding="utf-8"),
-                (out_dir / "chunks.jsonl").read_text(encoding="utf-8"),
-                (out_dir / "summary.json").read_text(encoding="utf-8"),
-            ]
-        )
-        self.assertNotIn(str(pdf_path), serialized_artifacts)
+        self.assertFalse(payload["applied_state"]["present"])
+        self.assertEqual({path.name for path in out_dir.iterdir()}, {"plan.json", "delta.duckdb"})
+        verified = verify_plan_artifacts(out_dir / "plan.json")
+        chunk = verified.upsert_rows[0]
+        self.assertEqual(verified.plan["source"]["uri"], f"pdf://{source_id}")
+        self.assertEqual(chunk["canonical_url"], f"pdf://{source_id}/Research%20Notes.pdf")
+        self.assertEqual(chunk["source_metadata_json"]["source_kind"], "pdf")
+        self.assertEqual(chunk["source_metadata_json"]["pdf_filename"], "Research Notes.pdf")
+        self.assertEqual(chunk["source_metadata_json"]["pdf_sha256"], pdf_sha256)
+        serialized_artifacts = b"\n".join(path.read_bytes() for path in out_dir.iterdir())
+        self.assertNotIn(str(pdf_path).encode(), serialized_artifacts)
         site_mock.assert_not_called()
         github_mock.assert_not_called()
         process_mock.assert_called_once()
@@ -1133,28 +1118,19 @@ class CliTests(unittest.TestCase):
         self.assertFalse(payload["credentials_required"])
         self.assertFalse(payload["turbopuffer_api_calls"])
         self.assertEqual(payload["diff"]["rows_to_upsert"], 1)
-        self.assertEqual(payload["state_path"], str(state_root / "state" / source_id / f"{source_id}-v1" / "state.duckdb"))
-        self.assertTrue((out_dir / "plan.json").exists())
-        self.assertTrue((out_dir / "manifest.json").exists())
-        self.assertTrue((out_dir / "chunks.jsonl").exists())
-        manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
-        chunk = manifest["chunks"][0]
-        self.assertEqual(manifest["base_url"], f"file://{source_id}")
-        self.assertEqual(manifest["pages"][0]["canonical_url"], f"file://{source_id}/Research%20Notes.csv")
-        self.assertEqual(chunk["source_metadata"]["source_kind"], "local_file")
-        self.assertEqual(chunk["source_metadata"]["file_filename"], "Research Notes.csv")
-        self.assertEqual(chunk["source_metadata"]["file_extension"], "csv")
-        self.assertEqual(chunk["source_metadata"]["file_sha256"], file_sha256)
-        self.assertNotIn("pdf_filename", chunk["source_metadata"])
-        serialized_artifacts = "\n".join(
-            [
-                (out_dir / "plan.json").read_text(encoding="utf-8"),
-                (out_dir / "manifest.json").read_text(encoding="utf-8"),
-                (out_dir / "chunks.jsonl").read_text(encoding="utf-8"),
-                (out_dir / "summary.json").read_text(encoding="utf-8"),
-            ]
-        )
-        self.assertNotIn(str(csv_path), serialized_artifacts)
+        self.assertFalse(payload["applied_state"]["present"])
+        self.assertEqual({path.name for path in out_dir.iterdir()}, {"plan.json", "delta.duckdb"})
+        verified = verify_plan_artifacts(out_dir / "plan.json")
+        chunk = verified.upsert_rows[0]
+        self.assertEqual(verified.plan["source"]["uri"], f"file://{source_id}")
+        self.assertEqual(chunk["canonical_url"], f"file://{source_id}/Research%20Notes.csv")
+        self.assertEqual(chunk["source_metadata_json"]["source_kind"], "local_file")
+        self.assertEqual(chunk["source_metadata_json"]["file_filename"], "Research Notes.csv")
+        self.assertEqual(chunk["source_metadata_json"]["file_extension"], "csv")
+        self.assertEqual(chunk["source_metadata_json"]["file_sha256"], file_sha256)
+        self.assertNotIn("pdf_filename", chunk["source_metadata_json"])
+        serialized_artifacts = b"\n".join(path.read_bytes() for path in out_dir.iterdir())
+        self.assertNotIn(str(csv_path).encode(), serialized_artifacts)
         site_mock.assert_not_called()
         github_mock.assert_not_called()
 

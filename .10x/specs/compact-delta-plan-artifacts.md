@@ -97,7 +97,7 @@ Canonical hashing everywhere in this spec means SHA-256 over UTF-8 `stable_json_
 
 ### Diff summary
 
-`diff` contains exactly the current non-negative fields: `first_apply` boolean, `pages_added`, `pages_changed`, `pages_unchanged`, `pages_removed`, `chunks_unchanged`, `chunks_to_embed`, `rows_to_upsert`, `stale_rows`, and `retained_stale_rows`. Counts MUST agree with delta tables and the in-memory complete desired diff.
+`diff` contains exactly the current non-negative fields: `first_apply` boolean, `pages_added`, `pages_changed`, `pages_unchanged`, `pages_removed`, `chunks_unchanged`, `chunks_to_embed`, `rows_to_upsert`, `stale_rows`, and `retained_stale_rows`. Planning MUST compute every field from the complete in-memory desired diff before discarding unchanged content. Full artifact verification MUST independently reconcile the derivable operation fields: `chunks_to_embed` and `rows_to_upsert` equal delta upserts; `stale_rows` and `retained_stale_rows` equal delta categories; first apply has zero changed/unchanged/removed pages, zero unchanged chunks, and zero stale records. Page counts and later `chunks_unchanged` are deliberately not independently derivable after unchanged content is omitted; they remain artifact-identity-bound summary claims covered by planner/diff tests. An empty acquired page may therefore produce `pages_added=1` with zero delta rows.
 
 ## Exact `delta.duckdb` contract
 
@@ -150,7 +150,7 @@ CREATE TABLE upsert_rows (
 )
 ```
 
-`ordinal` is contiguous from zero in sort order `(canonical_url, section_path, chunk_index, row_id)`. `tags_json` is canonical JSON for a string array preserving current deterministic tag order. `source_metadata_json` is canonical JSON for the current string-to-string metadata object. Empty content or identity fields fail according to current chunk rules. `embedding_text_hash` is recomputed from the exact current embedding text projection and plan precision.
+`ordinal` is contiguous from zero in sort order `(canonical_url, section_path, chunk_index, row_id)`. `tags_json` is canonical JSON for a lexicographically sorted unique string array. `source_metadata_json` is canonical JSON for the current string-to-string metadata object. Empty content or identity fields fail according to current chunk rules. `embedding_text_hash` is recomputed from the exact current embedding text projection and plan precision.
 
 ### `stale_rows`
 
@@ -213,7 +213,7 @@ No plan ID, timestamp, filesystem path, or DuckDB binary byte layout enters this
 
 A **summary-qualified plan** has a regular no-follow `plan.json` within the artifact root, is within the size bound, passes the complete schema-2 metadata validation above, and has a sibling `delta.duckdb` that is a regular no-follow file. This level does not open the database and is sufficient only for Command Center list/dashboard/namespace summaries. It MUST be reported internally as payload verification `not_checked`, never as apply-valid.
 
-A **fully verified plan** additionally opens the selected database read-only and validates exact SQL schema/constraints, metadata identity, counts, ordinals, uniqueness, source consistency, embedding hashes, logical hash, artifact hash, and plan ID. Apply and selected plan detail require this level. Tamper or corruption in one selected plan MUST not break unrelated summary-qualified inventory.
+A **fully verified plan** additionally opens the selected database read-only and validates exact SQL schema/constraints across every non-internal schema, absence of extra application tables/views/macros, metadata identity, derivable operation counts above, ordinals, uniqueness, source consistency, embedding hashes, logical hash, artifact hash, and plan ID. Non-derivable compact summary counts remain identity-bound rather than reconstructed from omitted unchanged content. Apply and selected plan detail require this level. Tamper or corruption in one selected plan MUST not break unrelated summary-qualified inventory.
 
 ## Planning behavior
 

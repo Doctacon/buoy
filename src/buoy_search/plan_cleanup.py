@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 import shutil
@@ -63,27 +62,18 @@ def _is_within_state_root(path: Path, state_root: Path) -> bool:
 
 
 def _verified_plan_namespace(plan_dir: Path) -> str | None:
-    """Return a namespace only for a regular, self-consistent plan directory."""
+    """Return a namespace only for a fully verified schema-v2 plan directory."""
 
     if plan_dir.is_symlink() or not plan_dir.is_dir():
         return None
-    plan_path = plan_dir / "plan.json"
-    manifest_path = plan_dir / "manifest.json"
-    if any(path.is_symlink() or not path.is_file() for path in (plan_path, manifest_path)):
-        return None
     try:
-        plan = json.loads(plan_path.read_text(encoding="utf-8"))
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        from buoy_search.plan_artifacts import verify_plan_artifacts
+
+        verified = verify_plan_artifacts(plan_dir / "plan.json")
+    except (OSError, ValueError):
         return None
-    if not isinstance(plan, dict) or not isinstance(manifest, dict):
-        return None
-    namespace = plan.get("namespace")
-    if plan.get("command") != "plan" or not isinstance(namespace, str) or not namespace:
-        return None
-    if manifest.get("namespace") != namespace:
-        return None
-    return namespace
+    namespace = verified.plan.get("namespace")
+    return namespace if isinstance(namespace, str) and namespace else None
 
 
 def _remove_plan_directory(plan_dir: Path) -> list[str]:
