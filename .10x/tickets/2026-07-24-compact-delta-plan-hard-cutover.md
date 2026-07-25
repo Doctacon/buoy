@@ -13,7 +13,7 @@ Coordinate the schema-v2 compact-delta hard cutover from current `develop` on `w
 ## Child work
 
 1. `.10x/tickets/done/2026-07-24-implement-compact-delta-planning.md`
-2. `.10x/tickets/2026-07-24-implement-compact-delta-apply.md`
+2. `.10x/tickets/done/2026-07-24-implement-compact-delta-apply.md`
 3. `.10x/tickets/2026-07-24-integrate-compact-delta-command-center.md`
 
 Planning establishes schema-v2 artifacts and source coverage. Apply consumes only that format and enforces baseline drift. Command Center/managed jobs then adopt the new artifacts, remove payload-heavy inventory behavior, update docs/static/package surfaces, and run integrated validation.
@@ -35,6 +35,7 @@ Planning establishes schema-v2 artifacts and source coverage. Apply consumes onl
 - 2026-07-24: Independent shaping review initially failed on regeneration detail, no-change provenance, catalog lineage, cleanup scope, inventory validity levels, baseline projection, no-change apply, route conflicts, performance bounds, and branch governance. Records were hardened to exact schema/hash/source contracts and active authorities reconciled; implementation remains unstarted.
 - 2026-07-24: Subsequent reviews exposed and resolved remaining catalog source-authority, database schema-1 compatibility, removed page-route, and destructive cleanup verification conflicts. Final shaping review passed with no blocker at `.10x/reviews/2026-07-24-compact-delta-plan-shaping.md`.
 - 2026-07-25: Planning child closed after exact schema-v2 writer/verifier implementation, 193-test focused validation, and adversarial review closure at `.10x/reviews/2026-07-25-compact-delta-planning.md`.
+- 2026-07-25: Apply child closed after schema-v2-only preflight/execution, inode-bound baseline and cleanup race hardening, 234-test expanded validation, and adversarial review closure at `.10x/reviews/2026-07-25-compact-delta-apply.md`.
 
 ## Blockers
 

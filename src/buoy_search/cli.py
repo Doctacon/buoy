@@ -16,6 +16,7 @@ from typing import TextIO, Sequence
 from buoy_search import __version__
 from buoy_search.applied_state import AppliedStateError, resolve_state_root
 from buoy_search.apply import (
+    ApplyCleanupBinding,
     ApplyPlanError,
     apply_preflight_summary,
     discover_latest_plan_path,
@@ -1496,6 +1497,12 @@ def _run_apply(args: argparse.Namespace) -> int:
         embedding_model=str(verified.plan["embedding_model"]),
         embedding_precision=str(verified.plan.get("embedding_precision", "float32")),
     )
+    cleanup_binding: ApplyCleanupBinding | None = None
+
+    def capture_cleanup_binding(binding: ApplyCleanupBinding) -> None:
+        nonlocal cleanup_binding
+        cleanup_binding = binding
+
     try:
         summary = run_approved_apply(
             verified,
@@ -1505,6 +1512,7 @@ def _run_apply(args: argparse.Namespace) -> int:
             embedding_batch_size=args.embedding_batch_size,
             delete_stale=args.delete_stale,
             progress_callback=lambda message: progress.update(message, force=True) if progress.enabled else None,
+            cleanup_binding_callback=capture_cleanup_binding,
         )
     except CatalogCommitPartialSuccess as exc:
         progress.finish()
@@ -1523,7 +1531,20 @@ def _run_apply(args: argparse.Namespace) -> int:
         return 2
 
     progress.update("apply: cleaning up successful plan", force=True)
-    cleanup_warnings = cleanup_applied_plan_directory(verified.plan_path, state_root=verified.state_root)
+    # The binding is captured from the full verification that authorized apply
+    # while the namespace lock was held. It is never added to user output.
+    if cleanup_binding is None:
+        cleanup_warnings = ["could not remove plan artifact directory: cleanup identity was unavailable"]
+    else:
+        cleanup_warnings = cleanup_applied_plan_directory(
+            cleanup_binding.plan_path,
+            state_root=verified.state_root,
+            expected_plan_id=cleanup_binding.plan_id,
+            expected_artifact_hash=cleanup_binding.artifact_hash,
+            expected_namespace=cleanup_binding.namespace,
+            expected_directory_device=cleanup_binding.directory_device,
+            expected_directory_inode=cleanup_binding.directory_inode,
+        )
     progress.finish()
     for warning in cleanup_warnings:
         print(f"Warning: {warning}", file=sys.stderr)

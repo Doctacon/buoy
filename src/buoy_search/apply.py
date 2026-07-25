@@ -2,8 +2,8 @@
 
 Preflight verification is local-only: it reads plan artifacts and local state,
 but does not read credentials, load embedding models, or call turbopuffer.
-Approved apply is explicit and writes only rows selected by a freshly recomputed
-local diff.
+Approved apply is explicit and writes only fully verified rows from the exact
+baseline-bound compact delta.
 """
 
 from __future__ import annotations
@@ -15,12 +15,15 @@ import json
 import os
 from pathlib import Path
 import shlex
+import stat
+import tempfile
 import time
-from typing import Any, Callable, Sequence
+from typing import Any, Callable
 
 from buoy_search.applied_state import (
     ROW_STATUS_ACTIVE,
     ROW_STATUS_RETAINED_STALE,
+    APPLIED_STATE_SCHEMA_VERSION,
     ApplyRunSummary,
     AppliedState,
     AppliedStateError,
@@ -31,7 +34,7 @@ from buoy_search.applied_state import (
     load_applied_state,
     save_applied_state,
 )
-from buoy_search.config import DEFAULT_REGION, EMBEDDING_PRECISIONS, RuntimeConfig
+from buoy_search.config import DEFAULT_REGION, RuntimeConfig
 from buoy_search.chunker import SentenceTransformerEmbedder, TurbopufferWriter, batched
 from buoy_search.catalog import (
     CardFields,
@@ -65,17 +68,21 @@ from buoy_search.remote_catalog import (
 from buoy_search.retriever import ranking_defaults_for_namespace
 from buoy_search.plan_artifacts import (
     GENERIC_SITE_TURBOPUFFER_SCHEMA,
+    MAX_PLAN_JSON_BYTES,
     PLAN_SCHEMA_VERSION,
     ChunkManifestRecord,
     ManifestDocument,
+    applied_state_descriptor,
     build_generic_site_row,
-    chunk_jsonl_records,
-    dataclass_to_json_object,
-    embedding_hash,
-    stable_hash,
     state_path_for_site,
+    validate_plan_document,
+    verify_plan_artifacts,
 )
-from buoy_search.plan_diff import IncrementalPlanDiff, PlanDiffError, diff_manifest_against_state
+from buoy_search.plan_diff import (
+    DesiredChunkDiffRecord,
+    IncrementalPlanDiff,
+    StateRowDiffRecord,
+)
 
 JsonObject = dict[str, Any]
 DEFAULT_APPLY_PLAN_SEARCH_ROOT = Path("artifacts/site-crawls")
@@ -88,7 +95,7 @@ class ApplyPlanError(ValueError):
 
 @dataclass(frozen=True)
 class VerifiedApplyPlan:
-    """Verified local apply inputs before any live work."""
+    """Fully verified schema-v2 delta plus its exact current baseline."""
 
     plan_path: Path
     plan: JsonObject
@@ -97,6 +104,22 @@ class VerifiedApplyPlan:
     state: AppliedState
     diff: IncrementalPlanDiff
     state_root: Path
+    upsert_rows: tuple[JsonObject, ...]
+    stale_rows: tuple[JsonObject, ...]
+    plan_directory_device: int
+    plan_directory_inode: int
+
+
+@dataclass(frozen=True)
+class ApplyCleanupBinding:
+    """Internal exact directory binding captured by successful under-lock apply."""
+
+    plan_path: Path
+    plan_id: str
+    artifact_hash: str
+    namespace: str
+    directory_device: int
+    directory_inode: int
 
 
 @dataclass(frozen=True)
@@ -106,85 +129,246 @@ class ApplyResult:
     summary: JsonObject
 
 
+def _state_changed() -> ApplyPlanError:
+    return ApplyPlanError("Applied state changed after this plan was created; run buoy plan again.")
+
+
+def _directory_observation(descriptor: int) -> tuple[int, int, int, int]:
+    observed = os.fstat(descriptor)
+    if not stat.S_ISDIR(observed.st_mode):
+        raise _state_changed()
+    return observed.st_dev, observed.st_ino, observed.st_mtime_ns, observed.st_ctime_ns
+
+
+def _file_observation(descriptor: int) -> tuple[int, int, int, int, int]:
+    observed = os.fstat(descriptor)
+    if not stat.S_ISREG(observed.st_mode):
+        raise _state_changed()
+    return (
+        observed.st_dev,
+        observed.st_ino,
+        observed.st_size,
+        observed.st_mtime_ns,
+        observed.st_ctime_ns,
+    )
+
+
+def _empty_applied_state(*, site_id: str, namespace: str, base_url: str) -> AppliedState:
+    return AppliedState(
+        schema_version=APPLIED_STATE_SCHEMA_VERSION,
+        site_id=site_id,
+        namespace=namespace,
+        base_url=base_url,
+        updated_at="",
+        last_plan_id="",
+        last_apply_id="",
+        rows=[],
+        first_apply=True,
+    )
+
+
+def _load_inode_bound_applied_state(
+    *,
+    database_path: Path,
+    parent_fd: int,
+    site_id: str,
+    namespace: str,
+    base_url: str,
+) -> AppliedState:
+    """Load an exact private snapshot copied from one no-follow file descriptor."""
+
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        database_fd = os.open(database_path.name, flags, dir_fd=parent_fd)
+    except OSError as exc:
+        raise _state_changed() from exc
+    try:
+        directory_before = _directory_observation(parent_fd)
+        file_before = _file_observation(database_fd)
+        with tempfile.TemporaryDirectory(prefix="buoy-state-snapshot-") as tmp:
+            snapshot_root = Path(tmp)
+            snapshot_path = applied_state_paths(
+                site_id=site_id, namespace=namespace, state_root=snapshot_root
+            ).database_path
+            snapshot_path.parent.mkdir(parents=True)
+            with snapshot_path.open("xb") as target:
+                while True:
+                    block = os.read(database_fd, 1024 * 1024)
+                    if not block:
+                        break
+                    target.write(block)
+                target.flush()
+                os.fsync(target.fileno())
+            state = load_applied_state(
+                site_id=site_id,
+                namespace=namespace,
+                base_url=base_url,
+                state_root=snapshot_root,
+            )
+        file_after = _file_observation(database_fd)
+        try:
+            path_after = os.stat(database_path.name, dir_fd=parent_fd, follow_symlinks=False)
+        except OSError as exc:
+            raise _state_changed() from exc
+        if (
+            file_before != file_after
+            or not stat.S_ISREG(path_after.st_mode)
+            or (path_after.st_dev, path_after.st_ino) != file_before[:2]
+            or _directory_observation(parent_fd) != directory_before
+        ):
+            raise _state_changed()
+        return state
+    finally:
+        os.close(database_fd)
+
+
+def _load_stable_applied_state(
+    *, site_id: str, namespace: str, base_url: str, state_root: Path
+) -> tuple[AppliedState, bool]:
+    """Load state from an inode-bound snapshot and detect path ABA replacement."""
+
+    database_path = applied_state_paths(
+        site_id=site_id, namespace=namespace, state_root=state_root
+    ).database_path
+    flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0)
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        parent_fd = os.open(database_path.parent, flags)
+    except FileNotFoundError:
+        return _empty_applied_state(
+            site_id=site_id, namespace=namespace, base_url=base_url
+        ), False
+    except OSError as exc:
+        raise _state_changed() from exc
+    try:
+        directory_before = _directory_observation(parent_fd)
+        try:
+            observed = os.stat(database_path.name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            state = _empty_applied_state(
+                site_id=site_id, namespace=namespace, base_url=base_url
+            )
+            try:
+                os.stat(database_path.name, dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                if _directory_observation(parent_fd) != directory_before:
+                    raise _state_changed()
+                return state, False
+            except OSError as exc:
+                raise _state_changed() from exc
+            raise _state_changed()
+        except OSError as exc:
+            raise _state_changed() from exc
+        if not stat.S_ISREG(observed.st_mode):
+            raise _state_changed()
+        state = _load_inode_bound_applied_state(
+            database_path=database_path,
+            parent_fd=parent_fd,
+            site_id=site_id,
+            namespace=namespace,
+            base_url=base_url,
+        )
+        return state, True
+    finally:
+        os.close(parent_fd)
+
+
 def discover_latest_plan_path(search_root: Path = DEFAULT_APPLY_PLAN_SEARCH_ROOT) -> Path:
-    """Return the newest local plan.json under the default artifacts tree."""
+    """Return the newest summary-qualified schema-v2 plan without opening deltas."""
 
     if not search_root.exists():
         raise ApplyPlanError(f"No plan search root found: {search_root}; pass --plan explicitly.")
-    candidates = [path for path in search_root.rglob("plan.json") if path.is_file()]
+    candidates: list[Path] = []
+    for path in search_root.rglob("plan.json"):
+        try:
+            if path.is_symlink() or not path.is_file():
+                continue
+            if path.stat().st_size > MAX_PLAN_JSON_BYTES:
+                continue
+            plan = json.loads(path.read_text(encoding="utf-8"))
+            validate_plan_document(plan)
+            delta = path.with_name("delta.duckdb")
+            if delta.is_symlink() or not delta.is_file():
+                continue
+            candidates.append(path)
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+            continue
     if not candidates:
-        raise ApplyPlanError(f"No plan.json files found under {search_root}; run `buoy plan <url>` or pass --plan.")
+        raise ApplyPlanError(
+            f"No supported schema-v2 plan.json files found under {search_root}; "
+            "run `buoy plan <source>` or pass --plan."
+        )
     return max(candidates, key=lambda path: (path.stat().st_mtime_ns, str(path)))
 
 
 def load_verified_apply_plan(*, plan_path: Path, namespace: str | None, state_root: Path) -> VerifiedApplyPlan:
-    """Load and verify plan artifacts and recompute state diff locally.
-
-    This function is intentionally safe for preflight: it does not read secrets,
-    load embeddings, or contact turbopuffer.
-    """
+    """Fully verify one compact delta and its exact applied-state baseline."""
 
     if not plan_path.exists():
         raise ApplyPlanError(f"Plan file not found: {plan_path}")
-    plan_dir = plan_path.parent
+    if plan_path.is_symlink() or not plan_path.is_file():
+        raise ApplyPlanError("Plan file must be a regular schema-v2 plan.json.")
+    plan_directory = plan_path.parent
     try:
-        plan = json.loads(plan_path.read_text(encoding="utf-8"))
-        manifest_payload = json.loads((plan_dir / "manifest.json").read_text(encoding="utf-8"))
-        chunks_jsonl = (plan_dir / "chunks.jsonl").read_text(encoding="utf-8")
-    except json.JSONDecodeError as exc:
-        raise ApplyPlanError(f"Could not parse plan artifacts: {exc}") from exc
-    except OSError as exc:
-        raise ApplyPlanError(f"Could not read plan artifacts: {exc}") from exc
-
-    require_plan_field(plan, "schema_version")
-    if int(plan["schema_version"]) != PLAN_SCHEMA_VERSION:
-        raise ApplyPlanError(
-            f"unsupported plan schema_version {plan['schema_version']}; expected {PLAN_SCHEMA_VERSION}"
-        )
-    if plan.get("command") != "plan":
-        raise ApplyPlanError(f"plan command must be 'plan', found {plan.get('command')!r}")
-    require_plan_field(plan, "namespace")
+        directory_before = plan_directory.lstat()
+        if not stat.S_ISDIR(directory_before.st_mode):
+            raise ApplyPlanError("Plan directory must be a regular directory.")
+        if plan_path.stat().st_size <= MAX_PLAN_JSON_BYTES:
+            header = json.loads(plan_path.read_text(encoding="utf-8"))
+            if isinstance(header, dict) and header.get("schema_version") != PLAN_SCHEMA_VERSION:
+                raise ApplyPlanError(
+                    f"Unsupported plan schema_version {header.get('schema_version')!r}; "
+                    f"expected {PLAN_SCHEMA_VERSION}."
+                )
+        verified = verify_plan_artifacts(plan_path)
+        directory_after = plan_directory.lstat()
+        if not stat.S_ISDIR(directory_after.st_mode) or (
+            directory_before.st_dev,
+            directory_before.st_ino,
+        ) != (
+            directory_after.st_dev,
+            directory_after.st_ino,
+        ):
+            raise ApplyPlanError("Plan directory changed during verification.")
+    except ApplyPlanError:
+        raise
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        raise ApplyPlanError(f"Unsupported or invalid schema-v2 plan: {exc}") from exc
+    plan = verified.plan
     resolved_namespace = str(plan["namespace"])
     if namespace is not None and resolved_namespace != namespace:
-        raise ApplyPlanError(f"namespace mismatch: plan has {plan['namespace']!r}, argument has {namespace!r}")
-
-    manifest = manifest_from_json(manifest_payload)
-    if manifest.namespace != resolved_namespace:
         raise ApplyPlanError(
-            f"namespace mismatch: manifest has {manifest.namespace!r}, plan has {resolved_namespace!r}"
+            f"namespace mismatch: plan has {resolved_namespace!r}, argument has {namespace!r}"
         )
-    for field in ("base_url", "site_id", "namespace_candidate"):
-        require_plan_field(plan, field)
-        if str(plan[field]) != str(getattr(manifest, field)):
-            raise ApplyPlanError(
-                f"plan {field} mismatch: plan has {plan[field]!r}, manifest has {getattr(manifest, field)!r}"
-            )
-
-    expected_state_path = state_path_for_site(manifest.site_id, resolved_namespace, state_root=state_root)
-    if str(plan.get("state_path", "")) != expected_state_path:
-        raise ApplyPlanError(
-            "plan state_path does not match the requested state root; "
-            f"expected {expected_state_path!r}, found {plan.get('state_path')!r}"
-        )
-
-    chunks = list(chunk_jsonl_records(chunks_jsonl))
-    verify_chunks_match_manifest(chunks, manifest)
-    embedding_precision = str(plan.get("embedding_precision", "float32"))
-    if embedding_precision not in EMBEDDING_PRECISIONS:
-        raise ApplyPlanError(
-            f"embedding precision must be one of: {', '.join(EMBEDDING_PRECISIONS)}"
-        )
-    verify_manifest_embedding_hashes(manifest, embedding_precision=embedding_precision)
-    verify_artifact_hash(plan, manifest)
-
-    state = load_applied_state(
-        site_id=manifest.site_id,
+    source_uri = str(plan["source"]["uri"])
+    site_id = str(plan["site_id"])
+    state, state_present = _load_stable_applied_state(
+        site_id=site_id,
         namespace=resolved_namespace,
-        base_url=manifest.base_url,
+        base_url=source_uri,
         state_root=state_root,
     )
-    diff = diff_manifest_against_state(manifest, state)
-    chunks_by_row_id = {chunk.row_id: chunk for chunk in manifest.chunks}
+    current_baseline = applied_state_descriptor(state, present=state_present)
+    if current_baseline != plan["applied_state"]:
+        raise ApplyPlanError(
+            "Applied state changed after this plan was created; run buoy plan again."
+        )
+    _validate_delta_against_state(verified.upsert_rows, verified.stale_rows, state)
+    chunks = tuple(_chunk_from_delta(row) for row in verified.upsert_rows)
+    chunks_by_row_id = {chunk.row_id: chunk for chunk in chunks}
+    diff = _diff_from_delta(plan, verified.upsert_rows, verified.stale_rows)
+    manifest = ManifestDocument(
+        schema_version=PLAN_SCHEMA_VERSION,
+        site_id=site_id,
+        base_url=source_uri,
+        namespace=resolved_namespace,
+        namespace_candidate=str(plan["namespace_candidate"]),
+        pages=[],
+        chunks=list(chunks),
+    )
     return VerifiedApplyPlan(
         plan_path=plan_path,
         plan=plan,
@@ -193,6 +377,140 @@ def load_verified_apply_plan(*, plan_path: Path, namespace: str | None, state_ro
         state=state,
         diff=diff,
         state_root=state_root,
+        upsert_rows=verified.upsert_rows,
+        stale_rows=verified.stale_rows,
+        plan_directory_device=directory_before.st_dev,
+        plan_directory_inode=directory_before.st_ino,
+    )
+
+
+def _validate_delta_against_state(
+    upserts: tuple[JsonObject, ...], stale_rows: tuple[JsonObject, ...], state: AppliedState
+) -> None:
+    baseline = {row.row_id: row for row in state.rows}
+    for raw in stale_rows:
+        row = baseline.get(str(raw["row_id"]))
+        expected = None if row is None else {
+            "canonical_url": row.canonical_url,
+            "page_hash": row.page_hash,
+            "chunk_hash": row.chunk_hash,
+            "embedding_text_hash": row.embedding_text_hash,
+            "prior_plan_id": row.plan_id,
+            "prior_applied_at": row.applied_at,
+            "prior_status": row.status,
+        }
+        actual = {key: raw[key] for key in (
+            "canonical_url", "page_hash", "chunk_hash", "embedding_text_hash",
+            "prior_plan_id", "prior_applied_at", "prior_status",
+        )}
+        if expected != actual:
+            raise ApplyPlanError("Verified stale delta does not match applied-state baseline.")
+    active_rows = tuple(row for row in state.rows if row.status == ROW_STATUS_ACTIVE)
+    for raw in upserts:
+        row = baseline.get(str(raw["row_id"]))
+        action = raw["action"]
+        if action == "reactivate_retained_stale":
+            if row is None or row.status != ROW_STATUS_RETAINED_STALE:
+                raise ApplyPlanError("Verified reactivation does not match applied-state baseline.")
+        elif action == "changed":
+            same_active_row_changed = (
+                row is not None
+                and row.status == ROW_STATUS_ACTIVE
+                and row.embedding_text_hash != str(raw["embedding_text_hash"])
+            )
+            same_active_url = row is None and any(
+                candidate.canonical_url == str(raw["canonical_url"])
+                for candidate in active_rows
+            )
+            if not same_active_row_changed and not same_active_url:
+                raise ApplyPlanError("Verified changed row has no active applied-state lineage.")
+        elif action == "new":
+            if row is not None and row.status in {ROW_STATUS_ACTIVE, ROW_STATUS_RETAINED_STALE}:
+                raise ApplyPlanError("Verified new row already exists in applied-state baseline.")
+            if any(
+                candidate.canonical_url == str(raw["canonical_url"])
+                for candidate in active_rows
+            ):
+                raise ApplyPlanError("Verified new row has active canonical-URL lineage.")
+
+
+def _chunk_from_delta(row: JsonObject) -> ChunkManifestRecord:
+    return ChunkManifestRecord(
+        row_id=str(row["row_id"]),
+        row_id_candidate=str(row["row_id_candidate"]),
+        site_id=str(row["site_id"]),
+        duplicate_ordinal=int(row["duplicate_ordinal"]),
+        canonical_url=str(row["canonical_url"]),
+        page_content_path=str(row["source_path"]),
+        page_hash=str(row["page_hash"]),
+        chunk_hash=str(row["chunk_hash"]),
+        embedding_text_hash=str(row["embedding_text_hash"]),
+        title=str(row["title"]),
+        section_path=str(row["section_path"]),
+        chunk_index=int(row["chunk_index"]),
+        content=str(row["content"]),
+        content_preview=str(row["content"])[:240].replace("\n", " "),
+        doc_kind=str(row["doc_kind"]),
+        tags=[str(value) for value in row["tags_json"]],
+        source_metadata={str(key): str(value) for key, value in row["source_metadata_json"].items()},
+    )
+
+
+def _diff_from_delta(
+    plan: JsonObject,
+    upserts: tuple[JsonObject, ...],
+    stale_rows: tuple[JsonObject, ...],
+) -> IncrementalPlanDiff:
+    summary = plan["diff"]
+    desired = [
+        DesiredChunkDiffRecord(
+            row_id=str(row["row_id"]),
+            canonical_url=str(row["canonical_url"]),
+            page_hash=str(row["page_hash"]),
+            chunk_hash=str(row["chunk_hash"]),
+            embedding_text_hash=str(row["embedding_text_hash"]),
+            section_path=str(row["section_path"]),
+            chunk_index=int(row["chunk_index"]),
+            action=str(row["action"]),  # type: ignore[arg-type]
+        )
+        for row in upserts
+    ]
+    stale = [
+        StateRowDiffRecord(
+            row_id=str(row["row_id"]),
+            canonical_url=str(row["canonical_url"]),
+            page_hash=str(row["page_hash"]),
+            chunk_hash=str(row["chunk_hash"]),
+            embedding_text_hash=str(row["embedding_text_hash"]),
+            plan_id=str(row["prior_plan_id"]),
+            applied_at=str(row["prior_applied_at"]),
+            status=str(row["prior_status"]),
+            reason=str(row["reason"]),
+        )
+        for row in stale_rows
+    ]
+    return IncrementalPlanDiff(
+        first_apply=bool(summary["first_apply"]),
+        pages_added=int(summary["pages_added"]),
+        pages_changed=int(summary["pages_changed"]),
+        pages_unchanged=int(summary["pages_unchanged"]),
+        pages_removed=int(summary["pages_removed"]),
+        chunks_unchanged=int(summary["chunks_unchanged"]),
+        chunks_to_embed=int(summary["chunks_to_embed"]),
+        rows_to_upsert=int(summary["rows_to_upsert"]),
+        stale_rows=int(summary["stale_rows"]),
+        retained_stale_rows=int(summary["retained_stale_rows"]),
+        unchanged_chunks=[],
+        chunks_to_embed_records=desired,
+        rows_to_upsert_records=desired,
+        stale_row_records=[
+            record for record, raw in zip(stale, stale_rows, strict=True)
+            if raw["category"] == "stale"
+        ],
+        retained_stale_row_records=[
+            record for record, raw in zip(stale, stale_rows, strict=True)
+            if raw["category"] == "retained_stale"
+        ],
     )
 
 
@@ -231,13 +549,39 @@ def apply_preflight_summary(
 
 
 def verified_source_metadata(verified: VerifiedApplyPlan) -> list[dict[str, str]]:
-    """Return only integrity-verified page/chunk source metadata."""
+    """Project catalog metadata solely from the verified plan-level source."""
 
-    return [
-        dict(record.source_metadata)
-        for record in [*verified.manifest.pages, *verified.manifest.chunks]
-        if record.source_metadata
-    ]
+    source = verified.plan["source"]
+    kind = str(source["kind"])
+    attrs = source["attributes"]
+    if kind == "website":
+        return []
+    if kind == "github_repo":
+        return [{"source_kind": kind, **{
+            key: str(attrs[key])
+            for key in ("repo_full_name", "repo_owner", "repo_name", "repo_ref", "commit_sha")
+        }}]
+    if kind == "local_file":
+        return [{
+            "source_kind": kind,
+            "file_filename": str(attrs["filename"]),
+            "file_extension": str(attrs["extension"]),
+            "file_sha256": str(attrs["sha256"]),
+            "file_source_id": str(attrs["source_id"]),
+        }]
+    if kind == "pdf":
+        return [{
+            "source_kind": kind,
+            "pdf_filename": str(attrs["filename"]),
+            "pdf_sha256": str(attrs["sha256"]),
+            "pdf_source_id": str(attrs["source_id"]),
+        }]
+    return [{
+        "source_kind": kind,
+        "database_backend": str(attrs["database_backend"]),
+        "database_source_id": str(attrs["database_source_id"]),
+        "database_relation": str(attrs["database_relation"]),
+    }]
 
 
 def catalog_registration_preview(
@@ -248,8 +592,8 @@ def catalog_registration_preview(
 ) -> JsonObject:
     """Build a credential/API/model-free remote registration preview."""
     semantics = generated_semantics(
-        base_url=verified.manifest.base_url,
-        site_id=verified.manifest.site_id,
+        base_url=str(verified.plan["source"]["uri"]),
+        site_id=str(verified.plan["site_id"]),
         plan_schema_version=int(verified.plan["schema_version"]),
         source_metadata=verified_source_metadata(verified),
     )
@@ -277,8 +621,8 @@ def prospective_card_for_apply(
     """Validate and embed the complete pre-remote catalog card."""
 
     semantics = generated_semantics(
-        base_url=verified.manifest.base_url,
-        site_id=verified.manifest.site_id,
+        base_url=str(verified.plan["source"]["uri"]),
+        site_id=str(verified.plan["site_id"]),
         plan_schema_version=int(verified.plan["schema_version"]),
         source_metadata=verified_source_metadata(verified),
     )
@@ -289,7 +633,7 @@ def prospective_card_for_apply(
         enabled=existing.enabled if existing is not None else True,
         source_kind=semantics.source_kind,
         source_uri=semantics.source_uri,
-        site_id=verified.manifest.site_id,
+        site_id=str(verified.plan["site_id"]),
         title=existing.title if manual else semantics.title,
         summary=existing.summary if manual else semantics.summary,
         aliases=list(existing.aliases if manual else semantics.aliases),
@@ -319,8 +663,9 @@ def run_approved_apply(
     delete_stale: bool = False,
     progress_callback: Callable[[str], None] | None = None,
     monotonic: Callable[[], float] = time.monotonic,
+    cleanup_binding_callback: Callable[[ApplyCleanupBinding], None] | None = None,
 ) -> JsonObject:
-    """Run one locked content apply and revision-bound remote card commit."""
+    """Reverify under lock, then run one delta-only apply and catalog commit."""
 
     def emit_progress(message: str) -> None:
         if progress_callback is None:
@@ -351,7 +696,7 @@ def run_approved_apply(
 
     emit_progress("apply: acquiring namespace lock")
     with acquire_namespace_apply_lock(
-        site_id=verified.manifest.site_id,
+        site_id=str(verified.plan["site_id"]),
         namespace=namespace,
         state_root=verified.state_root,
     ):
@@ -369,7 +714,7 @@ def run_approved_apply(
         pending_path = pending_path_for_plan(verified.state_root, plan_id)
         resolved_state_root = verified.state_root.expanduser().resolve(strict=False)
         state_path = applied_state_paths(
-            site_id=verified.manifest.site_id,
+            site_id=str(verified.plan["site_id"]),
             namespace=namespace,
             state_root=verified.state_root,
         ).database_path.resolve(strict=False)
@@ -379,10 +724,10 @@ def run_approved_apply(
                 "state_root": str(resolved_state_root),
                 "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
                 "applied_state_path": str(state_path),
-                "site_id": verified.manifest.site_id,
+                "site_id": str(verified.plan["site_id"]),
                 "namespace": namespace,
                 "plan_id": plan_id,
-                "base_url": verified.manifest.base_url,
+                "base_url": str(verified.plan["source"]["uri"]),
             },
         )
 
@@ -421,10 +766,10 @@ def run_approved_apply(
         pending = build_pending_payload(
             state_root=resolved_state_root,
             applied_state_path=state_path,
-            site_id=verified.manifest.site_id,
+            site_id=str(verified.plan["site_id"]),
             namespace=namespace,
             plan_id=plan_id,
-            base_url=verified.manifest.base_url,
+            base_url=str(verified.plan["source"]["uri"]),
             prospective_card=prospective,
             existing_card=existing_card,
             prior_applied_plan_id=(None if verified.state.first_apply else verified.state.last_plan_id),
@@ -639,6 +984,17 @@ def run_approved_apply(
         except (OSError, ValueError) as exc:
             raise CatalogCommitPartialSuccess(str(exc), committed_summary) from exc
 
+        if cleanup_binding_callback is not None:
+            cleanup_binding_callback(
+                ApplyCleanupBinding(
+                    plan_path=verified.plan_path,
+                    plan_id=str(verified.plan["plan_id"]),
+                    artifact_hash=str(verified.plan["artifact_hash"]),
+                    namespace=str(verified.plan["namespace"]),
+                    directory_device=verified.plan_directory_device,
+                    directory_inode=verified.plan_directory_inode,
+                )
+            )
         return {
             **committed_summary,
             "pending_cleanup": True,
@@ -653,8 +1009,29 @@ def build_state_after_apply(
 ) -> AppliedState:
     """Return the local state ledger after a successful approved apply."""
 
-    active_rows = [
-        AppliedStateRow(
+    upsert_ids = set(verified.chunks_by_row_id)
+    stale_ids = {str(row["row_id"]) for row in verified.stale_rows}
+    next_rows: dict[str, AppliedStateRow] = {}
+    for row in verified.state.rows:
+        if row.row_id in upsert_ids:
+            continue
+        if row.row_id in stale_ids:
+            if not delete_stale:
+                next_rows[row.row_id] = AppliedStateRow(
+                    row_id=row.row_id,
+                    canonical_url=row.canonical_url,
+                    page_hash=row.page_hash,
+                    chunk_hash=row.chunk_hash,
+                    embedding_text_hash=row.embedding_text_hash,
+                    plan_id=row.plan_id,
+                    applied_at=row.applied_at,
+                    status=ROW_STATUS_RETAINED_STALE,
+                )
+            continue
+        if row.status in {ROW_STATUS_ACTIVE, ROW_STATUS_RETAINED_STALE}:
+            next_rows[row.row_id] = row
+    for chunk in verified.chunks_by_row_id.values():
+        next_rows[chunk.row_id] = AppliedStateRow(
             row_id=chunk.row_id,
             canonical_url=chunk.canonical_url,
             page_hash=chunk.page_hash,
@@ -664,35 +1041,14 @@ def build_state_after_apply(
             applied_at=applied_at,
             status=ROW_STATUS_ACTIVE,
         )
-        for chunk in sorted(verified.manifest.chunks, key=lambda item: item.row_id)
-    ]
-    retained_rows: list[AppliedStateRow] = []
-    if not delete_stale:
-        retained_seen: set[str] = set()
-        for record in [*verified.diff.stale_row_records, *verified.diff.retained_stale_row_records]:
-            if record.row_id in retained_seen:
-                continue
-            retained_seen.add(record.row_id)
-            retained_rows.append(
-                AppliedStateRow(
-                    row_id=record.row_id,
-                    canonical_url=record.canonical_url,
-                    page_hash=record.page_hash,
-                    chunk_hash=record.chunk_hash,
-                    embedding_text_hash=record.embedding_text_hash,
-                    plan_id=record.plan_id,
-                    applied_at=record.applied_at,
-                    status=ROW_STATUS_RETAINED_STALE,
-                )
-            )
     apply_id = make_apply_id(str(verified.plan["plan_id"]), applied_at)
     return build_applied_state(
-        site_id=verified.manifest.site_id,
-        namespace=verified.manifest.namespace,
-        base_url=verified.manifest.base_url,
+        site_id=str(verified.plan["site_id"]),
+        namespace=str(verified.plan["namespace"]),
+        base_url=str(verified.plan["source"]["uri"]),
         last_plan_id=str(verified.plan["plan_id"]),
         last_apply_id=apply_id,
-        rows=[*active_rows, *sorted(retained_rows, key=lambda row: row.row_id)],
+        rows=[next_rows[row_id] for row_id in sorted(next_rows)],
         updated_at=applied_at,
     )
 
@@ -732,12 +1088,12 @@ def build_apply_summary(
         "api_calls_occurred": api_calls_occurred,
         "namespace": namespace,
         "region": region,
-        "base_url": verified.manifest.base_url,
-        "site_id": verified.manifest.site_id,
+        "base_url": str(verified.plan["source"]["uri"]),
+        "site_id": str(verified.plan["site_id"]),
         "plan_id": verified.plan["plan_id"],
         "plan_path": str(verified.plan_path),
         "state_backend": "local",
-        "state_path": state_path_for_site(verified.manifest.site_id, namespace, state_root=verified.state_root),
+        "state_path": state_path_for_site(str(verified.plan["site_id"]), namespace, state_root=verified.state_root),
         "state_first_apply": verified.state.first_apply,
         "state_updated": state_updated,
         "artifact_hash": verified.plan["artifact_hash"],
@@ -806,49 +1162,6 @@ def stale_row_ids_for_delete(verified: VerifiedApplyPlan) -> list[str]:
     return row_ids
 
 
-def verify_artifact_hash(plan: JsonObject, manifest: ManifestDocument) -> None:
-    require_plan_field(plan, "artifact_hash")
-    require_plan_field(plan, "crawl_options")
-    require_plan_field(plan, "chunk_options")
-    require_plan_field(plan, "embedding_model")
-    artifact_payload = {
-        "schema_version": PLAN_SCHEMA_VERSION,
-        "base_url": manifest.base_url,
-        "site_id": manifest.site_id,
-        "namespace": manifest.namespace,
-        "namespace_candidate": manifest.namespace_candidate,
-        "crawl_options": plan["crawl_options"],
-        "chunk_options": plan["chunk_options"],
-        "embedding_model": plan["embedding_model"],
-        "manifest": dataclass_to_json_object(manifest),
-    }
-    if "embedding_precision" in plan:
-        artifact_payload["embedding_precision"] = plan["embedding_precision"]
-    expected = stable_hash(artifact_payload)
-    if str(plan["artifact_hash"]) != expected:
-        raise ApplyPlanError(
-            f"artifact hash mismatch: plan has {plan['artifact_hash']!r}, recomputed {expected!r}"
-        )
-
-
-def verify_chunks_match_manifest(chunks_jsonl_records_payload: Sequence[JsonObject], manifest: ManifestDocument) -> None:
-    manifest_chunks = [dataclass_to_json_object(chunk) for chunk in manifest.chunks]
-    if list(chunks_jsonl_records_payload) != manifest_chunks:
-        raise ApplyPlanError("chunks.jsonl does not match manifest.json chunks")
-
-
-def verify_manifest_embedding_hashes(
-    manifest: ManifestDocument, *, embedding_precision: str = "float32"
-) -> None:
-    for chunk in manifest.chunks:
-        expected = embedding_hash(embedding_text_for_chunk(chunk), embedding_precision)
-        if chunk.embedding_text_hash != expected:
-            raise ApplyPlanError(
-                f"embedding_text_hash mismatch for row {chunk.row_id}: "
-                f"manifest has {chunk.embedding_text_hash!r}, recomputed {expected!r}"
-            )
-
-
 def embedding_text_for_chunk(chunk: ChunkManifestRecord) -> str:
     context: list[str] = []
     if chunk.title:
@@ -857,86 +1170,6 @@ def embedding_text_for_chunk(chunk: ChunkManifestRecord) -> str:
         context.append(f"Section: {chunk.section_path}")
     context.append(chunk.content)
     return "\n\n".join(part for part in context if str(part).strip())
-
-
-def manifest_from_json(payload: JsonObject) -> ManifestDocument:
-    if not isinstance(payload, dict):
-        raise ApplyPlanError("manifest must be a JSON object")
-    try:
-        schema_version = int(payload["schema_version"])
-        if schema_version != PLAN_SCHEMA_VERSION:
-            raise ApplyPlanError(
-                f"unsupported manifest schema_version {schema_version}; expected {PLAN_SCHEMA_VERSION}"
-            )
-        pages_payload = payload.get("pages", [])
-        chunks_payload = payload.get("chunks", [])
-        if not isinstance(pages_payload, list):
-            raise ApplyPlanError("manifest pages must be a list")
-        if not isinstance(chunks_payload, list):
-            raise ApplyPlanError("manifest chunks must be a list")
-        return ManifestDocument(
-            schema_version=schema_version,
-            site_id=str(payload["site_id"]),
-            base_url=str(payload["base_url"]),
-            namespace=str(payload["namespace"]),
-            namespace_candidate=str(payload["namespace_candidate"]),
-            pages=[page_from_json(page, index=index) for index, page in enumerate(pages_payload)],
-            chunks=[chunk_from_json(chunk, index=index) for index, chunk in enumerate(chunks_payload)],
-        )
-    except KeyError as exc:
-        raise ApplyPlanError(f"manifest missing required field: {exc.args[0]}") from exc
-
-
-def page_from_json(payload: Any, *, index: int):
-    from buoy_search.plan_artifacts import PageManifestRecord
-
-    if not isinstance(payload, dict):
-        raise ApplyPlanError(f"manifest page {index} must be a JSON object")
-    try:
-        status = payload.get("status")
-        return PageManifestRecord(
-            canonical_url=str(payload["canonical_url"]),
-            title=str(payload["title"]),
-            content_path=str(payload["content_path"]),
-            page_hash=str(payload["page_hash"]),
-            status=None if status is None else int(status),
-            content_type=str(payload.get("content_type", "")),
-            source_metadata={str(key): str(value) for key, value in dict(payload.get("source_metadata", {})).items()},
-        )
-    except KeyError as exc:
-        raise ApplyPlanError(f"manifest page {index} missing required field: {exc.args[0]}") from exc
-
-
-def chunk_from_json(payload: Any, *, index: int) -> ChunkManifestRecord:
-    if not isinstance(payload, dict):
-        raise ApplyPlanError(f"manifest chunk {index} must be a JSON object")
-    try:
-        return ChunkManifestRecord(
-            row_id=str(payload["row_id"]),
-            row_id_candidate=str(payload.get("row_id_candidate", payload["row_id"])),
-            site_id=str(payload["site_id"]),
-            duplicate_ordinal=int(payload.get("duplicate_ordinal", 0)),
-            canonical_url=str(payload["canonical_url"]),
-            page_content_path=str(payload["page_content_path"]),
-            page_hash=str(payload["page_hash"]),
-            chunk_hash=str(payload["chunk_hash"]),
-            embedding_text_hash=str(payload["embedding_text_hash"]),
-            title=str(payload["title"]),
-            section_path=str(payload["section_path"]),
-            chunk_index=int(payload["chunk_index"]),
-            content=str(payload["content"]),
-            content_preview=str(payload.get("content_preview", "")),
-            doc_kind=str(payload.get("doc_kind", "page")),
-            tags=[str(tag) for tag in payload.get("tags", [])],
-            source_metadata={str(key): str(value) for key, value in dict(payload.get("source_metadata", {})).items()},
-        )
-    except KeyError as exc:
-        raise ApplyPlanError(f"manifest chunk {index} missing required field: {exc.args[0]}") from exc
-
-
-def require_plan_field(plan: JsonObject, field: str) -> None:
-    if field not in plan:
-        raise ApplyPlanError(f"plan missing required field: {field}")
 
 
 def make_apply_id(plan_id: str, applied_at: str) -> str:

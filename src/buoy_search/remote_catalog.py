@@ -122,7 +122,7 @@ class CompatibilityContract:
     embedding_model: str
     embedding_precision: str
     vector_dimensions: int = ROUTING_DIMENSIONS
-    plan_schema_version: int = 1
+    plan_schema_version: int = 2
 
 
 @dataclass(frozen=True)
@@ -984,7 +984,7 @@ def _compatible(card: NamespaceCard, compatibility: CompatibilityContract) -> bo
         and card.embedding_model == compatibility.embedding_model
         and card.embedding_precision == compatibility.embedding_precision
         and card.vector_dimensions == compatibility.vector_dimensions
-        and card.plan_schema_version == compatibility.plan_schema_version
+        and card.plan_schema_version in {1, compatibility.plan_schema_version}
     )
 
 

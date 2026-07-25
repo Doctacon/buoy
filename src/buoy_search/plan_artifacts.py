@@ -1787,7 +1787,7 @@ def _validate_stale_row(plan: Mapping[str, object], row: Mapping[str, object]) -
     for field in ("page_hash", "chunk_hash", "embedding_text_hash"):
         if _HEX_SHA256.fullmatch(str(row[field])) is None:
             raise ValueError(f"delta stale {field} is invalid")
-    if _ROW_ID.fullmatch(str(row["row_id"])) is None or _PLAN_ID.fullmatch(str(row["prior_plan_id"])) is None:
+    if _ROW_ID.fullmatch(str(row["row_id"])) is None:
         raise ValueError("delta stale identity is invalid")
     expected = {
         "stale": ("active", "not_in_desired_source"),

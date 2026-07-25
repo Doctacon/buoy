@@ -346,7 +346,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
         repo = generated_semantics(
             base_url="https://github.com/Doctacon/buoy",
             site_id="repo-site",
-            plan_schema_version=1,
+            plan_schema_version=2,
             source_metadata=[{"source_kind": "github_repo", "repo_full_name": "Doctacon/buoy"}],
         )
         self.assertEqual(repo.source_kind, "github_repo")
@@ -356,7 +356,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
         legacy_repo = generated_semantics(
             base_url="https://github.com/Doctacon/buoy",
             site_id="repo-site",
-            plan_schema_version=1,
+            plan_schema_version=2,
             source_metadata=[],
         )
         self.assertEqual(legacy_repo.title, "Doctacon/buoy")
@@ -364,7 +364,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
         website = generated_semantics(
             base_url="https://Docs.Example.com/path",
             site_id="site",
-            plan_schema_version=1,
+            plan_schema_version=2,
             source_metadata=[],
         )
         self.assertEqual((website.source_kind, website.title, website.tags), ("website", "docs.example.com", ["website"]))
@@ -372,7 +372,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
         database = generated_semantics(
             base_url="duckdb://gong-calls",
             site_id="duckdb-gong-calls",
-            plan_schema_version=1,
+            plan_schema_version=2,
             source_metadata=[
                 {
                     "source_kind": "duckdb_relation",
@@ -410,7 +410,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
                 generated = generated_semantics(
                     base_url=f"{backend}://gong-calls",
                     site_id=f"{backend}-gong-calls",
-                    plan_schema_version=1,
+                    plan_schema_version=2,
                     source_metadata=[
                         {
                             "source_kind": raw_kind,
@@ -434,7 +434,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
             document = generated_semantics(
                 base_url=base_url,
                 site_id="stable-site-id",
-                plan_schema_version=1,
+                plan_schema_version=2,
                 source_metadata=[{"source_kind": raw_kind, filename_key: filename}],
             )
             self.assertEqual(document.source_kind, "document")
@@ -445,7 +445,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
         legacy = generated_semantics(
             base_url="file://opaque-source-id",
             site_id="stable-site-id",
-            plan_schema_version=1,
+            plan_schema_version=2,
             source_metadata=[],
         )
         self.assertEqual(legacy.title, "stable-site-id")
@@ -529,7 +529,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
                 generated_semantics(
                     base_url="duckdb://gong-calls",
                     site_id="duckdb-gong-calls",
-                    plan_schema_version=1,
+                    plan_schema_version=2,
                     source_metadata=source_metadata,
                 )
 
@@ -543,7 +543,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
                 generated_semantics(
                     base_url=f"{backend}://gong-calls",
                     site_id=f"{backend}-gong-calls",
-                    plan_schema_version=1,
+                    plan_schema_version=2,
                     source_metadata=[{"source_kind": wrong_kind}],
                 )
 
@@ -602,11 +602,11 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
         ]
         for values, message in cases:
             with self.subTest(values=values), self.assertRaisesRegex(CatalogError, message):
-                generated_semantics(site_id="site", plan_schema_version=1, **values)
+                generated_semantics(site_id="site", plan_schema_version=2, **values)
         with self.assertRaisesRegex(CatalogError, "plan_schema_version must equal"):
-            generated_semantics(base_url="https://example.com", site_id="site", plan_schema_version=2, source_metadata=[])
+            generated_semantics(base_url="https://example.com", site_id="site", plan_schema_version=1, source_metadata=[])
         with self.assertRaisesRegex(CatalogError, "plan_schema_version must be a JSON integer"):
-            generated_semantics(base_url="https://example.com", site_id="site", plan_schema_version=1.0, source_metadata=[])
+            generated_semantics(base_url="https://example.com", site_id="site", plan_schema_version=2.0, source_metadata=[])
 
 
 class CatalogModelTests(unittest.TestCase):

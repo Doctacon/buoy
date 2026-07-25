@@ -114,6 +114,6 @@ The no-change delta contains no content rows. No state database was created for 
 
 ## Limits and dependency handoff
 
-The dependent apply ticket still reads schema-v1 manifest/chunks artifacts and therefore is not expected to pass until `.10x/tickets/2026-07-24-implement-compact-delta-apply.md` replaces that reader. Command Center/managed-job contract consumers beyond the shared publication seam remain for the final integration ticket. Full repository tests were not claimed at this intermediate dependency boundary.
+At this intermediate boundary, the then-open dependent apply ticket still read schema-v1 manifest/chunks artifacts and was not expected to pass until the now-completed `.10x/tickets/done/2026-07-24-implement-compact-delta-apply.md` replaced that reader. Command Center/managed-job contract consumers beyond the shared publication seam remain for the final integration ticket. Full repository tests were not claimed at this intermediate dependency boundary.
 
 No live source provider, embedding model, turbopuffer credential/call/write, real apply, user artifact deletion, push, PR, merge, publish, or release occurred.

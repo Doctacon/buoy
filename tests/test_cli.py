@@ -824,6 +824,9 @@ class CliTests(unittest.TestCase):
             state_root=root / "state",
         )
         write_plan_artifacts(old_artifacts, old_dir)
+        for page in old_pages.iterdir():
+            page.unlink()
+        old_pages.rmdir()
         out_dir = plans_root / "new"
 
         def fake_crawl(options: CrawlOptions) -> dict[str, object]:
