@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import redirect_stderr
 from dataclasses import dataclass, replace
 import importlib.util
+from io import StringIO
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -1437,6 +1440,50 @@ class CommandCenterApiTests(unittest.TestCase):
                 uvicorn_runner=lambda _app, **_kwargs: None,
             )
         self.assertEqual(opened, [])
+
+    def test_default_server_signal_announces_active_job_shutdown_once(self) -> None:
+        stderr = StringIO()
+
+        class FakeService:
+            calls = 0
+
+            def announce_shutdown(self) -> None:
+                import logging
+
+                self.calls += 1
+                logging.getLogger("buoy_search.command_center_jobs").warning("safe shutdown warning")
+
+        service = FakeService()
+
+        class FakeConfig:
+            def __init__(self, app, **_kwargs) -> None:  # noqa: ANN001, ANN003 - uvicorn fake.
+                self.app = app
+
+        class FakeServer:
+            def __init__(self, config) -> None:  # noqa: ANN001 - uvicorn fake.
+                self.config = config
+
+            def handle_exit(self, _sig, _frame) -> None:  # noqa: ANN001 - signal protocol.
+                return None
+
+            def run(self) -> None:
+                self.config.app.state.plan_job_service = service
+                self.handle_exit(signal.SIGTERM, None)
+
+        with tempfile.TemporaryDirectory() as tmp, redirect_stderr(stderr), patch(
+            "uvicorn.Config", FakeConfig
+        ), patch("uvicorn.Server", FakeServer):
+            root = Path(tmp)
+            run_server(
+                host="127.0.0.1",
+                port=8765,
+                artifacts_root=root / "artifacts",
+                state_root=root / "state",
+                open_browser=False,
+            )
+
+        self.assertEqual(service.calls, 1)
+        self.assertEqual(stderr.getvalue().count("WARNING: safe shutdown warning"), 1)
 
     def test_app_startup_is_remote_provider_model_and_source_adapter_inert(self) -> None:
         source_root = Path(__file__).resolve().parents[1] / "src"

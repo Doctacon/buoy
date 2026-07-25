@@ -63,6 +63,7 @@ from buoy_search.crawler import (
     CrawlExecution,
     CrawlOptions,
     elapsed_since,
+    emit_progress,
     namespace_candidate,
     observe_monotonic,
     page_filename,
@@ -447,10 +448,12 @@ def crawl_github_repo_with_plan(source: GitHubRepoSource, options: CrawlOptions)
     validate_repo_chunking_options(options)
     total_started_at = observe_monotonic()
     crawl_started_at = observe_monotonic()
+    emit_progress(options.progress_callback, "clone: acquiring public GitHub repository")
     acquisition = acquire_github_repo(source, options.out_dir)
     crawl_seconds = elapsed_since(crawl_started_at)
     pages_dir = options.out_dir / "pages"
     corpus_started_at = observe_monotonic()
+    emit_progress(options.progress_callback, "processing: materializing repository files")
     corpus = build_github_repo_corpus(
         acquisition,
         pages_dir,
@@ -464,6 +467,7 @@ def crawl_github_repo_with_plan(source: GitHubRepoSource, options: CrawlOptions)
     )
     corpus_write_seconds = elapsed_since(corpus_started_at)
     chunk_started_at = observe_monotonic()
+    emit_progress(options.progress_callback, "chunk: chunking repository pages")
     if options.repo_chunking_arm in PYTHON_SYNTAX_ARMS:
         plan = process_syntax_repo_corpus(
             corpus,

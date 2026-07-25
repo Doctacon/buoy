@@ -938,6 +938,7 @@ class PlanJobServiceTests(unittest.TestCase):
             with self.assertLogs("buoy_search.command_center_jobs", level="WARNING") as logs, patch.object(
                 service.store, "get", side_effect=signaling_get
             ):
+                service.announce_shutdown()
                 thread = Thread(target=service.shutdown, kwargs={"wait": True})
                 thread.start()
                 self.assertTrue(shutdown_read.wait(5))
@@ -946,10 +947,48 @@ class PlanJobServiceTests(unittest.TestCase):
                 thread.join(5)
             self.assertFalse(thread.is_alive())
             rendered = "\n".join(logs.output)
+            self.assertEqual(rendered.count("Waiting for active plan job"), 1)
             self.assertIn(job.job_id, rendered)
             self.assertIn("queued", rendered)
             self.assertIn("cancellation is not supported in Phase 2A", rendered)
             self.assertNotIn("private-source", rendered)
+
+    def test_shutdown_warning_deduplication_is_scoped_to_the_active_job(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            executor = CapturingExecutor()
+            job_ids = iter(JOB_IDS)
+            service = PlanJobService(
+                state_root=root / "state",
+                artifacts_root=root / "artifacts",
+                planning_service=SuccessfulPlanningService(),  # type: ignore[arg-type]
+                executor=executor,  # type: ignore[arg-type]
+                job_id_factory=lambda: next(job_ids),
+            )
+            first = service.start(PlanJobRequest("https://example.com/first"))
+
+            with self.assertLogs("buoy_search.command_center_jobs", level="WARNING") as logs:
+                with self.assertRaisesRegex(ServiceOwnershipError, "worker is still active"):
+                    service.shutdown(wait=False)
+                service.announce_shutdown()
+                executor.run()
+                self.assertEqual(service.wait(first.job_id, timeout=1).state, "succeeded")
+
+                second = service.start(PlanJobRequest("https://example.com/second"))
+                shutdown = Thread(target=service.shutdown, kwargs={"wait": True})
+                shutdown.start()
+                deadline = time.monotonic() + 5
+                while not service._closed and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(service._closed)
+                self.assertTrue(shutdown.is_alive())
+                executor.run()
+                shutdown.join(5)
+
+            self.assertFalse(shutdown.is_alive())
+            rendered = "\n".join(logs.output)
+            self.assertEqual(rendered.count(f"active plan job {first.job_id}"), 1)
+            self.assertEqual(rendered.count(f"active plan job {second.job_id}"), 1)
 
     def test_shutdown_state_lookup_failure_still_waits_and_releases_ownership(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1277,6 +1316,10 @@ class PlanJobServiceTests(unittest.TestCase):
                     job = service.start(PlanJobRequest("https://github.com/owner/repo"))
                     finished = service.wait(job.job_id, timeout=10)
                 self.assertEqual(finished.state, "succeeded")
+                stages = [event.stage for event in service.events_after(job.job_id)]
+                self.assertIn("clone", stages)
+                self.assertIn("processing", stages)
+                self.assertIn("chunk", stages)
                 final = root / "artifacts/command-center/plans" / job.job_id
                 self.assertEqual(
                     {"plan.json", "manifest.json", "chunks.jsonl", "summary.json", "pages"},
