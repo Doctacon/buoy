@@ -18,11 +18,11 @@ The service MUST own current source validation/detection, acquisition, Markdown 
 
 The service accepts a progress callback and emits sanitized stage/message/count information. Each sanitized stage MUST be at most 64 characters and each sanitized message MUST be at most 500 characters. It MUST NOT read turbopuffer credentials, call turbopuffer, load an embedding model, update applied state, or mutate a routing catalog. It MUST lazily import database/local-document adapters only when existing CLI source modes require them; managed public-source planning imports none of those adapters.
 
-CLI `_run_plan` MUST delegate to this service while preserving existing arguments, output, progress behavior, artifact schema, errors, and exit semantics.
+CLI `_run_plan` MUST delegate to this service while preserving existing arguments, progress behavior, safe errors, and exit semantics. Artifact output MUST use the schema-v2 compact delta contract in `.10x/specs/compact-delta-plan-artifacts.md`.
 
 ## Artifacts
 
-Managed jobs write ordinary artifacts into a unique directory under `<artifacts-root>/command-center/plans/<job-id>/`. The managed output directory MUST be absent before planning begins; the service MUST reject an existing file, directory, or symlink rather than reuse it. The job ID affects only storage/audit identity, never source, document, chunk, plan namespace, or row identity. Success requires complete, verified `plan.json`, `manifest.json`, `chunks.jsonl`, `summary.json`, and `pages/` artifacts using the unchanged `PLAN_SCHEMA_VERSION`. For a managed run, `summary.json` MUST include the validated originating plan-job ID as read-only audit metadata; that metadata MUST NOT affect plan, source, document, chunk, namespace, row, or schema identity. The plan remains discoverable by Phase 1 and applicable only through the existing explicit CLI.
+Managed jobs write ordinary artifacts into a unique directory under `<artifacts-root>/command-center/plans/<job-id>/`. The managed output directory MUST be absent before planning begins; the service MUST reject an existing file, directory, or symlink rather than reuse it. The job ID affects only storage/audit identity, never source, document, chunk, plan namespace, or row identity. Success requires exactly complete, verified schema-v2 `plan.json` and `delta.duckdb` artifacts governed by `.10x/specs/compact-delta-plan-artifacts.md`; no manifest, chunks JSONL, summary sidecar, pages directory, or source checkout is retained. The validated originating plan-job ID may appear only as read-only audit metadata excluded from plan identity. The plan remains discoverable by Command Center and applicable only through the existing explicit CLI.
 
 ## Acceptance criteria
 
