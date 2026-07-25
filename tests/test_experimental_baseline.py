@@ -194,6 +194,10 @@ def make_verified() -> VerifiedApplyPlan:
         state=state,
         diff=diff,
         state_root=Path("/not-retained/state"),
+        upsert_rows=(),
+        stale_rows=(),
+        plan_directory_device=1,
+        plan_directory_inode=1,
     )
 
 

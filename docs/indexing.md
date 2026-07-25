@@ -172,23 +172,20 @@ For source ID `product-docs` the identities differ only by backend:
 
 Credentials, credential paths, DuckDB paths, BigQuery billing project/location/job ID, Snowflake connection name/account/user/role/warehouse, physical row order, row counts, and relation contents never affect logical identity or serialize as source configuration. Stable document IDs determine percent-encoded URIs and hash-derived page filenames.
 
-Every new database page, manifest record, chunk, and turbopuffer content row retains the fixed provenance fields `database_backend`, `database_source_id`, `database_relation`, and `database_document_id`. New DuckDB pages also retain legacy `duckdb_*` provenance for compatibility; existing saved DuckDB plans without generic fields remain supported.
+Every new database delta row and turbopuffer content row retains the fixed provenance fields `database_backend`, `database_source_id`, `database_relation`, and `database_document_id`. New DuckDB rows also retain legacy `duckdb_*` provenance for compatibility.
 
 V1 excludes arbitrary user SQL, Buoy-configured joins, multiple input relations per command, API/dlt/dbt/SQLMesh orchestration, source-specific Gong/Chorus behavior, arbitrary metadata JSON, dynamic turbopuffer schemas, CDC, watermarks, incremental warehouse predicates, BigQuery Storage API, Snowflake pandas/Arrow ingestion, other databases, credential CLI arguments, custom transcript/speaker chunking, and taxonomy/ontology features.
 
 ## Plan artifacts
 
-A plan directory contains:
+A successful schema-v2 plan directory contains exactly:
 
 ```text
 plan.json
-summary.json
-manifest.json
-chunks.jsonl
-pages/*.md
+delta.duckdb
 ```
 
-Use `summary.json` for counts and samples; `plan.json` for source, namespace, options, diff, and artifact identity; `manifest.json` and `chunks.jsonl` for exact desired rows; and `pages/` for extracted Markdown.
+`plan.json` is bounded metadata: source and namespace identity, options, diff counts, the applied-state baseline hash, delta counts, and artifact identity. `delta.duckdb` contains only exact changed/new/reactivated rows and stale identities. Unchanged content and source staging are not retained. Legacy schema-v1 directories remain inert: current discovery ignores them, explicit apply rejects them, and Buoy does not automatically delete them.
 
 Interactive `plan` and `crawl` commands show one-line stderr progress. `--json`, non-TTY stderr, and `--no-progress` suppress it.
 
@@ -235,7 +232,7 @@ uv run buoy apply --dry-run
 
 By default, apply selects the newest plan under `artifacts/site-crawls/`. Use `--plan <path>` when multiple plans exist. Plain apply requires an interactive stdin; scripts must choose `--dry-run` or `--approve`, and piped input cannot confirm.
 
-Preflight verifies schema, namespace, manifest/chunk agreement, embedding-text hashes, artifact integrity, and compatibility with local state. Because it does not contact Turbopuffer, remote catalog state and the resulting registration action remain unknown until approved. Its text identifies the automatically selected plan path and source, artifact hash, namespace and region, verified embedding model and precision, first-apply state, upsert/embedding/unchanged/stale counts, and an explicit `retain N` or `delete N` stale-row intent.
+Preflight fully verifies the schema-v2 metadata and delta, row identities, embedding-text hashes, artifact integrity, and exact applied-state baseline. If applied state changed after planning, apply fails with replanning guidance before credentials, models, provider calls, or writes. Because preflight does not contact Turbopuffer, remote catalog state and the resulting registration action remain unknown until approved. Its text identifies the automatically selected plan path and source, artifact hash, namespace and region, verified embedding model and precision, first-apply state, upsert/embedding/unchanged/stale counts, and an explicit `retain N` or `delete N` stale-row intent.
 
 Use `--region REGION` to override `TURBOPUFFER_REGION` and bind that region into the registered retrieval contract. The remote catalog namespace is fixed as `buoy-routing-catalog-v1`; local catalog path options and `BUOY_CATALOG_PATH` are not supported.
 

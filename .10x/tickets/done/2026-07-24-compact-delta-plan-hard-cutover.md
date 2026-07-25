@@ -1,6 +1,6 @@
-Status: open
+Status: done
 Created: 2026-07-24
-Updated: 2026-07-24
+Updated: 2026-07-25
 Parent: None
 Depends-On: None
 
@@ -14,7 +14,7 @@ Coordinate the schema-v2 compact-delta hard cutover from current `develop` on `w
 
 1. `.10x/tickets/done/2026-07-24-implement-compact-delta-planning.md`
 2. `.10x/tickets/done/2026-07-24-implement-compact-delta-apply.md`
-3. `.10x/tickets/2026-07-24-integrate-compact-delta-command-center.md`
+3. `.10x/tickets/done/2026-07-24-integrate-compact-delta-command-center.md`
 
 Planning establishes schema-v2 artifacts and source coverage. Apply consumes only that format and enforces baseline drift. Command Center/managed jobs then adopt the new artifacts, remove payload-heavy inventory behavior, update docs/static/package surfaces, and run integrated validation.
 
@@ -36,6 +36,12 @@ Planning establishes schema-v2 artifacts and source coverage. Apply consumes onl
 - 2026-07-24: Subsequent reviews exposed and resolved remaining catalog source-authority, database schema-1 compatibility, removed page-route, and destructive cleanup verification conflicts. Final shaping review passed with no blocker at `.10x/reviews/2026-07-24-compact-delta-plan-shaping.md`.
 - 2026-07-25: Planning child closed after exact schema-v2 writer/verifier implementation, 193-test focused validation, and adversarial review closure at `.10x/reviews/2026-07-25-compact-delta-planning.md`.
 - 2026-07-25: Apply child closed after schema-v2-only preflight/execution, inode-bound baseline and cleanup race hardening, 234-test expanded validation, and adversarial review closure at `.10x/reviews/2026-07-25-compact-delta-apply.md`.
+- 2026-07-25: Command Center integration closed after payload-independent inventory, bounded fully verified changed/stale review, managed two-file publication, synchronized frontend/package output, 766-test UI-extra validation, and review closure at `.10x/reviews/2026-07-25-compact-delta-command-center.md`.
+- 2026-07-25: Aggregate closure review passed at `.10x/reviews/2026-07-25-compact-delta-hard-cutover.md`; all child dependencies, specifications, evidence, reviews, and statuses are coherent.
+
+## Retrospective
+
+The cutover removed full-corpus duplication and forced plan/apply authority into explicit logical identities. Adversarial review showed that compactness alone is insufficient: omitted data requires precise distinction between identity-bound claims and independently derivable checks; every persisted source field needs allowlisted privacy validation; state and plan reads must bind opened inodes rather than pathnames; destructive cleanup must carry exact under-lock identity; and fast inventory must distinguish summary qualification from full verification. These invariants now live in the active decision/spec, implementation, tests, evidence, and child reviews.
 
 ## Blockers
 

@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-24
 Updated: 2026-07-24
-Target: .10x/specs/compact-delta-plan-artifacts.md and .10x/tickets/2026-07-24-compact-delta-plan-hard-cutover.md
+Target: .10x/specs/compact-delta-plan-artifacts.md and .10x/tickets/done/2026-07-24-compact-delta-plan-hard-cutover.md
 Verdict: pass
 
 # Compact Delta Plan Shaping Review

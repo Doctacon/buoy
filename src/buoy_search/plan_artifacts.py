@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+import hashlib
 import json
 import math
 import os
@@ -912,9 +913,23 @@ def _create_delta_schema(connection: duckdb.DuckDBPyConnection) -> None:
     )
 
 
-def verify_plan_artifacts(plan_path: Path) -> VerifiedDeltaPlan:
-    """Fully verify one schema-v2 plan and its logical delta."""
+def verify_plan_artifacts(
+    plan_path: Path,
+    *,
+    materialize: bool = True,
+    upsert_window: tuple[int, int] | None = None,
+    stale_window: tuple[int, int] | None = None,
+) -> VerifiedDeltaPlan:
+    """Fully verify one schema-v2 plan, optionally materializing bounded windows."""
 
+    if materialize and (upsert_window is not None or stale_window is not None):
+        raise ValueError("bounded windows require materialize=False")
+    for window in (upsert_window, stale_window):
+        if window is not None and (
+            type(window[0]) is not int or window[0] < 0
+            or type(window[1]) is not int or window[1] < 1 or window[1] > 100
+        ):
+            raise ValueError("delta window is invalid")
     if plan_path.is_symlink() or not plan_path.is_file():
         raise ValueError("plan.json must be a regular file")
     opened = plan_path.stat()
@@ -931,63 +946,58 @@ def verify_plan_artifacts(plan_path: Path) -> VerifiedDeltaPlan:
     delta_path = plan_path.with_name("delta.duckdb")
     if delta_path.is_symlink() or not delta_path.is_file():
         raise ValueError("delta.duckdb must be a regular file")
+    delta = plan["delta"]
+    source = plan["source"]
+    expected_metadata = (
+        DELTA_SCHEMA_VERSION, plan["plan_id"], plan["site_id"], plan["namespace"],
+        source["kind"], source["uri"], plan["applied_state"]["hash"],
+        delta["logical_hash"], delta["upsert_count"], delta["stale_count"],
+        delta["retained_stale_count"],
+    )
     try:
         with duckdb.connect(str(delta_path), read_only=True) as connection:
             _validate_delta_schema(connection)
             metadata = connection.execute("SELECT * FROM delta_metadata").fetchall()
-            if len(metadata) != 1:
-                raise ValueError("delta metadata must contain exactly one row")
-            upsert_rows = tuple(_read_upserts(connection))
-            stale_rows = tuple(_read_stale(connection))
+            if len(metadata) != 1 or tuple(metadata[0]) != expected_metadata:
+                raise ValueError("delta metadata does not match plan.json")
+            overlap = connection.execute(
+                "SELECT 1 FROM upsert_rows u JOIN stale_rows s USING (row_id) LIMIT 1"
+            ).fetchone()
+            if overlap is not None:
+                raise ValueError("delta row identity cannot be both upsert and stale")
+            logical_digest = hashlib.sha256()
+            logical_digest.update(b'{"schema_version":1,"stale_rows":[')
+            stale_materialized, stale_count, retained_count = _verify_stale_stream(
+                connection, materialize=materialize, digest=logical_digest
+            )
+            logical_digest.update(b'],"upsert_rows":[')
+            upsert_materialized, upsert_count = _verify_upsert_stream(
+                connection, materialize=materialize, digest=logical_digest
+            )
+            logical_digest.update(b']}')
+            logical = logical_digest.hexdigest()
+            if logical != delta["logical_hash"]:
+                raise ValueError("delta logical hash does not match")
+            _validate_delta_rows_stream(connection, plan)
+            if upsert_count != delta["upsert_count"]:
+                raise ValueError("delta upsert count does not match")
+            if stale_count != delta["stale_count"] or retained_count != delta["retained_stale_count"]:
+                raise ValueError("delta stale counts do not match")
+            if not materialize:
+                upsert_materialized = _read_upsert_window(connection, upsert_window)
+                stale_materialized = _read_stale_window(connection, stale_window)
     except duckdb.Error as exc:
         raise ValueError("delta.duckdb is unreadable or invalid") from exc
-    delta = plan["delta"]
-    source = plan["source"]
-    expected_metadata = (
-        DELTA_SCHEMA_VERSION,
-        plan["plan_id"],
-        plan["site_id"],
-        plan["namespace"],
-        source["kind"],
-        source["uri"],
-        plan["applied_state"]["hash"],
-        delta["logical_hash"],
-        delta["upsert_count"],
-        delta["stale_count"],
-        delta["retained_stale_count"],
-    )
-    if tuple(metadata[0]) != expected_metadata:
-        raise ValueError("delta metadata does not match plan.json")
-    if len(upsert_rows) != delta["upsert_count"]:
-        raise ValueError("delta upsert count does not match")
-    stale_count = sum(row["category"] == "stale" for row in stale_rows)
-    retained_count = sum(row["category"] == "retained_stale" for row in stale_rows)
-    if stale_count != delta["stale_count"] or retained_count != delta["retained_stale_count"]:
-        raise ValueError("delta stale counts do not match")
     _validate_diff_counts(plan["diff"], delta)
     if not plan["applied_state"]["present"] and not plan["diff"]["first_apply"]:
         raise ValueError("absent applied state requires first-apply diff semantics")
-    if tuple(upsert_rows) != tuple(sorted(upsert_rows, key=_upsert_sort_key)):
-        raise ValueError("delta upsert rows are not in canonical sort order")
-    if tuple(stale_rows) != tuple(sorted(stale_rows, key=_stale_sort_key)):
-        raise ValueError("delta stale rows are not in canonical sort order")
-    if delta_logical_hash(upsert_rows, stale_rows) != delta["logical_hash"]:
-        raise ValueError("delta logical hash does not match")
-    upsert_ids = {str(row["row_id"]) for row in upsert_rows}
-    stale_ids = {str(row["row_id"]) for row in stale_rows}
-    if upsert_ids & stale_ids:
-        raise ValueError("delta row identity cannot be both upsert and stale")
-    for row in upsert_rows:
-        _validate_upsert_row(plan, row)
-    for row in stale_rows:
-        _validate_stale_row(plan, row)
     identity = artifact_identity(plan)
     artifact_hash = stable_hash(identity)
     if artifact_hash != plan["artifact_hash"]:
         raise ValueError("plan artifact hash does not match")
     if plan["plan_id"] != f"plan_{artifact_hash[:16]}":
         raise ValueError("plan ID does not match artifact hash")
-    return VerifiedDeltaPlan(plan, upsert_rows, stale_rows)
+    return VerifiedDeltaPlan(plan, tuple(upsert_materialized), tuple(stale_materialized))
 
 
 def _sensitive_key(key: str) -> bool:
@@ -1153,6 +1163,15 @@ def validate_plan_document(plan: object) -> None:
         if type(delta[key]) is not int or delta[key] < 0:
             raise ValueError("invalid delta count")
     normalize_diff(plan["diff"])
+    _validate_diff_counts(plan["diff"], delta)
+    if not baseline["present"] and not plan["diff"]["first_apply"]:
+        raise ValueError("absent applied state requires first-apply diff semantics")
+    identity = artifact_identity(plan)
+    artifact_hash = stable_hash(identity)
+    if artifact_hash != plan["artifact_hash"]:
+        raise ValueError("plan artifact hash does not match")
+    if plan["plan_id"] != f"plan_{artifact_hash[:16]}":
+        raise ValueError("plan ID does not match artifact hash")
     if "originating_job_id" in plan and _MANAGED_JOB_ID.fullmatch(str(plan["originating_job_id"])) is None:
         raise ValueError("invalid originating job ID")
 
@@ -1529,51 +1548,139 @@ def _validate_delta_schema(connection: duckdb.DuckDBPyConnection) -> None:
         raise ValueError("delta database constraints do not match schema")
 
 
-def _read_upserts(connection: duckdb.DuckDBPyConnection) -> Iterable[JsonObject]:
-    rows = connection.execute("SELECT * FROM upsert_rows ORDER BY ordinal").fetchall()
-    if [int(row[0]) for row in rows] != list(range(len(rows))):
-        raise ValueError("delta upsert ordinals are not contiguous")
-    for row in rows:
-        tags_raw = str(row[16])
-        metadata_raw = str(row[17])
-        try:
-            tags = json.loads(tags_raw, parse_constant=_reject_json_constant)
-            metadata = json.loads(metadata_raw, parse_constant=_reject_json_constant)
-        except (json.JSONDecodeError, ValueError) as exc:
-            raise ValueError("delta upsert JSON metadata is invalid") from exc
-        if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
-            raise ValueError("delta upsert tags must be a string array")
-        if stable_json_dumps(tags) != tags_raw:
-            raise ValueError("delta upsert tags JSON is not canonical")
-        if not isinstance(metadata, dict) or not all(
-            isinstance(key, str) and isinstance(value, str) for key, value in metadata.items()
-        ):
-            raise ValueError("delta upsert source metadata must contain strings")
-        if stable_json_dumps(metadata) != metadata_raw:
-            raise ValueError("delta upsert source metadata JSON is not canonical")
-        yield {
-            "action": str(row[1]), "row_id": str(row[2]), "row_id_candidate": str(row[3]),
-            "site_id": str(row[4]), "duplicate_ordinal": int(row[5]),
-            "canonical_url": str(row[6]), "source_path": str(row[7]),
-            "page_hash": str(row[8]), "chunk_hash": str(row[9]),
-            "embedding_text_hash": str(row[10]), "title": str(row[11]),
-            "section_path": str(row[12]), "chunk_index": int(row[13]),
-            "content": str(row[14]), "doc_kind": str(row[15]),
-            "tags_json": tags, "source_metadata_json": metadata,
-        }
+def _upsert_from_sql(row: tuple[object, ...]) -> JsonObject:
+    tags_raw = str(row[16])
+    metadata_raw = str(row[17])
+    try:
+        tags = json.loads(tags_raw, parse_constant=_reject_json_constant)
+        metadata = json.loads(metadata_raw, parse_constant=_reject_json_constant)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise ValueError("delta upsert JSON metadata is invalid") from exc
+    if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
+        raise ValueError("delta upsert tags must be a string array")
+    if stable_json_dumps(tags) != tags_raw:
+        raise ValueError("delta upsert tags JSON is not canonical")
+    if not isinstance(metadata, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) for key, value in metadata.items()
+    ):
+        raise ValueError("delta upsert source metadata must contain strings")
+    if stable_json_dumps(metadata) != metadata_raw:
+        raise ValueError("delta upsert source metadata JSON is not canonical")
+    return {
+        "action": str(row[1]), "row_id": str(row[2]), "row_id_candidate": str(row[3]),
+        "site_id": str(row[4]), "duplicate_ordinal": int(row[5]),
+        "canonical_url": str(row[6]), "source_path": str(row[7]),
+        "page_hash": str(row[8]), "chunk_hash": str(row[9]),
+        "embedding_text_hash": str(row[10]), "title": str(row[11]),
+        "section_path": str(row[12]), "chunk_index": int(row[13]),
+        "content": str(row[14]), "doc_kind": str(row[15]),
+        "tags_json": tags, "source_metadata_json": metadata,
+    }
 
 
-def _read_stale(connection: duckdb.DuckDBPyConnection) -> Iterable[JsonObject]:
-    rows = connection.execute("SELECT * FROM stale_rows ORDER BY ordinal").fetchall()
-    if [int(row[0]) for row in rows] != list(range(len(rows))):
-        raise ValueError("delta stale ordinals are not contiguous")
-    for row in rows:
-        yield {
-            "category": str(row[1]), "row_id": str(row[2]), "canonical_url": str(row[3]),
-            "page_hash": str(row[4]), "chunk_hash": str(row[5]),
-            "embedding_text_hash": str(row[6]), "prior_plan_id": str(row[7]),
-            "prior_applied_at": str(row[8]), "prior_status": str(row[9]), "reason": str(row[10]),
-        }
+def _stale_from_sql(row: tuple[object, ...]) -> JsonObject:
+    return {
+        "category": str(row[1]), "row_id": str(row[2]), "canonical_url": str(row[3]),
+        "page_hash": str(row[4]), "chunk_hash": str(row[5]),
+        "embedding_text_hash": str(row[6]), "prior_plan_id": str(row[7]),
+        "prior_applied_at": str(row[8]), "prior_status": str(row[9]), "reason": str(row[10]),
+    }
+
+
+def _verify_upsert_stream(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    materialize: bool,
+    digest: Any,
+) -> tuple[list[JsonObject], int]:
+    cursor = connection.execute("SELECT * FROM upsert_rows ORDER BY ordinal")
+    values: list[JsonObject] = []
+    previous_key: tuple[str, str, int, str] | None = None
+    count = 0
+    while (raw := cursor.fetchone()) is not None:
+        if int(raw[0]) != count:
+            raise ValueError("delta upsert ordinals are not contiguous")
+        row = _upsert_from_sql(tuple(raw))
+        key = _upsert_sort_key(row)
+        if previous_key is not None and key < previous_key:
+            raise ValueError("delta upsert rows are not in canonical sort order")
+        previous_key = key
+        if count:
+            digest.update(b",")
+        digest.update(stable_json_dumps(row).encode("utf-8"))
+        if materialize:
+            values.append(row)
+        count += 1
+    return values, count
+
+
+def _verify_stale_stream(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    materialize: bool,
+    digest: Any,
+) -> tuple[list[JsonObject], int, int]:
+    cursor = connection.execute("SELECT * FROM stale_rows ORDER BY ordinal")
+    values: list[JsonObject] = []
+    previous_key: tuple[str, str] | None = None
+    stale_count = 0
+    retained_count = 0
+    ordinal = 0
+    while (raw := cursor.fetchone()) is not None:
+        if int(raw[0]) != ordinal:
+            raise ValueError("delta stale ordinals are not contiguous")
+        row = _stale_from_sql(tuple(raw))
+        key = _stale_sort_key(row)
+        if previous_key is not None and key < previous_key:
+            raise ValueError("delta stale rows are not in canonical sort order")
+        previous_key = key
+        stale_count += row["category"] == "stale"
+        retained_count += row["category"] == "retained_stale"
+        if ordinal:
+            digest.update(b",")
+        digest.update(stable_json_dumps(row).encode("utf-8"))
+        if materialize:
+            values.append(row)
+        ordinal += 1
+    return values, stale_count, retained_count
+
+
+def _validate_delta_rows_stream(
+    connection: duckdb.DuckDBPyConnection,
+    plan: Mapping[str, object],
+) -> None:
+    cursor = connection.execute("SELECT * FROM upsert_rows ORDER BY ordinal")
+    while (raw := cursor.fetchone()) is not None:
+        _validate_upsert_row(plan, _upsert_from_sql(tuple(raw)))
+    cursor = connection.execute("SELECT * FROM stale_rows ORDER BY ordinal")
+    while (raw := cursor.fetchone()) is not None:
+        _validate_stale_row(plan, _stale_from_sql(tuple(raw)))
+
+
+def _read_upsert_window(
+    connection: duckdb.DuckDBPyConnection,
+    window: tuple[int, int] | None,
+) -> list[JsonObject]:
+    if window is None:
+        return []
+    offset, limit = window
+    rows = connection.execute(
+        "SELECT * FROM upsert_rows ORDER BY ordinal LIMIT ? OFFSET ?", [limit, offset]
+    ).fetchall()
+    return [_upsert_from_sql(tuple(row)) for row in rows]
+
+
+def _read_stale_window(
+    connection: duckdb.DuckDBPyConnection,
+    window: tuple[int, int] | None,
+) -> list[JsonObject]:
+    if window is None:
+        return []
+    offset, limit = window
+    rows = connection.execute(
+        "SELECT * FROM stale_rows ORDER BY ordinal LIMIT ? OFFSET ?", [limit, offset]
+    ).fetchall()
+    return [_stale_from_sql(tuple(row)) for row in rows]
 
 
 def _upsert_sort_key(row: Mapping[str, object]) -> tuple[str, str, int, str]:

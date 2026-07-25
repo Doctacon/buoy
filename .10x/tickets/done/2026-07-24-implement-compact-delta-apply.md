@@ -1,7 +1,7 @@
 Status: done
 Created: 2026-07-24
 Updated: 2026-07-25
-Parent: .10x/tickets/2026-07-24-compact-delta-plan-hard-cutover.md
+Parent: .10x/tickets/done/2026-07-24-compact-delta-plan-hard-cutover.md
 Depends-On: .10x/tickets/done/2026-07-24-implement-compact-delta-planning.md
 
 # Implement Compact Delta Apply

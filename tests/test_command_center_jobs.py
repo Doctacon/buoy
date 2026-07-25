@@ -1247,20 +1247,18 @@ class PlanJobServiceTests(unittest.TestCase):
                 self.assertEqual(finished.state, "succeeded")
                 final = root / "artifacts/command-center/plans" / job.job_id
                 self.assertEqual(
-                    {"plan.json", "manifest.json", "chunks.jsonl", "summary.json", "pages"},
+                    {"plan.json", "delta.duckdb"},
                     {path.name for path in final.iterdir()},
                 )
                 self.assertEqual(len(write_dirs), 1)
                 self.assertNotEqual(write_dirs[0], final)
                 self.assertFalse(write_dirs[0].exists())
-                persisted = "\n".join(
-                    path.read_text(encoding="utf-8")
-                    for path in final.rglob("*")
-                    if path.is_file()
+                persisted = b"".join(
+                    path.read_bytes() for path in final.rglob("*") if path.is_file()
                 )
-                self.assertNotIn("buoy-managed-plan-", persisted)
-                self.assertNotIn("/dev/fd/", persisted)
-                self.assertNotIn("/proc/", persisted)
+                self.assertNotIn(b"buoy-managed-plan-", persisted)
+                self.assertNotIn(b"/dev/fd/", persisted)
+                self.assertNotIn(b"/proc/", persisted)
             finally:
                 service.shutdown()
 
@@ -1322,18 +1320,16 @@ class PlanJobServiceTests(unittest.TestCase):
                 self.assertIn("chunk", stages)
                 final = root / "artifacts/command-center/plans" / job.job_id
                 self.assertEqual(
-                    {"plan.json", "manifest.json", "chunks.jsonl", "summary.json", "pages"},
+                    {"plan.json", "delta.duckdb"},
                     {path.name for path in final.iterdir()},
                 )
                 self.assertFalse((final / "repo-checkout").exists())
-                persisted = "\n".join(
-                    path.read_text(encoding="utf-8")
-                    for path in final.rglob("*")
-                    if path.is_file()
+                persisted = b"".join(
+                    path.read_bytes() for path in final.rglob("*") if path.is_file()
                 )
-                self.assertNotIn("buoy-managed-plan-", persisted)
-                self.assertNotIn("/dev/fd/", persisted)
-                self.assertNotIn("/proc/", persisted)
+                self.assertNotIn(b"buoy-managed-plan-", persisted)
+                self.assertNotIn(b"/dev/fd/", persisted)
+                self.assertNotIn(b"/proc/", persisted)
             finally:
                 service.shutdown()
 
@@ -1746,8 +1742,7 @@ time.sleep(30)
                 job = service.start(PlanJobRequest("https://example.com/docs"))
                 self.assertEqual(service.wait(job.job_id, timeout=5).state, "failed")
                 self.assertEqual(list(outside.iterdir()), [])
-                self.assertTrue((moved / "pages/page.md").is_file())
-                self.assertNotIn("buoy-managed-plan-", (moved / "pages/page.md").read_text(encoding="utf-8"))
+                self.assertEqual(list(moved.iterdir()), [])
             finally:
                 service.shutdown()
 

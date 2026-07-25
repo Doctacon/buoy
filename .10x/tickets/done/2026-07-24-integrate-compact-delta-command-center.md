@@ -1,7 +1,7 @@
-Status: open
+Status: done
 Created: 2026-07-24
-Updated: 2026-07-24
-Parent: .10x/tickets/2026-07-24-compact-delta-plan-hard-cutover.md
+Updated: 2026-07-25
+Parent: .10x/tickets/done/2026-07-24-compact-delta-plan-hard-cutover.md
 Depends-On: .10x/tickets/done/2026-07-24-implement-compact-delta-planning.md, .10x/tickets/done/2026-07-24-implement-compact-delta-apply.md
 
 # Integrate Compact Delta Command Center and Validation
@@ -30,6 +30,10 @@ Create durable evidence for API/UI behavior, managed jobs, schema-1 inertness, p
 ## Progress and notes
 
 - 2026-07-24: Opened from the user-ratified hard-cutover contract. Depends on planning and apply children.
+- 2026-07-25: Both dependencies are done with passing evidence/review. Started final Command Center, managed-job, frontend, docs/package, performance, and integrated validation work on the compact-delta branch.
+- 2026-07-25: Implemented summary-qualified schema-v2 inventory, fully verified changed/stale detail routes, schema-v1 page-route/UI removal, two-file managed-job expectations, synchronized frontend/static assets, and docs. Added exact 1,000 × 131,072-byte summary and 100,000-row selected-delta structural tests. UI-extra 149-test basket, 37 frontend tests/build, 764-test default full suite, ranking/C6, temporary installed-wheel checks, default restoration/import isolation, compile, and diff checks passed.
+- 2026-07-25: Independent review found summary qualification did not recompute plan identity or distinguish unsupported schema 3, selected payload routes were not bound to the inventory record across replacement/ABA, and performance proof tested a query helper rather than the production connection path. Repaired full plan-only identity/count validation, exact schema1 inertness versus malformed-version errors, directory/plan/delta identity plus logical record binding for detail/chunks/stale, deterministic replacement/ABA coverage, and a forwarding production connection/query spy proving LIMIT/OFFSET and ten-row materialization. Post-review local/API/jobs passed 88 tests; full UI-extra discovery passed 766; structural tests ran in 5.80 seconds / 212,959,232 bytes RSS. Evidence updated at `.10x/evidence/2026-07-25-compact-delta-command-center.md`.
+- 2026-07-25: Independent final review passed with no blocker at `.10x/reviews/2026-07-25-compact-delta-command-center.md`. Acceptance criteria map to the evidence record; the child is closed.
 
 ## Blockers
 

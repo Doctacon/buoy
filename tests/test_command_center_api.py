@@ -66,12 +66,6 @@ class FakeInventory:
     def get_plan(self, plan_id: str):
         return {"resource": "plan", "plan_id": plan_id}
 
-    def list_plan_pages(self, plan_id: str, *, offset: int = 0, limit: int = 50):
-        return {"resource": "pages", "plan_id": plan_id, "offset": offset, "limit": limit}
-
-    def get_plan_page(self, plan_id: str, index: int, *, max_chars: int = 20_000):
-        return {"resource": "page", "plan_id": plan_id, "index": index, "max_chars": max_chars}
-
     def list_plan_chunks(
         self,
         plan_id: str,
@@ -87,6 +81,9 @@ class FakeInventory:
             "limit": limit,
             "max_chars": max_chars,
         }
+
+    def list_plan_stale_rows(self, plan_id: str, *, offset: int = 0, limit: int = 50):
+        return {"resource": "stale", "plan_id": plan_id, "offset": offset, "limit": limit}
 
 
 @dataclass(frozen=True)
@@ -653,78 +650,17 @@ class CommandCenterApiTests(unittest.TestCase):
     def test_non_empty_local_service_contract_is_serialized_through_fastapi(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            plan_dir = root / "artifacts" / "plan-contract"
-            plan_dir.mkdir(parents=True)
-            plan = {
-                "command": "plan",
-                "plan_id": "plan-contract",
-                "namespace": "docs-contract",
-                "namespace_candidate": "docs-contract",
-                "site_id": "docs-contract",
-                "created_at": "2026-07-23T12:00:00+00:00",
-                "base_url": "https://example.test/docs",
-                "embedding_model": "BAAI/bge-small-en-v1.5",
-                "embedding_precision": "float32",
-                "artifact_hash": "a" * 64,
-                "diff": {
-                    "first_apply": True,
-                    "pages_added": 1,
-                    "pages_changed": 0,
-                    "pages_unchanged": 0,
-                    "pages_removed": 0,
-                    "chunks_unchanged": 0,
-                    "chunks_to_embed": 1,
-                    "rows_to_upsert": 1,
-                    "stale_rows": 0,
-                    "retained_stale_rows": 0,
-                },
-            }
-            page = {
-                "canonical_url": "https://example.test/docs/page",
-                "title": "Contract page",
-                "content_path": "page.md",
-                "source_metadata": {},
-            }
-            chunk = {
-                "row_id": "ts_contract",
-                "canonical_url": page["canonical_url"],
-                "content": "Contract content",
-                "chunk_index": 0,
-                "source_metadata": {},
-            }
-            manifest = {
-                "namespace": plan["namespace"],
-                "namespace_candidate": plan["namespace_candidate"],
-                "site_id": plan["site_id"],
-                "base_url": plan["base_url"],
-                "pages": [page],
-                "chunks": [chunk],
-            }
-            summary = {
-                "plan_id": plan["plan_id"],
-                "source_credentials_required": True,
-                "source_api_calls_occurred": True,
-                "originating_job_id": f"planjob_{'c' * 32}",
-                "catalog_registration": {
-                    "ranking_mode": "page",
-                    "ranking_profile": "none",
-                    "ranking_pool": 20,
-                    "ranking_aggregation": "max",
-                    "region": "aws-us-east-1",
-                },
-            }
-            for name, payload in (
-                ("plan.json", plan),
-                ("manifest.json", manifest),
-                ("summary.json", summary),
-            ):
-                (plan_dir / name).write_text(json.dumps(payload), encoding="utf-8")
+            from tests.test_command_center_local import write_plan
 
+            plan_id, _ = write_plan(
+                root / "artifacts" / "plan-contract",
+                originating_job_id=f"planjob_{'c' * 32}",
+            )
             _, client = self.make_client(root)
             dashboard_response = client.get("/api/v1/dashboard")
             namespaces_response = client.get("/api/v1/namespaces")
             plans_response = client.get("/api/v1/plans")
-            plan_response = client.get("/api/v1/plans/plan-contract")
+            plan_response = client.get(f"/api/v1/plans/{plan_id}")
 
         for response in (
             dashboard_response,
@@ -740,7 +676,7 @@ class CommandCenterApiTests(unittest.TestCase):
         self.assertTrue(dashboard["recent_plans"][0]["diff"]["first_apply"])
         self.assertEqual(
             dashboard["recent_plans"][0]["source_activity"],
-            {"credentials_required": True, "api_calls_occurred": True},
+            {"credentials_required": False, "api_calls_occurred": False},
         )
 
         namespace = namespaces_response.json()["items"][0]
@@ -750,7 +686,7 @@ class CommandCenterApiTests(unittest.TestCase):
         self.assertEqual(namespace["latest_planned_stale_rows"], 0)
         self.assertEqual(namespace["document_count"], 1)
         self.assertEqual(namespace["chunk_count"], 1)
-        self.assertEqual(namespace["latest_plan_id"], "plan-contract")
+        self.assertEqual(namespace["latest_plan_id"], plan_id)
         self.assertIsNone(namespace["last_apply_id"])
         self.assertEqual(namespace["source"]["kind"], "website")
 
@@ -759,9 +695,9 @@ class CommandCenterApiTests(unittest.TestCase):
         self.assertEqual(plan_summary["diff"]["rows_to_upsert"], 1)
         self.assertEqual(
             plan_summary["source_activity"],
-            {"credentials_required": True, "api_calls_occurred": True},
+            {"credentials_required": False, "api_calls_occurred": False},
         )
-        self.assertEqual(plan_response.json()["retrieval"]["region"], "aws-us-east-1")
+        self.assertIsNone(plan_response.json()["retrieval"]["region"])
         self.assertEqual(
             plan_response.json()["originating_job_id"], f"planjob_{'c' * 32}"
         )
@@ -775,15 +711,21 @@ class CommandCenterApiTests(unittest.TestCase):
                 ("/api/v1/namespaces/site-example-v1", "namespace"),
                 ("/api/v1/plans?offset=1&limit=2", "plans"),
                 ("/api/v1/plans/plan-1", "plan"),
-                ("/api/v1/plans/plan-1/pages?offset=2&limit=3", "pages"),
-                ("/api/v1/plans/plan-1/pages/4?max_chars=123", "page"),
                 ("/api/v1/plans/plan-1/chunks?offset=2&limit=3&max_chars=123", "chunks"),
+                ("/api/v1/plans/plan-1/stale-rows?offset=2&limit=3", "stale"),
             ]
             for path, resource in cases:
                 with self.subTest(path=path):
                     response = client.get(path)
                     self.assertEqual(response.status_code, 200, response.text)
                     self.assertEqual(response.json()["resource"], resource)
+            for removed in (
+                "/api/v1/plans/plan-1/pages",
+                "/api/v1/plans/plan-1/pages/4",
+            ):
+                response = client.get(removed)
+                self.assertEqual(response.status_code, 404)
+                self.assertEqual(response.json()["error"]["code"], "api_route_not_found")
 
     def test_remote_refresh_and_search_are_explicit_and_safe(self) -> None:
         remote = FakeRemote()
