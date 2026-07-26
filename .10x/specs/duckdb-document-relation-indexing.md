@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-22
-Updated: 2026-07-22
+Updated: 2026-07-24
 
 # DuckDB Document Relation Indexing
 
@@ -51,12 +51,12 @@ The adapter MUST call the existing shared `process_corpus()` path and MUST NOT i
 
 ## Plan/apply boundary
 
-Only `plan` and `crawl` MAY read DuckDB. `apply`, including dry-run, MUST consume integrity-verified saved artifacts only. Deleting, renaming, moving, or changing the database after planning MUST NOT affect saved-plan verification or application. `PLAN_SCHEMA_VERSION` MUST remain unchanged unless the existing schema proves insufficient.
+Only `plan` and `crawl` MAY read the source DuckDB. `apply`, including dry-run, MUST consume fully verified schema-v2 compact delta artifacts only. Deleting, renaming, moving, or changing the source database after planning MUST NOT affect saved-plan verification or application. Schema-v1 saved plans are unsupported and inert.
 
 ## Acceptance scenarios
 
-1. Given a valid table or view, planning emits deterministic Markdown pages and normal plan artifacts.
+1. Given a valid table or view, planning uses deterministic temporary Markdown pages and emits exactly schema-v2 `plan.json` plus changed-only `delta.duckdb`; temporary pages are removed before success.
 2. Given invalid paths, relations, mappings, IDs, or all-empty content, acquisition fails clearly before partial successful planning.
 3. Given different insertion order or file path with the same source ID and contents, logical identities and artifact content (apart from established temporal fields) remain stable.
 4. Given a saved plan whose source database is removed, `apply --dry-run --plan` verifies without accessing DuckDB.
-5. Existing website, GitHub, local document, plan, and apply behavior remains passing.
+5. Existing website, GitHub, and local-document source/chunk identities remain passing through the shared schema-v2 plan/apply contract.

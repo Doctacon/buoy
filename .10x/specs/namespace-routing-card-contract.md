@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-18
-Updated: 2026-07-18
+Updated: 2026-07-24
 
 # Namespace Routing Card Contract
 
@@ -53,7 +53,7 @@ Manual upsert sets `semantic_origin=manual`. Approved apply preserves manual tit
 - `embedding_model`: non-empty;
 - `embedding_precision`: `float32` or `float16`;
 - `vector_dimensions`: exact integer 384;
-- `plan_schema_version`: exact integer 1;
+- `plan_schema_version`: exact integer `1` or `2`; value `1` remains readable/routable lineage for existing cards, while every new schema-v2 approved apply writes `2`. This compatibility does not authorize schema-1 local plan artifacts;
 - `ranking_mode`: `file`, `page`, or `chunk`;
 - `ranking_profile`: `repo_code` or `none`;
 - `ranking_pool`: positive exact integer;
@@ -99,19 +99,16 @@ Golden fixtures:
 
 ## Deterministic generated semantics
 
-For first/later generated apply cards:
+For every schema-v2 first/later generated apply card, the fully verified plan-level `source` object from `.10x/specs/compact-delta-plan-artifacts.md` is the sole source authority. Apply MUST NOT derive catalog semantics from delta row presence, page/chunk metadata, namespace text, or schema-v1 artifacts. This remains complete for a no-change plan with zero upserts.
 
-1. Collect non-empty page/chunk `source_kind`; multiple distinct values fail before model/remote work.
-2. Map `github_repo` to repository, `pdf`/`local_file` to document, absent kind by verified URI: canonical GitHub repository root to repository, other HTTP(S) to website, canonical `file://<opaque-id>`/`pdf://<opaque-id>` to document. Contradictions fail.
-3. `source_uri` is verified plan base URL. Repository metadata must agree; website/document retains verified URI.
-4. Repository identity uses one consistent `repo_full_name`; schema-v1 absence derives exact owner/repo only from canonical GitHub root.
-5. PDF/local file uses one consistent `pdf_filename`/`file_filename`. Opaque URI ID is non-empty and rejects whitespace/path/query/fragment; it is never decoded as filename. Supported legacy `file:` without filename uses site ID and fabricates no filename alias.
-6. Title: repository full name, normalized website hostname, verified document filename, or permitted legacy site ID.
-7. Summary: `Public GitHub repository <full-name> indexed from <base-url>.`, `Indexed document <filename-or-site-id> from <base-url>.`, or `Indexed knowledge source at <base-url>.`.
-8. Aliases: repository short/full name, website hostname, or verified filename stem; remove normalized title duplicates.
-9. Tags: `github`,`repository`; `website`; or `document` respectively.
+1. `source.uri` becomes `source_uri`; its exact low-level kind/URI/attributes consistency is already integrity-bound and is revalidated before model/remote work.
+2. Map `github_repo` to catalog `github_repo`; `website` to `website`; `pdf`/`local_file` to `document`; and `duckdb_relation`/`bigquery_relation`/`snowflake_relation` to `database`.
+3. Repository identity uses exact `repo_full_name`, owner, name, ref, and commit attributes agreeing with the canonical repository root. Title is full name; summary is `Public GitHub repository <full-name> indexed from <uri>.`; aliases are repository short/full name with title duplicates removed; tags are `github`,`repository`.
+4. Website title is the normalized hostname; summary is `Indexed knowledge source at <uri>.`; aliases are empty; tags are `website`.
+5. PDF/local-file title is exact verified filename; summary is `Indexed document <filename> from <uri>.`; aliases contain the filename stem when not a title duplicate; tags are `document`. The opaque URI ID is never decoded as a filename.
+6. Database title, summary, aliases, and tags use exact backend/source/relation attributes under the existing database generated-semantics formulas.
 
-Same verified inputs produce identical fields. Generated semantics are editable defaults, not human-approved descriptions.
+Existing remote cards with lineage `plan_schema_version=1` remain readable/routable as specified above, but no new generated semantics are derived from a schema-1 local plan. Same verified schema-v2 source inputs produce identical fields. Generated semantics are editable defaults, not human-approved descriptions.
 
 ## Apply identity parsing
 

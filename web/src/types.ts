@@ -114,6 +114,7 @@ export interface PlanSummary {
   page_count: number | null
   chunk_count: number | null
   diff: DiffSummary
+  payload_verification: 'not_checked'
   source_activity: {
     credentials_required: boolean | null
     api_calls_occurred: boolean | null
@@ -124,8 +125,11 @@ export interface PlanSummary {
 export interface PlanDetail {
   summary: PlanSummary
   namespace_candidate: string
-  artifact_hash: string | null
+  artifact_hash: string
   originating_job_id: string | null
+  payload_verification: 'verified'
+  applied_state_present: boolean
+  applied_state_hash: string
   retrieval: RetrievalSettings
   source_activity: {
     credentials_required: boolean | null
@@ -217,29 +221,9 @@ export interface Capabilities {
   snowflake_extra_installed: boolean
 }
 
-export interface PageSummary {
-  index: number
-  title: string
-  canonical_url: string
-  status: number | null
-  content_type: string
-}
-
-export interface PageInventory {
-  items: PageSummary[]
-  total: number
-  offset: number
-  limit: number
-}
-
-export interface PagePreview {
-  page: PageSummary
-  markdown: string
-  truncated: boolean
-}
-
 export interface ChunkPreview {
   index: number
+  action: 'new' | 'changed' | 'reactivate_retained_stale'
   row_id: string
   title: string
   canonical_url: string
@@ -251,6 +235,22 @@ export interface ChunkPreview {
 
 export interface ChunkInventory {
   items: ChunkPreview[]
+  total: number
+  offset: number
+  limit: number
+}
+
+export interface StaleRowPreview {
+  index: number
+  category: 'stale' | 'retained_stale'
+  row_id: string
+  canonical_url: string
+  prior_status: 'active' | 'retained_stale'
+  reason: 'not_in_desired_source' | 'retained_stale_not_in_desired_source'
+}
+
+export interface StaleRowInventory {
+  items: StaleRowPreview[]
   total: number
   offset: number
   limit: number

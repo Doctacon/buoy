@@ -1,23 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import json
 import tempfile
 from pathlib import Path
 import unittest
 
 from buoy_search.applied_state import AppliedStateRow, build_applied_state
-from buoy_search.apply import verify_artifact_hash, verify_manifest_embedding_hashes
 from buoy_search.chunker import IndexingPlan, IndexingStats, MarkdownChunk, process_corpus
 from buoy_search.plan_artifacts import (
     GENERIC_SITE_TURBOPUFFER_SCHEMA,
     PLAN_SCHEMA_VERSION,
-    PlanArtifacts,
     build_generic_site_row,
     build_plan_artifacts,
     chunk_jsonl_records,
-    dataclass_to_json_object,
-    stable_hash,
+    verify_plan_artifacts,
     write_plan_artifacts,
 )
 from buoy_search.plan_diff import diff_manifest_against_state
@@ -73,54 +69,36 @@ class PlanArtifactTests(unittest.TestCase):
             diff=diff,
         )
 
-    def test_plan_manifest_and_chunks_have_required_fields(self) -> None:
+    def test_plan_and_delta_have_required_schema_v2_fields(self) -> None:
         artifacts = self.build_artifacts()
         plan = artifacts.plan_dict()
-        manifest = artifacts.manifest_dict()
-        chunks = list(chunk_jsonl_records(artifacts.chunks_jsonl))
+        upsert = artifacts.upsert_rows[0]
 
         self.assertEqual(plan["schema_version"], PLAN_SCHEMA_VERSION)
         self.assertEqual(plan["command"], "plan")
         self.assertTrue(plan["plan_id"].startswith("plan_"))
         self.assertRegex(plan["created_at"], r"^\d{4}-\d{2}-\d{2}T")
-        self.assertEqual(plan["base_url"], "https://example.com/docs/")
+        self.assertEqual(plan["source"], {
+            "kind": "website", "uri": "https://example.com/docs/",
+            "title": "example.com", "attributes": {},
+        })
         self.assertEqual(plan["site_id"], "example-com")
         self.assertEqual(plan["namespace_candidate"], "site-example-com-v1")
         self.assertEqual(plan["namespace"], "site-example-com-v1")
-        self.assertEqual(plan["state_backend"], "local")
-        self.assertEqual(
-            plan["state_path"],
-            ".buoy/state/example-com/site-example-com-v1/state.duckdb",
-        )
+        self.assertEqual(plan["applied_state"]["present"], False)
+        self.assertEqual(plan["delta"]["filename"], "delta.duckdb")
+        self.assertEqual(plan["delta"]["upsert_count"], 1)
         self.assertEqual(plan["diff"]["rows_to_upsert"], 1)
-        self.assertEqual(plan["diff"]["chunks_to_embed"], 1)
         self.assertRegex(plan["artifact_hash"], r"^[0-9a-f]{64}$")
-        self.assertEqual(plan["embedding_precision"], "float32")
+        self.assertNotIn("state_path", plan)
+        self.assertNotIn("manifest_path", plan)
+        self.assertEqual(upsert["action"], "new")
+        self.assertTrue(upsert["row_id"].startswith("ts_"))
+        self.assertEqual(upsert["source_path"], "page.md")
+        self.assertIn("Useful documentation", upsert["content"])
+        self.assertNotIn("content_preview", upsert)
 
-        self.assertEqual(manifest["schema_version"], PLAN_SCHEMA_VERSION)
-        self.assertEqual(len(manifest["pages"]), 1)
-        page = manifest["pages"][0]
-        self.assertEqual(page["canonical_url"], "https://example.com/docs/page")
-        self.assertEqual(page["content_path"], "page.md")
-        self.assertEqual(page["status"], 200)
-        self.assertEqual(page["content_type"], "text/html; charset=utf-8")
-        self.assertNotIn("crawl_timestamp", page["source_metadata"])
-
-        self.assertEqual(len(chunks), 1)
-        chunk = chunks[0]
-        self.assertTrue(chunk["row_id"].startswith("ts_"))
-        self.assertEqual(len(chunk["row_id"]), 35)
-        self.assertEqual(chunk["row_id_candidate"], chunk["row_id"])
-        self.assertEqual(chunk["duplicate_ordinal"], 0)
-        self.assertEqual(chunk["site_id"], "example-com")
-        self.assertEqual(chunk["canonical_url"], "https://example.com/docs/page")
-        self.assertEqual(chunk["page_content_path"], "page.md")
-        self.assertRegex(chunk["chunk_hash"], r"^[0-9a-f]{64}$")
-        self.assertRegex(chunk["embedding_text_hash"], r"^[0-9a-f]{64}$")
-        self.assertIn("Useful documentation", chunk["content"])
-        self.assertIn("Useful documentation", chunk["content_preview"])
-
-    def test_pre_rebrand_plan_identity_golden_is_preserved(self) -> None:
+    def test_schema_v2_plan_identity_golden_is_deterministic(self) -> None:
         artifacts = self.build_artifacts()
         plan = artifacts.plan_dict()
         chunks = list(chunk_jsonl_records(artifacts.chunks_jsonl))
@@ -128,7 +106,7 @@ class PlanArtifactTests(unittest.TestCase):
         # Precision-aware plans retain deterministic row and namespace identity.
         self.assertEqual(
             plan["artifact_hash"],
-            "b8ef78337fcb3f1a8f68c877ae6751889170de67dd19eb443453dd7f188914ef",
+            "d6b5e13bbbfdbbdeacef69ec5f154e9340038f88b28b40160135e7d9ed1014e0",
         )
         self.assertEqual(plan["namespace"], "site-example-com-v1")
         self.assertEqual(chunks[0]["row_id"], "ts_2fd4695f91b79df01d0f8b1d47587127")
@@ -171,23 +149,20 @@ class PlanArtifactTests(unittest.TestCase):
         self.assertEqual(diff.rows_to_upsert_records[0].row_id, previous.row_id)
         self.assertEqual(diff.chunks_unchanged, 0)
 
-    def test_legacy_plan_without_precision_keeps_float32_hash_contract(self) -> None:
+    def test_schema_v2_plan_excludes_legacy_paths_and_full_manifest(self) -> None:
         artifacts = self.build_artifacts()
         plan = artifacts.plan_dict()
-        plan.pop("embedding_precision")
-        plan["artifact_hash"] = stable_hash({
-            "schema_version": PLAN_SCHEMA_VERSION,
-            "base_url": artifacts.manifest.base_url,
-            "site_id": artifacts.manifest.site_id,
-            "namespace": artifacts.manifest.namespace,
-            "namespace_candidate": artifacts.manifest.namespace_candidate,
-            "crawl_options": plan["crawl_options"],
-            "chunk_options": plan["chunk_options"],
-            "embedding_model": plan["embedding_model"],
-            "manifest": dataclass_to_json_object(artifacts.manifest),
+
+        self.assertEqual(set(plan), {
+            "schema_version", "command", "plan_id", "created_at", "artifact_hash",
+            "source", "site_id", "namespace", "namespace_candidate", "crawl_options",
+            "chunk_options", "embedding_model", "embedding_precision", "applied_state",
+            "delta", "diff",
         })
-        verify_artifact_hash(plan, artifacts.manifest)
-        verify_manifest_embedding_hashes(artifacts.manifest)
+        serialized = json.dumps(plan)
+        self.assertNotIn("manifest.json", serialized)
+        self.assertNotIn("chunks.jsonl", serialized)
+        self.assertNotIn("pages_dir", serialized)
 
     def test_pdf_source_metadata_is_preserved_in_manifest_chunks_and_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -226,7 +201,11 @@ class PlanArtifactTests(unittest.TestCase):
                 out_dir=root / "plan",
             )
 
-        self.assertEqual(artifacts.plan.base_url, "pdf://pdf-research-notes-abc123")
+        self.assertEqual(artifacts.plan.source, {
+            "kind": "pdf", "uri": "pdf://pdf-research-notes-abc123",
+            "title": "Research Notes.pdf",
+            "attributes": {"filename": "Research Notes.pdf", "sha256": "abc123", "source_id": "pdf-research-notes-abc123"},
+        })
         self.assertEqual(artifacts.plan.site_id, "pdf-research-notes-abc123")
         self.assertEqual(artifacts.plan.namespace_candidate, "pdf-research-notes-abc123-v1")
         self.assertIn("pdf_filename", GENERIC_SITE_TURBOPUFFER_SCHEMA)
@@ -281,7 +260,11 @@ class PlanArtifactTests(unittest.TestCase):
                 out_dir=root / "plan",
             )
 
-        self.assertEqual(artifacts.plan.base_url, "file://file-csv-research-notes-abc123")
+        self.assertEqual(artifacts.plan.source, {
+            "kind": "local_file", "uri": "file://file-csv-research-notes-abc123",
+            "title": "Research Notes.csv",
+            "attributes": {"filename": "Research Notes.csv", "extension": "csv", "sha256": "abc123", "source_id": "file-csv-research-notes-abc123"},
+        })
         self.assertEqual(artifacts.plan.site_id, "file-csv-research-notes-abc123")
         self.assertEqual(artifacts.plan.namespace_candidate, "file-csv-research-notes-abc123-v1")
         self.assertIn("file_filename", GENERIC_SITE_TURBOPUFFER_SCHEMA)
@@ -310,7 +293,7 @@ class PlanArtifactTests(unittest.TestCase):
         self.assertEqual(first.manifest_dict(), second.manifest_dict())
         self.assertEqual(first.chunks_jsonl, second.chunks_jsonl)
 
-    def test_optimized_diff_finalization_matches_full_rebuild(self) -> None:
+    def test_repeated_build_with_same_complete_diff_is_identical(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
@@ -330,36 +313,15 @@ class PlanArtifactTests(unittest.TestCase):
             "chunk_options": {"target_tokens": 300, "overlap_sentences": 2},
         }
         initial = build_plan_artifacts(**kwargs)
-        final_diff = {
-            "first_apply": True,
-            "pages_added": 1,
-            "pages_changed": 0,
-            "pages_removed": 0,
-            "pages_unchanged": 0,
-            "rows_to_upsert": 1,
-            "chunks_to_embed": 1,
-            "chunks_unchanged": 0,
-            "stale_rows": 0,
-            "retained_stale_rows": 0,
-        }
-        optimized = PlanArtifacts(
-            plan=replace(initial.plan, diff=final_diff),
-            manifest=initial.manifest,
-            chunks_jsonl=initial.chunks_jsonl,
-        )
-        rebuilt = build_plan_artifacts(**kwargs, diff=final_diff)
+        rebuilt = build_plan_artifacts(**kwargs, diff=initial.diff)
 
-        optimized_plan = optimized.plan_dict()
+        initial_plan = initial.plan_dict()
         rebuilt_plan = rebuilt.plan_dict()
-        # created_at is observational and may differ between constructions.
-        optimized_plan.pop("created_at")
+        initial_plan.pop("created_at")
         rebuilt_plan.pop("created_at")
-        self.assertEqual(optimized_plan, rebuilt_plan)
-        self.assertEqual(optimized.plan.artifact_hash, rebuilt.plan.artifact_hash)
-        self.assertEqual(optimized.plan.plan_id, rebuilt.plan.plan_id)
-        self.assertEqual(optimized.plan.diff, rebuilt.plan.diff)
-        self.assertEqual(optimized.manifest_dict(), rebuilt.manifest_dict())
-        self.assertEqual(optimized.chunks_jsonl, rebuilt.chunks_jsonl)
+        self.assertEqual(initial_plan, rebuilt_plan)
+        self.assertEqual(initial.upsert_rows, rebuilt.upsert_rows)
+        self.assertEqual(initial.stale_rows, rebuilt.stale_rows)
 
     def test_artifact_hash_ignores_volatile_crawl_timestamp(self) -> None:
         first = self.build_artifacts(crawl_timestamp="2026-06-20T00:00:00+00:00")
@@ -387,14 +349,13 @@ class PlanArtifactTests(unittest.TestCase):
             write_plan_artifacts(artifacts, out_dir)
 
             plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
-            manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
-            chunks_text = (out_dir / "chunks.jsonl").read_text(encoding="utf-8")
-            chunks = [json.loads(line) for line in chunks_text.splitlines()]
+            verified = verify_plan_artifacts(out_dir / "plan.json")
+            names = {path.name for path in out_dir.iterdir()}
 
+        self.assertEqual(names, {"plan.json", "delta.duckdb"})
         self.assertEqual(plan["artifact_hash"], artifacts.plan.artifact_hash)
-        self.assertEqual(manifest["chunks"][0]["chunk_hash"], chunks[0]["chunk_hash"])
-        self.assertEqual(len(chunks), 1)
-        self.assertTrue(chunks_text.endswith("\n"))
+        self.assertEqual(len(verified.upsert_rows), 1)
+        self.assertEqual(verified.upsert_rows[0]["chunk_hash"], artifacts.upsert_rows[0]["chunk_hash"])
 
     def test_generic_row_id_is_stable_when_unrelated_page_section_changes(self) -> None:
         original = self.build_artifacts(

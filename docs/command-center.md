@@ -44,7 +44,7 @@ Managed website planning validates HTTP(S) syntax and accepts no source credenti
 
 Only one managed job may be `queued` or `running` at a time for the configured local service. A second submission is rejected and links to the active job; it is not queued. Job history and append-only progress events are durable. New jobs retain at most 5,000 lifecycle and progress events. At the threshold, one durable event states that additional progress is being coalesced; later intermediate callbacks do not rewrite the record or event log, and the final `succeeded`, `failed`, or `interrupted` event remains reserved. Existing over-limit schema-v1 history remains readable and is never compacted or deleted by this rule. States are `queued`, `running`, `succeeded`, `failed`, and `interrupted`. On startup, a previously queued or running job becomes `interrupted`; no job resumes or retries automatically. There is no cancel, pause, resume, automatic retry, or plan-job retry endpoint. **Start a new plan** always creates a new job identity.
 
-A successful job writes the same ordinary, integrity-verified `plan.json`, `manifest.json`, `chunks.jsonl`, `summary.json`, and `pages/` artifacts as CLI planning. The job ID is audit/storage metadata only and does not change source, namespace, document, chunk, plan, or row identity. The plan appears in the existing read-only plan review screen. Planning does not read turbopuffer credentials, embed content, call turbopuffer, update applied state, or mutate a namespace or catalog.
+A successful job publishes exactly the same two integrity-verified schema-v2 artifacts as CLI planning: `plan.json` and `delta.duckdb`. It retains no manifest, chunk JSONL, summary sidecar, extracted pages, or source staging. The job ID is audit/storage metadata only and does not change source, namespace, document, chunk, plan, or row identity. The plan appears in the existing read-only plan review screen. Planning does not read turbopuffer credentials, embed content, call turbopuffer, update applied state, or mutate a namespace or catalog.
 
 Command Center never applies a plan. After reviewing a successful managed plan, hand its exact artifact path to the existing CLI:
 
@@ -57,7 +57,7 @@ Use the configured artifacts root instead of `artifacts/site-crawls` when overri
 
 ## Local and remote activity
 
-Ordinary navigation is local-only. Dashboard, namespace, plan, and plan-job history pages inspect saved artifacts, Markdown, chunks, summaries, job events, and local applied state beneath the configured roots. Malformed artifacts are isolated and displayed as item-level errors. The console never repairs or changes them.
+Ordinary navigation is local-only. Dashboard, namespace, plan, and plan-job history pages inspect bounded `plan.json` summaries, selected fully verified deltas, job events, and local applied state beneath the configured roots. Inventory never opens `delta.duckdb`; it reports payload verification as `not_checked`. Selecting one plan fully verifies that delta before showing bounded windows. Schema-v1 plans are silently ignored and never opened. Malformed schema-v2 artifacts are isolated and displayed as item-level errors. The console never repairs or changes them.
 
 Submitting **Start plan** is the only source-acquisition workflow: it may crawl the submitted credential-free HTTP(S) website or clone the submitted public GitHub repository root. It never reconnects to document or database sources. Opening history, progress, or a completed plan does not reacquire the source. Displayed source activity on saved plans is recorded plan metadata, not a new source query.
 
@@ -82,11 +82,11 @@ Do not put secrets in plan artifacts, URLs, browser storage, logs, screenshots, 
 - **Namespaces** filters combined local inventory by namespace, source kind, local state, refreshed remote classification, and catalog-card status.
 - **Namespace detail** shows source provenance, retrieval settings, related plans and diffs, a search entry point, and a clearly labeled future graph area.
 - **Plans** presents deterministic plan history, source/activity metadata, counts, and proposed diffs.
-- **Plan detail** shows identity, safe provenance, embedding and retrieval contracts, diff, bounded page/Markdown previews, paginated chunks, warnings, errors, and an originating job link when durable managed metadata establishes one.
+- **Plan detail** shows fully verified identity, applied-state baseline, safe provenance, embedding and retrieval contracts, diff, paginated changed/new/reactivated chunks, paginated stale identities, an explicit unchanged-content omission notice, warnings, errors, and an originating job link when durable managed metadata establishes one.
 - **Search** supports explicit namespace selection or automatic routing with bounded ranking inputs, execution-impact disclosure, and citation-rich results.
 - **Graphs** explains the future evidence-backed graph flow. It contains no generated, placeholder, or inferred graph data.
 
-Markdown, chunk content, progress, errors, citations, and result text are rendered as escaped plain text rather than executable HTML. A shared **Retry** button on a read-error card only repeats that idempotent GET; it does not retry, resume, or replay a plan job.
+Changed chunk content, progress, errors, citations, and result text are rendered as escaped plain text rather than executable HTML. A shared **Retry** button on a read-error card only repeats that idempotent GET; it does not retry, resume, or replay a plan job.
 
 ## Security boundary
 
@@ -94,7 +94,7 @@ Command Center is for one local operator. It has no authentication and compensat
 
 Starting an available plan requires JSON within the bounded request size and a server-process CSRF token fetched by the UI and returned in a non-simple header. When capabilities report `managed_public_planning_available: false` with reason `platform_unsupported`, managed routes render an unavailable explanation and make no job-history, CSRF, or creation request; `durable_plan_job_history_available` is also false. The token is not persisted, logged, or stored in browser storage. Restarting the server changes the token. These protections complement the loopback bind; they do not make remote exposure safe.
 
-Browser requests address plans and jobs by validated IDs and bounded index or pagination values. They cannot request arbitrary filesystem paths or SQL. Responses redact private absolute paths, warehouse connection details, credentials, and raw provider errors. The only Phase 2A mutation endpoint creates a bounded local plan job; there are no apply, approve, cancel, retry/resume, delete, catalog/source-definition, or namespace mutation endpoints.
+Browser requests address plans and jobs by validated IDs and bounded pagination values. They cannot request arbitrary filesystem paths or SQL. Responses redact private absolute paths, warehouse connection details, credentials, and raw provider errors. The only Phase 2A mutation endpoint creates a bounded local plan job; there are no apply, approve, cancel, retry/resume, delete, catalog/source-definition, or namespace mutation endpoints.
 
 Do not reverse-proxy the server, expose it through a tunnel, bind it to a network interface, or treat it as a multi-user service.
 
@@ -118,7 +118,7 @@ Choose another loopback port, for example `uv run buoy serve --port 8876`.
 
 ### Plans, plan jobs, or namespaces are absent
 
-Run the server from the project that owns the artifacts and state, or pass the correct `--artifacts-root` and `--state-root`. The artifacts root is searched recursively for `plan.json`; unsafe symlinks, malformed artifacts, and identity mismatches are not silently accepted. Plan-job history belongs to the selected state root.
+Run the server from the project that owns the artifacts and state, or pass the correct `--artifacts-root` and `--state-root`. The artifacts root is searched recursively for bounded schema-v2 `plan.json` summaries with regular-file `delta.duckdb` siblings. Legacy schema-v1 plans are inert and omitted. Unsafe symlinks, malformed schema-v2 artifacts, and summary identity mismatches are not silently accepted. Plan-job history belongs to the selected state root.
 
 ### Server shutdown waits for an active job
 

@@ -6,7 +6,7 @@ Updated: 2026-07-24
 
 ## Purpose and scope
 
-Add one managed public-source plan workflow to the existing local command center while retaining all Phase 1 read-only review/search/remote behavior.
+Add one managed public-source plan workflow to the existing local command center while retaining Phase 1 read-only dashboard, namespace, changed-content plan review, search, and remote behavior. Schema-v1 full-page review routes are deliberately removed by the schema-v2 hard cutover.
 
 ## Routes
 
@@ -14,7 +14,7 @@ Add one managed public-source plan workflow to the existing local command center
 - `/plan-jobs`: recent bounded job history with job ID, safe source, source type, state, created time, current stage, plan ID, and progress/review links.
 - `/plan-jobs/:jobId`: state, source, namespace, durable progress timeline/counts, sanitized error, and plan-review link after success. It consumes persisted-plus-live SSE with polling fallback and reconnect sequence. Failed/interrupted jobs may link to `/plans/new` as `Start a new plan`; they never replay automatically.
 
-Navigation adds `Start plan` and `Plan jobs`. Existing plan detail displays originating job ID when the managed job record can establish it. When capabilities report managed planning unavailable, managed routes show an explanatory read-only fallback without rendering the form, fetching history/CSRF, opening SSE, or attempting submission; saved plans and all Phase 1 routes remain available.
+Navigation adds `Start plan` and `Plan jobs`. Existing plan detail displays originating job ID when the managed job record can establish it and reviews only bounded changed/new content and stale identities from the schema-v2 delta; unchanged source content is not retained. When capabilities report managed planning unavailable, managed routes show an explanatory read-only fallback without rendering the form, fetching history/CSRF, opening SSE, or attempting submission; saved schema-v2 plans and all retained read-only routes remain available; removed schema-v1 page routes are not part of this fallback.
 
 ## UX and safety
 

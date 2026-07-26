@@ -7,7 +7,7 @@ updates applied state or routing catalogs.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -18,8 +18,7 @@ import stat
 import tempfile
 from typing import Any, Callable, Literal
 
-from buoy_search.applied_state import load_applied_state
-from buoy_search.catalog import generated_semantics
+from buoy_search.applied_state import applied_state_paths, load_applied_state
 from buoy_search.config import DEFAULT_EMBEDDING_PRECISION, DEFAULT_REGION
 from buoy_search.crawler import (
     DEFAULT_CRAWL_CONCURRENT_REQUESTS,
@@ -46,17 +45,18 @@ from buoy_search.crawler import (
 from buoy_search.chunker import (
     DEFAULT_OVERLAP_SENTENCES,
     DEFAULT_TARGET_TOKENS,
-    parse_markdown_file,
 )
 from buoy_search.database_relation import DatabaseRelationError
 from buoy_search.plan_artifacts import (
     DEFAULT_PLAN_EMBEDDING_MODEL,
     PlanArtifacts,
     build_plan_artifacts,
+    site_id_for_url,
+    verify_plan_artifacts,
     write_plan_artifacts,
 )
 from buoy_search.plan_cleanup import cleanup_superseded_plan_directories
-from buoy_search.plan_diff import IncrementalPlanDiff, diff_manifest_against_state
+from buoy_search.plan_diff import IncrementalPlanDiff
 from buoy_search.source_url import validate_http_url_authority
 from buoy_search.remote_catalog import REMOTE_CATALOG_NAMESPACE
 from buoy_search.retriever import ranking_defaults_for_namespace
@@ -261,7 +261,9 @@ class PlanningService:
             "complete",
             "plan: complete "
             f"pages={len(result.artifacts.manifest.pages)}; "
-            f"chunks={len(result.artifacts.manifest.chunks)}",
+            f"chunks={len(result.artifacts.manifest.chunks)}; "
+            f"upserts={len(result.artifacts.upsert_rows)}; "
+            f"stale={len(result.artifacts.stale_rows)}",
         )
         return result
 
@@ -341,9 +343,25 @@ class PlanningService:
             crawl_summary["pages_dir"] = str(out_dir / "pages")
         namespace = request.namespace or str(crawl_summary["namespace_candidate"])
 
-        emit_progress(progress_callback, "artifacts", "plan: building artifacts")
+        site_id = site_id_for_url(base_url)
+        state_path = applied_state_paths(
+            site_id=site_id,
+            namespace=namespace,
+            state_root=request.state_root,
+        ).database_path
+        state_present = state_path.exists()
+        state = load_applied_state(
+            site_id=site_id,
+            namespace=namespace,
+            base_url=base_url,
+            state_root=request.state_root,
+        )
+
+        emit_progress(progress_callback, "diff", "plan: diffing against local state")
+        diff_started_at = observe_monotonic()
+        emit_progress(progress_callback, "artifacts", "plan: building compact delta artifacts")
         artifact_started_at = observe_monotonic()
-        initial_artifacts = self._artifact_builder(
+        artifacts = self._artifact_builder(
             indexing_plan=crawl_execution.indexing_plan,
             base_url=base_url,
             out_dir=out_dir,
@@ -353,24 +371,14 @@ class PlanningService:
             embedding_model=DEFAULT_PLAN_EMBEDDING_MODEL,
             embedding_precision=request.embedding_precision,
             state_root=request.state_root,
+            applied_state=state,
+            state_present=state_present,
+            source_summary=crawl_summary,
+            originating_job_id=request.originating_job_id,
         )
-        artifact_seconds = elapsed_since(artifact_started_at)
-        state = load_applied_state(
-            site_id=initial_artifacts.manifest.site_id,
-            namespace=initial_artifacts.manifest.namespace,
-            base_url=base_url,
-            state_root=request.state_root,
-        )
-
-        emit_progress(progress_callback, "diff", "plan: diffing against local state")
-        diff_started_at = observe_monotonic()
-        diff = diff_manifest_against_state(initial_artifacts.manifest, state)
+        diff = artifacts.diff
         diff_seconds = elapsed_since(diff_started_at)
-        artifacts = PlanArtifacts(
-            plan=replace(initial_artifacts.plan, diff=diff.to_dict()),
-            manifest=initial_artifacts.manifest,
-            chunks_jsonl=initial_artifacts.chunks_jsonl,
-        )
+        artifact_seconds = elapsed_since(artifact_started_at)
         catalog_preview = plan_catalog_registration_preview(
             artifacts,
             region=os.environ.get("TURBOPUFFER_REGION", DEFAULT_REGION),
@@ -380,6 +388,9 @@ class PlanningService:
         validate_precreated_output(request)
         publication_started_at = observe_monotonic()
         self._artifact_writer(artifacts, write_out_dir)
+        remove_source_staging(write_out_dir)
+        if {path.name for path in write_out_dir.iterdir()} != {"plan.json", "delta.duckdb"}:
+            raise ValueError("successful compact plan output must contain exactly plan.json and delta.duckdb")
         validate_precreated_output(request)
         publication_seconds = elapsed_since(publication_started_at)
 
@@ -408,10 +419,6 @@ class PlanningService:
             state_first_apply=state.first_apply,
             catalog_registration=catalog_preview,
             originating_job_id=request.originating_job_id,
-        )
-        validate_precreated_output(request)
-        (write_out_dir / "summary.json").write_text(
-            json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
         )
         validate_precreated_output(request)
         self._artifact_verifier(
@@ -494,10 +501,8 @@ def validate_precreated_output(
             raise ValueError("managed plan output directory could not be inspected safely") from exc
 
 
-_MANAGED_ARTIFACT_FILES = frozenset(
-    {"plan.json", "manifest.json", "chunks.jsonl", "summary.json"}
-)
-_MANAGED_ARTIFACT_ROOTS = _MANAGED_ARTIFACT_FILES | {"pages"}
+_MANAGED_ARTIFACT_FILES = frozenset({"plan.json", "delta.duckdb"})
+_MANAGED_ARTIFACT_ROOTS = _MANAGED_ARTIFACT_FILES
 
 
 def create_private_staging_directory() -> tuple[Path, int]:
@@ -544,10 +549,7 @@ def copy_staged_artifacts(
             raise ValueError("managed plan output directory is not empty")
         return
     for name in sorted(selected):
-        if name == "pages":
-            _copy_staged_directory(staging_descriptor, destination, name)
-        else:
-            _copy_staged_file(staging_descriptor, destination, name)
+        _copy_staged_file(staging_descriptor, destination, name)
     _fsync_directory_descriptor(destination)
     source_hashes = _ordinary_tree_hashes(staging_descriptor, selected)
     destination_hashes = _ordinary_tree_hashes(destination, selected)
@@ -921,13 +923,11 @@ def plan_summary(
             "namespace_candidate": plan_dict["namespace_candidate"],
             "site_id": plan_dict["site_id"],
             "plan_id": plan_dict["plan_id"],
-            "plan_path": str(Path(str(plan_dict["manifest_path"])).with_name("plan.json")),
-            "manifest_path": plan_dict["manifest_path"],
-            "chunks_path": plan_dict["chunks_path"],
-            "pages_dir": plan_dict["pages_dir"],
-            "state_backend": plan_dict["state_backend"],
-            "state_path": plan_dict["state_path"],
+            "plan_path": str(Path(str(crawl_summary["out_dir"])) / "plan.json"),
+            "delta_filename": "delta.duckdb",
             "state_first_apply": state_first_apply,
+            "applied_state": plan_dict["applied_state"],
+            "source": plan_dict["source"],
             "embedding_model": plan_dict["embedding_model"],
             "embedding_precision": plan_dict["embedding_precision"],
             "artifact_hash": plan_dict["artifact_hash"],
@@ -947,28 +947,25 @@ def plan_catalog_registration_preview(
     *,
     region: str,
 ) -> JsonObject:
-    manifest = artifacts.manifest
-    metadata = [
-        dict(record.source_metadata)
-        for record in [*manifest.pages, *manifest.chunks]
-        if record.source_metadata
-    ]
-    semantics = generated_semantics(
-        base_url=manifest.base_url,
-        site_id=manifest.site_id,
-        plan_schema_version=artifacts.plan.schema_version,
-        source_metadata=metadata,
-    )
+    source_kind = {
+        "website": "website",
+        "github_repo": "github_repo",
+        "local_file": "document",
+        "pdf": "document",
+        "duckdb_relation": "database",
+        "bigquery_relation": "database",
+        "snowflake_relation": "database",
+    }[str(artifacts.plan.source["kind"])]
     ranking = ranking_defaults_for_namespace(
-        manifest.namespace, source_kind=semantics.source_kind
+        artifacts.plan.namespace, source_kind=source_kind
     )
     return {
         "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
-        "namespace": manifest.namespace,
+        "namespace": artifacts.plan.namespace,
         "action": "unknown_until_approved",
         "remote_catalog_state": "unknown_until_approved",
         "manual_semantics_preservation": "unknown_until_approved",
-        "source_kind": semantics.source_kind,
+        "source_kind": source_kind,
         "region": region,
         "vector_dimensions": 384,
         **ranking,
@@ -976,47 +973,28 @@ def plan_catalog_registration_preview(
 
 
 def verify_written_plan(plan_path: Path, state_root: Path, expected_plan_id: str) -> None:
-    """Require complete ordinary artifacts to pass the existing apply verifier."""
+    """Require complete compact artifacts to pass logical verification."""
 
-    from buoy_search.apply import load_verified_apply_plan
-
-    verified = load_verified_apply_plan(
-        plan_path=plan_path,
-        namespace=None,
-        state_root=state_root,
-    )
+    del state_root
+    verified = verify_plan_artifacts(plan_path)
     if verified.plan.get("plan_id") != expected_plan_id:
         raise ValueError("verified plan ID does not match the generated plan")
-    summary_path = plan_path.with_name("summary.json")
-    summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    if not isinstance(summary, dict) or summary.get("plan_id") != expected_plan_id:
-        raise ValueError("summary.json does not match the generated plan")
-    pages_dir = plan_path.with_name("pages")
-    if pages_dir.is_symlink() or not pages_dir.is_dir():
-        raise ValueError("pages artifact directory is missing or unsafe")
-    pages_root = pages_dir.resolve(strict=True)
-    for page in verified.manifest.pages:
-        relative_path = Path(page.content_path)
-        if (
-            relative_path.is_absolute()
-            or not relative_path.parts
-            or any(part in {"", ".", ".."} for part in relative_path.parts)
-        ):
-            raise ValueError("manifest page artifact is missing or unsafe")
-        page_path = pages_dir / relative_path
-        current = pages_dir
-        for part in relative_path.parts:
-            current /= part
-            if current.is_symlink():
-                raise ValueError("manifest page artifact is missing or unsafe")
-        try:
-            page_path.resolve(strict=True).relative_to(pages_root)
-        except (OSError, ValueError) as exc:
-            raise ValueError("manifest page artifact is missing or unsafe") from exc
-        if not page_path.is_file():
-            raise ValueError("manifest page artifact is missing or unsafe")
-        if parse_markdown_file(page_path, pages_dir).source_hash != page.page_hash:
-            raise ValueError("manifest page artifact content hash does not match")
+
+
+def remove_source_staging(out_dir: Path) -> None:
+    """Remove only known private acquisition roots after compact artifacts exist."""
+
+    for name in ("pages", "repo-checkout"):
+        path = out_dir / name
+        if path.is_symlink():
+            raise ValueError(f"source staging path is an unsafe symlink: {path}")
+        if path.is_dir():
+            shutil.rmtree(path)
+    summary = out_dir / "summary.json"
+    if summary.is_symlink():
+        raise ValueError(f"source staging path is an unsafe symlink: {summary}")
+    if summary.is_file():
+        summary.unlink()
 
 
 def emit_progress(callback: ProgressCallback | None, stage: str, message: str) -> None:

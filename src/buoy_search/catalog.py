@@ -35,6 +35,7 @@ ROUTING_CONTRACT: dict[str, object] = {
     "revision": ROUTING_MODEL_REVISION,
 }
 SOURCE_KINDS = {"github_repo", "website", "document", "database"}
+SUPPORTED_PLAN_SCHEMA_VERSIONS = frozenset({1, PLAN_SCHEMA_VERSION})
 DATABASE_SOURCE_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 DATABASE_RELATION_PATTERN = re.compile(
     r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*){0,2}$"
@@ -467,8 +468,11 @@ def _parse_card(payload: object, *, persisted: bool) -> NamespaceCard:
         payload["plan_schema_version"],
         field="plan_schema_version",
         namespace=namespace,
-        expected=PLAN_SCHEMA_VERSION,
     )
+    if plan_schema not in SUPPORTED_PLAN_SCHEMA_VERSIONS:
+        raise CatalogError(
+            f"namespace {namespace!r} field plan_schema_version is unsupported"
+        )
     ranking_pool = _require_exact_int(
         payload["ranking_pool"], field="ranking_pool", namespace=namespace, positive=True
     )
@@ -606,12 +610,15 @@ def validate_card_fields(fields: CardFields, *, persisted: bool = True) -> CardF
     _require_string(fields.embedding_model, field="embedding_model", namespace=namespace)
     if fields.embedding_precision not in EMBEDDING_PRECISIONS:
         raise CatalogError(f"namespace {namespace!r} field embedding_precision is unsupported")
-    _require_exact_int(
+    plan_schema = _require_exact_int(
         fields.plan_schema_version,
         field="plan_schema_version",
         namespace=namespace,
-        expected=PLAN_SCHEMA_VERSION,
     )
+    if plan_schema not in SUPPORTED_PLAN_SCHEMA_VERSIONS:
+        raise CatalogError(
+            f"namespace {namespace!r} field plan_schema_version is unsupported"
+        )
     if fields.ranking_mode not in RANKING_MODES or fields.ranking_profile not in RANKING_PROFILES or fields.ranking_aggregation not in RANKING_AGGREGATIONS:
         raise CatalogError(f"namespace {namespace!r} has an unsupported ranking contract")
     _require_exact_int(
@@ -709,7 +716,7 @@ def _prepare_card(
         embedding_model=fields.embedding_model,
         embedding_precision=fields.embedding_precision,
         vector_dimensions=ROUTING_DIMENSIONS,
-        plan_schema_version=PLAN_SCHEMA_VERSION,
+        plan_schema_version=fields.plan_schema_version,
         ranking_mode=fields.ranking_mode,
         ranking_profile=fields.ranking_profile,
         ranking_pool=fields.ranking_pool,

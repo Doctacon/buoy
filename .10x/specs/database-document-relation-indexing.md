@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-22
-Updated: 2026-07-22
+Updated: 2026-07-24
 
 # Database Document Relation Indexing
 
@@ -16,7 +16,7 @@ Each row is one logical document. `document_id` and `content` are required; `tit
 
 For backend `<backend>` and source ID `<slug>`, base URI is `<backend>://<slug>`, site/state ID is `<backend>-<slug>`, default namespace is `<backend>-<slug>-v1`, output is `artifacts/site-crawls/<backend>-<slug>`, and document URI appends the percent-encoded text ID. Identity MUST NOT depend on credentials, connection settings, paths, query/job IDs, row order, counts, or contents. Source IDs retain `^[a-z0-9]+(?:-[a-z0-9]+)*$` validation without normalization.
 
-New pages, manifest source metadata, chunks, and turbopuffer content rows MUST preserve `database_backend`, `database_source_id`, `database_relation`, and `database_document_id`. DuckDB MAY retain legacy `duckdb_*` fields. Existing saved DuckDB plans lacking generic fields MUST still catalog, verify, and apply.
+Temporary materialized pages, schema-v2 plan-level source metadata, changed/new delta rows, and turbopuffer content rows MUST preserve `database_backend`, `database_source_id`, and `database_relation`; delta/content rows also preserve `database_document_id`. DuckDB MAY retain `duckdb_*` row metadata in addition to required generic fields. Schema-v1 saved plans, including DuckDB plans lacking generic fields, are inert and unsupported under `.10x/specs/compact-delta-plan-artifacts.md`; no compatibility reader or migration remains.
 
 ## Shared materialization and summaries
 
@@ -26,7 +26,7 @@ Summaries MUST distinguish `rows_discovered`, `documents_selected`, `documents_s
 
 ## Plan/apply boundary
 
-Only `plan` and `crawl` MAY connect to source databases. `apply`, including dry-run, MUST use integrity-verified saved artifacts only and MUST remain independent of source files, credentials, profiles, connection settings, and changed relation contents. Source connection/credential details and volatile operational diagnostics MUST NOT enter deterministic identity or artifact hashes. `PLAN_SCHEMA_VERSION` remains unchanged unless proven insufficient.
+Only `plan` and `crawl` MAY connect to source databases. `apply`, including dry-run, MUST use integrity-verified saved artifacts only and MUST remain independent of source files, credentials, profiles, connection settings, and changed relation contents. Source connection/credential details and volatile operational diagnostics MUST NOT enter deterministic identity or artifact hashes. All database sources emit `PLAN_SCHEMA_VERSION=2` compact deltas with the exact source variant and hard-cutover behavior in `.10x/specs/compact-delta-plan-artifacts.md`.
 
 ## CLI and safety
 
@@ -44,9 +44,9 @@ No API extraction, orchestration, arbitrary SQL, Buoy-configured joins, multiple
 
 ## Acceptance criteria
 
-1. Existing DuckDB commands/names/identities and saved plans remain compatible while global validation uses backend SQL rather than retaining all IDs in Python.
+1. Existing DuckDB command names and source/row identities remain compatible while every newly generated plan uses schema 2; schema-1 saved plans are unsupported and inert. Global validation uses backend SQL rather than retaining all IDs in Python.
 2. BigQuery and Snowflake tables/views satisfy the same contract through official lazy clients/connectors and bounded deterministic acquisition.
-3. Generic provenance survives pages through turbopuffer rows without credential/connection leakage.
+3. Generic provenance survives temporary materialized pages into plan-level source metadata, changed/new delta rows, and turbopuffer rows without credential/connection leakage.
 4. Invalid identifiers/combinations fail clearly before successful page/plan output.
 5. Saved-plan apply never imports/connects to source adapters.
 6. Catalog and ranking behavior supports all three backends and custom namespaces without changing other source categories.

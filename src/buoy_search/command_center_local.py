@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 from typing import Any, Literal
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
@@ -29,6 +30,8 @@ from buoy_search.applied_state import (
 
 DEFAULT_ARTIFACTS_ROOT = Path("artifacts/site-crawls")
 DEFAULT_STATE_ROOT = Path(".buoy")
+PLAN_SCHEMA_VERSION = 2
+MAX_PLAN_JSON_BYTES = 131_072
 MAX_PAGE_SIZE = 100
 MAX_PREVIEW_CHARS = 20_000
 MAX_CITATION_CHARS = 2_000
@@ -64,6 +67,10 @@ DIFF_COUNT_FIELDS = (
     "stale_rows",
     "retained_stale_rows",
 )
+
+
+class _LegacyPlan(ValueError):
+    """Internal sentinel for inert unsupported plan artifacts."""
 
 
 class InventoryLookupError(ValueError):
@@ -141,6 +148,7 @@ class PlanSummary:
     page_count: int | None
     chunk_count: int | None
     diff: DiffSummary
+    payload_verification: Literal["not_checked"] = "not_checked"
     source_activity: SourceActivity = SourceActivity(None, None)
     warnings: list[InventoryWarning] = field(default_factory=list)
 
@@ -149,10 +157,13 @@ class PlanSummary:
 class PlanDetail:
     summary: PlanSummary
     namespace_candidate: str
-    artifact_hash: str | None
+    artifact_hash: str
     retrieval: RetrievalSettings
     source_activity: SourceActivity
     originating_job_id: str | None
+    payload_verification: Literal["verified"]
+    applied_state_present: bool
+    applied_state_hash: str
 
 
 @dataclass(frozen=True)
@@ -213,24 +224,9 @@ class NamespaceInventory:
 
 
 @dataclass(frozen=True)
-class PageSummary:
-    index: int
-    title: str
-    canonical_url: str
-    status: int | None
-    content_type: str
-
-
-@dataclass(frozen=True)
-class PagePreview:
-    page: PageSummary
-    markdown: str
-    truncated: bool
-
-
-@dataclass(frozen=True)
 class ChunkPreview:
     index: int
+    action: str
     row_id: str
     title: str
     canonical_url: str
@@ -241,16 +237,26 @@ class ChunkPreview:
 
 
 @dataclass(frozen=True)
-class PageInventory:
-    items: list[PageSummary]
+class ChunkInventory:
+    items: list[ChunkPreview]
     total: int
     offset: int
     limit: int
 
 
 @dataclass(frozen=True)
-class ChunkInventory:
-    items: list[ChunkPreview]
+class StaleRowPreview:
+    index: int
+    category: str
+    row_id: str
+    canonical_url: str
+    prior_status: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class StaleRowInventory:
+    items: list[StaleRowPreview]
     total: int
     offset: int
     limit: int
@@ -273,13 +279,15 @@ class Dashboard:
 class _PlanRecord:
     summary: PlanSummary
     namespace_candidate: str
-    artifact_hash: str | None
+    artifact_hash: str
     retrieval: RetrievalSettings
     source_activity: SourceActivity
     originating_job_id: str | None
-    pages: list[dict[str, Any]]
-    chunks: list[dict[str, Any]]
+    plan_path: Path = field(repr=False)
     directory: Path = field(repr=False)
+    directory_identity: tuple[int, int] = field(repr=False)
+    plan_identity: tuple[int, int] = field(repr=False)
+    delta_identity: tuple[int, int] = field(repr=False)
     timestamp: datetime | None = field(repr=False)
     candidate_id: str = field(repr=False)
 
@@ -311,6 +319,13 @@ class LocalInventoryService:
 
     def get_plan(self, plan_id: str) -> PlanDetail:
         record = self._plan_record(plan_id)
+        try:
+            verified = _verify_record(record, materialize=False)
+        except (OSError, ValueError) as exc:
+            raise InventoryLookupError(
+                "plan_payload_invalid", "Plan delta could not be fully verified."
+            ) from exc
+        applied_state = verified.plan["applied_state"]
         return PlanDetail(
             summary=record.summary,
             namespace_candidate=record.namespace_candidate,
@@ -318,32 +333,10 @@ class LocalInventoryService:
             retrieval=record.retrieval,
             source_activity=record.source_activity,
             originating_job_id=record.originating_job_id,
+            payload_verification="verified",
+            applied_state_present=bool(applied_state["present"]),
+            applied_state_hash=str(applied_state["hash"]),
         )
-
-    def list_plan_pages(
-        self, plan_id: str, *, offset: int = 0, limit: int = 50
-    ) -> PageInventory:
-        offset, limit = _validate_pagination(offset, limit)
-        record = self._plan_record(plan_id)
-        items = [_page_summary(index, page) for index, page in enumerate(record.pages)]
-        return PageInventory(items[offset : offset + limit], len(items), offset, limit)
-
-    def get_plan_page(
-        self, plan_id: str, index: int, *, max_chars: int = MAX_PREVIEW_CHARS
-    ) -> PagePreview:
-        max_chars = _validate_preview_limit(max_chars)
-        record = self._plan_record(plan_id)
-        if type(index) is not int or index < 0 or index >= len(record.pages):
-            raise InventoryLookupError("page_not_found", "Plan page index was not found.")
-        page = record.pages[index]
-        content_path = str(page["content_path"])
-        preview_path = _safe_preview_path(record.directory, content_path)
-        try:
-            markdown = preview_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as exc:
-            raise InventoryLookupError("page_unavailable", "Plan page preview is unavailable.") from exc
-        text, truncated = _bounded_text(markdown, max_chars)
-        return PagePreview(_page_summary(index, page), text, truncated)
 
     def list_plan_chunks(
         self,
@@ -356,12 +349,51 @@ class LocalInventoryService:
         offset, limit = _validate_pagination(offset, limit)
         max_chars = _validate_preview_limit(max_chars)
         record = self._plan_record(plan_id)
-        selected = record.chunks[offset : offset + limit]
-        items = [
-            _chunk_preview(index, chunk, max_chars=max_chars)
-            for index, chunk in enumerate(selected, start=offset)
-        ]
-        return ChunkInventory(items, len(record.chunks), offset, limit)
+        try:
+            verified = _verify_record(
+                record, materialize=False, upsert_window=(offset, limit)
+            )
+        except (OSError, ValueError) as exc:
+            raise InventoryLookupError(
+                "plan_payload_invalid", "Plan delta could not be fully verified."
+            ) from exc
+        return ChunkInventory(
+            [
+                _chunk_preview(index, row, max_chars=max_chars)
+                for index, row in enumerate(verified.upsert_rows, start=offset)
+            ],
+            int(verified.plan["delta"]["upsert_count"]),
+            offset,
+            limit,
+        )
+
+    def list_plan_stale_rows(
+        self,
+        plan_id: str,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> StaleRowInventory:
+        offset, limit = _validate_pagination(offset, limit)
+        record = self._plan_record(plan_id)
+        try:
+            verified = _verify_record(
+                record, materialize=False, stale_window=(offset, limit)
+            )
+        except (OSError, ValueError) as exc:
+            raise InventoryLookupError(
+                "plan_payload_invalid", "Plan delta could not be fully verified."
+            ) from exc
+        return StaleRowInventory(
+            [
+                _stale_preview(index, row)
+                for index, row in enumerate(verified.stale_rows, start=offset)
+            ],
+            int(verified.plan["delta"]["stale_count"])
+            + int(verified.plan["delta"]["retained_stale_count"]),
+            offset,
+            limit,
+        )
 
     def list_namespaces(self, *, offset: int = 0, limit: int = 50) -> NamespaceInventory:
         offset, limit = _validate_pagination(offset, limit)
@@ -475,6 +507,8 @@ def _discover_plans(root: Path) -> tuple[list[_PlanRecord], list[SafeError]]:
             continue
         try:
             records.append(_read_plan(root, plan_path))
+        except _LegacyPlan:
+            continue
         except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError) as exc:
             errors.append(_artifact_error(root, plan_path, "malformed_plan", _safe_parse_message(exc)))
 
@@ -503,84 +537,162 @@ def _discover_plans(root: Path) -> tuple[list[_PlanRecord], list[SafeError]]:
 
 
 def _read_plan(root: Path, plan_path: Path) -> _PlanRecord:
-    plan = _json_object(plan_path)
-    plan_id = _required_safe_string(plan, "plan_id")
-    namespace = _required_safe_string(plan, "namespace")
-    site_id = _required_safe_string(plan, "site_id")
-    namespace_candidate = _required_string(plan, "namespace_candidate")
-    if plan.get("command") != "plan":
-        raise ValueError("plan command is invalid")
-    created_at_raw = plan.get("created_at")
-    created_at = created_at_raw if isinstance(created_at_raw, str) and created_at_raw else None
-    timestamp = _parse_timestamp(created_at)
-    warnings: list[InventoryWarning] = []
-    if timestamp is None:
-        warnings.append(InventoryWarning("invalid_created_at", "Plan creation timestamp is missing or invalid."))
+    directory_metadata = plan_path.parent.lstat()
+    if stat.S_ISLNK(directory_metadata.st_mode) or not stat.S_ISDIR(directory_metadata.st_mode):
+        raise ValueError("plan directory must be a regular directory")
+    plan, plan_identity = _bounded_plan_object(plan_path)
+    schema_version = plan.get("schema_version")
+    if type(schema_version) is int and schema_version == 1:
+        raise _LegacyPlan("unsupported schema-v1 plan")
+    if type(schema_version) is not int or schema_version != PLAN_SCHEMA_VERSION:
+        raise ValueError("unsupported plan schema version")
+    from buoy_search.plan_artifacts import validate_plan_document
 
-    directory = plan_path.parent
-    manifest_path = directory / "manifest.json"
-    if manifest_path.is_symlink():
-        raise ValueError("manifest is a symlink")
-    manifest = _json_object(manifest_path)
-    for key, expected in (
-        ("namespace", namespace),
-        ("site_id", site_id),
-        ("base_url", _required_string(plan, "base_url")),
-        ("namespace_candidate", namespace_candidate),
+    validate_plan_document(plan)
+    delta_path = plan_path.with_name("delta.duckdb")
+    try:
+        delta_metadata = delta_path.lstat()
+    except OSError as exc:
+        raise ValueError("delta.duckdb is missing") from exc
+    if stat.S_ISLNK(delta_metadata.st_mode) or not stat.S_ISREG(delta_metadata.st_mode):
+        raise ValueError("delta.duckdb must be a regular file")
+    directory_after = plan_path.parent.lstat()
+    if (
+        not stat.S_ISDIR(directory_after.st_mode)
+        or (directory_after.st_dev, directory_after.st_ino)
+        != (directory_metadata.st_dev, directory_metadata.st_ino)
     ):
-        if manifest.get(key) != expected:
-            raise ValueError(f"manifest {key} does not match plan")
-    pages = _object_list(manifest, "pages")
-    chunks = _object_list(manifest, "chunks")
-    for page in pages:
-        _required_string(page, "canonical_url")
-        _required_string(page, "title")
-        _validate_relative_content_path(_required_string(page, "content_path"))
-    for chunk in chunks:
-        _required_safe_string(chunk, "row_id")
-        _required_string(chunk, "canonical_url")
-        _required_string(chunk, "content")
-        if type(chunk.get("chunk_index")) is not int:
-            raise ValueError("manifest chunk_index must be an integer")
+        raise ValueError("plan directory changed during summary qualification")
 
-    summary_payload = _optional_summary(directory / "summary.json", plan_id, warnings)
-    metadata = _source_metadata(pages, chunks)
-    source, source_warnings = _map_source(_required_string(plan, "base_url"), site_id, metadata)
-    warnings.extend(source_warnings)
-    diff = _diff_summary(plan.get("diff"))
-    retrieval = _retrieval_settings(plan, summary_payload)
-    activity = _source_activity(summary_payload)
-    originating_job_id = _originating_job_id(summary_payload, warnings)
-    artifact_hash = plan.get("artifact_hash")
-    if not isinstance(artifact_hash, str) or re.fullmatch(r"[0-9a-f]{64}", artifact_hash) is None:
-        artifact_hash = None
-        warnings.append(InventoryWarning("invalid_artifact_hash", "Plan artifact hash is missing or invalid."))
-    candidate_id = _artifact_id(root, plan_path)
+    plan_id = str(plan["plan_id"])
+    namespace = str(plan["namespace"])
+    site_id = str(plan["site_id"])
+    namespace_candidate = str(plan["namespace_candidate"])
+    created_at = str(plan["created_at"])
+    timestamp = _parse_timestamp(created_at)
+    if timestamp is None:
+        raise ValueError("plan created_at is invalid")
+    diff = _diff_summary(plan["diff"])
+    source = _source_from_plan(plan["source"])
+    retrieval = _retrieval_settings_v2(plan)
+    activity = _source_activity_v2(str(plan["source"]["kind"]))
+    originating_job_id = plan.get("originating_job_id")
+    if originating_job_id is not None:
+        originating_job_id = str(originating_job_id)
+    page_count = sum(
+        int(plan["diff"][key])
+        for key in ("pages_added", "pages_changed", "pages_unchanged")
+    )
+    chunk_count = int(plan["diff"]["chunks_unchanged"]) + int(
+        plan["diff"]["rows_to_upsert"]
+    )
     summary = PlanSummary(
         plan_id=plan_id,
         namespace=namespace,
         site_id=site_id,
-        created_at=created_at if timestamp is not None else None,
+        created_at=created_at,
         source=source,
-        page_count=len(pages),
-        chunk_count=len(chunks),
+        page_count=page_count,
+        chunk_count=chunk_count,
         diff=diff,
+        payload_verification="not_checked",
         source_activity=activity,
-        warnings=warnings,
+        warnings=[],
     )
     return _PlanRecord(
         summary=summary,
         namespace_candidate=namespace_candidate,
-        artifact_hash=artifact_hash,
+        artifact_hash=str(plan["artifact_hash"]),
         retrieval=retrieval,
         source_activity=activity,
         originating_job_id=originating_job_id,
-        pages=pages,
-        chunks=chunks,
-        directory=directory,
+        plan_path=plan_path,
+        directory=plan_path.parent,
+        directory_identity=(directory_metadata.st_dev, directory_metadata.st_ino),
+        plan_identity=plan_identity,
+        delta_identity=(delta_metadata.st_dev, delta_metadata.st_ino),
         timestamp=timestamp,
-        candidate_id=candidate_id,
+        candidate_id=_artifact_id(root, plan_path),
     )
+
+
+def _verify_plan_artifacts(plan_path: Path, **kwargs: Any) -> Any:
+    from buoy_search.plan_artifacts import verify_plan_artifacts
+
+    return verify_plan_artifacts(plan_path, **kwargs)
+
+
+def _verify_record(record: _PlanRecord, **kwargs: Any) -> Any:
+    """Fully verify exactly the inventory record selected before payload access."""
+
+    before = _record_path_identities(record)
+    expected = (
+        record.directory_identity,
+        record.plan_identity,
+        record.delta_identity,
+    )
+    if before != expected:
+        raise ValueError("selected plan artifacts changed before verification")
+    verified = _verify_plan_artifacts(record.plan_path, **kwargs)
+    plan = verified.plan
+    if (
+        str(plan["plan_id"]) != record.summary.plan_id
+        or str(plan["artifact_hash"]) != record.artifact_hash
+        or str(plan["namespace"]) != record.summary.namespace
+    ):
+        raise ValueError("selected plan identity changed during verification")
+    if _record_path_identities(record) != expected:
+        raise ValueError("selected plan artifacts changed during verification")
+    return verified
+
+
+def _record_path_identities(
+    record: _PlanRecord,
+) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int]]:
+    directory = record.directory.lstat()
+    plan = record.plan_path.lstat()
+    delta = record.plan_path.with_name("delta.duckdb").lstat()
+    if (
+        stat.S_ISLNK(directory.st_mode)
+        or not stat.S_ISDIR(directory.st_mode)
+        or stat.S_ISLNK(plan.st_mode)
+        or not stat.S_ISREG(plan.st_mode)
+        or stat.S_ISLNK(delta.st_mode)
+        or not stat.S_ISREG(delta.st_mode)
+    ):
+        raise ValueError("selected plan artifacts are no longer regular files")
+    return (
+        (directory.st_dev, directory.st_ino),
+        (plan.st_dev, plan.st_ino),
+        (delta.st_dev, delta.st_ino),
+    )
+
+
+def _bounded_plan_object(path: Path) -> tuple[dict[str, Any], tuple[int, int]]:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or opened.st_size > MAX_PLAN_JSON_BYTES:
+            raise ValueError("plan.json is missing, unsafe, or exceeds the size limit")
+        with os.fdopen(os.dup(descriptor), "r", encoding="utf-8") as handle:
+            text = handle.read(MAX_PLAN_JSON_BYTES + 1)
+        if len(text.encode("utf-8")) > MAX_PLAN_JSON_BYTES:
+            raise ValueError("plan.json exceeds the size limit")
+    finally:
+        os.close(descriptor)
+    value = json.loads(text)
+    if not isinstance(value, dict):
+        raise ValueError("plan.json must contain an object")
+    current = path.lstat()
+    identity = (opened.st_dev, opened.st_ino)
+    if (
+        stat.S_ISLNK(current.st_mode)
+        or not stat.S_ISREG(current.st_mode)
+        or (current.st_dev, current.st_ino) != identity
+    ):
+        raise ValueError("plan.json changed during summary qualification")
+    return value, identity
 
 
 def _discover_states(state_root: Path) -> tuple[list[StateSummary], list[SafeError]]:
@@ -722,6 +834,59 @@ def _namespace_summaries(snapshot: _Snapshot) -> list[NamespaceSummary]:
             warnings=warnings,
         ))
     return summaries
+
+
+def _source_from_plan(value: object) -> SourceProvenance:
+    if not isinstance(value, dict):
+        raise ValueError("plan source is invalid")
+    kind = str(value["kind"])
+    uri = str(value["uri"])
+    title = str(value["title"])
+    attributes = value["attributes"]
+    if not isinstance(attributes, dict):
+        raise ValueError("plan source attributes are invalid")
+    if kind == "website":
+        return SourceProvenance(kind="website", uri=uri, title=title)
+    if kind == "github_repo":
+        return SourceProvenance(
+            kind="github_repo",
+            uri=uri,
+            title=title,
+            repository=str(attributes["repo_full_name"]),
+        )
+    if kind in {"local_file", "pdf"}:
+        return SourceProvenance(
+            kind="document", uri=uri, title=title, filename=str(attributes["filename"])
+        )
+    if kind in DATABASE_KINDS:
+        return SourceProvenance(
+            kind="database",
+            uri=uri,
+            title=title,
+            database_backend=str(attributes["database_backend"]),
+            database_source_id=str(attributes["database_source_id"]),
+            database_relation=str(attributes["database_relation"]),
+        )
+    raise ValueError("plan source kind is unsupported")
+
+
+def _retrieval_settings_v2(plan: dict[str, Any]) -> RetrievalSettings:
+    options = plan.get("chunk_options")
+    options = options if isinstance(options, dict) else {}
+    return RetrievalSettings(
+        embedding_model=str(plan["embedding_model"]),
+        embedding_precision=str(plan["embedding_precision"]),
+        ranking_mode=_optional_string(options.get("ranking_mode")),
+        ranking_profile=_optional_string(options.get("ranking_profile")),
+        ranking_pool=_optional_positive_int(options.get("ranking_pool")),
+        ranking_aggregation=_optional_string(options.get("ranking_aggregation")),
+        region=None,
+    )
+
+
+def _source_activity_v2(source_kind: str) -> SourceActivity:
+    remote_database = source_kind in {"bigquery_relation", "snowflake_relation"}
+    return SourceActivity(remote_database, remote_database)
 
 
 def _map_source(
@@ -899,21 +1064,11 @@ def _diff_summary(value: Any) -> DiffSummary:
     )
 
 
-def _page_summary(index: int, page: dict[str, Any]) -> PageSummary:
-    status = page.get("status")
-    return PageSummary(
-        index=index,
-        title=str(page["title"]),
-        canonical_url=_safe_content_uri(str(page["canonical_url"])) or "",
-        status=status if type(status) is int else None,
-        content_type=str(page.get("content_type", "")),
-    )
-
-
 def _chunk_preview(index: int, chunk: dict[str, Any], *, max_chars: int) -> ChunkPreview:
     content, truncated = _bounded_text(str(chunk["content"]), max_chars)
     return ChunkPreview(
         index=index,
+        action=str(chunk["action"]),
         row_id=str(chunk["row_id"]),
         title=str(chunk.get("title", "")),
         canonical_url=_safe_content_uri(str(chunk["canonical_url"])) or "",
@@ -924,30 +1079,15 @@ def _chunk_preview(index: int, chunk: dict[str, Any], *, max_chars: int) -> Chun
     )
 
 
-def _safe_preview_path(plan_directory: Path, content_path: str) -> Path:
-    _validate_relative_content_path(content_path)
-    pages_root = plan_directory / "pages"
-    candidate = pages_root / content_path
-    if pages_root.is_symlink() or candidate.is_symlink():
-        raise InventoryLookupError("unsafe_page_path", "Plan page preview path is unsafe.")
-    current = pages_root
-    for part in Path(content_path).parts:
-        current = current / part
-        if current.is_symlink():
-            raise InventoryLookupError("unsafe_page_path", "Plan page preview path is unsafe.")
-    try:
-        candidate.resolve(strict=False).relative_to(pages_root.resolve(strict=False))
-    except (OSError, ValueError) as exc:
-        raise InventoryLookupError("unsafe_page_path", "Plan page preview path is unsafe.") from exc
-    if not candidate.is_file():
-        raise InventoryLookupError("page_unavailable", "Plan page preview is unavailable.")
-    return candidate
-
-
-def _validate_relative_content_path(value: str) -> None:
-    path = Path(value)
-    if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
-        raise ValueError("manifest content_path is unsafe")
+def _stale_preview(index: int, row: dict[str, Any]) -> StaleRowPreview:
+    return StaleRowPreview(
+        index=index,
+        category=str(row["category"]),
+        row_id=str(row["row_id"]),
+        canonical_url=_safe_content_uri(str(row["canonical_url"])) or "",
+        prior_status=str(row["prior_status"]),
+        reason=str(row["reason"]),
+    )
 
 
 def _validate_pagination(offset: int, limit: int) -> tuple[int, int]:
@@ -1103,6 +1243,7 @@ def _replace_record_warnings(
         page_count=record.summary.page_count,
         chunk_count=record.summary.chunk_count,
         diff=record.summary.diff,
+        payload_verification="not_checked",
         source_activity=record.summary.source_activity,
         warnings=warnings,
     )
@@ -1113,9 +1254,11 @@ def _replace_record_warnings(
         retrieval=record.retrieval,
         source_activity=record.source_activity,
         originating_job_id=record.originating_job_id,
-        pages=record.pages,
-        chunks=record.chunks,
+        plan_path=record.plan_path,
         directory=record.directory,
+        directory_identity=record.directory_identity,
+        plan_identity=record.plan_identity,
+        delta_identity=record.delta_identity,
         timestamp=record.timestamp,
         candidate_id=record.candidate_id,
     )

@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-08
-Updated: 2026-07-18
+Updated: 2026-07-24
 
 # Local MarkItDown Document Source Ingestion
 
@@ -79,7 +79,7 @@ Generated Markdown frontmatter for a local document MUST include at least:
 
 PDF artifacts MAY also preserve existing `pdf_filename`, `pdf_sha256`, and `pdf_source_id` fields for backward compatibility.
 
-Plan, manifest, chunks JSONL, summaries, rows, and applied state MUST preserve local-file metadata without storing absolute paths.
+Schema-v2 compact plan metadata, changed/new delta rows, turbopuffer rows, and applied state MUST preserve local-file metadata without storing absolute paths. No full manifest, chunks JSONL, summary sidecar, or unchanged local-file content is retained.
 
 ### Local-only and live-write guardrails
 
