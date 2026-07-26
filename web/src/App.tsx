@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
 import {
   Link,
   NavLink,
@@ -18,8 +18,6 @@ import type {
   DiffSummary,
   NamespaceDetail,
   NamespaceSummary,
-  PageInventory,
-  PagePreview,
   PlanDetail,
   PlanInventory,
   PlanJob,
@@ -32,6 +30,7 @@ import type {
   RetrievalSettings,
   SearchResponse,
   SourceProvenance,
+  StaleRowInventory,
   Warning,
 } from './types'
 
@@ -724,105 +723,48 @@ function PlanTable({ inventory }: { inventory: PlanInventory }) {
 function PlanScreen() {
   const { planId = '' } = useParams()
   const [chunkOffset, setChunkOffset] = useState(0)
-  const [pageOffset, setPageOffset] = useState(0)
+  const [staleOffset, setStaleOffset] = useState(0)
   const [attempt, setAttempt] = useState(0)
   const [detail, setDetail] = useState<PlanDetail | null>(null)
-  const [pages, setPages] = useState<PageInventory | null>(null)
   const [chunks, setChunks] = useState<ChunkInventory | null>(null)
-  const [preview, setPreview] = useState<PagePreview | null>(null)
+  const [staleRows, setStaleRows] = useState<StaleRowInventory | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [previewError, setPreviewError] = useState<string | null>(null)
-  const selectedPage = useRef<{ planId: string; index: number } | null>(null)
-  const previewGeneration = useRef(0)
-  const previewController = useRef<AbortController | null>(null)
 
   useEffect(() => {
     let current = true
-    const generation = ++previewGeneration.current
-    previewController.current?.abort()
-    setDetail(null); setPages(null); setChunks(null); setPreview(null); setError(null); setPreviewError(null)
-    Promise.all([api.plan(planId), api.pages(planId), api.chunks(planId, chunkOffset)]).then(async ([nextDetail, nextPages, nextChunks]) => {
+    setDetail(null); setChunks(null); setStaleRows(null); setError(null)
+    Promise.all([
+      api.plan(planId),
+      api.chunks(planId, chunkOffset),
+      api.staleRows(planId, staleOffset),
+    ]).then(([nextDetail, nextChunks, nextStale]) => {
       if (!current) return
-      setDetail(nextDetail); setPages(nextPages); setChunks(nextChunks)
-      if (nextPages.items.length) {
-        setPreviewError(null)
-        const retainedIndex = selectedPage.current?.planId === planId
-          ? selectedPage.current.index
-          : nextPages.items[0].index
-        const previewIndex = nextPages.items.some((page) => page.index === retainedIndex)
-          ? retainedIndex
-          : nextPages.items[0].index
-        selectedPage.current = { planId, index: previewIndex }
-        const controller = new AbortController()
-        previewController.current = controller
-        try {
-          const nextPreview = await api.page(planId, previewIndex, controller.signal)
-          if (
-            current
-            && generation === previewGeneration.current
-            && selectedPage.current?.planId === planId
-            && selectedPage.current.index === previewIndex
-          ) setPreview(nextPreview)
-        } catch (reason) {
-          if (
-            current
-            && generation === previewGeneration.current
-            && selectedPage.current?.planId === planId
-            && selectedPage.current.index === previewIndex
-          ) setPreviewError(reason instanceof Error ? reason.message : 'Page preview could not be loaded.')
-        }
-      }
+      setDetail(nextDetail); setChunks(nextChunks); setStaleRows(nextStale)
     }, (reason: unknown) => current && setError(reason instanceof Error ? reason.message : 'Plan detail could not be loaded.'))
-    return () => {
-      current = false
-      if (generation === previewGeneration.current) previewController.current?.abort()
-    }
-  }, [planId, chunkOffset, attempt])
+    return () => { current = false }
+  }, [planId, chunkOffset, staleOffset, attempt])
 
-  useEffect(() => { setPageOffset(0); setChunkOffset(0) }, [planId])
-
-  async function loadPreview(index: number) {
-    const generation = ++previewGeneration.current
-    previewController.current?.abort()
-    const controller = new AbortController()
-    previewController.current = controller
-    selectedPage.current = { planId, index }
-    setPreviewError(null)
-    try {
-      const nextPreview = await api.page(planId, index, controller.signal)
-      if (
-        generation === previewGeneration.current
-        && selectedPage.current?.planId === planId
-        && selectedPage.current.index === index
-      ) setPreview(nextPreview)
-    } catch (reason) {
-      if (
-        generation === previewGeneration.current
-        && selectedPage.current?.planId === planId
-        && selectedPage.current.index === index
-      ) setPreviewError(reason instanceof Error ? reason.message : 'Page preview could not be loaded.')
-    }
-  }
+  useEffect(() => { setChunkOffset(0); setStaleOffset(0) }, [planId])
 
   if (error) return <><PageTitle eyebrow="Plan" title={planId}>Review this saved plan artifact.</PageTitle><ErrorState message={error} retry={() => setAttempt((value) => value + 1)} /></>
-  if (!detail || !pages || !chunks) return <Loading label="Loading plan detail and bounded previews…" />
-  return <PlanContent detail={detail} pages={pages} chunks={chunks} preview={preview} previewError={previewError} loadPreview={loadPreview} pageOffset={pageOffset} setPageOffset={setPageOffset} chunkOffset={chunkOffset} setChunkOffset={setChunkOffset} />
+  if (!detail || !chunks || !staleRows) return <Loading label="Loading fully verified changed-content review…" />
+  return <PlanContent detail={detail} chunks={chunks} staleRows={staleRows} chunkOffset={chunkOffset} setChunkOffset={setChunkOffset} staleOffset={staleOffset} setStaleOffset={setStaleOffset} />
 }
 
-function PlanContent({ detail, pages, chunks, preview, previewError, loadPreview, pageOffset, setPageOffset, chunkOffset, setChunkOffset }: { detail: PlanDetail; pages: PageInventory; chunks: ChunkInventory; preview: PagePreview | null; previewError: string | null; loadPreview: (index: number) => void; pageOffset: number; setPageOffset: (offset: number) => void; chunkOffset: number; setChunkOffset: (offset: number) => void }) {
+function PlanContent({ detail, chunks, staleRows, chunkOffset, setChunkOffset, staleOffset, setStaleOffset }: { detail: PlanDetail; chunks: ChunkInventory; staleRows: StaleRowInventory; chunkOffset: number; setChunkOffset: (offset: number) => void; staleOffset: number; setStaleOffset: (offset: number) => void }) {
   const plan = detail.summary
-  const visiblePages = pages.items.slice(pageOffset, pageOffset + 20)
   const warehouse = plan.source.kind === 'database' && ['bigquery', 'snowflake'].includes(plan.source.database_backend ?? '')
   return (
     <>
-      <PageTitle eyebrow="Plan artifact" title={plan.plan_id}>Review identity, provenance, proposed diff, and bounded plain-text evidence. Phase 1 is read only.</PageTitle>
+      <PageTitle eyebrow="Plan artifact" title={plan.plan_id}>Review fully verified identity, provenance, changed content, and stale identities. This interface is read only.</PageTitle>
       <p className="notice"><strong>Read-only review.</strong> This screen cannot apply a plan, change a namespace, or contact the source.</p>
+      <p className="notice"><strong>Compact delta.</strong> Unchanged content is omitted because it already matches applied state.</p>
       {warehouse && <p className="notice"><strong>Remote-source plan.</strong> This saved plan can be reviewed without reconnecting to the source warehouse.</p>}
-      <section className="panel"><h2>Identity and provenance</h2><dl className="details-grid"><div><dt>Namespace</dt><dd><Link to={`/namespaces/${encodeURIComponent(plan.namespace)}`}>{plan.namespace}</Link></dd></div><div><dt>Candidate</dt><dd>{detail.namespace_candidate}</dd></div><div><dt>Site ID</dt><dd>{plan.site_id}</dd></div><div><dt>Created</dt><dd>{timestamp(plan.created_at)}</dd></div>{detail.originating_job_id && <div><dt>Originating plan job</dt><dd><Link to={`/plan-jobs/${encodeURIComponent(detail.originating_job_id)}`}>{detail.originating_job_id}</Link></dd></div>}<div><dt>Artifact hash</dt><dd className="break-word">{value(detail.artifact_hash)}</dd></div><div><dt>Pages / chunks</dt><dd>{value(plan.page_count)} / {value(plan.chunk_count)}</dd></div></dl><Source source={plan.source} /></section>
+      <section className="panel"><h2>Identity and provenance</h2><dl className="details-grid"><div><dt>Namespace</dt><dd><Link to={`/namespaces/${encodeURIComponent(plan.namespace)}`}>{plan.namespace}</Link></dd></div><div><dt>Candidate</dt><dd>{detail.namespace_candidate}</dd></div><div><dt>Site ID</dt><dd>{plan.site_id}</dd></div><div><dt>Created</dt><dd>{timestamp(plan.created_at)}</dd></div>{detail.originating_job_id && <div><dt>Originating plan job</dt><dd><Link to={`/plan-jobs/${encodeURIComponent(detail.originating_job_id)}`}>{detail.originating_job_id}</Link></dd></div>}<div><dt>Artifact hash</dt><dd className="break-word">{detail.artifact_hash}</dd></div><div><dt>Payload verification</dt><dd>{detail.payload_verification}</dd></div><div><dt>Applied baseline present</dt><dd>{value(detail.applied_state_present)}</dd></div><div><dt>Applied baseline hash</dt><dd className="break-word">{detail.applied_state_hash}</dd></div><div><dt>Desired pages / chunks</dt><dd>{value(plan.page_count)} / {value(plan.chunk_count)}</dd></div></dl><Source source={plan.source} /></section>
       <div className="two-column"><section className="panel"><h2>Source activity when this plan was created</h2><dl className="details-grid"><div><dt>Source credentials required</dt><dd>{value(detail.source_activity.credentials_required)}</dd></div><div><dt>Source API calls occurred</dt><dd>{value(detail.source_activity.api_calls_occurred)}</dd></div></dl><p className="muted">These fields describe recorded plan creation activity, not activity from opening this page.</p></section><section className="panel"><h2>Embedding and retrieval contract</h2><Retrieval settings={detail.retrieval} /></section></div>
       <section className="panel"><h2>Proposed diff</h2><Diff diff={plan.diff} /></section>
-      <section className="panel"><div className="section-heading"><h2>Pages and plain-text Markdown preview</h2><span>{pages.total ? `${pageOffset + 1}–${Math.min(pageOffset + visiblePages.length, pages.total)} of ${pages.total}` : '0 pages'}</span></div>{pages.items.length ? <><div className="page-selector" role="group" aria-label="Select page preview">{visiblePages.map((page) => <button className="secondary-button" type="button" key={page.index} onClick={() => loadPreview(page.index)}>{page.index + 1}. {page.title}</button>)}</div><div className="pagination"><button type="button" className="secondary-button" disabled={pageOffset === 0} onClick={() => setPageOffset(Math.max(0, pageOffset - 20))}>Previous pages</button><button type="button" className="secondary-button" disabled={pageOffset + visiblePages.length >= pages.total} onClick={() => setPageOffset(pageOffset + 20)}>Next pages</button></div>{previewError && <p role="alert" className="inline-error">{previewError} Select the page again to retry.</p>}{preview && <article className="preview"><h3>{preview.page.title}</h3><p><SafeLink href={preview.page.canonical_url}>{preview.page.canonical_url || 'Citation unavailable'}</SafeLink></p><pre>{preview.markdown}</pre>{preview.truncated && <p className="muted">Preview truncated by the server limit.</p>}</article>}</> : <Empty>This plan contains no page previews.</Empty>}</section>
-      <section className="panel"><div className="section-heading"><h2>Chunk previews</h2><span>{chunks.total ? `${chunkOffset + 1}–${Math.min(chunkOffset + chunks.items.length, chunks.total)} of ${chunks.total}` : '0 chunks'}</span></div>{chunks.items.length ? <div className="chunk-list">{chunks.items.map((chunk) => <article key={chunk.index}><h3>{chunk.title || `Chunk ${chunk.index + 1}`}</h3><p>{chunk.section_path}</p><pre>{chunk.content}</pre><p className="muted"><SafeLink href={chunk.canonical_url}>{chunk.canonical_url || 'Citation unavailable'}</SafeLink>{chunk.truncated ? ' · Preview truncated' : ''}</p></article>)}</div> : <Empty>This plan contains no chunks.</Empty>}<div className="pagination"><button type="button" className="secondary-button" disabled={chunkOffset === 0} onClick={() => setChunkOffset(Math.max(0, chunkOffset - 10))}>Previous chunks</button><button type="button" className="secondary-button" disabled={chunkOffset + chunks.items.length >= chunks.total} onClick={() => setChunkOffset(chunkOffset + 10)}>Next chunks</button></div></section>
+      <section className="panel"><div className="section-heading"><h2>Changed and new chunks</h2><span>{chunks.total ? `${chunkOffset + 1}–${Math.min(chunkOffset + chunks.items.length, chunks.total)} of ${chunks.total}` : '0 changed chunks'}</span></div>{chunks.items.length ? <div className="chunk-list">{chunks.items.map((chunk) => <article key={chunk.index}><h3>{chunk.title || `Chunk ${chunk.index + 1}`}</h3><p>{chunk.action.replaceAll('_', ' ')} · {chunk.section_path}</p><pre>{chunk.content}</pre><p className="muted"><SafeLink href={chunk.canonical_url}>{chunk.canonical_url || 'Citation unavailable'}</SafeLink>{chunk.truncated ? ' · Preview truncated' : ''}</p></article>)}</div> : <Empty>This plan contains no changed or new chunks.</Empty>}<div className="pagination"><button type="button" className="secondary-button" disabled={chunkOffset === 0} onClick={() => setChunkOffset(Math.max(0, chunkOffset - 10))}>Previous chunks</button><button type="button" className="secondary-button" disabled={chunkOffset + chunks.items.length >= chunks.total} onClick={() => setChunkOffset(chunkOffset + 10)}>Next chunks</button></div></section>
+      <section className="panel"><div className="section-heading"><h2>Stale row identities</h2><span>{staleRows.total ? `${staleOffset + 1}–${Math.min(staleOffset + staleRows.items.length, staleRows.total)} of ${staleRows.total}` : '0 stale rows'}</span></div>{staleRows.items.length ? <div className="chunk-list">{staleRows.items.map((row) => <article key={row.index}><h3>{row.row_id}</h3><p>{row.category.replaceAll('_', ' ')} · prior status {row.prior_status.replaceAll('_', ' ')}</p><p><SafeLink href={row.canonical_url}>{row.canonical_url || 'Citation unavailable'}</SafeLink></p><p className="muted">{row.reason.replaceAll('_', ' ')}</p></article>)}</div> : <Empty>This plan contains no stale row identities.</Empty>}<div className="pagination"><button type="button" className="secondary-button" disabled={staleOffset === 0} onClick={() => setStaleOffset(Math.max(0, staleOffset - 10))}>Previous stale rows</button><button type="button" className="secondary-button" disabled={staleOffset + staleRows.items.length >= staleRows.total} onClick={() => setStaleOffset(staleOffset + 10)}>Next stale rows</button></div></section>
       <WarningList title="Plan warnings and errors" items={plan.warnings} />
     </>
   )

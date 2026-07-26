@@ -729,18 +729,6 @@ def create_app(
     async def plan_detail(plan_id: str) -> Any:
         return _service_payload(inventory.get_plan(plan_id))  # type: ignore[attr-defined]
 
-    @app.get(f"{API_PREFIX}/plans/{{plan_id}}/pages")
-    async def plan_pages(plan_id: str, offset: int = 0, limit: int = 50) -> Any:
-        return _service_payload(
-            inventory.list_plan_pages(plan_id, offset=offset, limit=limit)  # type: ignore[attr-defined]
-        )
-
-    @app.get(f"{API_PREFIX}/plans/{{plan_id}}/pages/{{page_index}}")
-    async def plan_page(plan_id: str, page_index: int, max_chars: int = 20_000) -> Any:
-        return _service_payload(
-            inventory.get_plan_page(plan_id, page_index, max_chars=max_chars)  # type: ignore[attr-defined]
-        )
-
     @app.get(f"{API_PREFIX}/plans/{{plan_id}}/chunks")
     async def plan_chunks(
         plan_id: str,
@@ -754,6 +742,20 @@ def create_app(
                 offset=offset,
                 limit=limit,
                 max_chars=max_chars,
+            )
+        )
+
+    @app.get(f"{API_PREFIX}/plans/{{plan_id}}/stale-rows")
+    async def plan_stale_rows(
+        plan_id: str,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> Any:
+        return _service_payload(
+            inventory.list_plan_stale_rows(  # type: ignore[attr-defined]
+                plan_id,
+                offset=offset,
+                limit=limit,
             )
         )
 

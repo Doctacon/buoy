@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-12
-Updated: 2026-07-18
+Updated: 2026-07-24
 
 # Compact DuckDB Applied State
 
@@ -8,7 +8,7 @@ Updated: 2026-07-18
 
 Define Buoy's compact, per-namespace embedded DuckDB applied-state ledger. This specification governs local incremental state, format authority, history retention, and concurrent confirmed applies.
 
-It does not compact plan artifacts, change crawl/chunk semantics, create or delete Turbopuffer namespaces, add Quack, or enable simultaneous applies to one namespace.
+It does not itself store pending plans, change crawl/chunk semantics, create or delete Turbopuffer namespaces, add Quack, or enable simultaneous applies to one namespace. Compact changed-only pending artifacts and exact applied-state baseline binding are governed by `.10x/specs/compact-delta-plan-artifacts.md`.
 
 ## Storage model
 
@@ -34,7 +34,7 @@ Obsolete JSON applied-state files are inert user-owned files. Their presence or 
 
 ## Plan behavior
 
-`buoy plan` MUST read the DuckDB current ledger for the matching state location when it exists. When no DuckDB state exists, it MUST return first-apply semantics without creating a database.
+`buoy plan` MUST read the DuckDB current ledger for the matching state location when it exists. When no DuckDB state exists, it MUST return first-apply semantics without creating a database. It MUST bind the exact canonical applied-row/metadata projection plus database-presence bit into the compact delta plan, and apply MUST fail and require replanning if that baseline changes, as specified by `.10x/specs/compact-delta-plan-artifacts.md`. Apply-run summaries are not part of this incremental projection; every successful apply already changes bound top-level lineage.
 
 Given equivalent active rows, the DuckDB-backed diff MUST preserve the existing classifications: unchanged, new, changed, retained stale, and stale.
 

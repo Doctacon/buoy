@@ -11,7 +11,7 @@ import unittest
 import duckdb
 
 from buoy_search.cli import build_parser, main
-from buoy_search.plan_artifacts import PLAN_SCHEMA_VERSION, build_generic_site_row
+from buoy_search.plan_artifacts import PLAN_SCHEMA_VERSION, build_generic_site_row, verify_plan_artifacts
 
 
 class DuckDBRelationCliTests(unittest.TestCase):
@@ -22,7 +22,7 @@ class DuckDBRelationCliTests(unittest.TestCase):
             result = main(args)
         return result, stdout.getvalue(), stderr.getvalue()
 
-    def test_plan_materializes_relation_without_path_leak_and_saved_dry_run_survives_source_deletion(self) -> None:
+    def test_plan_materializes_compact_relation_delta_without_path_leak(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             database = root / "sensitive" / "calls.duckdb"
@@ -101,7 +101,8 @@ class DuckDBRelationCliTests(unittest.TestCase):
                 },
             )
             plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
-            manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+            verified = verify_plan_artifacts(out_dir / "plan.json")
+            self.assertEqual({path.name for path in out_dir.iterdir()}, {"plan.json", "delta.duckdb"})
             self.assertEqual(plan["schema_version"], PLAN_SCHEMA_VERSION)
             self.assertEqual(plan["crawl_options"]["source_kind"], "duckdb_relation")
             self.assertEqual(plan["crawl_options"]["duckdb_source_id"], "gong-calls")
@@ -109,18 +110,17 @@ class DuckDBRelationCliTests(unittest.TestCase):
             self.assertEqual(plan["crawl_options"]["id_column"], "call_id")
             self.assertEqual(plan["crawl_options"]["content_column"], "transcript")
             self.assertEqual(plan["crawl_options"]["title_column"], "subject")
-            self.assertEqual(manifest["base_url"], "duckdb://gong-calls")
-            self.assertEqual(manifest["pages"][0]["canonical_url"], "duckdb://gong-calls/call%2Fa")
-            page_metadata = manifest["pages"][0]["source_metadata"]
-            self.assertEqual(page_metadata["duckdb_document_id"], "call/a")
-            self.assertEqual(page_metadata["database_backend"], "duckdb")
-            self.assertEqual(page_metadata["database_source_id"], "gong-calls")
-            self.assertEqual(page_metadata["database_relation"], "calls")
-            self.assertEqual(page_metadata["database_document_id"], "call/a")
-            chunk_metadata = manifest["chunks"][0]["source_metadata"]
+            self.assertEqual(plan["source"]["uri"], "duckdb://gong-calls")
+            self.assertEqual(plan["source"]["kind"], "duckdb_relation")
+            chunk = verified.upsert_rows[0]
+            self.assertEqual(chunk["canonical_url"], "duckdb://gong-calls/call%2Fa")
+            chunk_metadata = chunk["source_metadata_json"]
+            self.assertEqual(chunk_metadata["database_backend"], "duckdb")
+            self.assertEqual(chunk_metadata["database_source_id"], "gong-calls")
+            self.assertEqual(chunk_metadata["database_relation"], "calls")
             self.assertEqual(chunk_metadata["database_document_id"], "call/a")
             row = build_generic_site_row(
-                manifest["chunks"][0],
+                chunk,
                 [0.0],
                 plan_id=plan["plan_id"],
                 applied_at="2026-07-22T00:00:00+00:00",
@@ -129,37 +129,8 @@ class DuckDBRelationCliTests(unittest.TestCase):
             self.assertEqual(row["database_source_id"], "gong-calls")
             self.assertEqual(row["database_relation"], "calls")
             self.assertEqual(row["database_document_id"], "call/a")
-            serialized = "\n".join(
-                (out_dir / filename).read_text(encoding="utf-8")
-                for filename in ("plan.json", "manifest.json", "chunks.jsonl", "summary.json")
-            ) + "\n" + "\n".join(
-                path.read_text(encoding="utf-8") for path in (out_dir / "pages").glob("*.md")
-            )
-            self.assertNotIn(str(database), serialized)
-
-            database.unlink()
-            apply_result, apply_stdout, apply_stderr = self.run_cli(
-                [
-                    "apply",
-                    "--dry-run",
-                    "--plan",
-                    str(out_dir / "plan.json"),
-                    "--state-root",
-                    str(state_root),
-                    "--no-progress",
-                    "--json",
-                ]
-            )
-
-            self.assertEqual(apply_result, 0, apply_stderr)
-            apply_payload = json.loads(apply_stdout)
-            self.assertTrue(apply_payload["artifact_verified"])
-            self.assertEqual(apply_payload["base_url"], "duckdb://gong-calls")
-            self.assertEqual(apply_payload["namespace"], "duckdb-gong-calls-v1")
-            self.assertFalse(apply_payload["api_calls_occurred"])
-            self.assertEqual(apply_payload["catalog_registration"]["source_kind"], "database")
-            self.assertEqual(apply_payload["catalog_registration"]["ranking_mode"], "page")
-            self.assertEqual(apply_payload["catalog_registration"]["ranking_profile"], "none")
+            serialized = b"\n".join(path.read_bytes() for path in out_dir.iterdir())
+            self.assertNotIn(str(database).encode(), serialized)
 
     def test_crawl_accepts_database_base_url_and_table_alias(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

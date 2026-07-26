@@ -12,8 +12,17 @@ import threading
 import unittest
 from unittest.mock import patch
 
+import duckdb
+
+import buoy_search.apply as apply_module
 import buoy_search.cli as cli_module
-from buoy_search.apply import build_retrieval_commands, load_verified_apply_plan, run_approved_apply
+from buoy_search.apply import (
+    ApplyPlanError,
+    build_retrieval_commands,
+    discover_latest_plan_path,
+    load_verified_apply_plan,
+    run_approved_apply,
+)
 from buoy_search.applied_state import (
     ROW_STATUS_ACTIVE,
     ROW_STATUS_RETAINED_STALE,
@@ -38,7 +47,12 @@ from buoy_search.remote_catalog import (
 )
 from buoy_search.chunker import process_corpus
 from buoy_search.config import RuntimeConfig
-from buoy_search.plan_artifacts import build_plan_artifacts, write_plan_artifacts
+from buoy_search.plan_artifacts import (
+    build_plan_artifacts,
+    site_id_for_url,
+    write_plan_artifacts,
+)
+from buoy_search.crawler import namespace_candidate
 
 
 class TtyStringIO(StringIO):
@@ -182,6 +196,40 @@ def write_page(corpus: Path, name: str, url: str, title: str, body: str) -> None
     )
 
 
+def build_for_current_state(
+    *,
+    corpus: Path,
+    out_dir: Path,
+    state_root: Path,
+    base_url: str = "https://example.com/docs/",
+    namespace: str | None = None,
+    embedding_precision: str = "float32",
+    embedding_model: str = "BAAI/bge-small-en-v1.5",
+):
+    resolved_namespace = namespace or namespace_candidate(base_url)
+    site_id = site_id_for_url(base_url)
+    database = applied_state_paths(
+        site_id=site_id, namespace=resolved_namespace, state_root=state_root
+    ).database_path
+    state = load_applied_state(
+        site_id=site_id,
+        namespace=resolved_namespace,
+        base_url=base_url,
+        state_root=state_root,
+    )
+    return build_plan_artifacts(
+        indexing_plan=process_corpus(corpus),
+        base_url=base_url,
+        out_dir=out_dir,
+        state_root=state_root,
+        applied_state=state,
+        state_present=database.exists(),
+        embedding_precision=embedding_precision,
+        namespace=namespace,
+        embedding_model=embedding_model,
+    )
+
+
 def build_saved_plan(
     root: Path,
     *,
@@ -195,9 +243,8 @@ def build_saved_plan(
     write_page(corpus, "a.md", "https://example.com/docs/a", "Page A", "# Intro\n\nAlpha useful docs.")
     write_page(corpus, "b.md", "https://example.com/docs/b", "Page B", page_b_body)
     out_dir = root / "plan"
-    artifacts = build_plan_artifacts(
-        indexing_plan=process_corpus(corpus),
-        base_url="https://example.com/docs/",
+    artifacts = build_for_current_state(
+        corpus=corpus,
         out_dir=out_dir,
         state_root=state_root or root / "state",
         embedding_precision=embedding_precision,
@@ -233,17 +280,6 @@ def build_one_page_plan_with_stale_state(root: Path, state_root: Path):
     previous_artifacts, _ = build_saved_plan(root / "previous", state_root=state_root)
     desired = previous_artifacts.manifest.chunks[0]
     stale = previous_artifacts.manifest.chunks[1]
-
-    one_page_root = root / "one-page"
-    corpus = one_page_root / "pages"
-    write_page(corpus, "a.md", "https://example.com/docs/a", "Page A", "# Intro\n\nAlpha useful docs.")
-    one_page_artifacts = build_plan_artifacts(
-        indexing_plan=process_corpus(corpus),
-        base_url="https://example.com/docs/",
-        out_dir=one_page_root / "plan",
-        state_root=state_root,
-    )
-    write_plan_artifacts(one_page_artifacts, one_page_root / "plan")
     save_applied_state(
         build_applied_state(
             site_id=previous_artifacts.manifest.site_id,
@@ -253,28 +289,29 @@ def build_one_page_plan_with_stale_state(root: Path, state_root: Path):
             last_apply_id="apply_previous",
             rows=[
                 AppliedStateRow(
-                    row_id=desired.row_id,
-                    canonical_url=desired.canonical_url,
-                    page_hash=desired.page_hash,
-                    chunk_hash=desired.chunk_hash,
-                    embedding_text_hash=desired.embedding_text_hash,
+                    row_id=row.row_id,
+                    canonical_url=row.canonical_url,
+                    page_hash=row.page_hash,
+                    chunk_hash=row.chunk_hash,
+                    embedding_text_hash=row.embedding_text_hash,
                     plan_id="plan_previous",
                     applied_at="2026-06-20T12:00:00+00:00",
-                ),
-                AppliedStateRow(
-                    row_id=stale.row_id,
-                    canonical_url=stale.canonical_url,
-                    page_hash=stale.page_hash,
-                    chunk_hash=stale.chunk_hash,
-                    embedding_text_hash=stale.embedding_text_hash,
-                    plan_id="plan_previous",
-                    applied_at="2026-06-20T12:00:00+00:00",
-                ),
+                )
+                for row in (desired, stale)
             ],
             updated_at="2026-06-20T12:00:00+00:00",
         ),
         state_root=state_root,
     )
+    one_page_root = root / "one-page"
+    corpus = one_page_root / "pages"
+    write_page(corpus, "a.md", "https://example.com/docs/a", "Page A", "# Intro\n\nAlpha useful docs.")
+    one_page_artifacts = build_for_current_state(
+        corpus=corpus,
+        out_dir=one_page_root / "plan",
+        state_root=state_root,
+    )
+    write_plan_artifacts(one_page_artifacts, one_page_root / "plan")
     return previous_artifacts, one_page_artifacts, one_page_root / "plan" / "plan.json", stale
 
 
@@ -940,6 +977,7 @@ class ApplyCliTests(unittest.TestCase):
                 ),
                 state_root=state_root,
             )
+            artifacts, plan_path = build_saved_plan(root, state_root=state_root)
 
             with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
                 "buoy_search.apply.TurbopufferWriter", FakeWriter
@@ -1059,6 +1097,7 @@ class ApplyCliTests(unittest.TestCase):
                 retained_stale_rows=0,
             )
             save_applied_state(previous_state, state_root=state_root, apply_run=previous_summary)
+            artifacts, plan_path = build_saved_plan(root, state_root=state_root)
             FakeWriter.should_fail = True
 
             with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
@@ -1181,10 +1220,8 @@ class ApplyCliTests(unittest.TestCase):
             root = Path(tmp)
             state_root = root / "state"
             _, plan_path = build_saved_plan(root, state_root=state_root)
-            manifest_path = plan_path.parent / "manifest.json"
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            manifest["chunks"][0]["content"] = "tampered content"
-            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+            with duckdb.connect(str(plan_path.parent / "delta.duckdb")) as connection:
+                connection.execute("UPDATE upsert_rows SET content = 'tampered content' WHERE ordinal = 0")
 
             with patch("buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")), patch(
                 "buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
@@ -1206,7 +1243,7 @@ class ApplyCliTests(unittest.TestCase):
 
         self.assertEqual(result, 2)
         self.assertEqual(stdout, "")
-        self.assertTrue("chunks.jsonl does not match" in stderr or "artifact hash mismatch" in stderr)
+        self.assertIn("logical hash", stderr)
 
     def test_apply_fails_on_namespace_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1272,51 +1309,8 @@ class ApplyCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             state_root = root / "state"
-            artifacts, plan_path = build_saved_plan(root, state_root=state_root)
-            desired = artifacts.manifest.chunks[0]
-            stale = artifacts.manifest.chunks[1]
-            # Rebuild a one-page desired plan so the saved state's second row is stale.
-            one_page_root = root / "one-page"
-            corpus = one_page_root / "pages"
-            write_page(corpus, "a.md", "https://example.com/docs/a", "Page A", "# Intro\n\nAlpha useful docs.")
-            one_page_artifacts = build_plan_artifacts(
-                indexing_plan=process_corpus(corpus),
-                base_url="https://example.com/docs/",
-                out_dir=one_page_root / "plan",
-                state_root=state_root,
-            )
-            write_plan_artifacts(one_page_artifacts, one_page_root / "plan")
-            plan_path = one_page_root / "plan" / "plan.json"
-            save_applied_state(
-                build_applied_state(
-                    site_id=artifacts.manifest.site_id,
-                    namespace=artifacts.manifest.namespace,
-                    base_url=artifacts.manifest.base_url,
-                    last_plan_id="plan_previous",
-                    last_apply_id="apply_previous",
-                    rows=[
-                        AppliedStateRow(
-                            row_id=desired.row_id,
-                            canonical_url=desired.canonical_url,
-                            page_hash=desired.page_hash,
-                            chunk_hash=desired.chunk_hash,
-                            embedding_text_hash=desired.embedding_text_hash,
-                            plan_id="plan_previous",
-                            applied_at="2026-06-20T12:00:00+00:00",
-                        ),
-                        AppliedStateRow(
-                            row_id=stale.row_id,
-                            canonical_url=stale.canonical_url,
-                            page_hash=stale.page_hash,
-                            chunk_hash=stale.chunk_hash,
-                            embedding_text_hash=stale.embedding_text_hash,
-                            plan_id="plan_previous",
-                            applied_at="2026-06-20T12:00:00+00:00",
-                        ),
-                    ],
-                    updated_at="2026-06-20T12:00:00+00:00",
-                ),
-                state_root=state_root,
+            artifacts, _one_page_artifacts, plan_path, stale = (
+                build_one_page_plan_with_stale_state(root, state_root)
             )
 
             with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
@@ -1863,6 +1857,7 @@ class ApplyCliTests(unittest.TestCase):
                     batch_size=64,
                 )
 
+            artifacts, plan_path = build_saved_plan(root, state_root=state_root)
             verified_zero = load_verified_apply_plan(
                 plan_path=plan_path,
                 namespace=artifacts.manifest.namespace,
@@ -1877,6 +1872,11 @@ class ApplyCliTests(unittest.TestCase):
                     namespace=artifacts.manifest.namespace,
                     batch_size=64,
                 )
+            zero_summaries = load_apply_run_summaries(
+                site_id=artifacts.manifest.site_id,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            )
 
         self.assertEqual(ThreadRecordingWriter.call_count, 1)
         self.assertTrue(all(thread_id != main_thread for thread_id in ThreadRecordingWriter.thread_ids))
@@ -1886,6 +1886,13 @@ class ApplyCliTests(unittest.TestCase):
         self.assertEqual(zero_batch["rows_upserted"], 0)
         self.assertEqual(zero_batch["embeddings_generated"], 0)
         self.assertEqual(zero_batch["timing"]["pipeline_mode"], "depth_one")
+        self.assertEqual(len(self.remote_catalog.cards), 1)
+        self.assertEqual(self.remote_catalog.cards[0].plan_schema_version, 2)
+        self.assertEqual(self.remote_catalog.cards[0].last_plan_id, artifacts.plan.plan_id)
+        self.assertEqual(len(zero_summaries), 2)
+        self.assertEqual(zero_summaries[-1].plan_id, artifacts.plan.plan_id)
+        self.assertEqual(zero_summaries[-1].rows_upserted, 0)
+        self.assertEqual(zero_summaries[-1].rows_deleted, 0)
 
     def test_approved_apply_reports_controlled_stage_timings_and_batch_sizes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2254,6 +2261,410 @@ class ApplyCliTests(unittest.TestCase):
 
         self.assertEqual(result, 2)
         self.assertEqual(FakeWriter.rows, [])
+
+    def test_explicit_schema1_rejection_leaves_legacy_payload_unread_and_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_dir = root / "legacy"
+            plan_dir.mkdir()
+            plan_path = plan_dir / "plan.json"
+            plan_path.write_text('{"schema_version":1,"command":"plan"}\n', encoding="utf-8")
+            legacy = {
+                plan_dir / "manifest.json": b"legacy manifest secret",
+                plan_dir / "chunks.jsonl": b"legacy chunks secret",
+            }
+            for path, content in legacy.items():
+                path.write_bytes(content)
+            before = {path: file_snapshot(path) for path in legacy}
+
+            result, stdout, stderr = self.run_main(
+                ["apply", "--dry-run", "--plan", str(plan_path), "--state-root", str(root / "state"), "--json"]
+            )
+
+            after = {path: file_snapshot(path) for path in legacy}
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout, "")
+        self.assertIn("Unsupported plan schema_version 1", stderr)
+        self.assertEqual(after, before)
+
+    def test_implicit_discovery_skips_newer_schema1_and_malformed_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _artifacts, supported = build_saved_plan(root / "supported", state_root=root / "state")
+            legacy = root / "legacy" / "plan.json"
+            legacy.parent.mkdir()
+            legacy.write_text('{"schema_version":1}\n', encoding="utf-8")
+            malformed = root / "malformed" / "plan.json"
+            malformed.parent.mkdir()
+            malformed.write_text("not json", encoding="utf-8")
+            oversized = root / "oversized" / "plan.json"
+            oversized.parent.mkdir()
+            oversized.write_text(" " * 131_073, encoding="utf-8")
+            newest = supported.stat().st_mtime_ns + 10_000_000
+            os.utime(legacy, ns=(newest, newest))
+            os.utime(malformed, ns=(newest + 1, newest + 1))
+            os.utime(oversized, ns=(newest + 2, newest + 2))
+
+            selected = discover_latest_plan_path(root)
+
+        self.assertEqual(selected, supported)
+
+    def test_absent_to_initialized_empty_state_is_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            artifacts, plan_path = build_saved_plan(root, state_root=state_root)
+            save_applied_state(
+                build_applied_state(
+                    site_id=artifacts.manifest.site_id,
+                    namespace=artifacts.manifest.namespace,
+                    base_url=artifacts.manifest.base_url,
+                    last_plan_id="plan_empty",
+                    last_apply_id="apply_empty",
+                    rows=[],
+                    updated_at="2026-07-25T00:00:00+00:00",
+                ),
+                state_root=state_root,
+            )
+
+            with self.assertRaisesRegex(ApplyPlanError, "Applied state changed"):
+                load_verified_apply_plan(
+                    plan_path=plan_path,
+                    namespace=artifacts.manifest.namespace,
+                    state_root=state_root,
+                )
+
+    def test_inode_bound_snapshot_rejects_swap_read_restore_aba(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            initial, _ = build_saved_plan(root / "initial", state_root=state_root)
+            save_applied_state(
+                build_applied_state(
+                    site_id=initial.manifest.site_id,
+                    namespace=initial.manifest.namespace,
+                    base_url=initial.manifest.base_url,
+                    last_plan_id="plan_a",
+                    last_apply_id="apply_a",
+                    rows=[],
+                    updated_at="2026-07-25T00:00:00+00:00",
+                ),
+                state_root=state_root,
+            )
+            artifacts, plan_path = build_saved_plan(root / "current", state_root=state_root)
+            verified = load_verified_apply_plan(
+                plan_path=plan_path,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            )
+            replacement_root = root / "replacement-state"
+            save_applied_state(
+                build_applied_state(
+                    site_id=artifacts.manifest.site_id,
+                    namespace=artifacts.manifest.namespace,
+                    base_url=artifacts.manifest.base_url,
+                    last_plan_id="plan_b",
+                    last_apply_id="apply_b",
+                    rows=[],
+                    updated_at="2026-07-25T01:00:00+00:00",
+                ),
+                state_root=replacement_root,
+            )
+            database = applied_state_paths(
+                site_id=artifacts.manifest.site_id,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            ).database_path
+            replacement = applied_state_paths(
+                site_id=artifacts.manifest.site_id,
+                namespace=artifacts.manifest.namespace,
+                state_root=replacement_root,
+            ).database_path
+            held = database.with_name("state-held.duckdb")
+            real_read = os.read
+            swapped = False
+
+            def swap_restore_then_read(fd, size):  # noqa: ANN001 - os protocol.
+                nonlocal swapped
+                if not swapped:
+                    swapped = True
+                    os.rename(database, held)
+                    os.rename(replacement, database)
+                    os.rename(database, replacement)
+                    os.rename(held, database)
+                return real_read(fd, size)
+
+            with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "must-not-read"}, clear=True), patch(
+                "buoy_search.apply.os.read", side_effect=swap_restore_then_read
+            ), patch(
+                "buoy_search.apply.prospective_card_for_apply",
+                side_effect=AssertionError("catalog projection called"),
+            ), patch(
+                "buoy_search.apply.REMOTE_CATALOG_CLIENT_FACTORY",
+                side_effect=AssertionError("remote client called"),
+            ), patch(
+                "buoy_search.apply.SentenceTransformerEmbedder",
+                side_effect=AssertionError("embedder called"),
+            ), patch(
+                "buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
+            ), patch(
+                "buoy_search.apply.create_pending", side_effect=AssertionError("pending created")
+            ):
+                with self.assertRaisesRegex(ApplyPlanError, "Applied state changed"):
+                    run_approved_apply(
+                        verified,
+                        config=RuntimeConfig(namespace=artifacts.manifest.namespace),
+                        namespace=artifacts.manifest.namespace,
+                        batch_size=64,
+                    )
+
+            self.assertTrue(swapped)
+            self.assertFalse((state_root / "pending").exists())
+            self.assertTrue(plan_path.exists())
+
+    def test_under_lock_drift_fails_before_approved_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            artifacts, plan_path = build_saved_plan(root, state_root=state_root)
+            verified = load_verified_apply_plan(
+                plan_path=plan_path,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            )
+
+            @contextmanager
+            def drifting_lock(**_kwargs):
+                save_applied_state(
+                    build_applied_state(
+                        site_id=artifacts.manifest.site_id,
+                        namespace=artifacts.manifest.namespace,
+                        base_url=artifacts.manifest.base_url,
+                        last_plan_id="plan_empty",
+                        last_apply_id="apply_empty",
+                        rows=[],
+                        updated_at="2026-07-25T00:00:00+00:00",
+                    ),
+                    state_root=state_root,
+                )
+                yield
+
+            with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "must-not-read"}, clear=True), patch(
+                "buoy_search.apply.acquire_namespace_apply_lock", drifting_lock
+            ), patch(
+                "buoy_search.apply.prospective_card_for_apply", side_effect=AssertionError("catalog projection called")
+            ), patch(
+                "buoy_search.apply.REMOTE_CATALOG_CLIENT_FACTORY", side_effect=AssertionError("remote client called")
+            ), patch(
+                "buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")
+            ), patch(
+                "buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
+            ):
+                with self.assertRaisesRegex(ApplyPlanError, "Applied state changed"):
+                    run_approved_apply(
+                        verified,
+                        config=RuntimeConfig(namespace=artifacts.manifest.namespace),
+                        namespace=artifacts.manifest.namespace,
+                        batch_size=64,
+                    )
+
+            self.assertFalse((state_root / "pending").exists())
+            self.assertTrue(plan_path.exists())
+
+    def test_delta_actions_must_match_exact_baseline_classification(self) -> None:
+        active = AppliedStateRow(
+            row_id="row-active",
+            canonical_url="https://example.com/docs/a",
+            page_hash="page-old",
+            chunk_hash="chunk-old",
+            embedding_text_hash="embed-old",
+            plan_id="plan_old",
+            applied_at="2026-07-25T00:00:00+00:00",
+        )
+        retained = AppliedStateRow(
+            row_id="row-retained",
+            canonical_url="https://example.com/docs/b",
+            page_hash="page-b",
+            chunk_hash="chunk-b",
+            embedding_text_hash="embed-b",
+            plan_id="plan_old",
+            applied_at="2026-07-25T00:00:00+00:00",
+            status=ROW_STATUS_RETAINED_STALE,
+        )
+        state = build_applied_state(
+            site_id="site-example-com",
+            namespace="site-example-com-v1",
+            base_url="https://example.com/docs/",
+            last_plan_id="plan_old",
+            last_apply_id="apply_old",
+            rows=[active, retained],
+            updated_at="2026-07-25T00:00:00+00:00",
+        )
+        base = {
+            "row_id": "row-new",
+            "canonical_url": "https://example.com/docs/c",
+            "embedding_text_hash": "embed-new",
+        }
+        apply_module._validate_delta_against_state(
+            ({**base, "action": "new"},), (), state
+        )
+        apply_module._validate_delta_against_state(
+            ({**base, "row_id": "row-changed", "canonical_url": active.canonical_url, "action": "changed"},),
+            (),
+            state,
+        )
+        apply_module._validate_delta_against_state(
+            ({**base, "row_id": retained.row_id, "canonical_url": retained.canonical_url, "action": "reactivate_retained_stale"},),
+            (),
+            state,
+        )
+        with self.assertRaisesRegex(ApplyPlanError, "active canonical-URL lineage"):
+            apply_module._validate_delta_against_state(
+                ({**base, "canonical_url": active.canonical_url, "action": "new"},), (), state
+            )
+        with self.assertRaisesRegex(ApplyPlanError, "no active applied-state lineage"):
+            apply_module._validate_delta_against_state(
+                ({**base, "action": "changed"},), (), state
+            )
+        with self.assertRaisesRegex(ApplyPlanError, "no active applied-state lineage"):
+            apply_module._validate_delta_against_state(
+                ({
+                    **base,
+                    "row_id": active.row_id,
+                    "canonical_url": active.canonical_url,
+                    "embedding_text_hash": active.embedding_text_hash,
+                    "action": "changed",
+                },),
+                (),
+                state,
+            )
+        with self.assertRaisesRegex(ApplyPlanError, "reactivation"):
+            apply_module._validate_delta_against_state(
+                ({**base, "action": "reactivate_retained_stale"},), (), state
+            )
+
+    def test_approved_apply_reactivates_retained_stale_and_records_apply_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            artifacts, _plan_path = build_saved_plan(root, state_root=state_root)
+            chunk = artifacts.manifest.chunks[0]
+            save_applied_state(
+                build_applied_state(
+                    site_id=artifacts.manifest.site_id,
+                    namespace=artifacts.manifest.namespace,
+                    base_url=artifacts.manifest.base_url,
+                    last_plan_id="plan_old",
+                    last_apply_id="apply_old",
+                    rows=[
+                        AppliedStateRow(
+                            row_id=chunk.row_id,
+                            canonical_url=chunk.canonical_url,
+                            page_hash=chunk.page_hash,
+                            chunk_hash=chunk.chunk_hash,
+                            embedding_text_hash=chunk.embedding_text_hash,
+                            plan_id="plan_old",
+                            applied_at="2026-07-25T00:00:00+00:00",
+                            status=ROW_STATUS_RETAINED_STALE,
+                        )
+                    ],
+                    updated_at="2026-07-25T00:00:00+00:00",
+                ),
+                state_root=state_root,
+            )
+            artifacts, plan_path = build_saved_plan(root, state_root=state_root)
+            verified = load_verified_apply_plan(
+                plan_path=plan_path,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            )
+            self.assertEqual(verified.upsert_rows[0]["action"], "reactivate_retained_stale")
+
+            with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "test-key"}, clear=True), patch(
+                "buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder
+            ), patch("buoy_search.apply.TurbopufferWriter", FakeWriter):
+                result = run_approved_apply(
+                    verified,
+                    config=RuntimeConfig(namespace=artifacts.manifest.namespace),
+                    namespace=artifacts.manifest.namespace,
+                    batch_size=64,
+                )
+            loaded = load_applied_state(
+                site_id=artifacts.manifest.site_id,
+                namespace=artifacts.manifest.namespace,
+                base_url=artifacts.manifest.base_url,
+                state_root=state_root,
+            )
+            summaries = load_apply_run_summaries(
+                site_id=artifacts.manifest.site_id,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            )
+
+        reactivated = next(row for row in loaded.rows if row.row_id == chunk.row_id)
+        self.assertEqual(result["rows_upserted"], len(verified.upsert_rows))
+        self.assertEqual(reactivated.status, ROW_STATUS_ACTIVE)
+        self.assertEqual(len(summaries), 1)
+        self.assertEqual(summaries[0].rows_upserted, len(verified.upsert_rows))
+
+    def test_cli_cleanup_uses_under_lock_directory_identity_across_identical_a_b_a_swap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            artifacts_a, plan_path_a = build_saved_plan(root / "a", state_root=state_root)
+            artifacts_b, plan_path_b = build_saved_plan(root / "b", state_root=state_root)
+            self.assertEqual(artifacts_a.plan.plan_id, artifacts_b.plan.plan_id)
+            self.assertEqual(artifacts_a.plan.artifact_hash, artifacts_b.plan.artifact_hash)
+            dir_a = plan_path_a.parent
+            dir_b = plan_path_b.parent
+            inode_a = dir_a.stat().st_ino
+            inode_b = dir_b.stat().st_ino
+            self.assertNotEqual(inode_a, inode_b)
+            held_a = root / "held-a"
+
+            @contextmanager
+            def swapping_lock(**_kwargs):
+                os.rename(dir_a, held_a)
+                os.rename(dir_b, dir_a)
+                try:
+                    yield
+                finally:
+                    os.rename(dir_a, dir_b)
+                    os.rename(held_a, dir_a)
+
+            with patch(
+                "buoy_search.apply.acquire_namespace_apply_lock", swapping_lock
+            ), patch(
+                "buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder
+            ), patch("buoy_search.apply.TurbopufferWriter", FakeWriter):
+                result, stdout, stderr = self.run_main(
+                    [
+                        "apply",
+                        "--plan",
+                        str(plan_path_a),
+                        "--state-root",
+                        str(state_root),
+                        "--approve",
+                        "--json",
+                    ],
+                    env={"TURBOPUFFER_API_KEY": "test-key"},
+                )
+
+            loaded = load_applied_state(
+                site_id=artifacts_b.manifest.site_id,
+                namespace=artifacts_b.manifest.namespace,
+                base_url=artifacts_b.manifest.base_url,
+                state_root=state_root,
+            )
+            output = json.loads(stdout)
+            self.assertEqual(result, 0, stderr)
+            self.assertNotIn("directory_device", output)
+            self.assertNotIn("directory_inode", output)
+            self.assertEqual(loaded.last_plan_id, artifacts_b.plan.plan_id)
+            self.assertTrue(plan_path_a.exists())
+            self.assertEqual(plan_path_a.parent.stat().st_ino, inode_a)
+            self.assertEqual(plan_path_b.parent.stat().st_ino, inode_b)
+            self.assertIn("replaced or unverified", stderr)
 
     def test_apply_text_output_suppresses_progress_when_stderr_is_not_a_tty(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

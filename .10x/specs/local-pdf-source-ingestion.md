@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-08
-Updated: 2026-07-18
+Updated: 2026-07-24
 
 # Local PDF Source Ingestion
 
@@ -50,7 +50,7 @@ Generated Markdown frontmatter for a PDF MUST include at least:
 - `fetcher` or converter marker identifying MarkItDown;
 - `crawl_timestamp` for local generation bookkeeping.
 
-Plan, manifest, chunks JSONL, and summary output MUST preserve PDF source metadata without storing absolute paths.
+Schema-v2 compact plan metadata and changed/new delta rows MUST preserve PDF source metadata without storing absolute paths. No full manifest, chunks JSONL, summary sidecar, or unchanged PDF-derived content is retained.
 
 ### Local-only and live-write guardrails
 

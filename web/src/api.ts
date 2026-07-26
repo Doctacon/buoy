@@ -5,8 +5,6 @@ import type {
   DashboardData,
   NamespaceDetail,
   NamespaceInventory,
-  PageInventory,
-  PagePreview,
   PlanDetail,
   PlanInventory,
   PlanJob,
@@ -14,6 +12,7 @@ import type {
   PlanJobRequest,
   RemoteSnapshot,
   SearchResponse,
+  StaleRowInventory,
 } from './types'
 
 export class RequestError extends Error {
@@ -87,12 +86,10 @@ export const api = {
       body: JSON.stringify(payload),
     })
   },
-  pages: (planId: string) =>
-    allPages<PageInventory['items'][number], PageInventory>(`/plans/${encodeURIComponent(planId)}/pages`),
-  page: (planId: string, index: number, signal?: AbortSignal) =>
-    request<PagePreview>(`/plans/${encodeURIComponent(planId)}/pages/${index}`, { signal }),
   chunks: (planId: string, offset: number) =>
     request<ChunkInventory>(`/plans/${encodeURIComponent(planId)}/chunks?offset=${offset}&limit=10`),
+  staleRows: (planId: string, offset: number) =>
+    request<StaleRowInventory>(`/plans/${encodeURIComponent(planId)}/stale-rows?offset=${offset}&limit=10`),
   refreshRemote: () => request<RemoteSnapshot>('/remote/snapshot', guardedPost),
   search: (payload: Record<string, unknown>) =>
     request<SearchResponse>('/search', { ...guardedPost, body: JSON.stringify(payload) }),

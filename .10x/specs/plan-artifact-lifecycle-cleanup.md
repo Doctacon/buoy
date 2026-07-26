@@ -1,14 +1,14 @@
 Status: active
 Created: 2026-07-12
-Updated: 2026-07-18
+Updated: 2026-07-24
 
 # Plan Artifact Lifecycle Cleanup
 
 ## Purpose and scope
 
-Define prospective automatic cleanup for Buoy plan artifact directories. It covers artifacts created under the chosen `--out-dir` or default plan path.
+Define prospective automatic cleanup for schema-v2 Buoy plan artifact directories. It covers valid schema-v2 artifacts created under the chosen `--out-dir` or default plan path.
 
-It does not delete historical artifact backlogs, active DuckDB state, obsolete JSON applied-state files, remote Turbopuffer data, or user-managed copies outside the plan artifact directory.
+It does not inspect or delete schema-v1/legacy artifact directories, historical artifact backlogs, active DuckDB state, obsolete JSON applied-state files, remote Turbopuffer data, or user-managed copies outside the plan artifact directory.
 
 ## Artifact lifecycle
 
@@ -27,7 +27,7 @@ Given remote failure, local-state failure, lock contention, `--dry-run`, interac
 
 ## Superseded plans
 
-After a new plan successfully writes its artifacts, the command MUST remove older plan directories for the same namespace. It MUST not remove the newly written directory, plans for other namespaces, or a directory whose namespace cannot be verified from its `plan.json`.
+After a new schema-v2 plan successfully writes its artifacts, the command MUST fully verify each older schema-v2 candidate and remove only fully verified plan directories for the same namespace. It MUST not remove the newly written directory, plans for other namespaces, schema-v1/legacy directories, summary-qualified directories whose delta is corrupt or unverifiable, or a directory whose namespace cannot be established safely. Cleanup may open schema-v2 delta payloads solely for this destructive verification; Command Center inventory remains payload-independent.
 
 ## Failure handling
 
@@ -35,7 +35,7 @@ Plan cleanup is local-only. A cleanup failure after a successful apply MUST NOT 
 
 ## Constraints
 
-- Automatic cleanup applies only to future lifecycle events; historical artifacts require a separate explicit reconciliation/GC workflow.
+- Automatic cleanup applies only to future schema-v2 lifecycle events; legacy/historical artifacts remain inert user-owned files and no reconciliation/GC workflow is authorized by this specification.
 - The command MUST not follow symlinks outside the selected artifact root.
 - The command MUST not delete `.buoy/state/**` or legacy `.turbo-search/state/**`, credentials, user-managed copies, or Turbopuffer data.
 - No additional confirmation flag is required for these ratified automatic lifecycle events.
@@ -43,7 +43,7 @@ Plan cleanup is local-only. A cleanup failure after a successful apply MUST NOT 
 ## Acceptance criteria
 
 1. A successful approved apply removes exactly its plan directory after local-state commit; failed/contended/preflight applies retain it.
-2. A successful new plan removes only older verified plan directories with the same namespace.
-3. Plans for other namespaces and malformed/unverifiable plan directories remain untouched.
+2. A successful new plan removes only older fully verified schema-v2 plan directories with the same namespace.
+3. Plans for other namespaces, schema-v1 directories, summary-qualified but payload-corrupt plans, and other malformed/unverifiable plan directories remain untouched.
 4. Cleanup exceptions leave the successful apply result intact and report the retained path.
 5. Tests cover all lifecycle cases without live Turbopuffer calls.

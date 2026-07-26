@@ -12,7 +12,7 @@ from buoy_search.applied_state import AppliedStateRow, build_applied_state, load
 from buoy_search.apply import apply_preflight_summary, load_verified_apply_plan
 from buoy_search.crawler import CrawlOptions, parse_github_repo_url
 from buoy_search.chunker import parse_markdown_file, process_corpus
-from buoy_search.plan_artifacts import build_generic_site_row, build_plan_artifacts, write_plan_artifacts
+from buoy_search.plan_artifacts import build_generic_site_row, build_plan_artifacts, verify_plan_artifacts, write_plan_artifacts
 from buoy_search.plan_diff import diff_manifest_against_state
 from buoy_search.repo_syntax_chunking import RepoSyntaxChunkingError, chunk_source, source_payload
 from buoy_search.treatment_token_budget import (
@@ -494,28 +494,23 @@ class GitHubRepoAcquisitionTests(unittest.TestCase):
             self.assertGreater(changed_diff.summary_dict()["rows_to_upsert"], 0)
             self.assertGreater(changed_diff.summary_dict()["stale_rows"], 0)
 
-    def test_apply_preflight_accepts_generated_github_plan(self) -> None:
+    def test_compact_artifacts_verify_generated_github_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            state_root = root / "state"
             artifacts, _ = build_github_plan_artifacts(
                 root,
                 {"README.md": "# Docs\n\nUseful docs.\n"},
-                state_root=state_root,
+                state_root=root / "state",
             )
             write_plan_artifacts(artifacts, root / "plan")
 
-            verified = load_verified_apply_plan(
-                plan_path=root / "plan" / "plan.json",
-                namespace=None,
-                state_root=state_root,
-            )
-            summary = apply_preflight_summary(verified, namespace=verified.manifest.namespace)
+            verified = verify_plan_artifacts(root / "plan" / "plan.json")
 
-            self.assertEqual(summary["namespace"], "github-owner-repo-v1")
-            self.assertEqual(summary["rows_to_upsert"], len(artifacts.manifest.chunks))
-            self.assertFalse(summary["api_calls_occurred"])
-            self.assertFalse(summary["state_updated"])
+            self.assertEqual(verified.plan["namespace"], "github-owner-repo-v1")
+            self.assertEqual(verified.plan["source"]["kind"], "github_repo")
+            self.assertEqual(verified.plan["source"]["attributes"]["repo_full_name"], "owner/repo")
+            self.assertEqual(len(verified.upsert_rows), len(artifacts.manifest.chunks))
+            self.assertEqual(verified.stale_rows, ())
 
     def test_explicit_current_default_matches_no_arm_pages_chunks_ids_and_citations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

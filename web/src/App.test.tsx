@@ -37,6 +37,7 @@ const plan = {
   page_count: 1,
   chunk_count: 12,
   diff,
+  payload_verification: 'not_checked',
   source_activity: { credentials_required: true, api_calls_occurred: true },
   warnings: [],
 }
@@ -142,7 +143,28 @@ function mockApi(
 ) {
   const mock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
-    const result = path.includes('/capabilities') ? capabilityPayload : await handler(path, init)
+    let result = path.includes('/capabilities') ? capabilityPayload : await handler(path, init)
+    if (result === undefined && path.includes('/stale-rows')) {
+      result = { items: [], total: 0, offset: 0, limit: 10 }
+    }
+    if (
+      result && !(result instanceof Response) && typeof result === 'object'
+      && /\/plans\/[^/?]+$/.test(path) && 'summary' in result
+    ) {
+      result = {
+        originating_job_id: null,
+        payload_verification: 'verified',
+        applied_state_present: false,
+        applied_state_hash: 'b'.repeat(64),
+        ...result,
+      }
+    }
+    if (
+      result && !(result instanceof Response) && typeof result === 'object'
+      && path.includes('/chunks') && 'items' in result
+    ) {
+      result = { ...result, items: (result as { items: Array<Record<string, unknown>> }).items.map((item) => ({ action: 'changed', ...item })) }
+    }
     return result instanceof Response ? result : json(result)
   })
   vi.stubGlobal('fetch', mock)
@@ -346,24 +368,22 @@ describe('Command Center', () => {
     expect(await screen.findByText(/Saved plan history will appear/)).toBeInTheDocument()
   })
 
-  it('renders plan provenance, warehouse review notice, bounded chunks, and escaped Markdown', async () => {
+  it('renders verified plan provenance, warehouse notice, bounded deltas, and escaped content', async () => {
     const warehousePlan = { ...plan, source: { ...source, kind: 'database', uri: 'bigquery://warehouse', title: 'warehouse (docs)', database_backend: 'bigquery', database_source_id: 'warehouse', database_relation: 'dataset.docs' } }
     mockApi((path) => {
+      const offset = Number(new URL(`http://localhost${path}`).searchParams.get('offset') ?? 0)
       if (path.endsWith('/plans/plan-1')) return { summary: warehousePlan, namespace_candidate: 'docs-one', artifact_hash: 'a'.repeat(64), retrieval: { embedding_model: 'model', embedding_precision: 'float32', ranking_mode: 'page', ranking_profile: 'none', ranking_pool: 25, ranking_aggregation: 'max' }, source_activity: { credentials_required: true, api_calls_occurred: true } }
-      if (path.includes('/pages/0')) return { page: { index: 0, title: 'Unsafe markdown', canonical_url: 'https://example.test/page', status: 200, content_type: 'text/markdown' }, markdown: '<script>alert("unsafe")</script> **plain text**', truncated: false }
-      if (path.includes('/pages')) return { items: [{ index: 0, title: 'Unsafe markdown', canonical_url: 'https://example.test/page', status: 200, content_type: 'text/markdown' }], total: 1, offset: 0, limit: 100 }
-      if (path.includes('/chunks')) return { items: [{ index: 0, row_id: 'row-1', title: 'Chunk title', canonical_url: 'https://example.test/page', section_path: 'Intro', chunk_index: 0, content: '<img src=x onerror=alert(1)>', truncated: false }], total: 12, offset: 0, limit: 10 }
+      if (path.includes('/chunks')) return { items: [{ index: offset, action: 'changed', row_id: `row-${offset}`, title: 'Chunk title', canonical_url: 'https://example.test/page', section_path: 'Intro', chunk_index: offset, content: '<img src=x onerror=alert(1)>', truncated: false }], total: 12, offset, limit: 10 }
+      if (path.includes('/stale-rows')) return { items: [{ index: 0, category: 'stale', row_id: 'stale-row', canonical_url: 'https://example.test/old', prior_status: 'active', reason: 'not_in_desired_source' }], total: 1, offset: 0, limit: 10 }
       throw new Error(`Unexpected path ${path}`)
     })
     renderRoute('/plans/plan-1')
     expect(await screen.findByText(/reviewed without reconnecting to the source warehouse/i)).toBeInTheDocument()
-    expect(screen.getByText('Local command center')).toBeInTheDocument()
     expect(screen.getByText(/Read-only review/)).toBeInTheDocument()
-    expect(screen.getByText('<script>alert("unsafe")</script> **plain text**')).toBeInTheDocument()
+    expect(screen.getByText('verified')).toBeInTheDocument()
     expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument()
-    expect(document.querySelector('script')).toBeNull()
+    expect(screen.getByText('stale-row')).toBeInTheDocument()
     expect(document.querySelector('img[src="x"]')).toBeNull()
-    expect(screen.getByText('1–1 of 12')).toBeInTheDocument()
     const next = screen.getByRole('button', { name: 'Next chunks' })
     expect(next).toBeEnabled()
     await userEvent.click(next)
@@ -456,18 +476,16 @@ describe('Command Center', () => {
     expect(screen.queryByText(/Remote status: ready/i)).not.toBeInTheDocument()
   })
 
-  it('loads complete inventories beyond 100 records and paginates the page selector', async () => {
+  it('loads complete inventories and paginates changed and stale delta rows', async () => {
     const namespaceItems = Array.from({ length: 101 }, (_, index) => ({ ...namespaces.items[0], namespace: `namespace-${index}` }))
     const planItems = Array.from({ length: 101 }, (_, index) => ({ ...plan, plan_id: `plan-${index}` }))
-    const pageItems = Array.from({ length: 101 }, (_, index) => ({ index, title: `Page ${index + 1}`, canonical_url: `https://example.test/${index}`, status: 200, content_type: 'text/markdown' }))
     const mock = mockApi((path) => {
       const offset = Number(new URL(`http://localhost${path}`).searchParams.get('offset') ?? 0)
       if (path.includes('/namespaces')) return { ...namespaces, items: namespaceItems.slice(offset, offset + 100), total: 101 }
       if (path === '/api/v1/plans?offset=0&limit=100' || path === '/api/v1/plans?offset=100&limit=100') return { items: planItems.slice(offset, offset + 100), total: 101, offset, limit: 100, errors: [] }
       if (path.endsWith('/plans/plan-many')) return { summary: { ...plan, plan_id: 'plan-many' }, namespace_candidate: 'docs-one', artifact_hash: 'a'.repeat(64), retrieval: null, source_activity: { credentials_required: false, api_calls_occurred: false } }
-      if (path.includes('/plans/plan-many/pages?')) return { items: pageItems.slice(offset, offset + 100), total: 101, offset, limit: 100 }
-      if (path.includes('/plans/plan-many/pages/')) return { page: pageItems[0], markdown: 'preview', truncated: false }
-      if (path.includes('/plans/plan-many/chunks')) return { items: [], total: 0, offset: 0, limit: 10 }
+      if (path.includes('/plans/plan-many/chunks')) return { items: [{ index: offset, action: 'changed', row_id: `row-${offset}`, title: `Changed ${offset + 1}`, canonical_url: 'https://example.test/page', section_path: 'Intro', chunk_index: offset, content: `changed ${offset + 1}`, truncated: false }], total: 11, offset, limit: 10 }
+      if (path.includes('/plans/plan-many/stale-rows')) return { items: [{ index: offset, category: 'stale', row_id: `stale-${offset}`, canonical_url: 'https://example.test/old', prior_status: 'active', reason: 'not_in_desired_source' }], total: 11, offset, limit: 10 }
       throw new Error(`Unexpected path ${path}`)
     })
 
@@ -478,116 +496,35 @@ describe('Command Center', () => {
     expect(await screen.findByRole('link', { name: 'plan-100' })).toBeInTheDocument()
     planView.unmount()
     renderRoute('/plans/plan-many')
-    expect(await screen.findByText('1–20 of 101')).toBeInTheDocument()
+    expect(await screen.findByText('changed 1')).toBeInTheDocument()
+    expect(screen.getByText('stale-0')).toBeInTheDocument()
+    expect(screen.getByText(/Unchanged content is omitted/)).toBeInTheDocument()
     const user = userEvent.setup()
-    for (let index = 0; index < 5; index += 1) await user.click(screen.getByRole('button', { name: 'Next pages' }))
-    expect(await screen.findByRole('button', { name: '101. Page 101' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Next chunks' }))
+    expect(await screen.findByText('changed 11')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Next stale rows' }))
+    expect(await screen.findByText('stale-10')).toBeInTheDocument()
     expect(mock.mock.calls.some(([path]) => String(path).includes('offset=100&limit=100'))).toBe(true)
+    expect(mock.mock.calls.some(([path]) => String(path).includes('/pages'))).toBe(false)
   })
 
-  it('retains a later selected page preview across chunk pagination', async () => {
-    const pages = Array.from({ length: 25 }, (_, index) => ({ index, title: `Page ${index + 1}`, canonical_url: `https://example.test/${index + 1}`, status: 200, content_type: 'text/markdown' }))
-    mockApi((path) => {
-      if (path.endsWith('/plans/plan-1')) return { summary: { ...plan, page_count: 25 }, namespace_candidate: 'docs-one', artifact_hash: 'a'.repeat(64), retrieval: null, source_activity: { credentials_required: false, api_calls_occurred: false } }
-      const previewMatch = path.match(/\/pages\/(\d+)$/)
-      if (previewMatch) {
-        const page = pages[Number(previewMatch[1])]
-        return { page, markdown: `preview ${page.index + 1}`, truncated: false }
-      }
-      if (path.includes('/pages')) return { items: pages, total: pages.length, offset: 0, limit: 100 }
-      if (path.includes('/chunks')) {
-        const offset = Number(new URL(`http://localhost${path}`).searchParams.get('offset') ?? 0)
-        return { items: [{ index: offset, row_id: `row-${offset}`, title: `Chunk ${offset + 1}`, canonical_url: '', section_path: '', chunk_index: offset, content: `chunk ${offset + 1}`, truncated: false }], total: 11, offset, limit: 10 }
-      }
-      throw new Error(`Unexpected path ${path}`)
-    })
-    renderRoute('/plans/plan-1')
-    expect(await screen.findByText('preview 1')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Next pages' }))
-    await userEvent.click(screen.getByRole('button', { name: '21. Page 21' }))
-    expect(await screen.findByText('preview 21')).toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('button', { name: 'Next chunks' }))
-
-    expect(await screen.findByText('chunk 11')).toBeInTheDocument()
-    expect(screen.getByText('21–25 of 25')).toBeInTheDocument()
-    expect(screen.getByText('preview 21')).toBeInTheDocument()
-    expect(screen.queryByText('preview 1')).not.toBeInTheDocument()
-  })
-
-  it('clears stale preview errors on a successful chunk-page transition', async () => {
-    let previewCalls = 0
-    mockApi((path) => {
-      if (path.endsWith('/plans/plan-1')) return { summary: plan, namespace_candidate: 'docs-one', artifact_hash: 'a'.repeat(64), retrieval: null, source_activity: { credentials_required: false, api_calls_occurred: false } }
-      if (path.includes('/pages/0')) {
-        previewCalls += 1
-        if (previewCalls === 1) return json({ error: { code: 'page_unavailable', message: 'Old preview failed.' } }, 400)
-        return { page: { index: 0, title: 'Page', canonical_url: 'https://example.test', status: 200, content_type: 'text/markdown' }, markdown: 'fresh preview', truncated: false }
-      }
-      if (path.includes('/pages')) return { items: [{ index: 0, title: 'Page', canonical_url: 'https://example.test', status: 200, content_type: 'text/markdown' }], total: 1, offset: 0, limit: 100 }
-      if (path.includes('/chunks')) return { items: [{ index: 0, row_id: 'row', title: 'Chunk', canonical_url: '', section_path: '', chunk_index: 0, content: 'chunk', truncated: false }], total: 11, offset: 0, limit: 10 }
-      throw new Error(`Unexpected path ${path}`)
-    })
-    renderRoute('/plans/plan-1')
-    expect(await screen.findByRole('alert')).toHaveTextContent('Old preview failed')
-    await userEvent.click(screen.getByRole('button', { name: 'Next chunks' }))
-    expect(await screen.findByText('fresh preview')).toBeInTheDocument()
-    expect(screen.queryByText(/Old preview failed/)).not.toBeInTheDocument()
-  })
-
-  it('keeps the newest page preview when page clicks resolve out of order', async () => {
-    const pages = [0, 1].map((index) => ({ index, title: `Page ${index + 1}`, canonical_url: `https://example.test/${index + 1}`, status: 200, content_type: 'text/markdown' }))
-    const stale = deferred<unknown>()
-    const latest = deferred<unknown>()
-    let initialLoaded = false
-    mockApi((path) => {
-      if (path.endsWith('/plans/plan-1')) return { summary: plan, namespace_candidate: 'docs-one', artifact_hash: 'a'.repeat(64), originating_job_id: null, retrieval: null, source_activity: { credentials_required: false, api_calls_occurred: false } }
-      if (path.endsWith('/pages/0')) {
-        if (!initialLoaded) {
-          initialLoaded = true
-          return { page: pages[0], markdown: 'initial preview', truncated: false }
-        }
-        return latest.promise
-      }
-      if (path.endsWith('/pages/1')) return stale.promise
-      if (path.includes('/pages')) return { items: pages, total: 2, offset: 0, limit: 100 }
-      if (path.includes('/chunks')) return { items: [], total: 0, offset: 0, limit: 10 }
-      throw new Error(`Unexpected path ${path}`)
-    })
-    renderRoute('/plans/plan-1')
-    expect(await screen.findByText('initial preview')).toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('button', { name: '2. Page 2' }))
-    await userEvent.click(screen.getByRole('button', { name: '1. Page 1' }))
-    latest.resolve({ page: pages[0], markdown: 'newest preview', truncated: false })
-    expect(await screen.findByText('newest preview')).toBeInTheDocument()
-    stale.resolve({ page: pages[1], markdown: 'stale preview', truncated: false })
-    await act(async () => { await stale.promise })
-
-    expect(screen.getByText('newest preview')).toBeInTheDocument()
-    expect(screen.queryByText('stale preview')).not.toBeInTheDocument()
-  })
-
-  it('ignores an old plan preview after the plan route changes', async () => {
-    const oldPreview = deferred<unknown>()
+  it('ignores old delta responses after the plan route changes', async () => {
+    const oldChunks = deferred<unknown>()
     mockApi((path) => {
       const planId = path.includes('plan-2') ? 'plan-2' : 'plan-1'
-      if (path.endsWith(`/plans/${planId}`)) return { summary: { ...plan, plan_id: planId }, namespace_candidate: 'docs-one', artifact_hash: 'a'.repeat(64), originating_job_id: null, retrieval: null, source_activity: { credentials_required: false, api_calls_occurred: false } }
-      if (path.endsWith('/plans/plan-1/pages/0')) return oldPreview.promise
-      if (path.endsWith('/plans/plan-2/pages/0')) return { page: { index: 0, title: 'Plan 2 page', canonical_url: '', status: 200, content_type: 'text/markdown' }, markdown: 'current plan preview', truncated: false }
-      if (path.includes('/pages')) return { items: [{ index: 0, title: `${planId} page`, canonical_url: '', status: 200, content_type: 'text/markdown' }], total: 1, offset: 0, limit: 100 }
-      if (path.includes('/chunks')) return { items: [], total: 0, offset: 0, limit: 10 }
+      if (path.endsWith(`/plans/${planId}`)) return { summary: { ...plan, plan_id: planId }, namespace_candidate: 'docs-one', artifact_hash: 'a'.repeat(64), retrieval: null, source_activity: { credentials_required: false, api_calls_occurred: false } }
+      if (path.includes('/plans/plan-1/chunks')) return oldChunks.promise
+      if (path.includes('/plans/plan-2/chunks')) return { items: [{ index: 0, action: 'changed', row_id: 'row-2', title: 'Current', canonical_url: '', section_path: '', chunk_index: 0, content: 'current plan content', truncated: false }], total: 1, offset: 0, limit: 10 }
+      if (path.includes('/stale-rows')) return { items: [], total: 0, offset: 0, limit: 10 }
       throw new Error(`Unexpected path ${path}`)
     })
     renderRouteWithLink('/plans/plan-1', '/plans/plan-2')
-    await screen.findByRole('button', { name: '1. plan-1 page' })
     await userEvent.click(screen.getByRole('link', { name: 'Test route change' }))
-    expect(await screen.findByText('current plan preview')).toBeInTheDocument()
-
-    oldPreview.resolve({ page: { index: 0, title: 'Old page', canonical_url: '', status: 200, content_type: 'text/markdown' }, markdown: 'old plan preview', truncated: false })
-    await act(async () => { await oldPreview.promise })
-    expect(screen.getByText('current plan preview')).toBeInTheDocument()
-    expect(screen.queryByText('old plan preview')).not.toBeInTheDocument()
+    expect(await screen.findByText('current plan content')).toBeInTheDocument()
+    oldChunks.resolve({ items: [{ index: 0, action: 'changed', row_id: 'old', title: 'Old', canonical_url: '', section_path: '', chunk_index: 0, content: 'old plan content', truncated: false }], total: 1, offset: 0, limit: 10 })
+    await act(async () => { await oldChunks.promise })
+    expect(screen.getByText('current plan content')).toBeInTheDocument()
+    expect(screen.queryByText('old plan content')).not.toBeInTheDocument()
   })
 
   it('keeps read-only routes available and makes managed routes inert when planning is unsupported', async () => {
@@ -968,9 +905,8 @@ describe('Command Center', () => {
   it('shows a durable originating job even when it is older than any history list window', async () => {
     const mock = mockApi((path) => {
       if (path.endsWith('/plans/plan-1')) return { summary: plan, namespace_candidate: 'docs-one', artifact_hash: 'a'.repeat(64), originating_job_id: jobId, retrieval: null, source_activity: { credentials_required: false, api_calls_occurred: false } }
-      if (path.includes('/pages/0')) return { page: { index: 0, title: 'Page', canonical_url: '', status: 200, content_type: 'text/markdown' }, markdown: 'preview', truncated: false }
-      if (path.includes('/pages')) return { items: [{ index: 0, title: 'Page', canonical_url: '', status: 200, content_type: 'text/markdown' }], total: 1, offset: 0, limit: 100 }
       if (path.includes('/chunks')) return { items: [], total: 0, offset: 0, limit: 10 }
+      if (path.includes('/stale-rows')) return { items: [], total: 0, offset: 0, limit: 10 }
       throw new Error(`Unexpected path ${path}`)
     })
     renderRoute('/plans/plan-1')
@@ -982,8 +918,8 @@ describe('Command Center', () => {
   it('omits the originating-job row when artifact metadata is unavailable', async () => {
     mockApi((path) => {
       if (path.endsWith('/plans/plan-1')) return { summary: plan, namespace_candidate: 'docs-one', artifact_hash: 'a'.repeat(64), originating_job_id: null, retrieval: null, source_activity: { credentials_required: false, api_calls_occurred: false } }
-      if (path.includes('/pages')) return { items: [], total: 0, offset: 0, limit: 100 }
       if (path.includes('/chunks')) return { items: [], total: 0, offset: 0, limit: 10 }
+      if (path.includes('/stale-rows')) return { items: [], total: 0, offset: 0, limit: 10 }
       throw new Error(`Unexpected path ${path}`)
     })
     renderRoute('/plans/plan-1')
@@ -1030,9 +966,8 @@ describe('Command Center', () => {
       if (path.includes('/plan-jobs')) return { items: [planJob()], total: 1, offset: 0, limit: 50 }
       if (path.includes('/namespaces')) return namespaces
       if (path.endsWith('/plans/plan-1')) return { summary: plan, namespace_candidate: 'docs-one', artifact_hash: 'a'.repeat(64), retrieval: null, source_activity: { credentials_required: false, api_calls_occurred: false } }
-      if (path.includes('/pages/0')) return { page: { index: 0, title: 'Page', canonical_url: '', status: 200, content_type: 'text/markdown' }, markdown: 'preview', truncated: false }
-      if (path.includes('/pages')) return { items: [{ index: 0, title: 'Page', canonical_url: '', status: 200, content_type: 'text/markdown' }], total: 1, offset: 0, limit: 100 }
       if (path.includes('/chunks')) return { items: [], total: 0, offset: 0, limit: 10 }
+      if (path.includes('/stale-rows')) return { items: [], total: 0, offset: 0, limit: 10 }
       if (path.includes('/plans')) return { items: [plan], total: 1, offset: 0, limit: 100, errors: [] }
       throw new Error(`Unexpected path ${path}`)
     })

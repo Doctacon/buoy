@@ -9,13 +9,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from buoy_search.apply import load_verified_apply_plan
 from buoy_search.bigquery_relation import BigQueryRelationError, BigQueryRelationSource
-from buoy_search.catalog import GeneratedSemantics
 from buoy_search.cli import build_parser, main, source_from_cli_args
 from buoy_search.database_relation import DatabaseDocument, DatabaseScanResult
 from buoy_search.duckdb_relation import DuckDBRelationSource
 from buoy_search.snowflake_relation import SnowflakeRelationError, SnowflakeRelationSource
+from buoy_search.plan_artifacts import verify_plan_artifacts
 
 
 class DatabaseRelationCliTests(unittest.TestCase):
@@ -171,47 +170,20 @@ class DatabaseRelationCliTests(unittest.TestCase):
             self.assertEqual(summary["catalog_registration"]["ranking_pool"], 20)
             self.assertEqual(summary["catalog_registration"]["ranking_aggregation"], "max")
             plan = json.loads((out / "plan.json").read_text(encoding="utf-8"))
-            serialized = "\n".join(
-                path.read_text(encoding="utf-8")
-                for path in (out / "plan.json", out / "manifest.json", out / "chunks.jsonl")
-            )
+            self.assertEqual({path.name for path in out.iterdir()}, {"plan.json", "delta.duckdb"})
+            serialized = b"\n".join(path.read_bytes() for path in out.iterdir())
             self.assertEqual(plan["crawl_options"]["source_kind"], "bigquery_relation")
             self.assertEqual(plan["crawl_options"]["database_backend"], "bigquery")
-            self.assertNotIn("billing-project", serialized)
-            self.assertNotIn("volatile-job", serialized)
-            semantics = GeneratedSemantics(
-                source_kind="database",
-                source_uri="bigquery://docs",
-                title="docs",
-                summary="BigQuery documents.",
-                aliases=[],
-                tags=["database", "bigquery"],
-            )
+            self.assertNotIn(b"billing-project", serialized)
+            self.assertNotIn(b"volatile-job", serialized)
             with (
                 patch("buoy_search.bigquery_relation._load_bigquery", side_effect=AssertionError("source access")),
                 patch("buoy_search.snowflake_relation._load_connector", side_effect=AssertionError("source access")),
-                patch("buoy_search.apply.generated_semantics", return_value=semantics),
             ):
-                verified = load_verified_apply_plan(
-                    plan_path=out / "plan.json",
-                    namespace=None,
-                    state_root=root / "state",
-                )
-                apply_result, apply_stdout, apply_stderr = self.run_cli(
-                    [
-                        "apply",
-                        "--dry-run",
-                        "--plan",
-                        str(out / "plan.json"),
-                        "--state-root",
-                        str(root / "state"),
-                        "--no-progress",
-                        "--json",
-                    ]
-                )
-            self.assertEqual(verified.manifest.base_url, "bigquery://docs")
-            self.assertEqual(apply_result, 0, apply_stderr)
-            self.assertTrue(json.loads(apply_stdout)["artifact_verified"])
+                verified = verify_plan_artifacts(out / "plan.json")
+            self.assertEqual(verified.plan["source"]["uri"], "bigquery://docs")
+            self.assertEqual(verified.plan["source"]["kind"], "bigquery_relation")
+            self.assertEqual(verified.upsert_rows[0]["source_metadata_json"]["database_document_id"], "call/1")
 
     def test_remote_plan_and_crawl_reach_lazy_dependency_boundary(self) -> None:
         commands = [
