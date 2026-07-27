@@ -809,6 +809,39 @@ class CliTests(unittest.TestCase):
         crawl_mock.assert_called_once()
         process_mock.assert_called_once()
 
+    def test_plan_command_text_output_succeeds_without_schema_v2_state_path(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        out_dir = root / "plan"
+
+        def fake_crawl(options: CrawlOptions) -> CrawlExecution:
+            write_fake_crawl_page(options.out_dir / "pages")
+            return CrawlExecution(
+                summary=fake_plan_crawl_summary(options),
+                indexing_plan=process_corpus(options.out_dir / "pages"),
+            )
+
+        stdout = StringIO()
+        with patch("buoy_search.crawler.crawl_site_with_plan", side_effect=fake_crawl), redirect_stdout(stdout):
+            result = main(
+                [
+                    "plan",
+                    "https://example.com/docs/",
+                    "--out-dir",
+                    str(out_dir),
+                    "--state-root",
+                    str(root / "state"),
+                ]
+            )
+
+        plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
+        self.assertEqual(result, 0)
+        self.assertEqual(plan["schema_version"], 2)
+        self.assertNotIn("state_path", plan)
+        self.assertIn(f"  plan_path: {out_dir / 'plan.json'}", stdout.getvalue())
+        self.assertNotIn("state_path:", stdout.getvalue())
+
     def test_plan_command_removes_verified_superseded_same_namespace_plan(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

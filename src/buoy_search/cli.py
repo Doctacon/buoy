@@ -1903,7 +1903,6 @@ def print_plan_text(payload: dict[str, object]) -> None:
             f"publish={float(timing.get('publication_seconds', 0.0)):.1f}s"
         )
     print(f"  plan_path: {payload['plan_path']}")
-    print(f"  state_path: {payload['state_path']}")
     registration = payload.get("catalog_registration")
     if isinstance(registration, dict):
         print(
