@@ -526,7 +526,13 @@ class LocalInventoryService:
         with self._cache_lock:
             rebuild_started_at = self._clock()
             cached = self._cached_snapshot
-            if force and previous is not None and cached is not None and cached is not previous:
+            if (
+                force
+                and previous is not None
+                and cached is not None
+                and cached is not previous
+                and rebuild_started_at < self._cache_expires_at
+            ):
                 return cached
             if (
                 not force

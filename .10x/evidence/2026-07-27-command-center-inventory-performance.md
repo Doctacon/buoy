@@ -277,3 +277,38 @@ The repair regressions cover absent `O_NOFOLLOW`, absent `O_DIRECTORY`, missing 
 ## External-side-effect attestation
 
 No live crawl, clone, source adapter, database provider, remote refresh/search, turbopuffer, embedding/model, apply, catalog/namespace mutation, push, merge, PR, publish, or release operation ran. The benchmark's hardcoded provider/source/plan/apply inventory agrees with this procedure-based attestation but is not runtime instrumentation. API/provider/source tests used fakes or temporary local artifacts. Package, benchmark, installed-wheel, local server, and attempted browser-driver files lived only in system temporary directories and were removed. No generated benchmark database/tree/profile/raw log, distribution, `node_modules`, credential, private path, or local state is committed.
+
+## Remaining final-review repairs
+
+A later final review found two integrity gaps and one validation-race gap in commit `def12172`: a forced direct-miss request could reuse a concurrently rebuilt snapshot even when that snapshot's rebuild-start expiry had elapsed; `_summary_bound_path` leaked the just-opened descriptor if its first `os.fstat()` raised; and the frontend persisted-event test could dereference `FakeEventSource.instances[0]` before the effect constructed it. The bounded repair under the still-open validation ticket:
+
+- reuses a concurrent replacement snapshot only while its rebuild-start expiry is still live; an expired replacement is rebuilt under the existing lock;
+- adds a deterministic direct-miss/concurrent-slow-rebuild schedule in which the concurrent scan completes before an external plan appears, its TTL elapses while it still owns the lock, and the waiting forced miss performs exactly one further scan and discovers the plan (three scans total: prime, concurrent rebuild, forced refresh);
+- closes a descriptor immediately when its initial `fstat` fails and proves the descriptor is invalid afterward; and
+- changes only `web/src/App.test.tsx` to wait for the single `FakeEventSource` instance before the existing dereference. No product frontend code changed.
+
+### Repair validation results
+
+- `PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest tests.test_command_center_local.CompactDeltaInventoryTests.test_direct_miss_refreshes_after_concurrent_rebuild_expires tests.test_applied_state.AppliedStateStoreTests.test_summary_reader_closes_descriptor_when_initial_fstat_fails -v` passed 2 tests in 0.880s.
+- `PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest tests.test_command_center_inventory_benchmark tests.test_applied_state tests.test_command_center_local tests.test_command_center_api -q` passed 89 tests in 7.875s with 36 expected core-environment UI skips.
+- Core full discovery passed 797 tests in 85.055s with 36 expected skips. After `uv sync --locked --extra ui`, the six-module focused basket passed 175 tests in 22.600s and UI-enabled full discovery passed 797 tests in 85.590s with no skips.
+- Ranking and C6 validation passed unchanged at dataset bundle SHA-256 `5a79f58aaca87a2d4f7cbec68fdcfbbcbf041131821587f8aba74a86daca99d9` and forecast SHA-256 `d5199276c19ae89779287eaa90824ce1e1cc684a3f060899f02f65d976016243`.
+- Targeted compilation, `git diff --check`, and `uv lock --check` passed.
+- The exact benchmark rerun passed. Warm p50 milliseconds were Dashboard `0.137`, Plans `0.016`, Namespaces `0.118`, namespace detail `0.141`, plan detail `2974.111`, changed page 1 `2981.829`, changed later page `3016.995`, and near-end stale `2995.965`. Structural output remained exactly one plan scan, one state scan, five state connections, zero applied-row objects, no legacy descendants, and zero delta opens. The first result-extraction helper used the wrong top-level JSON key (`timings`) and failed with `KeyError`; the benchmark itself had succeeded, and a complete rerun with the correct `measurements` key produced the recorded values and removed its temporary output.
+- After the test-only race repair, 20 repeated full frontend runs passed 37/37 each. A further 30 repeated focused persisted-event runs passed 1/1 each with 36 filtered tests, and 10 repeated full runs passed 37/37 each. Two consecutive `npm run build` executions each built the same 42 modules; `git diff --exit-code -- src/buoy_search/command_center_static` passed and the four packaged static hashes remained unchanged.
+- `uv build --out-dir dist` passed with a 69-entry wheel and 159-entry sdist, one hashed JavaScript asset, one hashed CSS asset, and zero archive `node_modules` entries. Isolated installation returned HTTP 200 for health, dashboard, plans, namespaces, and static root. Core sync removed the three UI packages; isolated core imports excluded FastAPI, Uvicorn, API/jobs, optional database adapters, turbopuffer, and model modules. The first import attempt occurred after the required generated `_version.py` cleanup and therefore failed as expected; a temporary rebuild regenerated it, the import-isolation check passed, and both `dist` and generated `_version.py` were removed again.
+
+### Mechanically derived generated-artifact and exclusion inventory
+
+The earlier Appendix F statement `generated_directories=0` was broader than its procedure: that command inspected tracked names and asserted two paths only. It is superseded for this final repair by an explicit filesystem walk. The accepted command pruned exactly `.git` (VCS metadata) and `.venv` (the task's explicit non-venv exclusion), then searched the rest of the worktree for exactly `.pytest_cache/`, `.ruff_cache/`, `__pycache__/`, `*.pyc`, `src/buoy_search/_version.py`, `.pi-subagents/artifacts/`, `dist/`, and `web/node_modules/`. It separately classified all 876 `git ls-files` paths against the same target rules before accepting deletion safety. Final output was:
+
+```text
+examined_root=.
+excluded_roots={.git: VCS metadata, .venv: explicitly exempt virtual environment}
+target_patterns=[.pytest_cache/, .ruff_cache/, non-.venv __pycache__/, non-.venv *.pyc, src/buoy_search/_version.py, .pi-subagents/artifacts/, dist/, web/node_modules/]
+remaining_targets=[]
+tracked_target_overlap=[]
+tracked_paths=876
+```
+
+This is a bounded claim about the enumerated generated targets and stated exclusions, not a claim that every possible generated-file convention was inferred. `git diff --check`, `uv lock --check`, an empty staged-name check, and final status also passed; only the five intentional source/test files plus this evidence and the two open ticket progress records were modified before commit.

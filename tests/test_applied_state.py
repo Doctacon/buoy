@@ -446,6 +446,40 @@ class AppliedStateStoreTests(unittest.TestCase):
                             database_path=paths.database_path, state_root=state_root
                         )
 
+    def test_summary_reader_closes_descriptor_when_initial_fstat_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            state_root = Path(tmp)
+            paths = save_applied_state(sample_state(), state_root=state_root)
+            real_fstat = os.fstat
+            real_close = os.close
+            closed: list[int] = []
+            fstat_calls = 0
+
+            def fail_first_fstat(descriptor: int):  # noqa: ANN202
+                nonlocal fstat_calls
+                fstat_calls += 1
+                if fstat_calls == 1:
+                    raise OSError("forced initial fstat failure")
+                return real_fstat(descriptor)
+
+            def record_close(descriptor: int) -> None:
+                closed.append(descriptor)
+                real_close(descriptor)
+
+            with mock.patch(
+                "buoy_search.applied_state.os.fstat", side_effect=fail_first_fstat
+            ), mock.patch(
+                "buoy_search.applied_state.os.close", side_effect=record_close
+            ), self.assertRaisesRegex(AppliedStateError, "unsafe no-follow path"):
+                load_applied_state_summary(
+                    database_path=paths.database_path, state_root=state_root
+                )
+
+            self.assertEqual(fstat_calls, 1)
+            self.assertEqual(len(closed), 1)
+            with self.assertRaises(OSError):
+                real_fstat(closed[0])
+
     def test_summary_reader_closes_connection_and_all_descriptors_on_failures(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             state_root = Path(tmp)

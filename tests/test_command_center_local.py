@@ -293,6 +293,84 @@ class CompactDeltaInventoryTests(unittest.TestCase):
         self.assertEqual(plans.call_count, 2)
         self.assertEqual([item.plan_id for item in refreshed.items], [external_plan_id])
 
+    def test_direct_miss_refreshes_after_concurrent_rebuild_expires(self) -> None:
+        import buoy_search.command_center_local as local_module
+
+        clock = FakeClock()
+        direct_miss_observed = threading.Event()
+        continue_direct_miss = threading.Event()
+        forced_refresh_attempted = threading.Event()
+        concurrent_scan_finished = threading.Event()
+        release_concurrent_rebuild = threading.Event()
+        discover_calls = 0
+        discover_lock = threading.Lock()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_id, staged_plan = write_plan(root / "staging")
+            real_discover = local_module._discover_plans
+
+            def slow_concurrent_discover(path):  # noqa: ANN001, ANN202
+                nonlocal discover_calls
+                with discover_lock:
+                    discover_calls += 1
+                    call = discover_calls
+                result = real_discover(path)
+                if call == 2:
+                    concurrent_scan_finished.set()
+                    self.assertTrue(release_concurrent_rebuild.wait(timeout=5))
+                return result
+
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts",
+                state_root=root / "state",
+                clock=clock,
+            )
+            with patch(
+                "buoy_search.command_center_local._discover_plans",
+                side_effect=slow_concurrent_discover,
+            ):
+                old = service._snapshot()
+                real_snapshot = service._snapshot
+
+                def coordinated_snapshot(*, force=False, previous=None):  # noqa: ANN001, ANN202
+                    if force:
+                        forced_refresh_attempted.set()
+                    snapshot = real_snapshot(force=force, previous=previous)
+                    if (
+                        threading.current_thread().name.startswith("direct-miss")
+                        and not force
+                        and previous is None
+                    ):
+                        self.assertIs(snapshot, old)
+                        direct_miss_observed.set()
+                        self.assertTrue(continue_direct_miss.wait(timeout=5))
+                    return snapshot
+
+                service._snapshot = coordinated_snapshot  # type: ignore[method-assign]
+                with ThreadPoolExecutor(
+                    max_workers=1, thread_name_prefix="direct-miss"
+                ) as direct_executor, ThreadPoolExecutor(max_workers=1) as rebuild_executor:
+                    direct = direct_executor.submit(service.get_plan, plan_id)
+                    self.assertTrue(direct_miss_observed.wait(timeout=5))
+
+                    clock.value = 1.0
+                    concurrent = rebuild_executor.submit(service.list_plans)
+                    self.assertTrue(concurrent_scan_finished.wait(timeout=5))
+                    external_plan = root / "artifacts" / "external" / "plan"
+                    external_plan.parent.mkdir(parents=True)
+                    staged_plan.rename(external_plan)
+                    clock.value = 2.0
+
+                    continue_direct_miss.set()
+                    self.assertTrue(forced_refresh_attempted.wait(timeout=5))
+                    release_concurrent_rebuild.set()
+
+                    self.assertEqual(concurrent.result(timeout=5).total, 0)
+                    self.assertEqual(direct.result(timeout=5).summary.plan_id, plan_id)
+
+        self.assertEqual(discover_calls, 3)
+
     def test_unavailable_state_summary_primitive_is_an_isolated_safe_item(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

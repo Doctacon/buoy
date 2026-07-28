@@ -676,7 +676,14 @@ def _require_summary_descriptor_primitives() -> None:
 def _summary_bound_path(
     path: Path, descriptor: int, *, directory: bool
 ) -> _SummaryBoundPath:
-    metadata = os.fstat(descriptor)
+    try:
+        metadata = os.fstat(descriptor)
+    except (OSError, NotImplementedError):
+        try:
+            os.close(descriptor)
+        except (OSError, NotImplementedError):
+            pass
+        raise
     expected_kind = stat.S_ISDIR if directory else stat.S_ISREG
     if not expected_kind(metadata.st_mode):
         os.close(descriptor)
