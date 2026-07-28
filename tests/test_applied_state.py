@@ -328,6 +328,138 @@ class AppliedStateStoreTests(unittest.TestCase):
                         database_path=paths.database_path, state_root=state_root
                     )
 
+    def test_summary_reader_detects_database_aba_during_inspection(self) -> None:
+        real_connect = duckdb.connect
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state-root"
+            paths = save_applied_state(sample_state(), state_root=state_root)
+            replacement_root = root / "replacement-root"
+            replacement_paths = save_applied_state(
+                sample_state([sample_row(), sample_row("ts_other")]),
+                state_root=replacement_root,
+            )
+            replacement = root / "replacement.duckdb"
+            replacement_paths.database_path.rename(replacement)
+
+            def connect_to_b_then_restore_a(path, **kwargs):  # noqa: ANN001, ANN202
+                held_a = paths.database_path.with_name("held-a.duckdb")
+                paths.database_path.rename(held_a)
+                replacement.rename(paths.database_path)
+                connection = real_connect(path, **kwargs)
+                paths.database_path.rename(replacement)
+                held_a.rename(paths.database_path)
+                return connection
+
+            with mock.patch(
+                "buoy_search.applied_state.duckdb.connect",
+                side_effect=connect_to_b_then_restore_a,
+            ):
+                with self.assertRaisesRegex(AppliedStateError, "changed during"):
+                    load_applied_state_summary(
+                        database_path=paths.database_path, state_root=state_root
+                    )
+
+    def test_summary_reader_rejects_root_intermediate_symlink_and_path_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            real_root = root / "real-root"
+            paths = save_applied_state(sample_state(), state_root=real_root)
+
+            linked_root = root / "linked-root"
+            linked_root.symlink_to(real_root, target_is_directory=True)
+            with self.assertRaises(AppliedStateError):
+                load_applied_state_summary(
+                    database_path=linked_root / paths.database_path.relative_to(real_root),
+                    state_root=linked_root,
+                )
+
+            state_directory = real_root / "state"
+            moved_state = real_root / "moved-state"
+            state_directory.rename(moved_state)
+            state_directory.symlink_to(moved_state, target_is_directory=True)
+            with self.assertRaises(AppliedStateError):
+                load_applied_state_summary(
+                    database_path=real_root / "state" / "example-com" / "site-example-com-v1" / "state.duckdb",
+                    state_root=real_root,
+                )
+
+            with self.assertRaisesRegex(AppliedStateError, "escapes"):
+                load_applied_state_summary(
+                    database_path=root / "outside.duckdb", state_root=real_root
+                )
+
+    def test_summary_reader_reuses_schema_validator_and_requires_one_metadata_row(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name, mutation, message in (
+                (
+                    "schema",
+                    "UPDATE state_schema SET schema_version = 2",
+                    "unsupported DuckDB applied state schema version",
+                ),
+                ("zero-metadata", "DELETE FROM state_metadata", "exactly one metadata row"),
+                (
+                    "duplicate-metadata",
+                    "INSERT INTO state_metadata SELECT * FROM state_metadata",
+                    "exactly one metadata row",
+                ),
+            ):
+                with self.subTest(name=name):
+                    state_root = root / name
+                    paths = save_applied_state(sample_state(), state_root=state_root)
+                    with duckdb.connect(str(paths.database_path)) as connection:
+                        connection.execute(mutation)
+                    with self.assertRaisesRegex(AppliedStateError, message):
+                        load_applied_state_summary(
+                            database_path=paths.database_path, state_root=state_root
+                        )
+
+    def test_summary_reader_closes_connection_and_all_descriptors_on_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            state_root = Path(tmp)
+            paths = save_applied_state(sample_state(), state_root=state_root)
+            connection_closed = False
+
+            class FailingConnection:
+                def __enter__(self):  # noqa: ANN204
+                    return self
+
+                def __exit__(self, exc_type, exc, traceback):  # noqa: ANN001
+                    nonlocal connection_closed
+                    connection_closed = True
+
+                def execute(self, sql, parameters=None):  # noqa: ANN001, ANN201
+                    raise duckdb.IOException("forced query failure")
+
+            with mock.patch(
+                "buoy_search.applied_state.duckdb.connect",
+                return_value=FailingConnection(),
+            ):
+                with self.assertRaisesRegex(AppliedStateError, "could not load"):
+                    load_applied_state_summary(
+                        database_path=paths.database_path, state_root=state_root
+                    )
+            self.assertTrue(connection_closed)
+
+            closed: list[int] = []
+
+            def close_then_fail_first(descriptor: int) -> None:
+                closed.append(descriptor)
+                real_close(descriptor)
+                if len(closed) == 1:
+                    raise OSError("forced close failure")
+
+            real_close = __import__("os").close
+            with mock.patch(
+                "buoy_search.applied_state.os.close", side_effect=close_then_fail_first
+            ):
+                with self.assertRaisesRegex(AppliedStateError, "close.*descriptors"):
+                    load_applied_state_summary(
+                        database_path=paths.database_path, state_root=state_root
+                    )
+            self.assertEqual(len(closed), 6)
+
     def test_apply_summaries_are_append_only_and_do_not_copy_row_snapshots(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             state_root = Path(tmp)

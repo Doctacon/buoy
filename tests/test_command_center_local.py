@@ -362,25 +362,33 @@ class CompactDeltaInventoryTests(unittest.TestCase):
         script = """
 import sys
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from buoy_search.command_center_local import LocalInventoryService
-with TemporaryDirectory() as tmp:
-    root = Path(tmp)
-    service = LocalInventoryService(artifacts_root=root / 'artifacts', state_root=root / 'state')
-    service.dashboard()
-    service.list_plans()
+artifacts = Path(sys.argv[1])
+plan_id = sys.argv[2]
+service = LocalInventoryService(artifacts_root=artifacts, state_root=artifacts.parent / 'state')
+inventory = service.list_plans()
+if inventory.total != 1 or inventory.items[0].plan_id != plan_id:
+    raise SystemExit('valid schema-v2 plan was not summary-qualified')
+service.dashboard()
 forbidden = {
     'buoy_search.apply', 'buoy_search.bigquery_relation', 'buoy_search.command_center_remote',
-    'buoy_search.database_relation', 'buoy_search.duckdb_relation', 'buoy_search.github_repo',
-    'buoy_search.planning_service', 'buoy_search.retriever', 'buoy_search.snowflake_relation',
+    'buoy_search.crawler', 'buoy_search.database_relation', 'buoy_search.duckdb_relation',
+    'buoy_search.github_repo', 'buoy_search.planning_service', 'buoy_search.retriever',
+    'buoy_search.snowflake_relation',
 }
 loaded = sorted(forbidden.intersection(sys.modules))
 if loaded:
     raise SystemExit(','.join(loaded))
 """
-        result = subprocess.run(
-            [sys.executable, "-c", script], capture_output=True, text=True, check=False
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_id, _ = write_plan(root / "artifacts" / "valid")
+            result = subprocess.run(
+                [sys.executable, "-c", script, str(root / "artifacts"), plan_id],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
     def test_summary_inventory_never_opens_delta_and_schema1_is_inert(self) -> None:
@@ -569,6 +577,40 @@ if loaded:
                     ):
                         with self.assertRaisesRegex(InventoryLookupError, "fully verified"):
                             operation()
+
+    def test_selected_detail_reconstructs_identity_excluded_metadata_after_cached_rewrite(self) -> None:
+        import buoy_search.command_center_local as local_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_id, output = write_plan(root / "artifacts" / "plan")
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts", state_root=root / "state"
+            )
+            cached = service.list_plans().items[0]
+            plan_path = output / "plan.json"
+            plan_inode = plan_path.stat().st_ino
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            rewritten_created_at = "2026-07-27T23:59:59+00:00"
+            rewritten_job_id = "planjob_" + "b" * 32
+            plan["created_at"] = rewritten_created_at
+            plan["originating_job_id"] = rewritten_job_id
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+            self.assertEqual(plan_path.stat().st_ino, plan_inode)
+
+            with patch(
+                "buoy_search.command_center_local._verify_plan_artifacts",
+                wraps=local_module._verify_plan_artifacts,
+            ) as verify:
+                first = service.get_plan(plan_id)
+                second = service.get_plan(plan_id)
+
+        self.assertNotEqual(cached.created_at, rewritten_created_at)
+        self.assertEqual(first.summary.created_at, rewritten_created_at)
+        self.assertEqual(first.originating_job_id, rewritten_job_id)
+        self.assertEqual(second.summary.created_at, rewritten_created_at)
+        self.assertEqual(second.originating_job_id, rewritten_job_id)
+        self.assertEqual(verify.call_count, 2)
 
     def test_selected_corrupt_delta_fails_without_breaking_summary_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import stat
+import sys
 from typing import Iterator, Literal
 
 import duckdb
@@ -257,10 +258,9 @@ def load_applied_state_summary(
 
     database_path = Path(database_path)
     state_root = Path(state_root)
-    site_id, namespace, descriptor, identity = _bind_summary_database(
+    with _bind_summary_database(
         database_path=database_path, state_root=state_root
-    )
-    try:
+    ) as binding:
         try:
             with duckdb.connect(str(database_path), read_only=True) as connection:
                 _validate_database_schema(connection)
@@ -292,12 +292,12 @@ def load_applied_state_summary(
                 f"could not load DuckDB applied-state summary: {exc}"
             ) from exc
 
-        _assert_summary_database_identity(database_path, descriptor, identity)
+        _assert_summary_database_identity(binding)
         schema_version = int(metadata[0])
         metadata_site_id = str(metadata[1])
         metadata_namespace = str(metadata[2])
         normalized_base_url = validate_base_url(str(metadata[3]))
-        if metadata_site_id != site_id or metadata_namespace != namespace:
+        if metadata_site_id != binding.site_id or metadata_namespace != binding.namespace:
             raise AppliedStateError("applied state path does not match its identity")
         expected_path = applied_state_paths(
             site_id=metadata_site_id,
@@ -329,8 +329,8 @@ def load_applied_state_summary(
                 last_plan_id=summary.last_plan_id,
                 last_apply_id=summary.last_apply_id,
             ),
-            expected_site_id=site_id,
-            expected_namespace=namespace,
+            expected_site_id=binding.site_id,
+            expected_namespace=binding.namespace,
             expected_base_url=normalized_base_url,
         )
         if min(
@@ -348,8 +348,6 @@ def load_applied_state_summary(
                 "applied state contains an unknown status or contradictory row counts"
             )
         return summary
-    finally:
-        os.close(descriptor)
 
 
 def save_applied_state(
@@ -563,60 +561,137 @@ def safe_state_component(value: str, *, label: str) -> str:
     return value
 
 
+@dataclass(frozen=True)
+class _SummaryBoundPath:
+    path: Path
+    descriptor: int
+    identity: tuple[int, int, int, int, int]
+    directory: bool
+
+
+@dataclass(frozen=True)
+class _SummaryDatabaseBinding:
+    site_id: str
+    namespace: str
+    paths: tuple[_SummaryBoundPath, ...]
+
+
+@contextmanager
 def _bind_summary_database(
     *, database_path: Path, state_root: Path
-) -> tuple[str, str, int, tuple[int, int]]:
-    """Bind an expected no-follow state path before DuckDB opens it."""
+) -> Iterator[_SummaryDatabaseBinding]:
+    """Hold the database and each parent entry across pathname-based inspection."""
 
-    root_metadata = state_root.lstat()
-    if stat.S_ISLNK(root_metadata.st_mode) or not stat.S_ISDIR(root_metadata.st_mode):
-        raise AppliedStateError("applied-state root must be a regular directory")
+    root = state_root.absolute()
+    database = database_path.absolute()
     try:
-        relative = database_path.absolute().relative_to(state_root.absolute())
+        relative = database.relative_to(root)
     except ValueError as exc:
         raise AppliedStateError("applied state escapes its configured root") from exc
-    if len(relative.parts) != 4 or relative.parts[0] != "state" or relative.parts[3] != "state.duckdb":
+    if (
+        len(relative.parts) != 4
+        or relative.parts[0] != "state"
+        or relative.parts[3] != "state.duckdb"
+    ):
         raise AppliedStateError("applied state path does not match its identity")
     site_id = safe_state_component(relative.parts[1], label="site_id")
     namespace = safe_state_component(relative.parts[2], label="namespace")
-    for directory in (
-        state_root / "state",
-        state_root / "state" / site_id,
-        state_root / "state" / site_id / namespace,
-    ):
-        metadata = directory.lstat()
-        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-            raise AppliedStateError("applied-state path contains an unsafe directory")
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+
+    directory_flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    file_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    opened: list[_SummaryBoundPath] = []
     try:
-        descriptor = os.open(database_path, flags)
-    except OSError as exc:
-        raise AppliedStateError("applied state must be a regular no-follow file") from exc
-    opened = os.fstat(descriptor)
-    identity = (opened.st_dev, opened.st_ino)
-    try:
-        if not stat.S_ISREG(opened.st_mode):
-            raise AppliedStateError("applied state must be a regular no-follow file")
-        _assert_summary_database_identity(database_path, descriptor, identity)
-    except Exception:
-        os.close(descriptor)
+        root_parent = root.parent
+        parent_descriptor = os.open(root_parent, directory_flags)
+        opened.append(_summary_bound_path(root_parent, parent_descriptor, directory=True))
+        parent = parent_descriptor
+        components = (
+            (root, root.name or "."),
+            (root / "state", "state"),
+            (root / "state" / site_id, site_id),
+            (root / "state" / site_id / namespace, namespace),
+        )
+        for path, name in components:
+            descriptor = os.open(name, directory_flags, dir_fd=parent)
+            bound = _summary_bound_path(path, descriptor, directory=True)
+            opened.append(bound)
+            parent = descriptor
+        try:
+            database_descriptor = os.open("state.duckdb", file_flags, dir_fd=parent)
+        except OSError as exc:
+            raise AppliedStateError(
+                "applied state must be a regular no-follow file"
+            ) from exc
+        opened.append(
+            _summary_bound_path(database, database_descriptor, directory=False)
+        )
+        binding = _SummaryDatabaseBinding(site_id, namespace, tuple(opened))
+        _assert_summary_database_identity(binding)
+        yield binding
+    except AppliedStateError:
         raise
-    return site_id, namespace, descriptor, identity
+    except OSError as exc:
+        raise AppliedStateError("applied state contains an unsafe no-follow path") from exc
+    finally:
+        active_error = sys.exc_info()[0] is not None
+        close_error: OSError | None = None
+        for item in reversed(opened):
+            try:
+                os.close(item.descriptor)
+            except OSError as exc:
+                close_error = close_error or exc
+        if close_error is not None and not active_error:
+            raise AppliedStateError("could not close applied-state summary descriptors") from close_error
 
 
-def _assert_summary_database_identity(
-    database_path: Path, descriptor: int, identity: tuple[int, int]
-) -> None:
-    opened = os.fstat(descriptor)
-    current = database_path.lstat()
-    if (
-        not stat.S_ISREG(opened.st_mode)
-        or (opened.st_dev, opened.st_ino) != identity
-        or stat.S_ISLNK(current.st_mode)
-        or not stat.S_ISREG(current.st_mode)
-        or (current.st_dev, current.st_ino) != identity
-    ):
-        raise AppliedStateError("applied state changed during summary inspection")
+def _summary_bound_path(
+    path: Path, descriptor: int, *, directory: bool
+) -> _SummaryBoundPath:
+    metadata = os.fstat(descriptor)
+    expected_kind = stat.S_ISDIR if directory else stat.S_ISREG
+    if not expected_kind(metadata.st_mode):
+        os.close(descriptor)
+        raise AppliedStateError(
+            "applied-state path contains an unsafe directory"
+            if directory
+            else "applied state must be a regular no-follow file"
+        )
+    return _SummaryBoundPath(
+        path=path,
+        descriptor=descriptor,
+        identity=_summary_mutation_identity(metadata),
+        directory=directory,
+    )
+
+
+def _summary_mutation_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _assert_summary_database_identity(binding: _SummaryDatabaseBinding) -> None:
+    for item in binding.paths:
+        opened = os.fstat(item.descriptor)
+        current = item.path.lstat()
+        expected_kind = stat.S_ISDIR if item.directory else stat.S_ISREG
+        if (
+            not expected_kind(opened.st_mode)
+            or not expected_kind(current.st_mode)
+            or stat.S_ISLNK(current.st_mode)
+            or _summary_mutation_identity(opened) != item.identity
+            or _summary_mutation_identity(current) != item.identity
+        ):
+            raise AppliedStateError("applied state changed during summary inspection")
 
 
 def _first_apply_state(*, site_id: str, namespace: str, base_url: str) -> AppliedState:

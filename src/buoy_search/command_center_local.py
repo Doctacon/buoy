@@ -22,6 +22,7 @@ from typing import Any, Callable, Literal
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 from buoy_search.applied_state import AppliedStateError, load_applied_state_summary
+from buoy_search.plan_validation import validate_plan_document
 
 DEFAULT_ARTIFACTS_ROOT = Path("artifacts/site-crawls")
 DEFAULT_STATE_ROOT = Path(".buoy")
@@ -345,14 +346,24 @@ class LocalInventoryService:
             raise InventoryLookupError(
                 "plan_payload_invalid", "Plan delta could not be fully verified."
             ) from exc
-        applied_state = verified.plan["applied_state"]
+        plan = verified.plan
+        (
+            summary,
+            namespace_candidate,
+            artifact_hash,
+            retrieval,
+            source_activity,
+            originating_job_id,
+            _,
+        ) = _plan_response_fields(plan, warnings=record.summary.warnings)
+        applied_state = plan["applied_state"]
         return PlanDetail(
-            summary=record.summary,
-            namespace_candidate=record.namespace_candidate,
-            artifact_hash=record.artifact_hash,
-            retrieval=record.retrieval,
-            source_activity=record.source_activity,
-            originating_job_id=record.originating_job_id,
+            summary=summary,
+            namespace_candidate=namespace_candidate,
+            artifact_hash=artifact_hash,
+            retrieval=retrieval,
+            source_activity=source_activity,
+            originating_job_id=originating_job_id,
             payload_verification="verified",
             applied_state_present=bool(applied_state["present"]),
             applied_state_hash=str(applied_state["hash"]),
@@ -602,8 +613,6 @@ def _read_plan(root: Path, plan_path: Path) -> _PlanRecord:
         raise _LegacyPlan("unsupported schema-v1 plan")
     if type(schema_version) is not int or schema_version != PLAN_SCHEMA_VERSION:
         raise ValueError("unsupported plan schema version")
-    from buoy_search.plan_artifacts import validate_plan_document
-
     validate_plan_document(plan)
     delta_path = plan_path.with_name("delta.duckdb")
     try:
@@ -620,10 +629,45 @@ def _read_plan(root: Path, plan_path: Path) -> _PlanRecord:
     ):
         raise ValueError("plan directory changed during summary qualification")
 
-    plan_id = str(plan["plan_id"])
-    namespace = str(plan["namespace"])
-    site_id = str(plan["site_id"])
-    namespace_candidate = str(plan["namespace_candidate"])
+    (
+        summary,
+        namespace_candidate,
+        artifact_hash,
+        retrieval,
+        activity,
+        originating_job_id,
+        timestamp,
+    ) = _plan_response_fields(plan)
+    return _PlanRecord(
+        summary=summary,
+        namespace_candidate=namespace_candidate,
+        artifact_hash=artifact_hash,
+        retrieval=retrieval,
+        source_activity=activity,
+        originating_job_id=originating_job_id,
+        plan_path=plan_path,
+        directory=plan_path.parent,
+        directory_identity=(directory_metadata.st_dev, directory_metadata.st_ino),
+        plan_identity=plan_identity,
+        delta_identity=(delta_metadata.st_dev, delta_metadata.st_ino),
+        timestamp=timestamp,
+        candidate_id=_artifact_id(root, plan_path),
+    )
+
+
+def _plan_response_fields(
+    plan: dict[str, Any], *, warnings: list[InventoryWarning] | None = None
+) -> tuple[
+    PlanSummary,
+    str,
+    str,
+    RetrievalSettings,
+    SourceActivity,
+    str | None,
+    datetime,
+]:
+    """Reconstruct every document-backed response field from verified metadata."""
+
     created_at = str(plan["created_at"])
     timestamp = _parse_timestamp(created_at)
     if timestamp is None:
@@ -635,40 +679,31 @@ def _read_plan(root: Path, plan_path: Path) -> _PlanRecord:
     originating_job_id = plan.get("originating_job_id")
     if originating_job_id is not None:
         originating_job_id = str(originating_job_id)
-    page_count = sum(
-        int(plan["diff"][key])
-        for key in ("pages_added", "pages_changed", "pages_unchanged")
-    )
-    chunk_count = int(plan["diff"]["chunks_unchanged"]) + int(
-        plan["diff"]["rows_to_upsert"]
-    )
     summary = PlanSummary(
-        plan_id=plan_id,
-        namespace=namespace,
-        site_id=site_id,
+        plan_id=str(plan["plan_id"]),
+        namespace=str(plan["namespace"]),
+        site_id=str(plan["site_id"]),
         created_at=created_at,
         source=source,
-        page_count=page_count,
-        chunk_count=chunk_count,
+        page_count=sum(
+            int(plan["diff"][key])
+            for key in ("pages_added", "pages_changed", "pages_unchanged")
+        ),
+        chunk_count=int(plan["diff"]["chunks_unchanged"])
+        + int(plan["diff"]["rows_to_upsert"]),
         diff=diff,
         payload_verification="not_checked",
         source_activity=activity,
-        warnings=[],
+        warnings=list(warnings or []),
     )
-    return _PlanRecord(
-        summary=summary,
-        namespace_candidate=namespace_candidate,
-        artifact_hash=str(plan["artifact_hash"]),
-        retrieval=retrieval,
-        source_activity=activity,
-        originating_job_id=originating_job_id,
-        plan_path=plan_path,
-        directory=plan_path.parent,
-        directory_identity=(directory_metadata.st_dev, directory_metadata.st_ino),
-        plan_identity=plan_identity,
-        delta_identity=(delta_metadata.st_dev, delta_metadata.st_ino),
-        timestamp=timestamp,
-        candidate_id=_artifact_id(root, plan_path),
+    return (
+        summary,
+        str(plan["namespace_candidate"]),
+        str(plan["artifact_hash"]),
+        retrieval,
+        activity,
+        originating_job_id,
+        timestamp,
     )
 
 
