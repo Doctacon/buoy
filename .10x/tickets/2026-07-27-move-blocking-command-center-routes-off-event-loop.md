@@ -26,6 +26,7 @@ Focused API concurrency and compatibility results with synchronization-based pro
 ## Progress and notes
 
 - 2026-07-27: Opened; dependency not yet executed.
+- 2026-07-27: Dependency is complete. Converted all required synchronous-service endpoints to normal `def` handlers while retaining async bounded plan-job creation and the existing async SSE route/synchronous generator boundary. Added event-coordinated shared-event-loop regressions proving health and exact structured inventory errors complete while dashboard inventory is blocked, and active plan-job detail remains observable while plan inventory is blocked. The structural route-boundary test and 99 focused API/job/SSE/security/remote tests pass; evidence is recorded at `.10x/evidence/2026-07-27-command-center-blocking-route-threading.md`. Ticket remains open and unmoved for required independent review.
 
 ## Blockers
 

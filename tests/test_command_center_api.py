@@ -4,6 +4,7 @@ import asyncio
 from contextlib import redirect_stderr
 from dataclasses import dataclass, replace
 import importlib.util
+import inspect
 from io import StringIO
 import json
 import os
@@ -13,7 +14,8 @@ import subprocess
 import sys
 import tempfile
 import time
-from threading import Thread
+from threading import Event, Thread
+from typing import Callable
 import unittest
 from unittest.mock import Mock, patch
 
@@ -91,6 +93,48 @@ class FakeInventory:
 
     def list_plan_stale_rows(self, plan_id: str, *, offset: int = 0, limit: int = 50):
         return {"resource": "stale", "plan_id": plan_id, "offset": offset, "limit": limit}
+
+
+class BlockingInventory(FakeInventory):
+    def __init__(self, blocked_resource: str) -> None:
+        super().__init__()
+        self.blocked_resource = blocked_resource
+        self.entered = Event()
+        self.release = Event()
+
+    def _block(self) -> None:
+        self.entered.set()
+        if not self.release.wait(10):
+            raise AssertionError("test did not release blocked inventory request")
+
+    def dashboard(self, *, recent_limit: int = 10):
+        if self.blocked_resource == "dashboard":
+            self._block()
+        return super().dashboard(recent_limit=recent_limit)
+
+    def list_plans(self, *, offset: int = 0, limit: int = 50):
+        if self.blocked_resource == "plans":
+            self._block()
+        return super().list_plans(offset=offset, limit=limit)
+
+
+def _start_threaded_call(
+    call: Callable[[], object],
+) -> tuple[Thread, Event, dict[str, object]]:
+    completed = Event()
+    result: dict[str, object] = {}
+
+    def run() -> None:
+        try:
+            result["response"] = call()
+        except BaseException as exc:
+            result["error"] = exc
+        finally:
+            completed.set()
+
+    thread = Thread(target=run)
+    thread.start()
+    return thread, completed, result
 
 
 @dataclass(frozen=True)
@@ -815,6 +859,150 @@ class CommandCenterApiTests(unittest.TestCase):
                 response = client.get(removed)
                 self.assertEqual(response.status_code, 404)
                 self.assertEqual(response.json()["error"]["code"], "api_route_not_found")
+
+    def test_blocking_service_routes_are_sync_with_async_creation_and_sse_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app, _ = self.make_client(Path(tmp), local_inventory=FakeInventory())
+
+        routes = {
+            (route.path, method): route.endpoint
+            for route in app.routes
+            if hasattr(route, "endpoint")
+            for method in getattr(route, "methods", set())
+        }
+        sync_routes = {
+            ("/api/v1/dashboard", "GET"),
+            ("/api/v1/namespaces", "GET"),
+            ("/api/v1/namespaces/{namespace}", "GET"),
+            ("/api/v1/plans", "GET"),
+            ("/api/v1/plans/{plan_id}", "GET"),
+            ("/api/v1/plans/{plan_id}/chunks", "GET"),
+            ("/api/v1/plans/{plan_id}/stale-rows", "GET"),
+            ("/api/v1/plan-jobs", "GET"),
+            ("/api/v1/plan-jobs/{job_id}", "GET"),
+            ("/api/v1/remote/snapshot", "POST"),
+            ("/api/v1/search", "POST"),
+        }
+        for route in sync_routes:
+            with self.subTest(route=route):
+                self.assertFalse(inspect.iscoroutinefunction(routes[route]))
+        for route in (
+            ("/api/v1/plan-jobs", "POST"),
+            ("/api/v1/plan-jobs/{job_id}/events", "GET"),
+        ):
+            with self.subTest(route=route):
+                self.assertTrue(inspect.iscoroutinefunction(routes[route]))
+
+    def test_blocked_dashboard_does_not_block_health_or_corrupt_structured_errors(self) -> None:
+        inventory = BlockingInventory("dashboard")
+        threads: list[Thread] = []
+        with tempfile.TemporaryDirectory() as tmp:
+            _, client = self.make_client(
+                Path(tmp),
+                local_inventory=inventory,
+                plan_job_service_factory=FakePlanJobService,
+            )
+            with client:
+                blocked, blocked_done, blocked_result = _start_threaded_call(
+                    lambda: client.get("/api/v1/dashboard?recent_limit=4")
+                )
+                threads.append(blocked)
+                try:
+                    self.assertTrue(inventory.entered.wait(5))
+                    health, health_done, health_result = _start_threaded_call(
+                        lambda: client.get("/api/v1/health")
+                    )
+                    missing, missing_done, missing_result = _start_threaded_call(
+                        lambda: client.get("/api/v1/namespaces/missing")
+                    )
+                    threads.extend((health, missing))
+                    self.assertTrue(health_done.wait(5))
+                    self.assertTrue(missing_done.wait(5))
+                    self.assertFalse(inventory.release.is_set())
+                    self.assertFalse(blocked_done.is_set())
+                finally:
+                    inventory.release.set()
+                    for thread in threads:
+                        thread.join(5)
+
+        for thread in threads:
+            self.assertFalse(thread.is_alive())
+        for result in (blocked_result, health_result, missing_result):
+            if "error" in result:
+                raise AssertionError("concurrent request raised outside FastAPI") from result["error"]
+        blocked_response = blocked_result["response"]
+        health_response = health_result["response"]
+        missing_response = missing_result["response"]
+        self.assertEqual(getattr(blocked_response, "status_code"), 200)
+        self.assertEqual(
+            getattr(blocked_response, "json")(),
+            {"resource": "dashboard", "recent_limit": 4},
+        )
+        self.assertEqual(getattr(health_response, "status_code"), 200)
+        self.assertEqual(getattr(health_response, "json")()["status"], "ok")
+        self.assertEqual(getattr(missing_response, "status_code"), 404)
+        self.assertEqual(
+            getattr(missing_response, "json")(),
+            {
+                "error": {
+                    "code": "namespace_not_found",
+                    "message": "Namespace was not found.",
+                }
+            },
+        )
+
+    def test_active_plan_job_detail_is_observable_while_plan_inventory_is_blocked(self) -> None:
+        inventory = BlockingInventory("plans")
+        service = FakePlanJobService(live=True)
+        threads: list[Thread] = []
+        with tempfile.TemporaryDirectory() as tmp:
+            app = create_app(
+                artifacts_root=Path(tmp) / "artifacts",
+                state_root=Path(tmp) / "state",
+                local_inventory=inventory,
+                plan_job_service_factory=lambda: service,
+            )
+            with TestClient(
+                app, base_url="http://localhost", raise_server_exceptions=False
+            ) as client:
+                token = client.get("/api/v1/csrf-token").json()["csrf_token"]
+                created = client.post(
+                    "/api/v1/plan-jobs",
+                    headers={CSRF_HEADER: token, "Origin": "http://localhost"},
+                    json={"source_url": "https://example.com/docs"},
+                )
+                job_id = created.json()["job_id"]
+                blocked, blocked_done, blocked_result = _start_threaded_call(
+                    lambda: client.get("/api/v1/plans")
+                )
+                threads.append(blocked)
+                try:
+                    self.assertTrue(inventory.entered.wait(5))
+                    observed, observed_done, observed_result = _start_threaded_call(
+                        lambda: client.get(f"/api/v1/plan-jobs/{job_id}")
+                    )
+                    threads.append(observed)
+                    self.assertTrue(observed_done.wait(5))
+                    self.assertFalse(inventory.release.is_set())
+                    self.assertFalse(blocked_done.is_set())
+                finally:
+                    inventory.release.set()
+                    for thread in threads:
+                        thread.join(5)
+
+        self.assertEqual(created.status_code, 202)
+        for thread in threads:
+            self.assertFalse(thread.is_alive())
+        for result in (blocked_result, observed_result):
+            if "error" in result:
+                raise AssertionError("concurrent request raised outside FastAPI") from result["error"]
+        blocked_response = blocked_result["response"]
+        observed_response = observed_result["response"]
+        self.assertEqual(getattr(blocked_response, "status_code"), 200)
+        self.assertEqual(getattr(blocked_response, "json")()["resource"], "plans")
+        self.assertEqual(getattr(observed_response, "status_code"), 200)
+        self.assertEqual(getattr(observed_response, "json")()["job_id"], job_id)
+        self.assertEqual(getattr(observed_response, "json")()["state"], "queued")
 
     def test_remote_refresh_and_search_are_explicit_and_safe(self) -> None:
         remote = FakeRemote()

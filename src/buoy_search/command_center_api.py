@@ -643,7 +643,7 @@ def create_app(
             return _job_error_response(exc)
 
     @app.get(f"{API_PREFIX}/plan-jobs")
-    async def list_plan_jobs(offset: int = 0, limit: int = 50) -> Any:
+    def list_plan_jobs(offset: int = 0, limit: int = 50) -> Any:
         unavailable = managed_planning_unavailable()
         if unavailable is not None:
             return unavailable
@@ -672,7 +672,7 @@ def create_app(
             return _job_error_response(exc)
 
     @app.get(f"{API_PREFIX}/plan-jobs/{{job_id}}")
-    async def plan_job_detail(job_id: str) -> Any:
+    def plan_job_detail(job_id: str) -> Any:
         unavailable = managed_planning_unavailable()
         if unavailable is not None:
             return unavailable
@@ -714,27 +714,27 @@ def create_app(
         )
 
     @app.get(f"{API_PREFIX}/dashboard")
-    async def dashboard(recent_limit: int = 10) -> Any:
+    def dashboard(recent_limit: int = 10) -> Any:
         return _service_payload(inventory.dashboard(recent_limit=recent_limit))  # type: ignore[attr-defined]
 
     @app.get(f"{API_PREFIX}/namespaces")
-    async def namespaces(offset: int = 0, limit: int = 50) -> Any:
+    def namespaces(offset: int = 0, limit: int = 50) -> Any:
         return _service_payload(inventory.list_namespaces(offset=offset, limit=limit))  # type: ignore[attr-defined]
 
     @app.get(f"{API_PREFIX}/namespaces/{{namespace}}")
-    async def namespace_detail(namespace: str) -> Any:
+    def namespace_detail(namespace: str) -> Any:
         return _service_payload(inventory.get_namespace(namespace))  # type: ignore[attr-defined]
 
     @app.get(f"{API_PREFIX}/plans")
-    async def plans(offset: int = 0, limit: int = 50) -> Any:
+    def plans(offset: int = 0, limit: int = 50) -> Any:
         return _service_payload(inventory.list_plans(offset=offset, limit=limit))  # type: ignore[attr-defined]
 
     @app.get(f"{API_PREFIX}/plans/{{plan_id}}")
-    async def plan_detail(plan_id: str) -> Any:
+    def plan_detail(plan_id: str) -> Any:
         return _service_payload(inventory.get_plan(plan_id))  # type: ignore[attr-defined]
 
     @app.get(f"{API_PREFIX}/plans/{{plan_id}}/chunks")
-    async def plan_chunks(
+    def plan_chunks(
         plan_id: str,
         offset: int = 0,
         limit: int = 50,
@@ -750,7 +750,7 @@ def create_app(
         )
 
     @app.get(f"{API_PREFIX}/plans/{{plan_id}}/stale-rows")
-    async def plan_stale_rows(
+    def plan_stale_rows(
         plan_id: str,
         offset: int = 0,
         limit: int = 50,
@@ -791,11 +791,11 @@ def create_app(
         return search_service
 
     @app.post(f"{API_PREFIX}/remote/snapshot")
-    async def refresh_remote_snapshot() -> Any:
+    def refresh_remote_snapshot() -> Any:
         return _service_payload(remote_service().refresh())  # type: ignore[attr-defined]
 
     @app.post(f"{API_PREFIX}/search")
-    async def search(payload: SearchPayload) -> Any:
+    def search(payload: SearchPayload) -> Any:
         from buoy_search.command_center_remote import SearchRequest
 
         request = SearchRequest(
