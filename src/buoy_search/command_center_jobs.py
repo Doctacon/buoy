@@ -1182,6 +1182,7 @@ class PlanJobService:
         executor: Executor | None = None,
         clock: Clock = utc_now,
         job_id_factory: JobIdFactory = make_job_id,
+        on_plan_published: Callable[[], None] | None = None,
     ) -> None:
         self.state_root = Path(state_root)
         self.artifacts_root = Path(artifacts_root)
@@ -1208,6 +1209,7 @@ class PlanJobService:
             raise
         self._owns_executor = executor is None
         self._job_id_factory = job_id_factory
+        self._on_plan_published = on_plan_published
         self._condition = Condition(RLock())
         self._start_lock = RLock()
         self._futures: dict[str, Future[Any]] = {}
@@ -1526,6 +1528,13 @@ class PlanJobService:
                 plan_id=plan_id,
                 namespace=namespace,
             )
+            if self._on_plan_published is not None:
+                try:
+                    self._on_plan_published()
+                except Exception as exc:
+                    _LOGGER.warning(
+                        "Plan publication callback failed (%s).", type(exc).__name__
+                    )
         except JobDurabilityError:
             self._notify()
             raise

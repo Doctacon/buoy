@@ -857,6 +857,103 @@ elif operation == "restart":
 
 
 class PlanJobServiceTests(unittest.TestCase):
+    def test_publication_callback_runs_once_after_durable_success(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            executor = CapturingExecutor()
+            observations: list[tuple[str, str | None, str]] = []
+            service: PlanJobService
+
+            def observe_publication() -> None:
+                completed = service.get(JOB_IDS[0])
+                observations.append(
+                    (
+                        completed.state,
+                        completed.plan_id,
+                        service.events_after(JOB_IDS[0])[-1].stage,
+                    )
+                )
+
+            service = PlanJobService(
+                state_root=root / "state",
+                artifacts_root=root / "artifacts",
+                planning_service=SuccessfulPlanningService(),  # type: ignore[arg-type]
+                executor=executor,  # type: ignore[arg-type]
+                job_id_factory=lambda: JOB_IDS[0],
+                on_plan_published=observe_publication,
+            )
+            try:
+                job = service.start(
+                    PlanJobRequest("https://example.com/docs", namespace="docs-v1")
+                )
+                self.assertEqual(observations, [])
+                executor.run()
+                self.assertEqual(service.wait(job.job_id, timeout=1).state, "succeeded")
+                self.assertEqual(
+                    observations,
+                    [("succeeded", "plan_verified", "succeeded")],
+                )
+            finally:
+                service.shutdown()
+
+    def test_raising_publication_callback_is_logged_by_type_and_cannot_fail_success(self) -> None:
+        def fail_publication_callback() -> None:
+            raise RuntimeError("RAW-CALLBACK-SECRET /private/callback")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            executor = CapturingExecutor()
+            service = PlanJobService(
+                state_root=root / "state",
+                artifacts_root=root / "artifacts",
+                planning_service=SuccessfulPlanningService(),  # type: ignore[arg-type]
+                executor=executor,  # type: ignore[arg-type]
+                job_id_factory=lambda: JOB_IDS[0],
+                on_plan_published=fail_publication_callback,
+            )
+            try:
+                job = service.start(
+                    PlanJobRequest("https://example.com/docs", namespace="docs-v1")
+                )
+                output = root / "artifacts/command-center/plans" / job.job_id
+                with self.assertLogs(
+                    "buoy_search.command_center_jobs", level="WARNING"
+                ) as logs:
+                    executor.run()
+                completed = service.wait(job.job_id, timeout=1)
+                self.assertEqual(completed.state, "succeeded")
+                self.assertEqual(completed.plan_id, "plan_verified")
+                self.assertEqual(
+                    service.events_after(job.job_id)[-1].stage, "succeeded"
+                )
+                self.assertTrue(output.is_dir())
+                rendered = "\n".join(logs.output)
+                self.assertIn("RuntimeError", rendered)
+                self.assertNotIn("RAW-CALLBACK-SECRET", rendered)
+                self.assertNotIn("/private/callback", rendered)
+            finally:
+                service.shutdown()
+
+    def test_restart_interruption_does_not_call_publication_callback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            store = PlanJobStore(root / "state")
+            create_job(store)
+            callbacks: list[str] = []
+            service = PlanJobService(
+                state_root=root / "state",
+                artifacts_root=root / "artifacts",
+                planning_service=SuccessfulPlanningService(),  # type: ignore[arg-type]
+                executor=CapturingExecutor(),  # type: ignore[arg-type]
+                on_plan_published=lambda: callbacks.append("published"),
+            )
+            try:
+                recovered = service.get(JOB_IDS[0])
+                self.assertEqual(recovered.state, "interrupted")
+                self.assertEqual(callbacks, [])
+            finally:
+                service.shutdown()
+
     def test_large_progress_burst_coalesces_once_notifies_only_on_durable_changes_and_succeeds(self) -> None:
         class BurstPlanningService:
             def plan(self, request, *, progress_callback=None):  # noqa: ANN001
@@ -1235,16 +1332,27 @@ class PlanJobServiceTests(unittest.TestCase):
                     indexing_plan=process_corpus(options.out_dir / "pages"),
                 )
 
+            callback_calls: list[str] = []
+
+            def raising_callback() -> None:
+                callback_calls.append("published")
+                raise RuntimeError("callback failure")
+
             service = PlanJobService(
                 state_root=root / "state",
                 artifacts_root=root / "artifacts",
                 planning_service=PlanningService(crawl_runner=offline_crawl),
                 job_id_factory=lambda: JOB_IDS[0],
+                on_plan_published=raising_callback,
             )
             try:
-                job = service.start(PlanJobRequest("https://example.com/docs"))
-                finished = service.wait(job.job_id, timeout=5)
+                with self.assertLogs(
+                    "buoy_search.command_center_jobs", level="WARNING"
+                ):
+                    job = service.start(PlanJobRequest("https://example.com/docs"))
+                    finished = service.wait(job.job_id, timeout=5)
                 self.assertEqual(finished.state, "succeeded")
+                self.assertEqual(callback_calls, ["published"])
                 final = root / "artifacts/command-center/plans" / job.job_id
                 self.assertEqual(
                     {"plan.json", "delta.duckdb"},
@@ -1397,11 +1505,13 @@ class PlanJobServiceTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
+            callbacks: list[str] = []
             service = PlanJobService(
                 state_root=root / "state",
                 artifacts_root=root / "artifacts",
                 planning_service=UnverifiedService(),  # type: ignore[arg-type]
                 job_id_factory=lambda: JOB_IDS[0],
+                on_plan_published=lambda: callbacks.append("published"),
             )
             try:
                 job = service.start(
@@ -1411,6 +1521,7 @@ class PlanJobServiceTests(unittest.TestCase):
                 self.assertEqual(failed.state, "failed")
                 self.assertIsNone(failed.plan_id)
                 self.assertEqual(service.events_after(job.job_id)[-1].stage, "failed")
+                self.assertEqual(callbacks, [])
             finally:
                 service.shutdown()
 
@@ -1423,11 +1534,13 @@ class PlanJobServiceTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
+            callbacks: list[str] = []
             service = PlanJobService(
                 state_root=root / "state",
                 artifacts_root=root / "artifacts",
                 planning_service=FailingService(),  # type: ignore[arg-type]
                 job_id_factory=lambda: JOB_IDS[0],
+                on_plan_published=lambda: callbacks.append("published"),
             )
             try:
                 with self.assertLogs("buoy_search.command_center_jobs", level="ERROR") as logs:
@@ -1455,6 +1568,7 @@ class PlanJobServiceTests(unittest.TestCase):
                 )
                 self.assertNotIn("RAW-SECRET", serialized)
                 self.assertNotIn("/private/path", serialized)
+                self.assertEqual(callbacks, [])
             finally:
                 service.shutdown()
 

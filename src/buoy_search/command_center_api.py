@@ -403,7 +403,11 @@ def create_app(
             return plan_job_service_factory()
         from buoy_search.command_center_jobs import PlanJobService
 
-        return PlanJobService(state_root=state_root, artifacts_root=artifacts_root)
+        return PlanJobService(
+            state_root=state_root,
+            artifacts_root=artifacts_root,
+            on_plan_published=inventory.invalidate,
+        )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):

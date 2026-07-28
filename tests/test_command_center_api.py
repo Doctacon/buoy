@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 from threading import Thread
 import unittest
 from unittest.mock import Mock, patch
@@ -49,6 +50,12 @@ if UI_AVAILABLE:
 
 
 class FakeInventory:
+    def __init__(self) -> None:
+        self.invalidations = 0
+
+    def invalidate(self) -> None:
+        self.invalidations += 1
+
     def dashboard(self, *, recent_limit: int = 10):
         return {"resource": "dashboard", "recent_limit": recent_limit}
 
@@ -646,6 +653,88 @@ class CommandCenterApiTests(unittest.TestCase):
                 with self.assertRaises(type(failure)):
                     with TestClient(app, base_url="http://localhost"):
                         pass
+
+    def test_default_managed_job_publication_is_immediately_discoverable(self) -> None:
+        from types import SimpleNamespace
+
+        from buoy_search.chunker import process_corpus
+        from buoy_search.plan_artifacts import build_plan_artifacts, write_plan_artifacts
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            corpus = root / "fixture-corpus"
+            corpus.mkdir()
+            (corpus / "page.md").write_text(
+                "---\nurl: https://example.com/docs/page\ntitle: Guide\n"
+                "status: 200\ncontent_type: text/markdown\nsource_kind: website\n"
+                "---\n\n# Published guide\n\nImmediately discoverable content.\n",
+                encoding="utf-8",
+            )
+
+            def publish_valid_plan(  # noqa: ANN001
+                _planning_service, request, *, progress_callback=None
+            ):
+                del progress_callback
+                artifacts = build_plan_artifacts(
+                    indexing_plan=process_corpus(corpus),
+                    base_url="https://example.com/docs",
+                    out_dir=request.out_dir,
+                    namespace=request.namespace,
+                    originating_job_id=request.originating_job_id,
+                )
+                write_plan_artifacts(artifacts, request.out_dir)
+                return SimpleNamespace(
+                    summary={
+                        "plan_id": artifacts.plan.plan_id,
+                        "namespace": artifacts.plan.namespace,
+                    },
+                    out_dir=request.out_dir,
+                )
+
+            app = create_app(
+                artifacts_root=root / "artifacts",
+                state_root=root / "state",
+            )
+            with patch(
+                "buoy_search.planning_service.PlanningService.plan",
+                new=publish_valid_plan,
+            ), TestClient(
+                app, base_url="http://localhost", raise_server_exceptions=False
+            ) as client:
+                cached_empty = client.get("/api/v1/plans")
+                token = client.get("/api/v1/csrf-token").json()["csrf_token"]
+                created = client.post(
+                    "/api/v1/plan-jobs",
+                    headers={CSRF_HEADER: token, "Origin": "http://localhost"},
+                    json={
+                        "source_url": "https://example.com/docs",
+                        "namespace": "docs-v1",
+                    },
+                )
+                job_id = created.json()["job_id"]
+                deadline = time.monotonic() + 5
+                while True:
+                    completed = client.get(f"/api/v1/plan-jobs/{job_id}")
+                    if completed.json()["state"] in {"succeeded", "failed", "interrupted"}:
+                        break
+                    if time.monotonic() >= deadline:
+                        self.fail("managed publication did not complete")
+                    time.sleep(0.01)
+                immediately_visible = client.get("/api/v1/plans")
+
+        self.assertEqual(cached_empty.status_code, 200)
+        self.assertEqual(cached_empty.json()["total"], 0)
+        self.assertEqual(created.status_code, 202, created.text)
+        self.assertEqual(completed.status_code, 200, completed.text)
+        self.assertEqual(completed.json()["state"], "succeeded")
+        self.assertEqual(
+            immediately_visible.status_code, 200, immediately_visible.text
+        )
+        self.assertEqual(immediately_visible.json()["total"], 1)
+        self.assertEqual(
+            immediately_visible.json()["items"][0]["plan_id"],
+            completed.json()["plan_id"],
+        )
 
     def test_non_empty_local_service_contract_is_serialized_through_fastapi(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
