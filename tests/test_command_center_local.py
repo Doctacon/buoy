@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import MagicMock, patch
@@ -156,7 +161,370 @@ def changed_and_stale_state(root: Path):  # noqa: ANN201 - fixture.
     )
 
 
+class FakeClock:
+    def __init__(self) -> None:
+        self.value = 0.0
+
+    def __call__(self) -> float:
+        return self.value
+
+
 class CompactDeltaInventoryTests(unittest.TestCase):
+    def test_plan_directories_are_leaves_before_any_parse_outcome(self) -> None:
+        import os
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, template_output = write_plan(root / "template")
+            plan_bytes = (template_output / "plan.json").read_bytes()
+            delta_bytes = (template_output / "delta.duckdb").read_bytes()
+            artifacts = root / "artifacts"
+            cases = {
+                "valid": plan_bytes,
+                "legacy": b'{"schema_version":1}',
+                "malformed": b"{not-json",
+                "unsupported": b'{"schema_version":999}',
+                "missing-delta": plan_bytes,
+            }
+            nested_paths: list[Path] = []
+            for name, payload in cases.items():
+                directory = artifacts / name
+                nested = directory / "payload" / "nested-plan"
+                nested.mkdir(parents=True)
+                (directory / "plan.json").write_bytes(payload)
+                if name != "missing-delta":
+                    (directory / "delta.duckdb").write_bytes(delta_bytes)
+                (nested / "plan.json").write_bytes(plan_bytes)
+                (nested / "delta.duckdb").write_bytes(delta_bytes)
+                nested_paths.extend([directory / "payload", nested])
+            sibling_id, _ = write_plan(artifacts / "sibling")
+            walked: list[Path] = []
+            real_walk = os.walk
+
+            def tracing_walk(top, *args, **kwargs):  # noqa: ANN001, ANN202
+                for item in real_walk(top, *args, **kwargs):
+                    walked.append(Path(item[0]))
+                    yield item
+
+            with patch("buoy_search.command_center_local.os.walk", side_effect=tracing_walk):
+                inventory = LocalInventoryService(
+                    artifacts_root=artifacts, state_root=root / "state"
+                ).list_plans(limit=100)
+
+        self.assertIn(sibling_id, [item.plan_id for item in inventory.items])
+        self.assertTrue(all(path not in walked for path in nested_paths))
+        self.assertEqual(len(inventory.errors), 3)
+        self.assertEqual({error.code for error in inventory.errors}, {"malformed_plan"})
+
+    def test_summary_cache_reuses_errors_expires_invalidates_and_bounds_ttl(self) -> None:
+        clock = FakeClock()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            malformed = root / "artifacts" / "malformed"
+            malformed.mkdir(parents=True)
+            (malformed / "plan.json").write_text("{bad", encoding="utf-8")
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts",
+                state_root=root / "state",
+                clock=clock,
+            )
+            with patch(
+                "buoy_search.command_center_local._discover_plans",
+                wraps=__import__(
+                    "buoy_search.command_center_local", fromlist=["_discover_plans"]
+                )._discover_plans,
+            ) as plans, patch(
+                "buoy_search.command_center_local._discover_states",
+                wraps=__import__(
+                    "buoy_search.command_center_local", fromlist=["_discover_states"]
+                )._discover_states,
+            ) as states:
+                self.assertEqual(service.dashboard().artifact_error_count, 1)
+                (malformed / "plan.json").write_text(
+                    '{"schema_version":1}', encoding="utf-8"
+                )
+                self.assertEqual(service.list_namespaces().errors[0].code, "malformed_plan")
+                service.list_plans()
+                self.assertEqual((plans.call_count, states.call_count), (1, 1))
+
+                clock.value = 1.0
+                self.assertEqual(service.dashboard().artifact_error_count, 0)
+                self.assertEqual((plans.call_count, states.call_count), (2, 2))
+
+                service.invalidate()
+                service.list_plans()
+                self.assertEqual((plans.call_count, states.call_count), (3, 3))
+
+        for ttl in (float("nan"), float("inf"), 0.49, 2.01, True):
+            with self.subTest(ttl=ttl), self.assertRaises(ValueError):
+                LocalInventoryService(cache_ttl=ttl)  # type: ignore[arg-type]
+        LocalInventoryService(cache_ttl=0.5)
+        LocalInventoryService(cache_ttl=2.0)
+
+    def test_slow_rebuild_is_immediately_expired_and_exposes_external_plan(self) -> None:
+        import buoy_search.command_center_local as local_module
+
+        clock = FakeClock()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            real_discover = local_module._discover_plans
+            external_plan_id: str | None = None
+
+            def slow_first_discover(path):  # noqa: ANN001, ANN202
+                nonlocal external_plan_id
+                result = real_discover(path)
+                if external_plan_id is None:
+                    external_plan_id, _ = write_plan(path / "external")
+                    clock.value = 1.0
+                return result
+
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts",
+                state_root=root / "state",
+                clock=clock,
+            )
+            with patch(
+                "buoy_search.command_center_local._discover_plans",
+                side_effect=slow_first_discover,
+            ) as plans:
+                self.assertEqual(service.list_plans().total, 0)
+                refreshed = service.list_plans()
+
+        self.assertEqual(plans.call_count, 2)
+        self.assertEqual([item.plan_id for item in refreshed.items], [external_plan_id])
+
+    def test_direct_miss_refreshes_after_concurrent_rebuild_expires(self) -> None:
+        import buoy_search.command_center_local as local_module
+
+        clock = FakeClock()
+        direct_miss_observed = threading.Event()
+        continue_direct_miss = threading.Event()
+        forced_refresh_attempted = threading.Event()
+        concurrent_scan_finished = threading.Event()
+        release_concurrent_rebuild = threading.Event()
+        discover_calls = 0
+        discover_lock = threading.Lock()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_id, staged_plan = write_plan(root / "staging")
+            real_discover = local_module._discover_plans
+
+            def slow_concurrent_discover(path):  # noqa: ANN001, ANN202
+                nonlocal discover_calls
+                with discover_lock:
+                    discover_calls += 1
+                    call = discover_calls
+                result = real_discover(path)
+                if call == 2:
+                    concurrent_scan_finished.set()
+                    self.assertTrue(release_concurrent_rebuild.wait(timeout=5))
+                return result
+
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts",
+                state_root=root / "state",
+                clock=clock,
+            )
+            with patch(
+                "buoy_search.command_center_local._discover_plans",
+                side_effect=slow_concurrent_discover,
+            ):
+                old = service._snapshot()
+                real_snapshot = service._snapshot
+
+                def coordinated_snapshot(*, force=False, previous=None):  # noqa: ANN001, ANN202
+                    if force:
+                        forced_refresh_attempted.set()
+                    snapshot = real_snapshot(force=force, previous=previous)
+                    if (
+                        threading.current_thread().name.startswith("direct-miss")
+                        and not force
+                        and previous is None
+                    ):
+                        self.assertIs(snapshot, old)
+                        direct_miss_observed.set()
+                        self.assertTrue(continue_direct_miss.wait(timeout=5))
+                    return snapshot
+
+                service._snapshot = coordinated_snapshot  # type: ignore[method-assign]
+                with ThreadPoolExecutor(
+                    max_workers=1, thread_name_prefix="direct-miss"
+                ) as direct_executor, ThreadPoolExecutor(max_workers=1) as rebuild_executor:
+                    direct = direct_executor.submit(service.get_plan, plan_id)
+                    self.assertTrue(direct_miss_observed.wait(timeout=5))
+
+                    clock.value = 1.0
+                    concurrent = rebuild_executor.submit(service.list_plans)
+                    self.assertTrue(concurrent_scan_finished.wait(timeout=5))
+                    external_plan = root / "artifacts" / "external" / "plan"
+                    external_plan.parent.mkdir(parents=True)
+                    staged_plan.rename(external_plan)
+                    clock.value = 2.0
+
+                    continue_direct_miss.set()
+                    self.assertTrue(forced_refresh_attempted.wait(timeout=5))
+                    release_concurrent_rebuild.set()
+
+                    self.assertEqual(concurrent.result(timeout=5).total, 0)
+                    self.assertEqual(direct.result(timeout=5).summary.plan_id, plan_id)
+
+        self.assertEqual(discover_calls, 3)
+
+    def test_unavailable_state_summary_primitive_is_an_isolated_safe_item(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            save_applied_state(
+                changed_and_stale_state(root / "fixture"), state_root=root / "state"
+            )
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts", state_root=root / "state"
+            )
+
+            with patch.object(os, "O_DIRECTORY", None):
+                dashboard = service.dashboard()
+                namespaces = service.list_namespaces()
+                plans = service.list_plans()
+
+        self.assertIsNone(dashboard.active_row_count)
+        self.assertEqual(dashboard.artifact_error_count, 1)
+        self.assertEqual(namespaces.items, [])
+        self.assertEqual(plans.items, [])
+        for errors in (dashboard.artifact_errors, namespaces.errors, plans.errors):
+            self.assertEqual([error.code for error in errors], ["malformed_state"])
+            self.assertIn("primitives are unavailable", errors[0].message)
+
+    def test_summary_cache_prevents_concurrent_rebuild_stampede(self) -> None:
+        import buoy_search.command_center_local as local_module
+
+        counts = {"plans": 0, "states": 0}
+        count_lock = threading.Lock()
+        real_plans = local_module._discover_plans
+        real_states = local_module._discover_states
+
+        def discover_plans(root):  # noqa: ANN001, ANN202
+            with count_lock:
+                counts["plans"] += 1
+            time.sleep(0.05)
+            return real_plans(root)
+
+        def discover_states(root):  # noqa: ANN001, ANN202
+            with count_lock:
+                counts["states"] += 1
+            return real_states(root)
+
+        clock = FakeClock()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts",
+                state_root=root / "state",
+                clock=clock,
+            )
+            with patch(
+                "buoy_search.command_center_local._discover_plans",
+                side_effect=discover_plans,
+            ), patch(
+                "buoy_search.command_center_local._discover_states",
+                side_effect=discover_states,
+            ), ThreadPoolExecutor(max_workers=12) as executor:
+                dashboards = list(executor.map(lambda _: service.dashboard(), range(24)))
+                self.assertEqual(counts, {"plans": 1, "states": 1})
+                clock.value = 1.0
+                dashboards.extend(executor.map(lambda _: service.dashboard(), range(24)))
+                self.assertEqual(counts, {"plans": 2, "states": 2})
+                service.invalidate()
+                dashboards.extend(executor.map(lambda _: service.dashboard(), range(24)))
+
+        self.assertTrue(all(item.plan_count == 0 for item in dashboards))
+        self.assertEqual(counts, {"plans": 3, "states": 3})
+
+    def test_direct_plan_and_namespace_misses_force_one_refresh(self) -> None:
+        import buoy_search.command_center_local as local_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts", state_root=root / "state"
+            )
+            with patch(
+                "buoy_search.command_center_local._discover_plans",
+                wraps=local_module._discover_plans,
+            ) as plans:
+                service.list_plans()
+                plan_id, _ = write_plan(root / "artifacts" / "new")
+                self.assertEqual(service.get_plan(plan_id).summary.plan_id, plan_id)
+                self.assertEqual(plans.call_count, 2)
+
+            state_service = LocalInventoryService(
+                artifacts_root=root / "other-artifacts", state_root=root / "other-state"
+            )
+            with patch(
+                "buoy_search.command_center_local._discover_states",
+                wraps=local_module._discover_states,
+            ) as states:
+                state_service.list_namespaces()
+                save_applied_state(changed_and_stale_state(root / "state-fixture"), state_root=root / "other-state")
+                namespace = state_service.get_namespace("site-example-com-v1")
+                self.assertEqual(namespace.summary.namespace, "site-example-com-v1")
+                self.assertEqual(states.call_count, 2)
+
+            missing = LocalInventoryService(
+                artifacts_root=root / "missing-artifacts", state_root=root / "missing-state"
+            )
+            with patch(
+                "buoy_search.command_center_local._discover_plans",
+                wraps=local_module._discover_plans,
+            ) as missing_plans:
+                with self.assertRaisesRegex(InventoryLookupError, "not found"):
+                    missing.get_plan("plan_missing")
+                self.assertEqual(missing_plans.call_count, 2)
+
+    def test_invalidate_is_non_raising_even_if_lock_fails(self) -> None:
+        class BrokenLock:
+            def __enter__(self):  # noqa: ANN204
+                raise RuntimeError("lock failed")
+
+            def __exit__(self, *args):  # noqa: ANN002, ANN204
+                return None
+
+        service = LocalInventoryService()
+        service._cache_lock = BrokenLock()  # type: ignore[assignment]
+        self.assertIsNone(service.invalidate())
+
+    def test_summary_cache_imports_no_remote_provider_model_or_source_adapter(self) -> None:
+        script = """
+import sys
+from pathlib import Path
+from buoy_search.command_center_local import LocalInventoryService
+artifacts = Path(sys.argv[1])
+plan_id = sys.argv[2]
+service = LocalInventoryService(artifacts_root=artifacts, state_root=artifacts.parent / 'state')
+inventory = service.list_plans()
+if inventory.total != 1 or inventory.items[0].plan_id != plan_id:
+    raise SystemExit('valid schema-v2 plan was not summary-qualified')
+service.dashboard()
+forbidden = {
+    'buoy_search.apply', 'buoy_search.bigquery_relation', 'buoy_search.command_center_remote',
+    'buoy_search.crawler', 'buoy_search.database_relation', 'buoy_search.duckdb_relation',
+    'buoy_search.github_repo', 'buoy_search.planning_service', 'buoy_search.retriever',
+    'buoy_search.snowflake_relation',
+}
+loaded = sorted(forbidden.intersection(sys.modules))
+if loaded:
+    raise SystemExit(','.join(loaded))
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_id, _ = write_plan(root / "artifacts" / "valid")
+            result = subprocess.run(
+                [sys.executable, "-c", script, str(root / "artifacts"), plan_id],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
     def test_summary_inventory_never_opens_delta_and_schema1_is_inert(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -343,6 +711,40 @@ class CompactDeltaInventoryTests(unittest.TestCase):
                     ):
                         with self.assertRaisesRegex(InventoryLookupError, "fully verified"):
                             operation()
+
+    def test_selected_detail_reconstructs_identity_excluded_metadata_after_cached_rewrite(self) -> None:
+        import buoy_search.command_center_local as local_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_id, output = write_plan(root / "artifacts" / "plan")
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts", state_root=root / "state"
+            )
+            cached = service.list_plans().items[0]
+            plan_path = output / "plan.json"
+            plan_inode = plan_path.stat().st_ino
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            rewritten_created_at = "2026-07-27T23:59:59+00:00"
+            rewritten_job_id = "planjob_" + "b" * 32
+            plan["created_at"] = rewritten_created_at
+            plan["originating_job_id"] = rewritten_job_id
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+            self.assertEqual(plan_path.stat().st_ino, plan_inode)
+
+            with patch(
+                "buoy_search.command_center_local._verify_plan_artifacts",
+                wraps=local_module._verify_plan_artifacts,
+            ) as verify:
+                first = service.get_plan(plan_id)
+                second = service.get_plan(plan_id)
+
+        self.assertNotEqual(cached.created_at, rewritten_created_at)
+        self.assertEqual(first.summary.created_at, rewritten_created_at)
+        self.assertEqual(first.originating_job_id, rewritten_job_id)
+        self.assertEqual(second.summary.created_at, rewritten_created_at)
+        self.assertEqual(second.originating_job_id, rewritten_job_id)
+        self.assertEqual(verify.call_count, 2)
 
     def test_selected_corrupt_delta_fails_without_breaking_summary_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -577,7 +979,7 @@ class CompactDeltaInventoryTests(unittest.TestCase):
                 "buoy_search.command_center_local._verify_plan_artifacts",
                 side_effect=AssertionError("inventory verified delta"),
             ), patch(
-                "buoy_search.command_center_local.duckdb.connect",
+                "buoy_search.applied_state.duckdb.connect",
                 side_effect=AssertionError("inventory connected to DuckDB"),
             ), patch(
                 "buoy_search.command_center_local.os.open", side_effect=reject_delta_open

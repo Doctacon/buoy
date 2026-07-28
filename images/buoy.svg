@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Buoy</title>
+  <desc id="desc">An orange and white navigation buoy with signal rings over dark navy waves.</desc>
+  <g fill="none" stroke="#0B1F33" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M174 112a116 116 0 0 1 164 0" stroke-width="22"/>
+    <path d="M207 145a69 69 0 0 1 98 0" stroke-width="22"/>
+    <path d="M256 164v58" stroke-width="24"/>
+    <circle cx="256" cy="188" r="25" fill="#FF6B35" stroke-width="18"/>
+    <path d="M178 228h156l31 168H147z" fill="#FFFFFF" stroke-width="24"/>
+  </g>
+  <path d="M164 300h184l12 64H152z" fill="#FF6B35"/>
+  <path d="M178 228h156l8 44H170z" fill="#FF6B35"/>
+  <path d="M147 396h218" fill="none" stroke="#0B1F33" stroke-linecap="round" stroke-width="24"/>
+  <g fill="none" stroke="#0B1F33" stroke-linecap="round" stroke-width="20">
+    <path d="M76 430c34-23 68-23 102 0s68 23 102 0 68-23 102 0 68 23 102 0"/>
+    <path d="M96 470c27-18 54-18 81 0s54 18 81 0 54-18 81 0 54 18 81 0"/>
+  </g>
+</svg>

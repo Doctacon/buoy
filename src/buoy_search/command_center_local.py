@@ -11,22 +11,18 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
 import stat
-from typing import Any, Literal
+import threading
+import time
+from typing import Any, Callable, Literal
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
-import duckdb
-
-from buoy_search.applied_state import (
-    ROW_STATUS_ACTIVE,
-    ROW_STATUS_RETAINED_STALE,
-    AppliedStateError,
-    applied_state_paths,
-    load_applied_state,
-)
+from buoy_search.applied_state import AppliedStateError, load_applied_state_summary
+from buoy_search.plan_validation import validate_plan_document
 
 DEFAULT_ARTIFACTS_ROOT = Path("artifacts/site-crawls")
 DEFAULT_STATE_ROOT = Path(".buoy")
@@ -307,9 +303,34 @@ class LocalInventoryService:
         *,
         artifacts_root: Path = DEFAULT_ARTIFACTS_ROOT,
         state_root: Path = DEFAULT_STATE_ROOT,
+        cache_ttl: float = 1.0,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        if (
+            isinstance(cache_ttl, bool)
+            or not isinstance(cache_ttl, (int, float))
+            or not math.isfinite(cache_ttl)
+            or cache_ttl < 0.5
+            or cache_ttl > 2.0
+        ):
+            raise ValueError("cache_ttl must be finite and between 0.5 and 2.0 seconds")
         self.artifacts_root = Path(artifacts_root)
         self.state_root = Path(state_root)
+        self._cache_ttl = float(cache_ttl)
+        self._clock = clock
+        self._cache_lock = threading.Lock()
+        self._cached_snapshot: _Snapshot | None = None
+        self._cache_expires_at = 0.0
+
+    def invalidate(self) -> None:
+        """Clear this service's summary snapshot without failing its caller."""
+
+        try:
+            with self._cache_lock:
+                self._cached_snapshot = None
+                self._cache_expires_at = 0.0
+        except Exception:
+            return
 
     def list_plans(self, *, offset: int = 0, limit: int = 50) -> PlanInventory:
         offset, limit = _validate_pagination(offset, limit)
@@ -325,14 +346,24 @@ class LocalInventoryService:
             raise InventoryLookupError(
                 "plan_payload_invalid", "Plan delta could not be fully verified."
             ) from exc
-        applied_state = verified.plan["applied_state"]
+        plan = verified.plan
+        (
+            summary,
+            namespace_candidate,
+            artifact_hash,
+            retrieval,
+            source_activity,
+            originating_job_id,
+            _,
+        ) = _plan_response_fields(plan, warnings=record.summary.warnings)
+        applied_state = plan["applied_state"]
         return PlanDetail(
-            summary=record.summary,
-            namespace_candidate=record.namespace_candidate,
-            artifact_hash=record.artifact_hash,
-            retrieval=record.retrieval,
-            source_activity=record.source_activity,
-            originating_job_id=record.originating_job_id,
+            summary=summary,
+            namespace_candidate=namespace_candidate,
+            artifact_hash=artifact_hash,
+            retrieval=retrieval,
+            source_activity=source_activity,
+            originating_job_id=originating_job_id,
             payload_verification="verified",
             applied_state_present=bool(applied_state["present"]),
             applied_state_hash=str(applied_state["hash"]),
@@ -404,8 +435,16 @@ class LocalInventoryService:
     def get_namespace(self, namespace: str) -> NamespaceDetail:
         _validate_lookup_id(namespace, label="namespace")
         snapshot = self._snapshot()
-        summaries = {item.namespace: item for item in _namespace_summaries(snapshot)}
-        summary = summaries.get(namespace)
+        summary = next(
+            (item for item in _namespace_summaries(snapshot) if item.namespace == namespace),
+            None,
+        )
+        if summary is None:
+            snapshot = self._snapshot(force=True, previous=snapshot)
+            summary = next(
+                (item for item in _namespace_summaries(snapshot) if item.namespace == namespace),
+                None,
+            )
         if summary is None:
             raise InventoryLookupError("namespace_not_found", "Namespace was not found.")
         plans = [record for record in snapshot.plans if record.summary.namespace == namespace]
@@ -466,20 +505,54 @@ class LocalInventoryService:
 
     def _plan_record(self, plan_id: str) -> _PlanRecord:
         _validate_lookup_id(plan_id, label="plan ID")
+        snapshot = self._snapshot()
         record = next(
-            (item for item in self._snapshot().plans if item.summary.plan_id == plan_id),
+            (item for item in snapshot.plans if item.summary.plan_id == plan_id),
             None,
         )
+        if record is None:
+            snapshot = self._snapshot(force=True, previous=snapshot)
+            record = next(
+                (item for item in snapshot.plans if item.summary.plan_id == plan_id),
+                None,
+            )
         if record is None:
             raise InventoryLookupError("plan_not_found", "Plan was not found.")
         return record
 
-    def _snapshot(self) -> _Snapshot:
-        plans, plan_errors = _discover_plans(self.artifacts_root)
-        states, state_errors = _discover_states(self.state_root)
-        return _Snapshot(plans=plans, states=states, errors=sorted(
-            [*plan_errors, *state_errors], key=lambda item: (item.code, item.artifact_id)
-        ))
+    def _snapshot(
+        self, *, force: bool = False, previous: _Snapshot | None = None
+    ) -> _Snapshot:
+        with self._cache_lock:
+            rebuild_started_at = self._clock()
+            cached = self._cached_snapshot
+            if (
+                force
+                and previous is not None
+                and cached is not None
+                and cached is not previous
+                and rebuild_started_at < self._cache_expires_at
+            ):
+                return cached
+            if (
+                not force
+                and cached is not None
+                and rebuild_started_at < self._cache_expires_at
+            ):
+                return cached
+            plans, plan_errors = _discover_plans(self.artifacts_root)
+            states, state_errors = _discover_states(self.state_root)
+            snapshot = _Snapshot(
+                plans=plans,
+                states=states,
+                errors=sorted(
+                    [*plan_errors, *state_errors],
+                    key=lambda item: (item.code, item.artifact_id),
+                ),
+            )
+            self._cached_snapshot = snapshot
+            self._cache_expires_at = rebuild_started_at + self._cache_ttl
+            return snapshot
 
 
 def _discover_plans(root: Path) -> tuple[list[_PlanRecord], list[SafeError]]:
@@ -491,15 +564,19 @@ def _discover_plans(root: Path) -> tuple[list[_PlanRecord], list[SafeError]]:
     errors: list[SafeError] = []
     for current, directories, files in os.walk(root, followlinks=False):
         current_path = Path(current)
-        safe_directories: list[str] = []
-        for name in sorted(directories):
-            child = current_path / name
-            if child.is_symlink():
-                errors.append(_artifact_error(root, child, "unsafe_symlink", "Symlinked artifact directories are not inspected."))
-            else:
-                safe_directories.append(name)
-        directories[:] = safe_directories
-        if "plan.json" not in files:
+        has_plan = "plan.json" in files
+        if has_plan:
+            directories[:] = []
+        else:
+            safe_directories: list[str] = []
+            for name in sorted(directories):
+                child = current_path / name
+                if child.is_symlink():
+                    errors.append(_artifact_error(root, child, "unsafe_symlink", "Symlinked artifact directories are not inspected."))
+                else:
+                    safe_directories.append(name)
+            directories[:] = safe_directories
+        if not has_plan:
             continue
         plan_path = current_path / "plan.json"
         if plan_path.is_symlink():
@@ -546,8 +623,6 @@ def _read_plan(root: Path, plan_path: Path) -> _PlanRecord:
         raise _LegacyPlan("unsupported schema-v1 plan")
     if type(schema_version) is not int or schema_version != PLAN_SCHEMA_VERSION:
         raise ValueError("unsupported plan schema version")
-    from buoy_search.plan_artifacts import validate_plan_document
-
     validate_plan_document(plan)
     delta_path = plan_path.with_name("delta.duckdb")
     try:
@@ -564,10 +639,45 @@ def _read_plan(root: Path, plan_path: Path) -> _PlanRecord:
     ):
         raise ValueError("plan directory changed during summary qualification")
 
-    plan_id = str(plan["plan_id"])
-    namespace = str(plan["namespace"])
-    site_id = str(plan["site_id"])
-    namespace_candidate = str(plan["namespace_candidate"])
+    (
+        summary,
+        namespace_candidate,
+        artifact_hash,
+        retrieval,
+        activity,
+        originating_job_id,
+        timestamp,
+    ) = _plan_response_fields(plan)
+    return _PlanRecord(
+        summary=summary,
+        namespace_candidate=namespace_candidate,
+        artifact_hash=artifact_hash,
+        retrieval=retrieval,
+        source_activity=activity,
+        originating_job_id=originating_job_id,
+        plan_path=plan_path,
+        directory=plan_path.parent,
+        directory_identity=(directory_metadata.st_dev, directory_metadata.st_ino),
+        plan_identity=plan_identity,
+        delta_identity=(delta_metadata.st_dev, delta_metadata.st_ino),
+        timestamp=timestamp,
+        candidate_id=_artifact_id(root, plan_path),
+    )
+
+
+def _plan_response_fields(
+    plan: dict[str, Any], *, warnings: list[InventoryWarning] | None = None
+) -> tuple[
+    PlanSummary,
+    str,
+    str,
+    RetrievalSettings,
+    SourceActivity,
+    str | None,
+    datetime,
+]:
+    """Reconstruct every document-backed response field from verified metadata."""
+
     created_at = str(plan["created_at"])
     timestamp = _parse_timestamp(created_at)
     if timestamp is None:
@@ -579,40 +689,31 @@ def _read_plan(root: Path, plan_path: Path) -> _PlanRecord:
     originating_job_id = plan.get("originating_job_id")
     if originating_job_id is not None:
         originating_job_id = str(originating_job_id)
-    page_count = sum(
-        int(plan["diff"][key])
-        for key in ("pages_added", "pages_changed", "pages_unchanged")
-    )
-    chunk_count = int(plan["diff"]["chunks_unchanged"]) + int(
-        plan["diff"]["rows_to_upsert"]
-    )
     summary = PlanSummary(
-        plan_id=plan_id,
-        namespace=namespace,
-        site_id=site_id,
+        plan_id=str(plan["plan_id"]),
+        namespace=str(plan["namespace"]),
+        site_id=str(plan["site_id"]),
         created_at=created_at,
         source=source,
-        page_count=page_count,
-        chunk_count=chunk_count,
+        page_count=sum(
+            int(plan["diff"][key])
+            for key in ("pages_added", "pages_changed", "pages_unchanged")
+        ),
+        chunk_count=int(plan["diff"]["chunks_unchanged"])
+        + int(plan["diff"]["rows_to_upsert"]),
         diff=diff,
         payload_verification="not_checked",
         source_activity=activity,
-        warnings=[],
+        warnings=list(warnings or []),
     )
-    return _PlanRecord(
-        summary=summary,
-        namespace_candidate=namespace_candidate,
-        artifact_hash=str(plan["artifact_hash"]),
-        retrieval=retrieval,
-        source_activity=activity,
-        originating_job_id=originating_job_id,
-        plan_path=plan_path,
-        directory=plan_path.parent,
-        directory_identity=(directory_metadata.st_dev, directory_metadata.st_ino),
-        plan_identity=plan_identity,
-        delta_identity=(delta_metadata.st_dev, delta_metadata.st_ino),
-        timestamp=timestamp,
-        candidate_id=_artifact_id(root, plan_path),
+    return (
+        summary,
+        str(plan["namespace_candidate"]),
+        str(plan["artifact_hash"]),
+        retrieval,
+        activity,
+        originating_job_id,
+        timestamp,
     )
 
 
@@ -739,23 +840,8 @@ def _discover_states(state_root: Path) -> tuple[list[StateSummary], list[SafeErr
             continue
         try:
             database_path.resolve(strict=True).relative_to(trusted_root)
-            with duckdb.connect(str(database_path), read_only=True) as connection:
-                rows = connection.execute(
-                    "SELECT site_id, namespace, base_url FROM state_metadata"
-                ).fetchall()
-            if len(rows) != 1:
-                raise AppliedStateError("applied state must contain exactly one metadata row")
-            site_id, namespace, base_url = (str(value) for value in rows[0])
-            expected = applied_state_paths(
-                site_id=site_id, namespace=namespace, state_root=state_root
-            ).database_path.absolute()
-            if database_path.absolute() != expected:
-                raise AppliedStateError("applied state path does not match its identity")
-            state = load_applied_state(
-                site_id=site_id,
-                namespace=namespace,
-                base_url=base_url,
-                state_root=state_root,
+            state = load_applied_state_summary(
+                database_path=database_path, state_root=state_root
             )
             source, _ = _map_source(state.base_url, state.site_id, [])
             states.append(StateSummary(
@@ -765,12 +851,10 @@ def _discover_states(state_root: Path) -> tuple[list[StateSummary], list[SafeErr
                 updated_at=state.updated_at or None,
                 last_plan_id=state.last_plan_id or None,
                 last_apply_id=state.last_apply_id or None,
-                active_rows=sum(row.status == ROW_STATUS_ACTIVE for row in state.rows),
-                retained_stale_rows=sum(
-                    row.status == ROW_STATUS_RETAINED_STALE for row in state.rows
-                ),
+                active_rows=state.active_rows,
+                retained_stale_rows=state.retained_stale_rows,
             ))
-        except (duckdb.Error, AppliedStateError, OSError, ValueError) as exc:
+        except (AppliedStateError, OSError, ValueError) as exc:
             errors.append(SafeError("malformed_state", _safe_parse_message(exc), artifact_id))
     states.sort(key=lambda item: item.namespace)
     return states, errors

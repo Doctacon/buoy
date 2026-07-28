@@ -10,7 +10,10 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import os
 from pathlib import Path
+import stat
+import sys
 from typing import Iterator, Literal
 
 import duckdb
@@ -109,6 +112,23 @@ class AppliedStatePaths:
     state_dir: Path
     database_path: Path
     lock_path: Path
+
+
+@dataclass(frozen=True)
+class AppliedStateSummary:
+    """Constant-size metadata and status counts for inventory surfaces."""
+
+    schema_version: int
+    site_id: str
+    namespace: str
+    base_url: str
+    updated_at: str
+    last_plan_id: str
+    last_apply_id: str
+    active_rows: int
+    retained_stale_rows: int
+    deleted_rows: int
+    total_rows: int
 
 
 def applied_state_paths(
@@ -227,6 +247,107 @@ def load_applied_state(
         expected_base_url=normalized_base_url,
     )
     return state
+
+
+def load_applied_state_summary(
+    *,
+    database_path: Path,
+    state_root: Path = DEFAULT_STATE_ROOT,
+) -> AppliedStateSummary:
+    """Inspect one state database without materializing its applied rows."""
+
+    database_path = Path(database_path)
+    state_root = Path(state_root)
+    with _bind_summary_database(
+        database_path=database_path, state_root=state_root
+    ) as binding:
+        try:
+            with duckdb.connect(str(database_path), read_only=True) as connection:
+                _validate_database_schema(connection)
+                metadata_rows = connection.execute(
+                    """
+                    SELECT schema_version, site_id, namespace, base_url, updated_at,
+                           last_plan_id, last_apply_id
+                    FROM state_metadata
+                    """
+                ).fetchall()
+                if len(metadata_rows) != 1:
+                    raise AppliedStateError(
+                        "DuckDB applied state must contain exactly one metadata row"
+                    )
+                metadata = metadata_rows[0]
+                counts = connection.execute(
+                    """
+                    SELECT count(*) FILTER (WHERE status = 'active'),
+                           count(*) FILTER (WHERE status = 'retained_stale'),
+                           count(*) FILTER (WHERE status = 'deleted'),
+                           count(*)
+                    FROM applied_rows
+                    """
+                ).fetchone()
+                if counts is None or len(counts) != 4:
+                    raise AppliedStateError("DuckDB applied-state counts are invalid")
+        except duckdb.Error as exc:
+            raise AppliedStateError(
+                f"could not load DuckDB applied-state summary: {exc}"
+            ) from exc
+
+        _assert_summary_database_identity(binding)
+        schema_version = int(metadata[0])
+        metadata_site_id = str(metadata[1])
+        metadata_namespace = str(metadata[2])
+        normalized_base_url = validate_base_url(str(metadata[3]))
+        if metadata_site_id != binding.site_id or metadata_namespace != binding.namespace:
+            raise AppliedStateError("applied state path does not match its identity")
+        expected_path = applied_state_paths(
+            site_id=metadata_site_id,
+            namespace=metadata_namespace,
+            state_root=state_root,
+        ).database_path.absolute()
+        if database_path.absolute() != expected_path:
+            raise AppliedStateError("applied state path does not match its identity")
+        summary = AppliedStateSummary(
+            schema_version=schema_version,
+            site_id=metadata_site_id,
+            namespace=metadata_namespace,
+            base_url=normalized_base_url,
+            updated_at=str(metadata[4]),
+            last_plan_id=str(metadata[5]),
+            last_apply_id=str(metadata[6]),
+            active_rows=int(counts[0]),
+            retained_stale_rows=int(counts[1]),
+            deleted_rows=int(counts[2]),
+            total_rows=int(counts[3]),
+        )
+        validate_applied_state(
+            AppliedState(
+                schema_version=summary.schema_version,
+                site_id=summary.site_id,
+                namespace=summary.namespace,
+                base_url=summary.base_url,
+                updated_at=summary.updated_at,
+                last_plan_id=summary.last_plan_id,
+                last_apply_id=summary.last_apply_id,
+            ),
+            expected_site_id=binding.site_id,
+            expected_namespace=binding.namespace,
+            expected_base_url=normalized_base_url,
+        )
+        if min(
+            summary.active_rows,
+            summary.retained_stale_rows,
+            summary.deleted_rows,
+            summary.total_rows,
+        ) < 0 or (
+            summary.active_rows
+            + summary.retained_stale_rows
+            + summary.deleted_rows
+            != summary.total_rows
+        ):
+            raise AppliedStateError(
+                "applied state contains an unknown status or contradictory row counts"
+            )
+        return summary
 
 
 def save_applied_state(
@@ -438,6 +559,170 @@ def safe_state_component(value: str, *, label: str) -> str:
     if Path(value).is_absolute() or "/" in value or "\\" in value:
         raise ValueError(f"{label} must not contain path separators")
     return value
+
+
+@dataclass(frozen=True)
+class _SummaryBoundPath:
+    path: Path
+    descriptor: int
+    identity: tuple[int, int, int, int, int]
+    directory: bool
+
+
+@dataclass(frozen=True)
+class _SummaryDatabaseBinding:
+    site_id: str
+    namespace: str
+    paths: tuple[_SummaryBoundPath, ...]
+
+
+@contextmanager
+def _bind_summary_database(
+    *, database_path: Path, state_root: Path
+) -> Iterator[_SummaryDatabaseBinding]:
+    """Hold the database and each parent entry across pathname-based inspection."""
+
+    _require_summary_descriptor_primitives()
+    root = state_root.absolute()
+    database = database_path.absolute()
+    try:
+        relative = database.relative_to(root)
+    except ValueError as exc:
+        raise AppliedStateError("applied state escapes its configured root") from exc
+    if (
+        len(relative.parts) != 4
+        or relative.parts[0] != "state"
+        or relative.parts[3] != "state.duckdb"
+    ):
+        raise AppliedStateError("applied state path does not match its identity")
+    site_id = safe_state_component(relative.parts[1], label="site_id")
+    namespace = safe_state_component(relative.parts[2], label="namespace")
+
+    directory_flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | os.O_DIRECTORY
+        | os.O_NOFOLLOW
+    )
+    file_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_NOFOLLOW
+    opened: list[_SummaryBoundPath] = []
+    try:
+        root_parent = root.parent
+        parent_descriptor = os.open(root_parent, directory_flags)
+        opened.append(_summary_bound_path(root_parent, parent_descriptor, directory=True))
+        parent = parent_descriptor
+        components = (
+            (root, root.name or "."),
+            (root / "state", "state"),
+            (root / "state" / site_id, site_id),
+            (root / "state" / site_id / namespace, namespace),
+        )
+        for path, name in components:
+            descriptor = os.open(name, directory_flags, dir_fd=parent)
+            bound = _summary_bound_path(path, descriptor, directory=True)
+            opened.append(bound)
+            parent = descriptor
+        try:
+            database_descriptor = os.open("state.duckdb", file_flags, dir_fd=parent)
+        except OSError as exc:
+            raise AppliedStateError(
+                "applied state must be a regular no-follow file"
+            ) from exc
+        opened.append(
+            _summary_bound_path(database, database_descriptor, directory=False)
+        )
+        binding = _SummaryDatabaseBinding(site_id, namespace, tuple(opened))
+        _assert_summary_database_identity(binding)
+        yield binding
+    except AppliedStateError:
+        raise
+    except NotImplementedError as exc:
+        raise AppliedStateError(
+            "applied state safe summary descriptor primitives are unavailable"
+        ) from exc
+    except OSError as exc:
+        raise AppliedStateError("applied state contains an unsafe no-follow path") from exc
+    finally:
+        active_error = sys.exc_info()[0] is not None
+        close_error: OSError | NotImplementedError | None = None
+        for item in reversed(opened):
+            try:
+                os.close(item.descriptor)
+            except (OSError, NotImplementedError) as exc:
+                close_error = close_error or exc
+        if close_error is not None and not active_error:
+            raise AppliedStateError("could not close applied-state summary descriptors") from close_error
+
+
+def _require_summary_descriptor_primitives() -> None:
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    directory = getattr(os, "O_DIRECTORY", None)
+    supports_dir_fd = getattr(os, "supports_dir_fd", None)
+    if (
+        not isinstance(no_follow, int)
+        or isinstance(no_follow, bool)
+        or no_follow == 0
+        or not isinstance(directory, int)
+        or isinstance(directory, bool)
+        or directory == 0
+        or supports_dir_fd is None
+        or os.open not in supports_dir_fd
+    ):
+        raise AppliedStateError(
+            "applied state safe summary descriptor primitives are unavailable"
+        )
+
+
+def _summary_bound_path(
+    path: Path, descriptor: int, *, directory: bool
+) -> _SummaryBoundPath:
+    try:
+        metadata = os.fstat(descriptor)
+    except (OSError, NotImplementedError):
+        try:
+            os.close(descriptor)
+        except (OSError, NotImplementedError):
+            pass
+        raise
+    expected_kind = stat.S_ISDIR if directory else stat.S_ISREG
+    if not expected_kind(metadata.st_mode):
+        os.close(descriptor)
+        raise AppliedStateError(
+            "applied-state path contains an unsafe directory"
+            if directory
+            else "applied state must be a regular no-follow file"
+        )
+    return _SummaryBoundPath(
+        path=path,
+        descriptor=descriptor,
+        identity=_summary_mutation_identity(metadata),
+        directory=directory,
+    )
+
+
+def _summary_mutation_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _assert_summary_database_identity(binding: _SummaryDatabaseBinding) -> None:
+    for item in binding.paths:
+        opened = os.fstat(item.descriptor)
+        current = item.path.lstat()
+        expected_kind = stat.S_ISDIR if item.directory else stat.S_ISREG
+        if (
+            not expected_kind(opened.st_mode)
+            or not expected_kind(current.st_mode)
+            or stat.S_ISLNK(current.st_mode)
+            or _summary_mutation_identity(opened) != item.identity
+            or _summary_mutation_identity(current) != item.identity
+        ):
+            raise AppliedStateError("applied state changed during summary inspection")
 
 
 def _first_apply_state(*, site_id: str, namespace: str, base_url: str) -> AppliedState:

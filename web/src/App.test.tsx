@@ -1,5 +1,5 @@
 import { Link, MemoryRouter } from 'react-router-dom'
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -659,6 +659,7 @@ describe('Command Center', () => {
     vi.stubGlobal('EventSource', FakeEventSource)
     renderRoute(`/plan-jobs/${jobId}`)
     expect(await screen.findByRole('heading', { name: jobId })).toBeInTheDocument()
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
     const stream = FakeEventSource.instances[0]
     expect(stream.url).toBe(`/api/v1/plan-jobs/${jobId}/events`)
     stream.onerror?.()
