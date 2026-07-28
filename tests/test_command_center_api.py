@@ -24,6 +24,7 @@ UI_AVAILABLE = importlib.util.find_spec("fastapi") is not None and importlib.uti
 if UI_AVAILABLE:
     from fastapi.testclient import TestClient
 
+    from buoy_search.applied_state import build_applied_state, save_applied_state
     from buoy_search.command_center_api import (
         CSRF_HEADER,
         MAX_PLAN_JOB_BODY_BYTES,
@@ -524,6 +525,44 @@ class CommandCenterApiTests(unittest.TestCase):
         }
         self.assertNotIn(("/api/v1/plans", "POST"), methods)
         self.assertNotIn(("/api/v1/namespaces", "POST"), methods)
+
+    def test_unavailable_state_summary_primitive_keeps_read_only_routes_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = build_applied_state(
+                site_id="example-com",
+                namespace="site-example-com-v1",
+                base_url="https://example.com/docs",
+                last_plan_id="plan_123",
+                last_apply_id="apply_123",
+                updated_at="2026-07-27T00:00:00+00:00",
+                rows=[],
+            )
+            save_applied_state(state, state_root=root / "state")
+            app = create_app(
+                artifacts_root=root / "artifacts", state_root=root / "state"
+            )
+
+            with patch.object(os, "O_NOFOLLOW", None), TestClient(
+                app, base_url="http://localhost"
+            ) as client:
+                dashboard = client.get("/api/v1/dashboard")
+                namespaces = client.get("/api/v1/namespaces")
+                plans = client.get("/api/v1/plans")
+
+        for response in (dashboard, namespaces, plans):
+            self.assertEqual(response.status_code, 200, response.text)
+        self.assertIsNone(dashboard.json()["active_row_count"])
+        self.assertEqual(dashboard.json()["artifact_error_count"], 1)
+        self.assertEqual(namespaces.json()["items"], [])
+        self.assertEqual(plans.json()["items"], [])
+        for errors in (
+            dashboard.json()["artifact_errors"],
+            namespaces.json()["errors"],
+            plans.json()["errors"],
+        ):
+            self.assertEqual([error["code"] for error in errors], ["malformed_state"])
+            self.assertIn("primitives are unavailable", errors[0]["message"])
 
     def test_unsupported_managed_planning_keeps_read_only_app_and_returns_uniform_503(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

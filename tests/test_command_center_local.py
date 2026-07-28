@@ -3,6 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -259,6 +260,61 @@ class CompactDeltaInventoryTests(unittest.TestCase):
                 LocalInventoryService(cache_ttl=ttl)  # type: ignore[arg-type]
         LocalInventoryService(cache_ttl=0.5)
         LocalInventoryService(cache_ttl=2.0)
+
+    def test_slow_rebuild_is_immediately_expired_and_exposes_external_plan(self) -> None:
+        import buoy_search.command_center_local as local_module
+
+        clock = FakeClock()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            real_discover = local_module._discover_plans
+            external_plan_id: str | None = None
+
+            def slow_first_discover(path):  # noqa: ANN001, ANN202
+                nonlocal external_plan_id
+                result = real_discover(path)
+                if external_plan_id is None:
+                    external_plan_id, _ = write_plan(path / "external")
+                    clock.value = 1.0
+                return result
+
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts",
+                state_root=root / "state",
+                clock=clock,
+            )
+            with patch(
+                "buoy_search.command_center_local._discover_plans",
+                side_effect=slow_first_discover,
+            ) as plans:
+                self.assertEqual(service.list_plans().total, 0)
+                refreshed = service.list_plans()
+
+        self.assertEqual(plans.call_count, 2)
+        self.assertEqual([item.plan_id for item in refreshed.items], [external_plan_id])
+
+    def test_unavailable_state_summary_primitive_is_an_isolated_safe_item(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            save_applied_state(
+                changed_and_stale_state(root / "fixture"), state_root=root / "state"
+            )
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts", state_root=root / "state"
+            )
+
+            with patch.object(os, "O_DIRECTORY", None):
+                dashboard = service.dashboard()
+                namespaces = service.list_namespaces()
+                plans = service.list_plans()
+
+        self.assertIsNone(dashboard.active_row_count)
+        self.assertEqual(dashboard.artifact_error_count, 1)
+        self.assertEqual(namespaces.items, [])
+        self.assertEqual(plans.items, [])
+        for errors in (dashboard.artifact_errors, namespaces.errors, plans.errors):
+            self.assertEqual([error.code for error in errors], ["malformed_state"])
+            self.assertIn("primitives are unavailable", errors[0].message)
 
     def test_summary_cache_prevents_concurrent_rebuild_stampede(self) -> None:
         import buoy_search.command_center_local as local_module

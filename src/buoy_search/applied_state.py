@@ -582,6 +582,7 @@ def _bind_summary_database(
 ) -> Iterator[_SummaryDatabaseBinding]:
     """Hold the database and each parent entry across pathname-based inspection."""
 
+    _require_summary_descriptor_primitives()
     root = state_root.absolute()
     database = database_path.absolute()
     try:
@@ -600,10 +601,10 @@ def _bind_summary_database(
     directory_flags = (
         os.O_RDONLY
         | getattr(os, "O_CLOEXEC", 0)
-        | getattr(os, "O_DIRECTORY", 0)
-        | getattr(os, "O_NOFOLLOW", 0)
+        | os.O_DIRECTORY
+        | os.O_NOFOLLOW
     )
-    file_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    file_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_NOFOLLOW
     opened: list[_SummaryBoundPath] = []
     try:
         root_parent = root.parent
@@ -635,18 +636,41 @@ def _bind_summary_database(
         yield binding
     except AppliedStateError:
         raise
+    except NotImplementedError as exc:
+        raise AppliedStateError(
+            "applied state safe summary descriptor primitives are unavailable"
+        ) from exc
     except OSError as exc:
         raise AppliedStateError("applied state contains an unsafe no-follow path") from exc
     finally:
         active_error = sys.exc_info()[0] is not None
-        close_error: OSError | None = None
+        close_error: OSError | NotImplementedError | None = None
         for item in reversed(opened):
             try:
                 os.close(item.descriptor)
-            except OSError as exc:
+            except (OSError, NotImplementedError) as exc:
                 close_error = close_error or exc
         if close_error is not None and not active_error:
             raise AppliedStateError("could not close applied-state summary descriptors") from close_error
+
+
+def _require_summary_descriptor_primitives() -> None:
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    directory = getattr(os, "O_DIRECTORY", None)
+    supports_dir_fd = getattr(os, "supports_dir_fd", None)
+    if (
+        not isinstance(no_follow, int)
+        or isinstance(no_follow, bool)
+        or no_follow == 0
+        or not isinstance(directory, int)
+        or isinstance(directory, bool)
+        or directory == 0
+        or supports_dir_fd is None
+        or os.open not in supports_dir_fd
+    ):
+        raise AppliedStateError(
+            "applied state safe summary descriptor primitives are unavailable"
+        )
 
 
 def _summary_bound_path(

@@ -516,6 +516,7 @@ def structural_observations(fixture: dict[str, Any]) -> dict[str, Any]:
     real_connect = duckdb.connect
     real_applied_row = state_module.AppliedStateRow
     real_os_open = os.open
+    real_supports_dir_fd = os.supports_dir_fd
     real_builtin_open = builtins.open
     real_io_open = io.open
     real_walk = os.walk
@@ -573,6 +574,7 @@ def structural_observations(fixture: dict[str, Any]) -> dict[str, Any]:
     duckdb.connect = connect
     state_module.AppliedStateRow = applied_row
     os.open = os_open
+    os.supports_dir_fd = (real_supports_dir_fd - {real_os_open}) | {os_open}
     builtins.open = builtin_open
     io.open = io_open
     os.walk = walk
@@ -589,6 +591,7 @@ def structural_observations(fixture: dict[str, Any]) -> dict[str, Any]:
         duckdb.connect = real_connect
         state_module.AppliedStateRow = real_applied_row
         os.open = real_os_open
+        os.supports_dir_fd = real_supports_dir_fd
         builtins.open = real_builtin_open
         io.open = real_io_open
         os.walk = real_walk

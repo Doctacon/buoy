@@ -524,11 +524,15 @@ class LocalInventoryService:
         self, *, force: bool = False, previous: _Snapshot | None = None
     ) -> _Snapshot:
         with self._cache_lock:
-            now = self._clock()
+            rebuild_started_at = self._clock()
             cached = self._cached_snapshot
             if force and previous is not None and cached is not None and cached is not previous:
                 return cached
-            if not force and cached is not None and now < self._cache_expires_at:
+            if (
+                not force
+                and cached is not None
+                and rebuild_started_at < self._cache_expires_at
+            ):
                 return cached
             plans, plan_errors = _discover_plans(self.artifacts_root)
             states, state_errors = _discover_states(self.state_root)
@@ -541,7 +545,7 @@ class LocalInventoryService:
                 ),
             )
             self._cached_snapshot = snapshot
-            self._cache_expires_at = self._clock() + self._cache_ttl
+            self._cache_expires_at = rebuild_started_at + self._cache_ttl
             return snapshot
 
 

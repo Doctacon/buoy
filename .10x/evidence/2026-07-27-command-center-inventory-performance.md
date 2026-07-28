@@ -7,7 +7,7 @@ Relates-To: .10x/tickets/2026-07-27-validate-command-center-inventory-performanc
 
 ## What was observed
 
-The final integrated implementation from branch `work/command-center-inventory-performance` was validated against base `01f2d19432c4bc77e9d6bd7ab8a657b5f4583521`. The exact committed default benchmark driver ran from clean implementation commit `607bae7ec55766acf46eb1c3cd42a0162e4236b3` with no tracked changes. The documentation/evidence/package-contract repair commit that contains this record is necessarily identified by the execution handoff because a commit cannot contain its own hash.
+The final integrated implementation from branch `work/command-center-inventory-performance` was validated against base `01f2d19432c4bc77e9d6bd7ab8a657b5f4583521`. The exact committed default benchmark driver ran from clean implementation commit `607bae7ec55766acf46eb1c3cd42a0162e4236b3` with no tracked changes. Final integration commit `4cb793bf` was then repaired under the same open validation ticket after two independent reviews found missing descriptor-capability gating, completion-based cache expiry, and insufficiently reproducible release evidence. The repair commit is necessarily identified by the execution handoff because a commit cannot contain its own hash.
 
 On the same host and exact fixture as the baseline, warm summary p50 fell from 671.639–688.501 ms to 0.018–0.141 ms. Dashboard, Plans, and Namespaces exceeded the required 5× observational improvement by 4,844.9×, 38,250.1×, and 6,532.5× respectively. Process-cold summaries still rebuild the snapshot and measured 365.065–371.328 ms. Selected-plan routes retained complete per-call verification and remain linear in the selected 100,100-row delta; their warm p50 was 2,899.825–2,937.950 ms, about 12.0–13.2% below baseline but intentionally not cached or claimed subsecond.
 
@@ -64,7 +64,7 @@ These calls are deliberately separate from summary performance. Each call comple
 ## Required commands and exact results
 
 1. `uv run python scripts/benchmark_command_center_inventory.py`
-   - Passed from clean commit `607bae7e`. All eight post-timing result validators passed; fixture and timing values are recorded above. Side-effect counters were exactly zero provider, source, plan, and apply operations.
+   - Passed from clean commit `607bae7e`. All eight post-timing result validators passed; fixture and timing values are recorded above. The output's provider/source/plan/apply zero values are a hardcoded side-effect inventory, not runtime counters. Absence of those effects is attested from the fixture-only procedure and external-side-effect inventory below; structural scan/connection/delta-open values are instrumented.
 2. `git diff --check && uv sync --locked && uv lock --check`
    - Passed before validation. Core sync resolved 157 lock entries and removed optional FastAPI/Starlette/Uvicorn.
 3. `PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate_ranking_contract.py`
@@ -84,36 +84,183 @@ These calls are deliberately separate from summary performance. Each call comple
    - Passed one Vitest file and all 37 tests in 2.11s.
 10. `cd web && npm run build`
     - Passed TypeScript and Vite 7.3.6: 42 modules; `index.html` 0.63 kB, CSS 10.66 kB, JavaScript 278.77 kB.
-11. `git diff --exit-code -- src/buoy_search/command_center_static` plus a standard-library HTML reference/hash check
+11. Appendix A HTML/static synchronization command
     - Passed. Build output was byte-synchronized. References `/buoy.svg`, `/assets/index-D34KCjuB.js`, and `/assets/index-Amu9gKyT.css` all resolve. SHA-256: index `c4129e00430f8378c89ae550bf72c860bd170d64158d1b78e13dd472a9855833`; JavaScript `734e5bb9acbeb0cc98e9da4e53c6fba81b15be1df34b59bbdfc98d3bbd63a74c`; CSS `fd57c4f2b1319313451571398931ad5b20c8707cdc3f931cd88d993d3c1bd815`; SVG `f791c77f25e202a0556d2688ec9180e7d78c983f220f84b097c1fdc8894edcef`.
-12. `uv build --out-dir dist`
-    - Passed in 1.99s; built `buoy_search-0.4.1.dev112+g607bae7ec.d20260728-py3-none-any.whl` and matching sdist.
-13. Standard-library wheel/sdist inventory assertions
-    - Passed. Wheel: 69 entries, including index, Buoy SVG, and exactly one hashed JavaScript/CSS asset. Sdist: 159 entries, including docs, benchmark driver, restored public SVG, and all intended frontend source/build inputs. Both archives contained zero `node_modules` entries.
-14. `uv pip install --no-deps --target /tmp/buoy-command-center-wheel-target dist/*.whl` plus isolated installed-wheel TestClient smoke
-    - Install passed. The accepted resolved-temporary-root run imported the package and static root from `/private/tmp/buoy-command-center-wheel-target`, then received HTTP 200 from `/api/v1/health`, `/api/v1/dashboard`, `/api/v1/plans`, `/api/v1/namespaces`, and `/`. Empty local summary counts/lists were exact and the packaged HTML loaded.
-15. Safari WebDriver availability/browser smoke probe
-    - `/usr/bin/safaridriver --version` reported Safari 26.5 and `/status` was ready, so a real-engine session was attempted without installing dependencies. Session creation returned the explicit platform error that Safari's user-level “Allow remote automation” setting was disabled. The setting was not mutated. No product/browser assertion was accepted, and all temporary server/driver roots/logs were removed.
-16. `rm -rf dist web/node_modules /tmp/buoy-command-center-wheel-target && uv sync --locked && uv lock --check`
+12. `rm -rf dist && uv build --out-dir dist`
+    - Repair-time run passed; built `buoy_search-0.4.1.dev113+g4cb793bf3.d20260728-py3-none-any.whl` and matching sdist. The earlier clean implementation archive was `dev112+g607bae7ec`.
+13. Appendix B standard-library archive inventory command
+    - Passed. Wheel: 69 entries, including index, Buoy SVG, and exactly one hashed JavaScript/CSS asset. Sdist: 159 entries, including docs, benchmark driver, restored public SVG, and intended frontend source/build inputs. Both archives contained zero `node_modules` entries.
+14. Appendix C isolated installed-wheel command
+    - Passed. Package/static roots resolved below `/private/tmp/buoy-command-center-wheel-target.zOsC36`; `/api/v1/health`, `/api/v1/dashboard`, `/api/v1/plans`, `/api/v1/namespaces`, and `/` each returned HTTP 200. Empty summary counts/lists were exact, packaged HTML contained `Buoy`, and the trap removed the target.
+15. Appendix D Safari WebDriver probe
+    - `safaridriver --version` returned `Included with Safari 26.5 (21624.2.5.11.4)` and `/status` returned `ready=true`. Session creation returned `session not created`: `You must enable 'Allow remote automation' in the Developer section of Safari Settings to control Safari via WebDriver.` The setting was not mutated; no browser product assertion was accepted.
+16. `rm -rf dist web/node_modules && uv sync --locked && uv lock --check`
     - Passed. Optional UI packages were removed and the default locked core environment was restored.
-17. Isolated core import check using `.venv/bin/python -I`
-    - Passed. Ordinary `buoy_search` and `buoy_search.cli` imports found neither FastAPI nor Uvicorn and loaded no Command Center API/job module, BigQuery/Snowflake adapter, turbopuffer, sentence-transformers, or transformers.
-18. Final `git diff --check`, lock check, staged-file, generated-directory, and tracked-artifact inventory checks
-    - Passed. No files were staged; `dist` and `web/node_modules` were absent; no tracked database/profile/log/private-state/generated-artifact path was found.
+17. Appendix E isolated core-import command
+    - Passed. Imports resolved to this worktree's `src/buoy_search/__init__.py` and `src/buoy_search/cli.py`; FastAPI/Uvicorn specs and all enumerated optional/API/job/provider/model modules were absent.
+18. Appendix F final artifact-inventory command
+    - Passed. Exactly 876 tracked paths were inspected; staged files, generated directories, and tracked private/generated artifacts were each empty. `dist` and `web/node_modules` were absent.
+
+## Post-review repair validation
+
+- Focused gate: `PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest tests.test_command_center_inventory_benchmark tests.test_applied_state tests.test_command_center_local tests.test_command_center_api -q` passed 87 tests in 7.976s with the known non-failing Starlette warning.
+- The first repair-time full discovery ran 795 tests in 86.688s and found one benchmark-harness compatibility failure: its temporary `os.open` tracer did not mirror `os.supports_dir_fd`, so the new capability gate isolated the fixture states. The bounded harness repair mirrors/restores only that advertised capability during tracing. The complete rerun `PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*.py' -q` passed all 795 tests in 86.292s with 36 core-environment skips.
+- The exact benchmark command was rerun after repair with output redirected to `/tmp/command-center-repair-benchmark.json`, asserted, summarized, and removed. Warm p50: Dashboard 0.144 ms, Plans 0.021 ms, Namespaces 0.116 ms, namespace detail 0.151 ms; selected complete verification 3,051.480–3,077.451 ms. Structural results remained exactly the JSON above. These repair observations do not replace the preserved clean-commit benchmark table.
+- Ranking/C6 validators passed unchanged at dataset SHA-256 `5a79f58aaca87a2d4f7cbec68fdcfbbf041131821587f8aba74a86daca99d9` and forecast SHA-256 `d5199276c19ae89779287eaa90824ce1e1cc684a3f060899f02f65d976016243`.
+- `cd web && npm ci && npm test -- --run && npm run build` passed: 214 packages installed, 37 tests passed, and the same 42-module synchronized build was produced. The separately owned advisory remained unchanged.
+- A preliminary Safari helper attempt using `-p 0` failed its local port-discovery assertion before any session request. Appendix D is the corrected probe using an OS-selected then explicitly supplied port; it reached the driver and returned the recorded platform-setting error.
+
+## Exact reproducible release commands
+
+### Appendix A — HTML/static hashes
+
+```bash
+git diff --exit-code -- src/buoy_search/command_center_static
+PYTHONDONTWRITEBYTECODE=1 uv run python - <<'PY'
+from hashlib import sha256
+from html.parser import HTMLParser
+from pathlib import Path
+root = Path('src/buoy_search/command_center_static')
+class Refs(HTMLParser):
+    def __init__(self): super().__init__(); self.paths = []
+    def handle_starttag(self, tag, attrs):
+        values = dict(attrs)
+        self.paths += [values[k] for k in ('href', 'src') if values.get(k, '').startswith('/')]
+p = Refs(); p.feed((root / 'index.html').read_text())
+assert p.paths == ['/buoy.svg', '/assets/index-D34KCjuB.js', '/assets/index-Amu9gKyT.css']
+files = [root / 'index.html', *(root / value[1:] for value in p.paths)]
+assert all(path.is_file() for path in files)
+print('\n'.join(f'{path} {sha256(path.read_bytes()).hexdigest()}' for path in files))
+PY
+```
+
+### Appendix B — archive inventory
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 uv run python - <<'PY'
+from pathlib import Path
+import tarfile, zipfile
+wheel = next(Path('dist').glob('*.whl')); sdist = next(Path('dist').glob('*.tar.gz'))
+with zipfile.ZipFile(wheel) as archive: wn = archive.namelist()
+with tarfile.open(sdist, 'r:gz') as archive: sn = archive.getnames()
+js = [n for n in wn if '/command_center_static/assets/index-' in n and n.endswith('.js')]
+css = [n for n in wn if '/command_center_static/assets/index-' in n and n.endswith('.css')]
+assert len(wn) == 69 and len(sn) == 159 and len(js) == len(css) == 1
+assert any(n.endswith('/command_center_static/index.html') for n in wn)
+assert any(n.endswith('/command_center_static/buoy.svg') for n in wn)
+for suffix in ('/docs/command-center.md', '/scripts/benchmark_command_center_inventory.py', '/images/buoy.svg', '/web/src/App.tsx', '/web/package-lock.json'):
+    assert any(n.endswith(suffix) for n in sn), suffix
+assert not any('node_modules' in n.split('/') for n in [*wn, *sn])
+print(wheel.name, len(wn), js, css, sdist.name, len(sn), 'node_modules=0')
+PY
+```
+
+### Appendix C — installed-wheel smoke
+
+```bash
+target="$(mktemp -d /tmp/buoy-command-center-wheel-target.XXXXXX)" && trap 'rm -rf "$target"' EXIT
+uv pip install --no-deps --target "$target" dist/*.whl
+TARGET="$target" PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -I <<'PY'
+import os, sys, tempfile
+from pathlib import Path
+target = Path(os.environ['TARGET']).resolve(strict=True); sys.path.insert(0, str(target))
+from fastapi.testclient import TestClient
+import buoy_search
+from buoy_search.command_center_api import create_app
+assert Path(buoy_search.__file__).resolve().is_relative_to(target)
+static = target / 'buoy_search' / 'command_center_static'
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp).resolve(strict=True)
+    with TestClient(create_app(artifacts_root=root/'artifacts', state_root=root/'state', static_root=static), base_url='http://localhost') as client:
+        responses = {p: client.get(p) for p in ('/api/v1/health', '/api/v1/dashboard', '/api/v1/plans', '/api/v1/namespaces', '/')}
+assert all(r.status_code == 200 for r in responses.values())
+assert responses['/api/v1/dashboard'].json()['plan_count'] == 0
+assert responses['/api/v1/plans'].json()['items'] == responses['/api/v1/namespaces'].json()['items'] == []
+assert 'Buoy' in responses['/'].text
+print(Path(buoy_search.__file__).resolve().parent, static.resolve(), {p: r.status_code for p, r in responses.items()})
+PY
+```
+
+### Appendix D — Safari probe
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 uv run python - <<'PY'
+import json, socket, subprocess, tempfile, time
+from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+version = subprocess.run(['/usr/bin/safaridriver', '--version'], check=True, capture_output=True, text=True).stdout.strip()
+with socket.socket() as probe: probe.bind(('127.0.0.1', 0)); port = probe.getsockname()[1]
+with tempfile.TemporaryDirectory() as tmp, (Path(tmp)/'driver.log').open('w') as log:
+    driver = subprocess.Popen(['/usr/bin/safaridriver', '-p', str(port)], stdout=log, stderr=subprocess.STDOUT)
+    try:
+        deadline = time.monotonic() + 5; status = None
+        while time.monotonic() < deadline:
+            try:
+                with urlopen(f'http://127.0.0.1:{port}/status', timeout=1) as response: status = json.load(response)
+                break
+            except URLError: time.sleep(.05)
+        assert status and status['value']['ready'] is True
+        request = Request(f'http://127.0.0.1:{port}/session', data=b'{"capabilities":{"alwaysMatch":{"browserName":"safari"}}}', headers={'Content-Type':'application/json'}, method='POST')
+        try:
+            with urlopen(request, timeout=10) as response: session = json.load(response)
+        except HTTPError as exc: session = json.load(exc)
+        print(version, json.dumps(status), json.dumps(session))
+    finally: driver.terminate(); driver.wait(timeout=5)
+PY
+```
+
+### Appendix E — core import isolation
+
+```bash
+rm -rf dist web/node_modules && uv sync --locked && uv lock --check
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -I <<'PY'
+import importlib.util, sys
+import buoy_search, buoy_search.cli
+assert importlib.util.find_spec('fastapi') is importlib.util.find_spec('uvicorn') is None
+for module in ('buoy_search.command_center_api', 'buoy_search.command_center_jobs', 'buoy_search.bigquery_relation', 'buoy_search.snowflake_relation', 'turbopuffer', 'sentence_transformers', 'transformers'):
+    assert module not in sys.modules, module
+print(buoy_search.__file__, buoy_search.cli.__file__, 'forbidden_modules=[]')
+PY
+```
+
+### Appendix F — final artifact inventory
+
+```bash
+git diff --check && uv lock --check
+test -z "$(git diff --cached --name-only)" && test ! -e dist && test ! -e web/node_modules
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -I <<'PY'
+from pathlib import PurePosixPath
+import subprocess
+tracked = [n for n in subprocess.run(['git','ls-files','-z'], check=True, capture_output=True).stdout.decode().split('\0') if n]
+forbidden = []
+for name in tracked:
+    path = PurePosixPath(name); parts = set(path.parts)
+    if path.suffix in {'.duckdb','.db','.sqlite','.log','.prof'} or 'node_modules' in parts or path.parts[:1] == ('dist',) or '.buoy' in parts or '.turbo-search' in parts: forbidden.append(name)
+assert forbidden == []
+print(f'tracked={len(tracked)} staged=0 generated_directories=0 private_or_generated=0')
+PY
+```
 
 ## Documentation and changed files
 
 `docs/command-center.md` now states the `plan.json` traversal leaf, aggregate read-only state summaries, locked 1.0-second process-local TTL, immediate managed invalidation, bounded external visibility, one-refresh misses, nonpersistent/non-authorizing cache scope, and continued complete selected verification with explicit linear-cost/no-universal-subsecond limits. README already links the canonical packaged SVG and accurately describes Command Center installation/scope, so no README change was needed.
 
-Final-child files are:
+Final integration and review-repair files are:
 
+- `src/buoy_search/applied_state.py`
+- `src/buoy_search/command_center_local.py`
+- `scripts/benchmark_command_center_inventory.py`
+- `tests/test_applied_state.py`
+- `tests/test_command_center_local.py`
+- `tests/test_command_center_api.py`
 - `docs/command-center.md`
 - `images/buoy.svg` (mechanical restoration of a pre-existing latest-main package/public-surface defect)
 - `.10x/evidence/2026-07-27-command-center-inventory-performance.md`
 - `.10x/tickets/2026-07-27-validate-command-center-inventory-performance.md`
 - `.10x/tickets/2026-07-27-command-center-inventory-performance-plan.md`
 
-No new or changed test file was needed in this final child; the existing release-automation regression detected the missing required SVG and the existing 791-test suite plus focused 169-test basket exercised the integrated behavior.
+The repair regressions cover absent `O_NOFOLLOW`, absent `O_DIRECTORY`, missing `dir_fd` support, `os.open` raising `NotImplementedError`, isolated service/API safe-state behavior, and a rebuild lasting exactly the TTL while an external plan appears after its scan.
 
 ## Deviations, defects, and limits
 
@@ -129,4 +276,4 @@ No new or changed test file was needed in this final child; the existing release
 
 ## External-side-effect attestation
 
-No live crawl, clone, source adapter, database provider, remote refresh/search, turbopuffer, embedding/model, apply, catalog/namespace mutation, push, merge, PR, publish, or release operation ran. The benchmark reported zero provider/source/plan/apply operations. API/provider/source tests used fakes or temporary local artifacts. Package, benchmark, installed-wheel, local server, and attempted browser-driver files lived only in system temporary directories and were removed. No generated benchmark database/tree/profile/raw log, distribution, `node_modules`, credential, private path, or local state is committed.
+No live crawl, clone, source adapter, database provider, remote refresh/search, turbopuffer, embedding/model, apply, catalog/namespace mutation, push, merge, PR, publish, or release operation ran. The benchmark's hardcoded provider/source/plan/apply inventory agrees with this procedure-based attestation but is not runtime instrumentation. API/provider/source tests used fakes or temporary local artifacts. Package, benchmark, installed-wheel, local server, and attempted browser-driver files lived only in system temporary directories and were removed. No generated benchmark database/tree/profile/raw log, distribution, `node_modules`, credential, private path, or local state is committed.

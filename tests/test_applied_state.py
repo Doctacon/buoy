@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -273,6 +274,36 @@ class AppliedStateStoreTests(unittest.TestCase):
         self.assertTrue(any("FILTER (WHERE status = 'active')" in sql for sql in queries))
         self.assertFalse(any("ORDER BY canonical_url" in sql for sql in queries))
         self.assertFalse(any("SELECT row_id, canonical_url" in sql for sql in queries))
+
+    def test_summary_reader_requires_safe_descriptor_primitives_and_translates_not_implemented(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            state_root = Path(tmp)
+            paths = save_applied_state(sample_state(), state_root=state_root)
+
+            for primitive in ("O_NOFOLLOW", "O_DIRECTORY"):
+                with self.subTest(primitive=primitive), mock.patch.object(
+                    os, primitive, None
+                ), self.assertRaisesRegex(AppliedStateError, "primitives are unavailable"):
+                    load_applied_state_summary(
+                        database_path=paths.database_path, state_root=state_root
+                    )
+
+            with self.subTest(primitive="dir_fd"), mock.patch.object(
+                os, "supports_dir_fd", set()
+            ), self.assertRaisesRegex(AppliedStateError, "primitives are unavailable"):
+                load_applied_state_summary(
+                    database_path=paths.database_path, state_root=state_root
+                )
+
+            unavailable_open = mock.Mock(side_effect=NotImplementedError)
+            with self.subTest(primitive="os.open"), mock.patch.object(
+                os, "open", unavailable_open
+            ), mock.patch.object(
+                os, "supports_dir_fd", {unavailable_open}
+            ), self.assertRaisesRegex(AppliedStateError, "primitives are unavailable"):
+                load_applied_state_summary(
+                    database_path=paths.database_path, state_root=state_root
+                )
 
     def test_summary_reader_rejects_unknown_status_identity_and_symlink(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
