@@ -1,4 +1,4 @@
-Status: open
+Status: done
 Created: 2026-07-27
 Updated: 2026-07-27
 Parent: None
@@ -17,7 +17,7 @@ Deliver the user-ratified bounded Command Center navigation-performance work fro
 3. In parallel after child 2:
    - `.10x/tickets/done/2026-07-27-integrate-managed-plan-cache-invalidation.md` wires successful managed publication invalidation.
    - `.10x/tickets/done/2026-07-27-move-blocking-command-center-routes-off-event-loop.md` converts compatible blocking handlers and proves responsiveness.
-4. `.10x/tickets/2026-07-27-validate-command-center-inventory-performance.md` reruns the exact benchmark, updates docs, performs complete Python/frontend/package validation, records before/after evidence, obtains independent review, and closes the graph when coherent.
+4. `.10x/tickets/done/2026-07-27-validate-command-center-inventory-performance.md` reruns the exact benchmark, updates docs, performs complete Python/frontend/package validation, records before/after evidence, obtains independent review, and closes the graph when coherent.
 
 One child writer operates in the task worktree at a time. Children 3 and 4 may be investigated/reviewed in parallel but MUST NOT write concurrently in the same worktree.
 
@@ -39,11 +39,13 @@ One child writer operates in the task worktree at a time. Children 3 and 4 may b
 - 2026-07-27: Baseline child completed after initial review-driven harness repair and passing rereview. The repeatable full fixture records warm summary p50 671.639–688.501 ms and selected full-verification p50 3,323.781–3,374.436 ms, with repeated scans, 303,093 row objects, legacy descendant traversal, and zero delta opens. Summary-core implementation is unblocked.
 - 2026-07-27: Final integration child completed implementation-owned validation and remains open for parent-owned independent review/closure. Exact post-change fixture results show warm summary p50 0.018–0.141 ms, 4,844.9×–38,250.1× improvement on Dashboard/Plans/Namespaces, one cached plan/state scan, aggregate state summaries, pruned legacy descendants, and zero delta opens. Selected full verification remains linear at 2,899.825–2,937.950 ms warm p50. Full Python/focused UI/frontend/static/package/installed-wheel/core-isolation gates passed after restoring the byte-identical public SVG required by the pre-existing active package contract. Evidence: `.10x/evidence/2026-07-27-command-center-inventory-performance.md`.
 - 2026-07-27: Final-review repair under the same validation child added explicit applied-summary descriptor-capability gating/fail-closed isolation, rebuild-start-based TTL expiry with deterministic external-freshness coverage, benchmark-tracer capability coherence, and exact reproducible release-evidence commands/results. Focused/full/benchmark/frontend/package/install/Safari/core-import/final-artifact gates passed after the bounded repair. Preserved the original clean-commit benchmark table and left parent/validation tickets open for independent rereview and closure.
-- 2026-07-27: Remaining final-review repairs under the same validation child rejected expired concurrently rebuilt snapshots on forced misses, closed the descriptor on initial summary `fstat` failure, and waited for the observed test-only `FakeEventSource` race without changing product behavior. Deterministic concurrent/direct-miss and injected-leak regressions plus full Python/frontend/benchmark/package/import/static/lock/diff validation passed. The final generated-artifact proof now explicitly walks the task worktree, names `.git`/`.venv` exclusions and exact target patterns, and reports no remaining target or tracked overlap rather than inferring a universal generated-artifact claim. Parent and validation tickets remain open for independent rereview and closure.
+- 2026-07-27: Remaining final-review repairs under the same validation child rejected expired concurrently rebuilt snapshots on forced misses, closed the descriptor on initial summary `fstat` failure, and waited for the observed test-only `FakeEventSource` race without changing product behavior. Deterministic concurrent/direct-miss and injected-leak regressions plus full Python/frontend/benchmark/package/import/static/lock/diff validation passed. The final generated-artifact proof explicitly walks the task worktree, names `.git`/`.venv` exclusions and exact target patterns, and reports no remaining target or tracked overlap rather than inferring a universal generated-artifact claim.
+- 2026-07-27: Final independent review passed after all adversarial findings were repaired. Parent closure corrected one evidence-only digest typo, removed reviewer-created generated artifacts, and rechecked graph/evidence/status coherence. All five children are done; aggregate acceptance maps to `.10x/evidence/2026-07-27-command-center-inventory-performance.md` and `.10x/reviews/2026-07-27-command-center-inventory-performance-final-review.md`.
+- 2026-07-27: Retrospective: compactness did not guarantee responsive inventory; traversal boundaries, aggregate projections, cache freshness measured from rebuild start, and explicit sync-route dispatch were each independently necessary. Review also showed that pathname/inode checks need ABA and unavailable-primitive cases, cache tests need concurrent forced-miss schedules, and performance evidence must validate semantics rather than timing empty results. These durable invariants now live in focused active specs, source tests, benchmark tooling, evidence, and reviews; no additional skill or follow-up ticket is required.
 
 ## Blockers
 
-None after the execution gate turn boundary. Child 1 is the first executable unit.
+None.
 
 ## Exclusions
 

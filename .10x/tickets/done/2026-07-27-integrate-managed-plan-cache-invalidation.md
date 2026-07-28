@@ -1,7 +1,7 @@
 Status: done
 Created: 2026-07-27
 Updated: 2026-07-27
-Parent: .10x/tickets/2026-07-27-command-center-inventory-performance-plan.md
+Parent: .10x/tickets/done/2026-07-27-command-center-inventory-performance-plan.md
 Depends-On: .10x/tickets/done/2026-07-27-implement-summary-inventory-performance.md
 
 # Integrate Managed Plan Cache Invalidation

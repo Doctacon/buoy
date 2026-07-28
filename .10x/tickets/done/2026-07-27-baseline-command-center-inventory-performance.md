@@ -1,7 +1,7 @@
 Status: done
 Created: 2026-07-27
 Updated: 2026-07-27
-Parent: .10x/tickets/2026-07-27-command-center-inventory-performance-plan.md
+Parent: .10x/tickets/done/2026-07-27-command-center-inventory-performance-plan.md
 Depends-On: None
 
 # Baseline Command Center Inventory Performance
@@ -44,4 +44,4 @@ Implementation changes, private user artifacts, live crawls/clones/providers/sea
 ## References
 
 - `.10x/specs/command-center-summary-inventory-performance.md`
-- `.10x/tickets/2026-07-27-command-center-inventory-performance-plan.md`
+- `.10x/tickets/done/2026-07-27-command-center-inventory-performance-plan.md`

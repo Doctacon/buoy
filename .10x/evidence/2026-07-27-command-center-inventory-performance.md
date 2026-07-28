@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-27
 Updated: 2026-07-27
-Relates-To: .10x/tickets/2026-07-27-validate-command-center-inventory-performance.md, .10x/tickets/2026-07-27-command-center-inventory-performance-plan.md, .10x/specs/command-center-summary-inventory-performance.md, .10x/specs/command-center-managed-plan-cache-invalidation.md, .10x/specs/command-center-blocking-route-threading.md
+Relates-To: .10x/tickets/done/2026-07-27-validate-command-center-inventory-performance.md, .10x/tickets/done/2026-07-27-command-center-inventory-performance-plan.md, .10x/specs/command-center-summary-inventory-performance.md, .10x/specs/command-center-managed-plan-cache-invalidation.md, .10x/specs/command-center-blocking-route-threading.md
 
 # Command Center Inventory Performance Aggregate Validation
 
@@ -106,7 +106,7 @@ These calls are deliberately separate from summary performance. Each call comple
 - Focused gate: `PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest tests.test_command_center_inventory_benchmark tests.test_applied_state tests.test_command_center_local tests.test_command_center_api -q` passed 87 tests in 7.976s with the known non-failing Starlette warning.
 - The first repair-time full discovery ran 795 tests in 86.688s and found one benchmark-harness compatibility failure: its temporary `os.open` tracer did not mirror `os.supports_dir_fd`, so the new capability gate isolated the fixture states. The bounded harness repair mirrors/restores only that advertised capability during tracing. The complete rerun `PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*.py' -q` passed all 795 tests in 86.292s with 36 core-environment skips.
 - The exact benchmark command was rerun after repair with output redirected to `/tmp/command-center-repair-benchmark.json`, asserted, summarized, and removed. Warm p50: Dashboard 0.144 ms, Plans 0.021 ms, Namespaces 0.116 ms, namespace detail 0.151 ms; selected complete verification 3,051.480–3,077.451 ms. Structural results remained exactly the JSON above. These repair observations do not replace the preserved clean-commit benchmark table.
-- Ranking/C6 validators passed unchanged at dataset SHA-256 `5a79f58aaca87a2d4f7cbec68fdcfbbf041131821587f8aba74a86daca99d9` and forecast SHA-256 `d5199276c19ae89779287eaa90824ce1e1cc684a3f060899f02f65d976016243`.
+- Ranking/C6 validators passed unchanged at dataset SHA-256 `5a79f58aaca87a2d4f7cbec68fdcfbbcbf041131821587f8aba74a86daca99d9` and forecast SHA-256 `d5199276c19ae89779287eaa90824ce1e1cc684a3f060899f02f65d976016243`.
 - `cd web && npm ci && npm test -- --run && npm run build` passed: 214 packages installed, 37 tests passed, and the same 42-module synchronized build was produced. The separately owned advisory remained unchanged.
 - A preliminary Safari helper attempt using `-p 0` failed its local port-discovery assertion before any session request. Appendix D is the corrected probe using an OS-selected then explicitly supplied port; it reached the driver and returned the recorded platform-setting error.
 
@@ -257,8 +257,8 @@ Final integration and review-repair files are:
 - `docs/command-center.md`
 - `images/buoy.svg` (mechanical restoration of a pre-existing latest-main package/public-surface defect)
 - `.10x/evidence/2026-07-27-command-center-inventory-performance.md`
-- `.10x/tickets/2026-07-27-validate-command-center-inventory-performance.md`
-- `.10x/tickets/2026-07-27-command-center-inventory-performance-plan.md`
+- `.10x/tickets/done/2026-07-27-validate-command-center-inventory-performance.md`
+- `.10x/tickets/done/2026-07-27-command-center-inventory-performance-plan.md`
 
 The repair regressions cover absent `O_NOFOLLOW`, absent `O_DIRECTORY`, missing `dir_fd` support, `os.open` raising `NotImplementedError`, isolated service/API safe-state behavior, and a rebuild lasting exactly the TTL while an external plan appears after its scan.
 
@@ -312,3 +312,7 @@ tracked_paths=876
 ```
 
 This is a bounded claim about the enumerated generated targets and stated exclusions, not a claim that every possible generated-file convention was inferred. `git diff --check`, `uv lock --check`, an empty staged-name check, and final status also passed; only the five intentional source/test files plus this evidence and the two open ticket progress records were modified before commit.
+
+## Parent-observed closure reconciliation
+
+Final independent rereview passed all implementation, correctness, security, benchmark, frontend, package, and validation boundaries after reproducing 797 Python tests with 36 skips, five repeated targeted repair runs, five complete frontend runs, exact benchmark structure/thresholds, and 69-wheel/159-sdist inventory. It found only the malformed duplicate ranking digest above and a reviewer-created non-venv `__pycache__`; the parent corrected the digest, removed the reviewer-created cache and completed reviewer runtime artifacts, and mechanically rechecked the explicit generated-target inventory outside `.git` and `.venv`. No tracked, staged, or prohibited generated artifact remained at closure.
