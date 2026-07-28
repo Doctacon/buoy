@@ -1,0 +1,64 @@
+Status: done
+Created: 2026-07-27
+Updated: 2026-07-27
+Parent: None
+Depends-On: None
+
+# Command Center Local-Inventory Performance Plan
+
+## Aggregate scope
+
+Deliver the user-ratified bounded Command Center navigation-performance work from latest hosted `main` commit `01f2d19432c4bc77e9d6bd7ab8a657b5f4583521` on `work/command-center-inventory-performance` without changing schema-v2 compact-delta architecture, state schema, product authority, or selected-plan full verification.
+
+## Child sequence and dependencies
+
+1. `.10x/tickets/done/2026-07-27-baseline-command-center-inventory-performance.md` freezes the repeatable pre-change fixture/method/results from the untouched `main` source.
+2. `.10x/tickets/done/2026-07-27-implement-summary-inventory-performance.md` implements plan-boundary pruning, aggregate applied-state summaries, and the locked 1.0-second cache after baseline evidence exists.
+3. In parallel after child 2:
+   - `.10x/tickets/done/2026-07-27-integrate-managed-plan-cache-invalidation.md` wires successful managed publication invalidation.
+   - `.10x/tickets/done/2026-07-27-move-blocking-command-center-routes-off-event-loop.md` converts compatible blocking handlers and proves responsiveness.
+4. `.10x/tickets/done/2026-07-27-validate-command-center-inventory-performance.md` reruns the exact benchmark, updates docs, performs complete Python/frontend/package validation, records before/after evidence, obtains independent review, and closes the graph when coherent.
+
+One child writer operates in the task worktree at a time. Children 3 and 4 may be investigated/reviewed in parallel but MUST NOT write concurrently in the same worktree.
+
+## Aggregate acceptance criteria
+
+- Every directory containing `plan.json` is an inventory traversal boundary; current plan handling and sibling discovery preserve existing policy and safety.
+- Applied-state inventory uses one read-only connection and aggregate SQL per database without `load_applied_state`, ordered full-row queries, or row-object materialization.
+- One service-local locked 1.0-second summary cache prevents repeated/stampeded scans, refreshes on expiry/invalidation, and direct misses force one retry.
+- Verified successful managed publication invalidates immediately without coupling jobs to FastAPI or turning callback failure into job failure.
+- Compatible blocking API routes run through Starlette's sync-route thread pool; bounded body and SSE behavior remain intact and responsive.
+- Selected plan detail/chunk/stale access retains complete exact verification and bounded page materialization on every call.
+- Structural tests and exact before/after measurements separate summary latency from selected-plan verification and show material host-observed improvement.
+- Documentation, full Python, focused UI-extra Python, frontend, generated assets, distribution inventory, installed-wheel smoke, import isolation, lock restoration, and diff checks pass.
+- No prohibited provider/source/apply/remote mutation, push, merge, PR, publish, or release occurs.
+
+## Progress and notes
+
+- 2026-07-27: User supplied and ratified the complete performance, safety, measurement, documentation, validation, and non-goal contract. Fished active/terminal records and inspected latest hosted `main` source across local inventory, applied state, API routes, managed jobs, prior compact-delta performance evidence, and active specifications. Created three focused active specifications and this bounded execution graph. No benchmark or implementation started in that shaping turn.
+- 2026-07-27: Baseline child completed after initial review-driven harness repair and passing rereview. The repeatable full fixture records warm summary p50 671.639–688.501 ms and selected full-verification p50 3,323.781–3,374.436 ms, with repeated scans, 303,093 row objects, legacy descendant traversal, and zero delta opens. Summary-core implementation is unblocked.
+- 2026-07-27: Final integration child completed implementation-owned validation and remains open for parent-owned independent review/closure. Exact post-change fixture results show warm summary p50 0.018–0.141 ms, 4,844.9×–38,250.1× improvement on Dashboard/Plans/Namespaces, one cached plan/state scan, aggregate state summaries, pruned legacy descendants, and zero delta opens. Selected full verification remains linear at 2,899.825–2,937.950 ms warm p50. Full Python/focused UI/frontend/static/package/installed-wheel/core-isolation gates passed after restoring the byte-identical public SVG required by the pre-existing active package contract. Evidence: `.10x/evidence/2026-07-27-command-center-inventory-performance.md`.
+- 2026-07-27: Final-review repair under the same validation child added explicit applied-summary descriptor-capability gating/fail-closed isolation, rebuild-start-based TTL expiry with deterministic external-freshness coverage, benchmark-tracer capability coherence, and exact reproducible release-evidence commands/results. Focused/full/benchmark/frontend/package/install/Safari/core-import/final-artifact gates passed after the bounded repair. Preserved the original clean-commit benchmark table and left parent/validation tickets open for independent rereview and closure.
+- 2026-07-27: Remaining final-review repairs under the same validation child rejected expired concurrently rebuilt snapshots on forced misses, closed the descriptor on initial summary `fstat` failure, and waited for the observed test-only `FakeEventSource` race without changing product behavior. Deterministic concurrent/direct-miss and injected-leak regressions plus full Python/frontend/benchmark/package/import/static/lock/diff validation passed. The final generated-artifact proof explicitly walks the task worktree, names `.git`/`.venv` exclusions and exact target patterns, and reports no remaining target or tracked overlap rather than inferring a universal generated-artifact claim.
+- 2026-07-27: Final independent review passed after all adversarial findings were repaired. Parent closure corrected one evidence-only digest typo, removed reviewer-created generated artifacts, and rechecked graph/evidence/status coherence. All five children are done; aggregate acceptance maps to `.10x/evidence/2026-07-27-command-center-inventory-performance.md` and `.10x/reviews/2026-07-27-command-center-inventory-performance-final-review.md`.
+- 2026-07-27: Retrospective: compactness did not guarantee responsive inventory; traversal boundaries, aggregate projections, cache freshness measured from rebuild start, and explicit sync-route dispatch were each independently necessary. Review also showed that pathname/inode checks need ABA and unavailable-primitive cases, cache tests need concurrent forced-miss schedules, and performance evidence must validate semantics rather than timing empty results. These durable invariants now live in focused active specs, source tests, benchmark tooling, evidence, and reviews; no additional skill or follow-up ticket is required.
+
+## Blockers
+
+None.
+
+## Exclusions
+
+All user-stated non-goals, especially schema redesign/migration/deletion, persistent or external cache/index infrastructure, selected-verification bypass, new authority, graph/taxonomy work, source/provider operations, apply, remote mutation, push/merge/PR/release.
+
+## References
+
+- `.10x/specs/command-center-summary-inventory-performance.md`
+- `.10x/specs/command-center-managed-plan-cache-invalidation.md`
+- `.10x/specs/command-center-blocking-route-threading.md`
+- `.10x/specs/command-center-local-inventory.md`
+- `.10x/specs/command-center-local-api-and-server.md`
+- `.10x/specs/compact-delta-plan-artifacts.md`
+- `.10x/specs/compact-duckdb-applied-state.md`
+- `.10x/specs/phase-2a-plan-job-lifecycle.md`
+- `.10x/specs/phase-2a-public-source-planning-service.md`

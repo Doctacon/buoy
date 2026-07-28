@@ -4,6 +4,7 @@ import asyncio
 from contextlib import redirect_stderr
 from dataclasses import dataclass, replace
 import importlib.util
+import inspect
 from io import StringIO
 import json
 import os
@@ -12,7 +13,9 @@ import signal
 import subprocess
 import sys
 import tempfile
-from threading import Thread
+import time
+from threading import Event, Thread
+from typing import Callable
 import unittest
 from unittest.mock import Mock, patch
 
@@ -21,6 +24,7 @@ UI_AVAILABLE = importlib.util.find_spec("fastapi") is not None and importlib.uti
 if UI_AVAILABLE:
     from fastapi.testclient import TestClient
 
+    from buoy_search.applied_state import build_applied_state, save_applied_state
     from buoy_search.command_center_api import (
         CSRF_HEADER,
         MAX_PLAN_JOB_BODY_BYTES,
@@ -49,6 +53,12 @@ if UI_AVAILABLE:
 
 
 class FakeInventory:
+    def __init__(self) -> None:
+        self.invalidations = 0
+
+    def invalidate(self) -> None:
+        self.invalidations += 1
+
     def dashboard(self, *, recent_limit: int = 10):
         return {"resource": "dashboard", "recent_limit": recent_limit}
 
@@ -84,6 +94,48 @@ class FakeInventory:
 
     def list_plan_stale_rows(self, plan_id: str, *, offset: int = 0, limit: int = 50):
         return {"resource": "stale", "plan_id": plan_id, "offset": offset, "limit": limit}
+
+
+class BlockingInventory(FakeInventory):
+    def __init__(self, blocked_resource: str) -> None:
+        super().__init__()
+        self.blocked_resource = blocked_resource
+        self.entered = Event()
+        self.release = Event()
+
+    def _block(self) -> None:
+        self.entered.set()
+        if not self.release.wait(10):
+            raise AssertionError("test did not release blocked inventory request")
+
+    def dashboard(self, *, recent_limit: int = 10):
+        if self.blocked_resource == "dashboard":
+            self._block()
+        return super().dashboard(recent_limit=recent_limit)
+
+    def list_plans(self, *, offset: int = 0, limit: int = 50):
+        if self.blocked_resource == "plans":
+            self._block()
+        return super().list_plans(offset=offset, limit=limit)
+
+
+def _start_threaded_call(
+    call: Callable[[], object],
+) -> tuple[Thread, Event, dict[str, object]]:
+    completed = Event()
+    result: dict[str, object] = {}
+
+    def run() -> None:
+        try:
+            result["response"] = call()
+        except BaseException as exc:
+            result["error"] = exc
+        finally:
+            completed.set()
+
+    thread = Thread(target=run)
+    thread.start()
+    return thread, completed, result
 
 
 @dataclass(frozen=True)
@@ -474,6 +526,44 @@ class CommandCenterApiTests(unittest.TestCase):
         self.assertNotIn(("/api/v1/plans", "POST"), methods)
         self.assertNotIn(("/api/v1/namespaces", "POST"), methods)
 
+    def test_unavailable_state_summary_primitive_keeps_read_only_routes_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = build_applied_state(
+                site_id="example-com",
+                namespace="site-example-com-v1",
+                base_url="https://example.com/docs",
+                last_plan_id="plan_123",
+                last_apply_id="apply_123",
+                updated_at="2026-07-27T00:00:00+00:00",
+                rows=[],
+            )
+            save_applied_state(state, state_root=root / "state")
+            app = create_app(
+                artifacts_root=root / "artifacts", state_root=root / "state"
+            )
+
+            with patch.object(os, "O_NOFOLLOW", None), TestClient(
+                app, base_url="http://localhost"
+            ) as client:
+                dashboard = client.get("/api/v1/dashboard")
+                namespaces = client.get("/api/v1/namespaces")
+                plans = client.get("/api/v1/plans")
+
+        for response in (dashboard, namespaces, plans):
+            self.assertEqual(response.status_code, 200, response.text)
+        self.assertIsNone(dashboard.json()["active_row_count"])
+        self.assertEqual(dashboard.json()["artifact_error_count"], 1)
+        self.assertEqual(namespaces.json()["items"], [])
+        self.assertEqual(plans.json()["items"], [])
+        for errors in (
+            dashboard.json()["artifact_errors"],
+            namespaces.json()["errors"],
+            plans.json()["errors"],
+        ):
+            self.assertEqual([error["code"] for error in errors], ["malformed_state"])
+            self.assertIn("primitives are unavailable", errors[0]["message"])
+
     def test_unsupported_managed_planning_keeps_read_only_app_and_returns_uniform_503(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -647,6 +737,88 @@ class CommandCenterApiTests(unittest.TestCase):
                     with TestClient(app, base_url="http://localhost"):
                         pass
 
+    def test_default_managed_job_publication_is_immediately_discoverable(self) -> None:
+        from types import SimpleNamespace
+
+        from buoy_search.chunker import process_corpus
+        from buoy_search.plan_artifacts import build_plan_artifacts, write_plan_artifacts
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            corpus = root / "fixture-corpus"
+            corpus.mkdir()
+            (corpus / "page.md").write_text(
+                "---\nurl: https://example.com/docs/page\ntitle: Guide\n"
+                "status: 200\ncontent_type: text/markdown\nsource_kind: website\n"
+                "---\n\n# Published guide\n\nImmediately discoverable content.\n",
+                encoding="utf-8",
+            )
+
+            def publish_valid_plan(  # noqa: ANN001
+                _planning_service, request, *, progress_callback=None
+            ):
+                del progress_callback
+                artifacts = build_plan_artifacts(
+                    indexing_plan=process_corpus(corpus),
+                    base_url="https://example.com/docs",
+                    out_dir=request.out_dir,
+                    namespace=request.namespace,
+                    originating_job_id=request.originating_job_id,
+                )
+                write_plan_artifacts(artifacts, request.out_dir)
+                return SimpleNamespace(
+                    summary={
+                        "plan_id": artifacts.plan.plan_id,
+                        "namespace": artifacts.plan.namespace,
+                    },
+                    out_dir=request.out_dir,
+                )
+
+            app = create_app(
+                artifacts_root=root / "artifacts",
+                state_root=root / "state",
+            )
+            with patch(
+                "buoy_search.planning_service.PlanningService.plan",
+                new=publish_valid_plan,
+            ), TestClient(
+                app, base_url="http://localhost", raise_server_exceptions=False
+            ) as client:
+                cached_empty = client.get("/api/v1/plans")
+                token = client.get("/api/v1/csrf-token").json()["csrf_token"]
+                created = client.post(
+                    "/api/v1/plan-jobs",
+                    headers={CSRF_HEADER: token, "Origin": "http://localhost"},
+                    json={
+                        "source_url": "https://example.com/docs",
+                        "namespace": "docs-v1",
+                    },
+                )
+                job_id = created.json()["job_id"]
+                deadline = time.monotonic() + 5
+                while True:
+                    completed = client.get(f"/api/v1/plan-jobs/{job_id}")
+                    if completed.json()["state"] in {"succeeded", "failed", "interrupted"}:
+                        break
+                    if time.monotonic() >= deadline:
+                        self.fail("managed publication did not complete")
+                    time.sleep(0.01)
+                immediately_visible = client.get("/api/v1/plans")
+
+        self.assertEqual(cached_empty.status_code, 200)
+        self.assertEqual(cached_empty.json()["total"], 0)
+        self.assertEqual(created.status_code, 202, created.text)
+        self.assertEqual(completed.status_code, 200, completed.text)
+        self.assertEqual(completed.json()["state"], "succeeded")
+        self.assertEqual(
+            immediately_visible.status_code, 200, immediately_visible.text
+        )
+        self.assertEqual(immediately_visible.json()["total"], 1)
+        self.assertEqual(
+            immediately_visible.json()["items"][0]["plan_id"],
+            completed.json()["plan_id"],
+        )
+
     def test_non_empty_local_service_contract_is_serialized_through_fastapi(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -726,6 +898,150 @@ class CommandCenterApiTests(unittest.TestCase):
                 response = client.get(removed)
                 self.assertEqual(response.status_code, 404)
                 self.assertEqual(response.json()["error"]["code"], "api_route_not_found")
+
+    def test_blocking_service_routes_are_sync_with_async_creation_and_sse_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app, _ = self.make_client(Path(tmp), local_inventory=FakeInventory())
+
+        routes = {
+            (route.path, method): route.endpoint
+            for route in app.routes
+            if hasattr(route, "endpoint")
+            for method in getattr(route, "methods", set())
+        }
+        sync_routes = {
+            ("/api/v1/dashboard", "GET"),
+            ("/api/v1/namespaces", "GET"),
+            ("/api/v1/namespaces/{namespace}", "GET"),
+            ("/api/v1/plans", "GET"),
+            ("/api/v1/plans/{plan_id}", "GET"),
+            ("/api/v1/plans/{plan_id}/chunks", "GET"),
+            ("/api/v1/plans/{plan_id}/stale-rows", "GET"),
+            ("/api/v1/plan-jobs", "GET"),
+            ("/api/v1/plan-jobs/{job_id}", "GET"),
+            ("/api/v1/remote/snapshot", "POST"),
+            ("/api/v1/search", "POST"),
+        }
+        for route in sync_routes:
+            with self.subTest(route=route):
+                self.assertFalse(inspect.iscoroutinefunction(routes[route]))
+        for route in (
+            ("/api/v1/plan-jobs", "POST"),
+            ("/api/v1/plan-jobs/{job_id}/events", "GET"),
+        ):
+            with self.subTest(route=route):
+                self.assertTrue(inspect.iscoroutinefunction(routes[route]))
+
+    def test_blocked_dashboard_does_not_block_health_or_corrupt_structured_errors(self) -> None:
+        inventory = BlockingInventory("dashboard")
+        threads: list[Thread] = []
+        with tempfile.TemporaryDirectory() as tmp:
+            _, client = self.make_client(
+                Path(tmp),
+                local_inventory=inventory,
+                plan_job_service_factory=FakePlanJobService,
+            )
+            with client:
+                blocked, blocked_done, blocked_result = _start_threaded_call(
+                    lambda: client.get("/api/v1/dashboard?recent_limit=4")
+                )
+                threads.append(blocked)
+                try:
+                    self.assertTrue(inventory.entered.wait(5))
+                    health, health_done, health_result = _start_threaded_call(
+                        lambda: client.get("/api/v1/health")
+                    )
+                    missing, missing_done, missing_result = _start_threaded_call(
+                        lambda: client.get("/api/v1/namespaces/missing")
+                    )
+                    threads.extend((health, missing))
+                    self.assertTrue(health_done.wait(5))
+                    self.assertTrue(missing_done.wait(5))
+                    self.assertFalse(inventory.release.is_set())
+                    self.assertFalse(blocked_done.is_set())
+                finally:
+                    inventory.release.set()
+                    for thread in threads:
+                        thread.join(5)
+
+        for thread in threads:
+            self.assertFalse(thread.is_alive())
+        for result in (blocked_result, health_result, missing_result):
+            if "error" in result:
+                raise AssertionError("concurrent request raised outside FastAPI") from result["error"]
+        blocked_response = blocked_result["response"]
+        health_response = health_result["response"]
+        missing_response = missing_result["response"]
+        self.assertEqual(getattr(blocked_response, "status_code"), 200)
+        self.assertEqual(
+            getattr(blocked_response, "json")(),
+            {"resource": "dashboard", "recent_limit": 4},
+        )
+        self.assertEqual(getattr(health_response, "status_code"), 200)
+        self.assertEqual(getattr(health_response, "json")()["status"], "ok")
+        self.assertEqual(getattr(missing_response, "status_code"), 404)
+        self.assertEqual(
+            getattr(missing_response, "json")(),
+            {
+                "error": {
+                    "code": "namespace_not_found",
+                    "message": "Namespace was not found.",
+                }
+            },
+        )
+
+    def test_active_plan_job_detail_is_observable_while_plan_inventory_is_blocked(self) -> None:
+        inventory = BlockingInventory("plans")
+        service = FakePlanJobService(live=True)
+        threads: list[Thread] = []
+        with tempfile.TemporaryDirectory() as tmp:
+            app = create_app(
+                artifacts_root=Path(tmp) / "artifacts",
+                state_root=Path(tmp) / "state",
+                local_inventory=inventory,
+                plan_job_service_factory=lambda: service,
+            )
+            with TestClient(
+                app, base_url="http://localhost", raise_server_exceptions=False
+            ) as client:
+                token = client.get("/api/v1/csrf-token").json()["csrf_token"]
+                created = client.post(
+                    "/api/v1/plan-jobs",
+                    headers={CSRF_HEADER: token, "Origin": "http://localhost"},
+                    json={"source_url": "https://example.com/docs"},
+                )
+                job_id = created.json()["job_id"]
+                blocked, blocked_done, blocked_result = _start_threaded_call(
+                    lambda: client.get("/api/v1/plans")
+                )
+                threads.append(blocked)
+                try:
+                    self.assertTrue(inventory.entered.wait(5))
+                    observed, observed_done, observed_result = _start_threaded_call(
+                        lambda: client.get(f"/api/v1/plan-jobs/{job_id}")
+                    )
+                    threads.append(observed)
+                    self.assertTrue(observed_done.wait(5))
+                    self.assertFalse(inventory.release.is_set())
+                    self.assertFalse(blocked_done.is_set())
+                finally:
+                    inventory.release.set()
+                    for thread in threads:
+                        thread.join(5)
+
+        self.assertEqual(created.status_code, 202)
+        for thread in threads:
+            self.assertFalse(thread.is_alive())
+        for result in (blocked_result, observed_result):
+            if "error" in result:
+                raise AssertionError("concurrent request raised outside FastAPI") from result["error"]
+        blocked_response = blocked_result["response"]
+        observed_response = observed_result["response"]
+        self.assertEqual(getattr(blocked_response, "status_code"), 200)
+        self.assertEqual(getattr(blocked_response, "json")()["resource"], "plans")
+        self.assertEqual(getattr(observed_response, "status_code"), 200)
+        self.assertEqual(getattr(observed_response, "json")()["job_id"], job_id)
+        self.assertEqual(getattr(observed_response, "json")()["state"], "queued")
 
     def test_remote_refresh_and_search_are_explicit_and_safe(self) -> None:
         remote = FakeRemote()

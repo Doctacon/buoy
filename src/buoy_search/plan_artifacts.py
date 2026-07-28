@@ -30,6 +30,9 @@ from buoy_search.applied_state import (
 )
 from buoy_search.config import DEFAULT_EMBEDDING_PRECISION, EMBEDDING_PRECISIONS
 from buoy_search.crawler import namespace_candidate, safe_slug, source_id_for_url, validate_base_url
+from buoy_search.plan_validation import (
+    validate_plan_document as _validate_import_safe_plan_document,
+)
 from buoy_search.source_url import validate_http_url_authority
 from buoy_search.chunker import (
     TURBOPUFFER_SCHEMA,
@@ -1090,90 +1093,9 @@ def _validate_private_free_json(
 
 
 def validate_plan_document(plan: object) -> None:
-    if not isinstance(plan, dict):
-        raise ValueError("plan.json must be an object")
-    required = {
-        "schema_version", "command", "plan_id", "created_at", "artifact_hash",
-        "source", "site_id", "namespace", "namespace_candidate", "crawl_options",
-        "chunk_options", "embedding_model", "embedding_precision", "applied_state",
-        "delta", "diff",
-    }
-    allowed = required | {"originating_job_id"}
-    if set(plan) != required and set(plan) != allowed:
-        raise ValueError("plan.json fields do not match schema v2")
-    if type(plan["schema_version"]) is not int or plan["schema_version"] != PLAN_SCHEMA_VERSION:
-        raise ValueError("unsupported plan schema version")
-    if plan["command"] != "plan" or not _PLAN_ID.fullmatch(str(plan["plan_id"])):
-        raise ValueError("invalid plan command or ID")
-    if not _HEX_SHA256.fullmatch(str(plan["artifact_hash"])):
-        raise ValueError("invalid artifact hash")
-    for key in ("site_id", "namespace", "namespace_candidate", "created_at", "embedding_model"):
-        if not isinstance(plan[key], str) or not plan[key] or plan[key] != plan[key].strip():
-            raise ValueError(f"plan {key} must be a non-empty trimmed string")
-    if _SAFE_SITE_ID.fullmatch(plan["site_id"]) is None:
-        raise ValueError("plan site_id is unsafe")
-    if any(re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", plan[key]) is None for key in ("namespace", "namespace_candidate")):
-        raise ValueError("plan namespace identity is unsafe")
-    try:
-        created = datetime.fromisoformat(plan["created_at"])
-    except ValueError as exc:
-        raise ValueError("plan created_at must be an ISO-8601 timestamp") from exc
-    if created.tzinfo is None or created.utcoffset() != timezone.utc.utcoffset(created):
-        raise ValueError("plan created_at must be a UTC timestamp")
-    if plan["embedding_precision"] not in EMBEDDING_PRECISIONS:
-        raise ValueError("invalid embedding precision")
-    if not isinstance(plan["crawl_options"], dict) or not isinstance(plan["chunk_options"], dict):
-        raise ValueError("plan options must be objects")
-    _validate_private_free_json(plan["crawl_options"], label="crawl options")
-    _validate_private_free_json(plan["chunk_options"], label="chunk options")
-    validate_plan_source(plan["source"])
-    source = plan["source"]
-    expected_site_id = site_id_for_url(str(source["uri"]))
-    expected_namespace_candidate = namespace_candidate(str(source["uri"]))
-    if plan["site_id"] != expected_site_id:
-        raise ValueError("plan site_id does not match source identity")
-    if plan["namespace_candidate"] != expected_namespace_candidate:
-        raise ValueError("plan namespace_candidate does not match source identity")
-    baseline = plan["applied_state"]
-    if not isinstance(baseline, dict) or set(baseline) != {"present", "schema_version", "hash"}:
-        raise ValueError("invalid applied-state descriptor")
-    if (
-        type(baseline["present"]) is not bool
-        or type(baseline["schema_version"]) is not int
-        or baseline["schema_version"] != APPLIED_STATE_SCHEMA_VERSION
-    ):
-        raise ValueError("invalid applied-state descriptor types or schema version")
-    if not _HEX_SHA256.fullmatch(str(baseline["hash"])):
-        raise ValueError("invalid applied-state hash")
-    delta = plan["delta"]
-    if not isinstance(delta, dict) or set(delta) != {
-        "filename", "schema_version", "logical_hash", "upsert_count", "stale_count",
-        "retained_stale_count",
-    }:
-        raise ValueError("invalid delta descriptor")
-    if (
-        delta["filename"] != "delta.duckdb"
-        or type(delta["schema_version"]) is not int
-        or delta["schema_version"] != DELTA_SCHEMA_VERSION
-    ):
-        raise ValueError("invalid delta descriptor identity")
-    if not _HEX_SHA256.fullmatch(str(delta["logical_hash"])):
-        raise ValueError("invalid delta logical hash")
-    for key in ("upsert_count", "stale_count", "retained_stale_count"):
-        if type(delta[key]) is not int or delta[key] < 0:
-            raise ValueError("invalid delta count")
-    normalize_diff(plan["diff"])
-    _validate_diff_counts(plan["diff"], delta)
-    if not baseline["present"] and not plan["diff"]["first_apply"]:
-        raise ValueError("absent applied state requires first-apply diff semantics")
-    identity = artifact_identity(plan)
-    artifact_hash = stable_hash(identity)
-    if artifact_hash != plan["artifact_hash"]:
-        raise ValueError("plan artifact hash does not match")
-    if plan["plan_id"] != f"plan_{artifact_hash[:16]}":
-        raise ValueError("plan ID does not match artifact hash")
-    if "originating_job_id" in plan and _MANAGED_JOB_ID.fullmatch(str(plan["originating_job_id"])) is None:
-        raise ValueError("invalid originating job ID")
+    """Validate metadata through the import-safe boundary used by summaries."""
+
+    _validate_import_safe_plan_document(plan)
 
 
 _SECRET_URI_COMPONENTS = {
