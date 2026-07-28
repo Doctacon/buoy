@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-27
 Updated: 2026-07-27
-Relates-To: .10x/tickets/2026-07-27-implement-summary-inventory-performance.md, .10x/specs/command-center-summary-inventory-performance.md
+Relates-To: .10x/tickets/done/2026-07-27-implement-summary-inventory-performance.md, .10x/specs/command-center-summary-inventory-performance.md
 
 # Command Center Summary Inventory Performance Implementation
 
