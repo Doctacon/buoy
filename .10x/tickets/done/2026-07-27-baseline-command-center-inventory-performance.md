@@ -1,4 +1,4 @@
-Status: open
+Status: done
 Created: 2026-07-27
 Updated: 2026-07-27
 Parent: .10x/tickets/2026-07-27-command-center-inventory-performance-plan.md
@@ -30,7 +30,8 @@ Create a bounded baseline evidence/research artifact under `.10x/evidence/` or `
 - 2026-07-27: Opened from the ratified performance brief; no benchmark executed yet.
 - 2026-07-27: Added the bounded reusable disposable driver `scripts/benchmark_command_center_inventory.py` and its focused test. The driver creates the exact synthetic plan/state/legacy fixture in a system temporary directory, validates the selected delta, measures process-cold plus five same-service warm calls in isolated workers, emits machine-readable JSON, and removes the fixture. It invokes no provider, source, plan, or apply operation.
 - 2026-07-27: Recorded the unchanged-base host baseline and structural observations in `.10x/evidence/2026-07-27-command-center-inventory-performance-baseline.md`. Warm p50 was 678.291 ms Dashboard, 688.501 ms Plans, 685.911 ms Namespaces, 671.639 ms namespace detail; selected full-verification p50 was 3,323.781 ms plan detail, 3,338.170 ms changed page 1, 3,335.544 ms later changed page, and 3,374.436 ms near-end stale page. The ticket remains open for parent verification and reconciliation as requested.
-- 2026-07-27: Repaired the benchmark harness after independent review without changing runtime source. Every timed result is now validated after timing; delta observation covers DuckDB, `os.open`, built-in `open`, and `io.open`/`Path.open` paths and derives its total/boolean from all counters; hardcoded event-loop output was removed; fixed baseline attribution and actual measured checkout are distinct; and permanent tests no longer require baseline scan/materialization/traversal behavior. A complete default-fixture verification validated all eight operations and reproduced zero opens across all four delta counters. Corrected the evidence to seven inventory route handlers serving eight benchmark operations. The ticket remains open.
+- 2026-07-27: Repaired the benchmark harness after independent review without changing runtime source. Every timed result is now validated after timing; delta observation covers DuckDB, `os.open`, built-in `open`, and `io.open`/`Path.open` paths and derives its total/boolean from all counters; hardcoded event-loop output was removed; fixed baseline attribution and actual measured checkout are distinct; and permanent tests no longer require baseline scan/materialization/traversal behavior. A complete default-fixture verification validated all eight operations and reproduced zero opens across all four delta counters. Corrected the evidence to seven inventory route handlers serving eight benchmark operations.
+- 2026-07-27: Independent rereview passed every repaired harness boundary at `.10x/reviews/2026-07-27-command-center-inventory-performance-baseline-review.md`. Runtime `src` remains identical to the base; the repeatable baseline is accepted and this child is closed.
 
 ## Blockers
 

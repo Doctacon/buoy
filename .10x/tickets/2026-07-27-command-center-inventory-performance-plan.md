@@ -12,7 +12,7 @@ Deliver the user-ratified bounded Command Center navigation-performance work fro
 
 ## Child sequence and dependencies
 
-1. `.10x/tickets/2026-07-27-baseline-command-center-inventory-performance.md` freezes the repeatable pre-change fixture/method/results from the untouched `main` source.
+1. `.10x/tickets/done/2026-07-27-baseline-command-center-inventory-performance.md` freezes the repeatable pre-change fixture/method/results from the untouched `main` source.
 2. `.10x/tickets/2026-07-27-implement-summary-inventory-performance.md` implements plan-boundary pruning, aggregate applied-state summaries, and the locked 1.0-second cache after baseline evidence exists.
 3. In parallel after child 2:
    - `.10x/tickets/2026-07-27-integrate-managed-plan-cache-invalidation.md` wires successful managed publication invalidation.
@@ -35,7 +35,8 @@ One child writer operates in the task worktree at a time. Children 3 and 4 may b
 
 ## Progress and notes
 
-- 2026-07-27: User supplied and ratified the complete performance, safety, measurement, documentation, validation, and non-goal contract. Fished active/terminal records and inspected latest hosted `main` source across local inventory, applied state, API routes, managed jobs, prior compact-delta performance evidence, and active specifications. Created three focused active specifications and this bounded execution graph. No benchmark or implementation has started in this shaping turn.
+- 2026-07-27: User supplied and ratified the complete performance, safety, measurement, documentation, validation, and non-goal contract. Fished active/terminal records and inspected latest hosted `main` source across local inventory, applied state, API routes, managed jobs, prior compact-delta performance evidence, and active specifications. Created three focused active specifications and this bounded execution graph. No benchmark or implementation started in that shaping turn.
+- 2026-07-27: Baseline child completed after initial review-driven harness repair and passing rereview. The repeatable full fixture records warm summary p50 671.639–688.501 ms and selected full-verification p50 3,323.781–3,374.436 ms, with repeated scans, 303,093 row objects, legacy descendant traversal, and zero delta opens. Summary-core implementation is unblocked.
 
 ## Blockers
 

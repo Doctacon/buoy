@@ -42,4 +42,4 @@ Live crawls/clones, BigQuery/Snowflake, turbopuffer, remote refresh/search, appr
 - `.10x/specs/command-center-managed-plan-cache-invalidation.md`
 - `.10x/specs/command-center-blocking-route-threading.md`
 - `.10x/specs/command-center-packaging-documentation-ci.md`
-- `.10x/tickets/2026-07-27-baseline-command-center-inventory-performance.md`
+- `.10x/tickets/done/2026-07-27-baseline-command-center-inventory-performance.md`
