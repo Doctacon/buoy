@@ -1,4 +1,4 @@
-Status: open
+Status: done
 Created: 2026-07-27
 Updated: 2026-07-27
 Parent: .10x/tickets/2026-07-27-command-center-inventory-performance-plan.md
@@ -26,7 +26,8 @@ Focused API concurrency and compatibility results with synchronization-based pro
 ## Progress and notes
 
 - 2026-07-27: Opened; dependency not yet executed.
-- 2026-07-27: Dependency is complete. Converted all required synchronous-service endpoints to normal `def` handlers while retaining async bounded plan-job creation and the existing async SSE route/synchronous generator boundary. Added event-coordinated shared-event-loop regressions proving health and exact structured inventory errors complete while dashboard inventory is blocked, and active plan-job detail remains observable while plan inventory is blocked. The structural route-boundary test and 99 focused API/job/SSE/security/remote tests pass; evidence is recorded at `.10x/evidence/2026-07-27-command-center-blocking-route-threading.md`. Ticket remains open and unmoved for required independent review.
+- 2026-07-27: Dependency is complete. Converted all required synchronous-service endpoints to normal `def` handlers while retaining async bounded plan-job creation and the existing async SSE route/synchronous generator boundary. Added event-coordinated shared-event-loop regressions proving health and exact structured inventory errors complete while dashboard inventory is blocked, and active plan-job detail remains observable while plan inventory is blocked. The structural route-boundary test and 99 focused API/job/SSE/security/remote tests pass; evidence is recorded at `.10x/evidence/2026-07-27-command-center-blocking-route-threading.md`.
+- 2026-07-27: Independent review passed with no defect at `.10x/reviews/2026-07-27-command-center-blocking-route-threading-review.md`, including repeated event-coordinated tests and confirmation of bounded Starlette/AnyIO dispatch. This child is closed; final aggregate validation is unblocked.
 
 ## Blockers
 

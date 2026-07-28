@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-27
 Updated: 2026-07-27
-Relates-To: .10x/tickets/2026-07-27-move-blocking-command-center-routes-off-event-loop.md, .10x/specs/command-center-blocking-route-threading.md
+Relates-To: .10x/tickets/done/2026-07-27-move-blocking-command-center-routes-off-event-loop.md, .10x/specs/command-center-blocking-route-threading.md
 
 # Command Center Blocking Route Threading
 
