@@ -28,6 +28,8 @@ Create a bounded baseline evidence/research artifact under `.10x/evidence/` or `
 ## Progress and notes
 
 - 2026-07-27: Opened from the ratified performance brief; no benchmark executed yet.
+- 2026-07-27: Added the bounded reusable disposable driver `scripts/benchmark_command_center_inventory.py` and its focused test. The driver creates the exact synthetic plan/state/legacy fixture in a system temporary directory, validates the selected delta, measures process-cold plus five same-service warm calls in isolated workers, emits machine-readable JSON, and removes the fixture. It invokes no provider, source, plan, or apply operation.
+- 2026-07-27: Recorded the unchanged-base host baseline and structural observations in `.10x/evidence/2026-07-27-command-center-inventory-performance-baseline.md`. Warm p50 was 678.291 ms Dashboard, 688.501 ms Plans, 685.911 ms Namespaces, 671.639 ms namespace detail; selected full-verification p50 was 3,323.781 ms plan detail, 3,338.170 ms changed page 1, 3,335.544 ms later changed page, and 3,374.436 ms near-end stale page. The ticket remains open for parent verification and reconciliation as requested.
 
 ## Blockers
 
