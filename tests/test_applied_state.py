@@ -18,10 +18,12 @@ from buoy_search.applied_state import (
     ApplyRunSummary,
     AppliedStateError,
     AppliedStateRow,
+    AppliedStateSummary,
     acquire_namespace_apply_lock,
     applied_state_paths,
     build_applied_state,
     load_applied_state,
+    load_applied_state_summary,
     load_apply_run_summaries,
     resolve_state_root,
     save_applied_state,
@@ -180,6 +182,151 @@ class AppliedStateStoreTests(unittest.TestCase):
             with duckdb.connect(str(paths.database_path), read_only=True) as connection:
                 self.assertEqual(connection.execute("SELECT schema_version FROM state_schema").fetchall(), [(DUCKDB_STATE_SCHEMA_VERSION,)])
                 self.assertEqual(connection.execute("SELECT count(*) FROM applied_rows").fetchone(), (2,))
+
+    def test_summary_reader_uses_one_read_only_aggregate_connection_for_100k_rows(self) -> None:
+        real_connect = duckdb.connect
+        connections: list[tuple[Path, dict[str, object]]] = []
+        queries: list[str] = []
+        materialized_sizes: list[int] = []
+
+        class TracingConnection:
+            def __init__(self, path, **kwargs):  # noqa: ANN001
+                connections.append((Path(path), kwargs))
+                self.inner = real_connect(path, **kwargs)
+                self.sql = ""
+
+            def __enter__(self):  # noqa: ANN204
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):  # noqa: ANN001
+                self.inner.close()
+
+            def execute(self, sql, parameters=None):  # noqa: ANN001, ANN201
+                self.sql = " ".join(str(sql).split())
+                queries.append(self.sql)
+                if parameters is None:
+                    self.inner.execute(sql)
+                else:
+                    self.inner.execute(sql, parameters)
+                return self
+
+            def fetchall(self):  # noqa: ANN201
+                rows = self.inner.fetchall()
+                materialized_sizes.append(len(rows))
+                return rows
+
+            def fetchone(self):  # noqa: ANN201
+                row = self.inner.fetchone()
+                materialized_sizes.append(0 if row is None else 1)
+                return row
+
+        with tempfile.TemporaryDirectory() as tmp:
+            state_root = Path(tmp)
+            paths = save_applied_state(sample_state(), state_root=state_root)
+            with real_connect(str(paths.database_path)) as connection:
+                connection.execute("DELETE FROM applied_rows")
+                connection.execute(
+                    """
+                    INSERT INTO applied_rows
+                    SELECT 'ts_' || printf('%032x', i),
+                           'https://example.com/docs/' || i,
+                           repeat('a', 64), repeat('b', 64), repeat('c', 64),
+                           'plan_123', '2026-06-20T12:00:00+00:00',
+                           CASE i % 4 WHEN 0 THEN 'active' WHEN 1 THEN 'active'
+                                      WHEN 2 THEN 'retained_stale' ELSE 'deleted' END
+                    FROM range(100000) rows(i)
+                    """
+                )
+                connection.execute("CHECKPOINT")
+            before = file_snapshot(paths.database_path)
+
+            with mock.patch(
+                "buoy_search.applied_state.duckdb.connect", side_effect=TracingConnection
+            ), mock.patch(
+                "buoy_search.applied_state.AppliedStateRow",
+                side_effect=AssertionError("summary constructed a full row"),
+            ):
+                summary = load_applied_state_summary(
+                    database_path=paths.database_path, state_root=state_root
+                )
+
+            self.assertEqual(file_snapshot(paths.database_path), before)
+
+        self.assertEqual(
+            summary,
+            AppliedStateSummary(
+                schema_version=1,
+                site_id="example-com",
+                namespace="site-example-com-v1",
+                base_url="https://example.com/docs/",
+                updated_at="2026-06-20T12:30:00+00:00",
+                last_plan_id="plan_123",
+                last_apply_id="apply_123",
+                active_rows=50_000,
+                retained_stale_rows=25_000,
+                deleted_rows=25_000,
+                total_rows=100_000,
+            ),
+        )
+        self.assertEqual(connections, [(paths.database_path, {"read_only": True})])
+        self.assertEqual(materialized_sizes, [1, 1, 1])
+        self.assertTrue(any("FILTER (WHERE status = 'active')" in sql for sql in queries))
+        self.assertFalse(any("ORDER BY canonical_url" in sql for sql in queries))
+        self.assertFalse(any("SELECT row_id, canonical_url" in sql for sql in queries))
+
+    def test_summary_reader_rejects_unknown_status_identity_and_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            state_root = Path(tmp)
+            paths = save_applied_state(sample_state(), state_root=state_root)
+            with duckdb.connect(str(paths.database_path)) as connection:
+                connection.execute("UPDATE applied_rows SET status = 'unknown'")
+            with self.assertRaisesRegex(AppliedStateError, "unknown status"):
+                load_applied_state_summary(
+                    database_path=paths.database_path, state_root=state_root
+                )
+
+            with duckdb.connect(str(paths.database_path)) as connection:
+                connection.execute("UPDATE applied_rows SET status = 'active'")
+                connection.execute("UPDATE state_metadata SET namespace = 'other'")
+            with self.assertRaisesRegex(AppliedStateError, "path does not match"):
+                load_applied_state_summary(
+                    database_path=paths.database_path, state_root=state_root
+                )
+
+            with duckdb.connect(str(paths.database_path)) as connection:
+                connection.execute(
+                    "UPDATE state_metadata SET namespace = 'site-example-com-v1'"
+                )
+            target = paths.state_dir / "target.duckdb"
+            paths.database_path.rename(target)
+            paths.database_path.symlink_to(target)
+            with self.assertRaisesRegex(AppliedStateError, "regular no-follow"):
+                load_applied_state_summary(
+                    database_path=paths.database_path, state_root=state_root
+                )
+
+    def test_summary_reader_detects_database_replacement_during_inspection(self) -> None:
+        real_connect = duckdb.connect
+        with tempfile.TemporaryDirectory() as tmp:
+            state_root = Path(tmp)
+            paths = save_applied_state(sample_state(), state_root=state_root)
+            replacement = state_root / "replacement.duckdb"
+            replacement.write_bytes(paths.database_path.read_bytes())
+
+            def connect_then_replace(path, **kwargs):  # noqa: ANN001, ANN202
+                connection = real_connect(path, **kwargs)
+                original = paths.database_path.with_name("original.duckdb")
+                paths.database_path.rename(original)
+                replacement.rename(paths.database_path)
+                return connection
+
+            with mock.patch(
+                "buoy_search.applied_state.duckdb.connect", side_effect=connect_then_replace
+            ):
+                with self.assertRaisesRegex(AppliedStateError, "changed during"):
+                    load_applied_state_summary(
+                        database_path=paths.database_path, state_root=state_root
+                    )
 
     def test_apply_summaries_are_append_only_and_do_not_copy_row_snapshots(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

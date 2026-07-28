@@ -79,10 +79,11 @@ class CommandCenterInventoryBenchmarkTests(unittest.TestCase):
                 "delta_io_opens",
             )
 
-            self.assertGreaterEqual(structural["plan_scans"], 1)
-            self.assertGreaterEqual(structural["state_scans"], 1)
-            self.assertGreaterEqual(structural["applied_row_objects"], 0)
-            self.assertIsInstance(structural["legacy_descendants_traversed"], bool)
+            self.assertEqual(structural["plan_scans"], 1)
+            self.assertEqual(structural["state_scans"], 1)
+            self.assertEqual(structural["state_connections"], 3)
+            self.assertEqual(structural["applied_row_objects"], 0)
+            self.assertFalse(structural["legacy_descendants_traversed"])
             self.assertEqual(
                 structural["summary_delta_payload_open_count"],
                 sum(structural[name] for name in delta_counter_names),

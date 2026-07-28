@@ -26,6 +26,8 @@ Record focused commands/results, structural query/traversal/cache-spy observatio
 ## Progress and notes
 
 - 2026-07-27: Opened from the ratified performance contract; implementation waits on baseline evidence.
+- 2026-07-27: Implemented parse-outcome-independent `plan.json` leaf pruning, the separate no-follow/read-only aggregate applied-state summary projection, and the locked per-service bounded-TTL snapshot cache with safe invalidation and one-refresh direct misses. Selected plan paths retain complete `_verify_record` payload and identity verification; summary paths retain zero delta opens.
+- 2026-07-27: Added deterministic traversal, schema/metadata/status/path, symlink/replacement, 100,000-row constant-materialization, cache expiry/invalidation/concurrency/direct-miss, selected replacement, and import-isolation coverage. All 43 focused tests, compile checks, and diff checks pass. The default structural fixture now records one plan scan, one state scan, five read-only state connections, zero applied-row objects, no legacy descendant traversal, and zero delta opens at `.10x/evidence/2026-07-27-command-center-summary-inventory-performance.md`. Ticket remains open for required independent downstream review and integration validation.
 
 ## Blockers
 

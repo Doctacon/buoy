@@ -604,7 +604,7 @@ def structural_observations(fixture: dict[str, Any]) -> dict[str, Any]:
         **counters,
         "summary_sequence": ["dashboard", "namespaces", "plans"],
         "legacy_descendants_traversed": counters["artifact_walk_directories"]
-        > 3 * (int(fixture["counts"]["summary_plans"]) + 2),
+        > int(fixture["counts"]["summary_plans"]) + 2,
         "summary_delta_payload_open_count": delta_open_count,
         "summary_delta_payload_opened": delta_open_count != 0,
     }
