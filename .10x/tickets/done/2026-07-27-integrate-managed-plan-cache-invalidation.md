@@ -1,4 +1,4 @@
-Status: open
+Status: done
 Created: 2026-07-27
 Updated: 2026-07-27
 Parent: .10x/tickets/2026-07-27-command-center-inventory-performance-plan.md
@@ -26,7 +26,8 @@ Focused jobs/API tests with exact success/failure/callback-order observations an
 ## Progress and notes
 
 - 2026-07-27: Opened; dependency not yet executed.
-- 2026-07-27: Implemented the optional framework-independent successful-publication callback and default Command Center wiring to the process-local inventory invalidator. Deterministic tests prove exact post-durable-success ordering, one call, no failure/incomplete/interruption calls, type-only isolation of callback exceptions, retained succeeded artifacts/job state, unchanged zero-argument injected factory construction, and immediate discovery from a previously cached empty inventory. All 79 focused job/API tests and 14 shared-planning/Command Center CLI tests pass; evidence is recorded at `.10x/evidence/2026-07-27-managed-plan-cache-invalidation.md`. Ticket remains open for required independent review and parent integration validation.
+- 2026-07-27: Implemented the optional framework-independent successful-publication callback and default Command Center wiring to the process-local inventory invalidator. Deterministic tests prove exact post-durable-success ordering, one call, no failure/incomplete/interruption calls, type-only isolation of callback exceptions, retained succeeded artifacts/job state, unchanged zero-argument injected factory construction, and immediate discovery from a previously cached empty inventory. All 79 focused job/API tests and 14 shared-planning/Command Center CLI tests pass; evidence is recorded at `.10x/evidence/2026-07-27-managed-plan-cache-invalidation.md`.
+- 2026-07-27: Independent review passed with no blocker at `.10x/reviews/2026-07-27-managed-plan-cache-invalidation-review.md`. Every child criterion is supported; final aggregate validation remains downstream. This child is closed.
 
 ## Blockers
 

@@ -15,7 +15,7 @@ Deliver the user-ratified bounded Command Center navigation-performance work fro
 1. `.10x/tickets/done/2026-07-27-baseline-command-center-inventory-performance.md` freezes the repeatable pre-change fixture/method/results from the untouched `main` source.
 2. `.10x/tickets/done/2026-07-27-implement-summary-inventory-performance.md` implements plan-boundary pruning, aggregate applied-state summaries, and the locked 1.0-second cache after baseline evidence exists.
 3. In parallel after child 2:
-   - `.10x/tickets/2026-07-27-integrate-managed-plan-cache-invalidation.md` wires successful managed publication invalidation.
+   - `.10x/tickets/done/2026-07-27-integrate-managed-plan-cache-invalidation.md` wires successful managed publication invalidation.
    - `.10x/tickets/2026-07-27-move-blocking-command-center-routes-off-event-loop.md` converts compatible blocking handlers and proves responsiveness.
 4. `.10x/tickets/2026-07-27-validate-command-center-inventory-performance.md` reruns the exact benchmark, updates docs, performs complete Python/frontend/package validation, records before/after evidence, obtains independent review, and closes the graph when coherent.
 

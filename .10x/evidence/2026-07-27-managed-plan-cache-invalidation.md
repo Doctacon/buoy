@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-07-27
 Updated: 2026-07-27
-Relates-To: .10x/tickets/2026-07-27-integrate-managed-plan-cache-invalidation.md, .10x/specs/command-center-managed-plan-cache-invalidation.md
+Relates-To: .10x/tickets/done/2026-07-27-integrate-managed-plan-cache-invalidation.md, .10x/specs/command-center-managed-plan-cache-invalidation.md
 
 # Managed Plan Cache Invalidation Integration
 
