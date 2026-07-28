@@ -10,8 +10,10 @@ operation.
 from __future__ import annotations
 
 import argparse
+import builtins
 import gc
 import hashlib
+import io
 import json
 import os
 import platform
@@ -415,6 +417,63 @@ def _rss_bytes() -> int:
     return value if platform.system() == "Darwin" else value * 1024
 
 
+def _validate_operation_result(
+    fixture: dict[str, Any], name: str, result: Any
+) -> None:
+    counts = fixture["counts"]
+    plan_count = int(counts["summary_plans"])
+    namespace_count = int(counts["small_state_databases"]) + 1
+    selected_upserts = int(counts["selected_upserts"])
+    selected_stale = int(counts["selected_stale"])
+
+    if name == "dashboard":
+        valid = (
+            result.plan_count == plan_count
+            and result.namespace_count == namespace_count
+            and result.artifact_error_count == 0
+        )
+    elif name == "plans":
+        valid = result.total == plan_count and not result.errors
+    elif name == "namespaces":
+        valid = (
+            result.total == namespace_count
+            and not result.errors
+            and any(item.namespace == fixture["namespace"] for item in result.items)
+        )
+    elif name == "namespace_detail":
+        valid = (
+            result.summary.namespace == fixture["namespace"]
+            and result.summary.plan_count == plan_count
+            and len(result.plans) == plan_count
+            and result.state is not None
+        )
+    elif name == "plan_detail":
+        valid = (
+            result.summary.plan_id == fixture["selected_plan_id"]
+            and result.payload_verification == "verified"
+        )
+    elif name in {"changed_page_1", "changed_page_later"}:
+        expected_offset = 0 if name == "changed_page_1" else 50
+        valid = (
+            result.total == selected_upserts
+            and result.offset == expected_offset
+            and len(result.items) == min(50, max(0, selected_upserts - expected_offset))
+            and all(item.action == "changed" for item in result.items)
+        )
+    elif name == "stale_near_end":
+        expected_offset = selected_stale - 50
+        valid = (
+            result.total == selected_stale
+            and result.offset == expected_offset
+            and len(result.items) == 50
+            and all(item.category == "stale" for item in result.items)
+        )
+    else:
+        raise ValueError(f"unknown benchmark operation: {name}")
+    if not valid:
+        raise AssertionError(f"benchmark operation returned an invalid full-fixture result: {name}")
+
+
 def measure_operation(fixture: dict[str, Any], name: str, *, warm_runs: int = 5) -> dict[str, Any]:
     service = LocalInventoryService(
         artifacts_root=fixture["artifacts_root"], state_root=fixture["state_root"]
@@ -425,6 +484,7 @@ def measure_operation(fixture: dict[str, Any], name: str, *, warm_runs: int = 5)
         started = time.perf_counter()
         result = _operation(service, fixture, name)
         timings.append((time.perf_counter() - started) * 1_000)
+        _validate_operation_result(fixture, name, result)
         del result
     return {
         "operation": name,
@@ -442,8 +502,10 @@ def structural_observations(fixture: dict[str, Any]) -> dict[str, Any]:
     counters = {
         "plan_scans": 0,
         "state_scans": 0,
-        "delta_connections": 0,
-        "delta_file_opens": 0,
+        "delta_duckdb_connections": 0,
+        "delta_os_opens": 0,
+        "delta_builtin_opens": 0,
+        "delta_io_opens": 0,
         "state_connections": 0,
         "applied_row_objects": 0,
         "artifact_walk_directories": 0,
@@ -453,7 +515,9 @@ def structural_observations(fixture: dict[str, Any]) -> dict[str, Any]:
     real_discover_states = local_module._discover_states
     real_connect = duckdb.connect
     real_applied_row = state_module.AppliedStateRow
-    real_open = os.open
+    real_os_open = os.open
+    real_builtin_open = builtins.open
+    real_io_open = io.open
     real_walk = os.walk
 
     def discover_plans(root: Path):
@@ -464,10 +528,13 @@ def structural_observations(fixture: dict[str, Any]) -> dict[str, Any]:
         counters["state_scans"] += 1
         return real_discover_states(root)
 
+    def is_delta_path(path: object) -> bool:
+        return isinstance(path, (str, os.PathLike)) and Path(path).name == "delta.duckdb"
+
     def connect(path: str, *args: Any, **kwargs: Any):
         name = Path(path).name
         if name == "delta.duckdb":
-            counters["delta_connections"] += 1
+            counters["delta_duckdb_connections"] += 1
         elif name == "state.duckdb":
             counters["state_connections"] += 1
         return real_connect(path, *args, **kwargs)
@@ -476,10 +543,20 @@ def structural_observations(fixture: dict[str, Any]) -> dict[str, Any]:
         counters["applied_row_objects"] += 1
         return real_applied_row(*args, **kwargs)
 
-    def open_file(path: str | os.PathLike[str], *args: Any, **kwargs: Any):
-        if Path(path).name == "delta.duckdb":
-            counters["delta_file_opens"] += 1
-        return real_open(path, *args, **kwargs)
+    def os_open(path: str | os.PathLike[str], *args: Any, **kwargs: Any):
+        if is_delta_path(path):
+            counters["delta_os_opens"] += 1
+        return real_os_open(path, *args, **kwargs)
+
+    def builtin_open(path: object, *args: Any, **kwargs: Any):
+        if is_delta_path(path):
+            counters["delta_builtin_opens"] += 1
+        return real_builtin_open(path, *args, **kwargs)
+
+    def io_open(path: object, *args: Any, **kwargs: Any):
+        if is_delta_path(path):
+            counters["delta_io_opens"] += 1
+        return real_io_open(path, *args, **kwargs)
 
     def walk(top: str | os.PathLike[str], *args: Any, **kwargs: Any) -> Iterator[Any]:
         category = (
@@ -495,7 +572,9 @@ def structural_observations(fixture: dict[str, Any]) -> dict[str, Any]:
     local_module._discover_states = discover_states
     duckdb.connect = connect
     state_module.AppliedStateRow = applied_row
-    os.open = open_file
+    os.open = os_open
+    builtins.open = builtin_open
+    io.open = io_open
     os.walk = walk
     try:
         service = LocalInventoryService(
@@ -509,20 +588,25 @@ def structural_observations(fixture: dict[str, Any]) -> dict[str, Any]:
         local_module._discover_states = real_discover_states
         duckdb.connect = real_connect
         state_module.AppliedStateRow = real_applied_row
-        os.open = real_open
+        os.open = real_os_open
+        builtins.open = real_builtin_open
+        io.open = real_io_open
         os.walk = real_walk
 
+    delta_open_counter_names = (
+        "delta_duckdb_connections",
+        "delta_os_opens",
+        "delta_builtin_opens",
+        "delta_io_opens",
+    )
+    delta_open_count = sum(counters[name] for name in delta_open_counter_names)
     return {
         **counters,
         "summary_sequence": ["dashboard", "namespaces", "plans"],
         "legacy_descendants_traversed": counters["artifact_walk_directories"]
         > 3 * (int(fixture["counts"]["summary_plans"]) + 2),
-        "summary_delta_payload_opened": counters["delta_connections"] != 0,
-        "event_loop": {
-            "observation": "All eight measured API route handlers are async functions that call the synchronous inventory method directly.",
-            "source": "src/buoy_search/command_center_api.py:712-760",
-            "blocking_work_offloaded": False,
-        },
+        "summary_delta_payload_open_count": delta_open_count,
+        "summary_delta_payload_opened": delta_open_count != 0,
     }
 
 
@@ -547,6 +631,25 @@ def _worker(args: argparse.Namespace) -> int:
     return 0
 
 
+def _measured_checkout() -> dict[str, Any]:
+    repository = Path(__file__).resolve().parents[1]
+    commit = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    tracked_changes = bool(
+        subprocess.run(
+            ["git", "-C", str(repository), "status", "--porcelain", "--untracked-files=no"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
+    return {"commit": commit, "tracked_changes": tracked_changes}
+
+
 def _host() -> dict[str, Any]:
     return {
         "os": platform.platform(),
@@ -560,6 +663,7 @@ def _host() -> dict[str, Any]:
 def run_benchmark(*, warm_runs: int = 5) -> dict[str, Any]:
     if warm_runs < 5:
         raise ValueError("the baseline requires at least five warm runs")
+    measured_checkout = _measured_checkout()
     with tempfile.TemporaryDirectory(prefix="buoy-command-center-baseline-") as tmp:
         root = Path(tmp)
         fixture = build_fixture(root)
@@ -592,7 +696,8 @@ def run_benchmark(*, warm_runs: int = 5) -> dict[str, Any]:
             text=True,
         )
         return {
-            "base_commit": BASE_COMMIT,
+            "baseline_attribution_commit": BASE_COMMIT,
+            "measured_checkout": measured_checkout,
             "host": _host(),
             "fixture": fixture["counts"],
             "method": {

@@ -42,10 +42,11 @@ The driver:
 4. records the first service call as process-cold, without attempting to drop OS filesystem caches;
 5. records the next five calls against the same service and fixture as warm repetitions;
 6. computes warm p50 with `statistics.median` over those five values;
-7. measures wall time with `time.perf_counter`; and
-8. records process `ru_maxrss`, including interpreter/import/runtime memory, normalized to bytes.
+7. validates every returned full-fixture result after stopping its timer, failing the worker rather than retaining a timing for an invalid response;
+8. measures wall time with `time.perf_counter`; and
+9. records process `ru_maxrss`, including interpreter/import/runtime memory, normalized to bytes.
 
-The exact default fixture parameters are constants/default arguments in the committed driver. Its stdout is the complete machine-readable JSON result. The measurement used no private artifacts and retained no fixture, database, legacy tree, browser profile, or raw JSON log.
+The exact default fixture parameters are constants/default arguments in the committed driver. Its stdout is the complete machine-readable JSON result. Repaired output labels the fixed comparison attribution as `baseline_attribution_commit` and separately emits the current Git `measured_checkout` commit plus whether tracked changes were present. The original timing run predates that distinction, so its actual checkout was not recorded and is not inferred here. The measurement used no private artifacts and retained no fixture, database, legacy tree, browser profile, or raw JSON log.
 
 ## Results
 
@@ -78,20 +79,36 @@ A traced `Dashboard → Namespaces → Plans` sequence against one service produ
 - 33 state-walk directory yields.
 - 30 state DuckDB connections, or two connections per database per scan.
 - 303,093 `AppliedStateRow` constructions, exactly `101,031 rows × 3 scans`.
-- 0 delta DuckDB connections, 0 Python `os.open` calls for any `delta.duckdb`, and 0 summary delta payload opens; the focused driver test separately confirmed sentinel bytes remained unchanged.
+- 0 delta DuckDB connections, 0 `os.open` calls, 0 built-in `open` calls, and 0 `io.open`/`Path.open` calls for any `delta.duckdb`. `summary_delta_payload_open_count` is derived from all four counters and was 0; the focused driver test separately confirmed sentinel bytes remained unchanged.
 
 Source and focused-test inspection additionally show:
 
 - `_snapshot()` calls `_discover_plans()` and `_discover_states()` on every invocation.
 - State discovery first reads metadata, then calls `load_applied_state()`, which executes the full ordered applied-row query and constructs one `AppliedStateRow` per row.
 - Each selected plan detail/chunk/stale request first performs the same summary snapshot, then `_verify_record()` opens exactly the selected delta read-only and fully streams/verifies it before returning the requested bounded window.
-- The eight measured FastAPI inventory handlers are `async def` handlers that directly invoke these synchronous filesystem/DuckDB methods. The blocking work is therefore executed on the endpoint event-loop thread in this baseline (`src/buoy_search/command_center_api.py:712-760`).
+- Seven FastAPI inventory route handlers are `async def` handlers that directly invoke these synchronous filesystem/DuckDB methods (`src/buoy_search/command_center_api.py:712-760`). The benchmark has eight operations because changed page 1 and changed page later both exercise the same chunks route. This source observation indicates baseline event-loop-thread execution; it is deliberately not emitted as a hardcoded dynamic harness result.
 
 ## What this supports or challenges
 
 This supports the child ticket's pre-change baseline and a reproducible before/after comparison. It shows that current warm summary navigation is approximately 672–689 ms p50 on this host, repeated summary navigation does not reuse inventory work, schema-v1 descendants are traversed, applied state is fully materialized, and selected full verification remains a separate approximately 3.32–3.37 second p50 cost.
 
 The run recorded exactly zero provider, source, plan, and apply operations.
+
+## Harness repair verification
+
+After independent review, the repaired harness was exercised against the complete default disposable fixture. All eight operations returned valid results through the new post-timing validator. A separate full-fixture structural run reproduced 3 plan scans, 3 state scans, 3,405 artifact directory yields, 33 state directory yields, 30 state connections, and 303,093 applied-row constructions. Each of the four delta open counters was zero, and their derived total/boolean were respectively `0` and `false`. The focused unittest suite also proves an invalid timed result is rejected and keeps baseline-only scan/materialization/traversal quantities out of permanent assertions.
+
+Commands:
+
+```bash
+uv run python -m unittest tests.test_command_center_inventory_benchmark -v
+uv run python - <<'PY'
+# Build the default fixture in TemporaryDirectory, call measure_operation(..., warm_runs=1)
+# for every OPERATIONS entry, then call structural_observations(fixture).
+PY
+```
+
+The complete-fixture verification retained no generated artifact or raw output file.
 
 ## Limits
 
@@ -100,4 +117,5 @@ The run recorded exactly zero provider, source, plan, and apply operations.
 - Results are observational for this host and fixture, not portable CI thresholds.
 - The selected fixture has 100 changed rows and 100,000 stale rows. It exercises early/later changed windows and a near-end stale window but is not a distribution model of production content sizes.
 - Runtime tracing used Python-level spies; it establishes calls/materialization, not physical disk-block reads below DuckDB or the OS cache.
-- Event-loop behavior is established by route/source structure, not a concurrent-load latency experiment.
+- Event-loop behavior is established by route/source structure, not a concurrent-load latency experiment. The harness no longer emits the prior hardcoded `blocking_work_offloaded: false` value.
+- The original timing JSON recorded only fixed baseline attribution. The precise checkout of that historical run is unavailable; repaired future runs emit actual checkout metadata separately.

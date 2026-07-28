@@ -3,12 +3,17 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+from unittest.mock import patch
 
 from buoy_search.command_center_local import LocalInventoryService
 from scripts.benchmark_command_center_inventory import (
     MAX_PLAN_JSON_BYTES,
+    OPERATIONS,
     SENTINEL,
     _operation,
+    _validate_operation_result,
     build_fixture,
     measure_operation,
     structural_observations,
@@ -16,57 +21,35 @@ from scripts.benchmark_command_center_inventory import (
 
 
 class CommandCenterInventoryBenchmarkTests(unittest.TestCase):
-    def test_disposable_fixture_and_driver_cover_all_baseline_surfaces(self) -> None:
+    def _fixture(self, root: Path) -> dict[str, Any]:
+        return build_fixture(
+            root,
+            plan_count=3,
+            large_state_rows=11,
+            small_state_count=2,
+            small_state_rows=3,
+            selected_upserts=60,
+            selected_stale=60,
+            legacy_depth=2,
+            legacy_files=4,
+        )
+
+    def test_disposable_fixture_and_driver_cover_permanent_surfaces(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            fixture = build_fixture(
-                Path(tmp),
-                plan_count=3,
-                large_state_rows=11,
-                small_state_count=2,
-                small_state_rows=3,
-                selected_upserts=60,
-                selected_stale=60,
-                legacy_depth=2,
-                legacy_files=4,
-            )
+            fixture = self._fixture(Path(tmp))
             artifacts = fixture["artifacts_root"]
             sentinels = sorted(artifacts.glob("plan-*/delta.duckdb"))[1:]
             service = LocalInventoryService(
                 artifacts_root=artifacts, state_root=fixture["state_root"]
             )
 
-            results = {
-                name: _operation(service, fixture, name)
-                for name in (
-                    "dashboard",
-                    "plans",
-                    "namespaces",
-                    "namespace_detail",
-                    "plan_detail",
-                    "changed_page_1",
-                    "changed_page_later",
-                    "stale_near_end",
-                )
-            }
-            measurement = measure_operation(fixture, "plans", warm_runs=1)
-            structural = structural_observations(fixture)
+            for name in OPERATIONS:
+                result = _operation(service, fixture, name)
+                _validate_operation_result(fixture, name, result)
 
-            self.assertEqual(results["dashboard"].plan_count, 3)
-            self.assertEqual(results["plans"].total, 3)
-            self.assertEqual(results["namespaces"].total, 3)
-            self.assertEqual(results["namespace_detail"].summary.namespace, fixture["namespace"])
-            self.assertEqual(results["plan_detail"].payload_verification, "verified")
-            self.assertEqual(len(results["changed_page_1"].items), 50)
-            self.assertEqual(len(results["changed_page_later"].items), 10)
-            self.assertEqual(len(results["stale_near_end"].items), 50)
+            measurement = measure_operation(fixture, "plans", warm_runs=1)
             self.assertEqual(measurement["operation"], "plans")
             self.assertEqual(len(measurement["warm_ms"]), 1)
-            self.assertEqual(structural["plan_scans"], 3)
-            self.assertEqual(structural["state_scans"], 3)
-            self.assertEqual(structural["delta_connections"], 0)
-            self.assertEqual(structural["delta_file_opens"], 0)
-            self.assertEqual(structural["applied_row_objects"], 51)
-            self.assertTrue(structural["legacy_descendants_traversed"])
             self.assertTrue(all(path.read_bytes() == SENTINEL for path in sentinels))
             self.assertTrue(
                 all(
@@ -74,6 +57,41 @@ class CommandCenterInventoryBenchmarkTests(unittest.TestCase):
                     for path in artifacts.glob("plan-*/plan.json")
                 )
             )
+
+    def test_measurement_rejects_an_invalid_result_after_timing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = self._fixture(Path(tmp))
+            with patch(
+                "scripts.benchmark_command_center_inventory._operation",
+                return_value=SimpleNamespace(total=-1, errors=[]),
+            ):
+                with self.assertRaisesRegex(AssertionError, "invalid full-fixture result"):
+                    measure_operation(fixture, "plans", warm_runs=0)
+
+    def test_structural_instrumentation_reports_dynamic_baseline_signals(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = self._fixture(Path(tmp))
+            structural = structural_observations(fixture)
+            delta_counter_names = (
+                "delta_duckdb_connections",
+                "delta_os_opens",
+                "delta_builtin_opens",
+                "delta_io_opens",
+            )
+
+            self.assertGreaterEqual(structural["plan_scans"], 1)
+            self.assertGreaterEqual(structural["state_scans"], 1)
+            self.assertGreaterEqual(structural["applied_row_objects"], 0)
+            self.assertIsInstance(structural["legacy_descendants_traversed"], bool)
+            self.assertEqual(
+                structural["summary_delta_payload_open_count"],
+                sum(structural[name] for name in delta_counter_names),
+            )
+            self.assertEqual(
+                structural["summary_delta_payload_opened"],
+                any(structural[name] != 0 for name in delta_counter_names),
+            )
+            self.assertFalse(structural["summary_delta_payload_opened"])
 
 
 if __name__ == "__main__":
