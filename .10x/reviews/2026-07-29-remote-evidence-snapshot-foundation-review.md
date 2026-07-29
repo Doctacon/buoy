@@ -2,7 +2,7 @@ Status: recorded
 Created: 2026-07-29
 Updated: 2026-07-29
 Target: work/remote-evidence-snapshot-foundation diff from 606c168389e28b09105e8eb139f2cde063994a83
-Verdict: concerns
+Verdict: pass
 
 # Remote Evidence Snapshot Foundation Review History
 
@@ -72,9 +72,17 @@ The final repair replaces the pre-publication hash/status-only pass with a compl
 
 No archive-building test was added to the normal suite. Existing release-test conventions inspect package configuration and release artifacts without running a nested repository build; adding `uv build` to ordinary unit discovery would create repository artifacts and materially slow every suite run. The provider-free manual `uv build` plus exact wheel/sdist inventory remains an independently repeated, non-blocking validation limit: 72 wheel entries and 168 sdist entries, all evidence modules/docs/tests present where required, and no state/snapshot/node_modules content.
 
-## Current verdict
+## Final independent acceptance
 
-**Concerns addressed; final repair implemented and validated; independent final acceptance remains with the parent.** This history does not self-ratify the final repair. The owning ticket remains open for fresh acceptance review and closure decision.
+A fresh-context reviewer inspected final implementation commit `d517e860ec2af791f647eca7c80fb2f13b1d9805`, reran focused corruption/retry/provider-shape checks, the 250-test focused suite, the 854-test full suite, lock/ranking/C6/diff checks, and returned **pass** with no blocker or significant finding.
+
+The reviewer confirmed that both newly written and retained ledgers receive a final exact remote ledger-to-locked-local validation immediately before catalog publication. That pass revalidates schema, deterministic row/source/branch/site/ordinal identity, per-source fingerprints and counts, and complete branch reconciliation. The final branch parent/write-marker comparison follows it; only then may the conditional `state=complete` catalog insert occur. New-ledger hash mutation and retained-ledger provenance mutation regressions both fail without a catalog row.
+
+The reviewer also re-confirmed SDK datetime normalization, canonical `last_write_at`/`updated_at` drift detection, exact deterministic retry, count/byte-bounded writes, streaming hash state, remote-only authentication, internal namespace filtering, factual reuse activity, missing-manifest rejection, and provider-inert imports. No repository file was modified by the reviewer.
+
+## Verdict
+
+**Pass.** Final implementation commit `d517e860ec2af791f647eca7c80fb2f13b1d9805` satisfies the active Phase 3A specification. Parent-observed final validation subsequently passed 195 focused tests, 854 full-suite tests with 39 skips, both repository validators, locked sync/lock checks, wheel/sdist inventory, provider-inert imports/help, environment restoration, and diff checks.
 
 ## Residual risk
 

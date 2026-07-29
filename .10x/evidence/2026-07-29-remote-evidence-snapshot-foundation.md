@@ -1,13 +1,13 @@
 Status: recorded
 Created: 2026-07-29
 Updated: 2026-07-29
-Relates-To: .10x/tickets/2026-07-29-implement-remote-evidence-snapshot-foundation.md, .10x/specs/remote-evidence-snapshots.md
+Relates-To: .10x/tickets/done/2026-07-29-implement-remote-evidence-snapshot-foundation.md, .10x/specs/remote-evidence-snapshots.md
 
 # Remote Evidence Snapshot Foundation
 
 ## What was observed
 
-Graph Phase 3A is implemented on `work/remote-evidence-snapshot-foundation` from base commit `606c168389e28b09105e8eb139f2cde063994a83` (`origin/main` fetched 2026-07-29). Initial implementation commit `cf37f5fff20cc05ffe561cbf3010165e779e74eb` received two independent fail reviews; repair commit `89a01bd7e23323d7e84088f5d504bf9a69b659fc` fixed those findings but a fresh re-review found write-marker and retry gaps. The second repair is `5a3a7c81c4f88b806897449465ff78e01d10a426`; the final pre-publication exact-ledger repair is the commit containing this updated record.
+Graph Phase 3A is implemented on `work/remote-evidence-snapshot-foundation` from base commit `606c168389e28b09105e8eb139f2cde063994a83` (`origin/main` fetched 2026-07-29). Initial implementation commit `cf37f5fff20cc05ffe561cbf3010165e779e74eb` received two independent fail reviews; repair commit `89a01bd7e23323d7e84088f5d504bf9a69b659fc` fixed those findings but a fresh re-review found write-marker and retry gaps. The second repair is `5a3a7c81c4f88b806897449465ff78e01d10a426`; the final independently accepted implementation commit is `d517e860ec2af791f647eca7c80fb2f13b1d9805`. A later record-only closure commit moves the owning ticket to `done` and records final acceptance.
 
 The installed and locked official provider SDK is `turbopuffer==2.4.0`. The implementation uses `client.namespace(destination).branch_from(source_namespace=source)`, explicit strong ordered queries, `limit=10_000`, metadata reads, conditional ledger ownership/catalog completion writes, and no provider import during ordinary module import/help. No live provider call was made.
 
@@ -78,6 +78,8 @@ All commands ran from the task worktree after the repair:
 - `buoy evidence estimate|snapshot|verify --help` — pass without credentials/provider import.
 - Restore `rm -rf dist web/node_modules; uv sync --locked; uv lock --check` — pass.
 - Final `git diff --check` — pass.
+
+Parent-observed closure validation after the independent pass repeated the required boundary: 195 focused tests passed in 22.828s; full discovery passed 854 tests in 106.296s with 39 skips; ranking and C6 validators, locked sync/lock checks, package build/inventory (72 wheel and 168 sdist entries), provider-inert imports and all evidence help paths, restoration, diff check, and clean branch status all passed.
 
 One initial focused command used the prompt's suggested `tests.test_apply` name, which does not exist in this repository, and failed during test-module import. It was corrected to the repository's `tests.test_apply_cli`; the 241-test focused suite then passed as recorded above.
 
