@@ -15,7 +15,12 @@ from unittest.mock import MagicMock, patch
 
 from buoy_search.applied_state import AppliedStateRow, build_applied_state, save_applied_state
 from buoy_search.chunker import process_corpus
-from buoy_search.command_center_local import InventoryLookupError, LocalInventoryService
+from buoy_search.command_center_local import (
+    ARTIFACT_ERROR_SAMPLE_LIMIT,
+    InventoryLookupError,
+    LocalInventoryService,
+    SafeError,
+)
 from buoy_search.plan_artifacts import build_plan_artifacts, write_plan_artifacts
 
 
@@ -261,6 +266,68 @@ class CompactDeltaInventoryTests(unittest.TestCase):
         LocalInventoryService(cache_ttl=0.5)
         LocalInventoryService(cache_ttl=2.0)
 
+    def test_large_artifact_error_inventory_is_sampled_and_paginated_from_cached_snapshot(self) -> None:
+        errors = [
+            SafeError(
+                code=f"error_{index % 7}",
+                message=("Needle diagnostic " if index % 100 == 0 else "Safe diagnostic ")
+                + str(index),
+                artifact_id=f"artifact-{9_999 - index:05d}",
+            )
+            for index in range(10_000)
+        ]
+        expected = sorted(errors, key=lambda item: (item.code, item.artifact_id))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts", state_root=root / "state"
+            )
+            with patch(
+                "buoy_search.command_center_local._discover_plans",
+                return_value=([], errors),
+            ) as plans, patch(
+                "buoy_search.command_center_local._discover_states",
+                return_value=([], [], set()),
+            ) as states, patch(
+                "buoy_search.command_center_local._verify_plan_artifacts",
+                side_effect=AssertionError("artifact diagnostics must not verify deltas"),
+            ) as verify:
+                dashboard = service.dashboard()
+                plans_inventory = service.list_plans()
+                namespaces_inventory = service.list_namespaces()
+                first_page = service.list_artifact_errors(limit=50)
+                filtered = service.list_artifact_errors(offset=5, limit=7, q="NEEDLE")
+                by_code = service.list_artifact_errors(limit=100, q="ERROR_3")
+
+        self.assertEqual((plans.call_count, states.call_count, verify.call_count), (1, 1, 0))
+        for sample in (
+            dashboard.artifact_errors,
+            plans_inventory.errors,
+            namespaces_inventory.errors,
+        ):
+            self.assertEqual(len(sample), ARTIFACT_ERROR_SAMPLE_LIMIT)
+            self.assertEqual(sample, expected[:ARTIFACT_ERROR_SAMPLE_LIMIT])
+        self.assertEqual(dashboard.artifact_error_count, 10_000)
+        self.assertTrue(dashboard.artifact_errors_truncated)
+        for inventory in (plans_inventory, namespaces_inventory):
+            self.assertEqual(inventory.error_total, 10_000)
+            self.assertTrue(inventory.errors_truncated)
+        self.assertEqual(first_page.items, expected[:50])
+        self.assertEqual((first_page.total, first_page.offset, first_page.limit), (10_000, 0, 50))
+        matching = [error for error in expected if "needle" in error.message.casefold()]
+        self.assertEqual(filtered.items, matching[5:12])
+        self.assertEqual((filtered.total, filtered.offset, filtered.limit), (100, 5, 7))
+        code_matching = [error for error in expected if error.code == "error_3"]
+        self.assertEqual(by_code.items, code_matching[:100])
+        self.assertEqual(by_code.total, len(code_matching))
+        for call in (
+            lambda: service.list_artifact_errors(offset=-1),
+            lambda: service.list_artifact_errors(limit=101),
+            lambda: service.list_artifact_errors(q="x" * 257),
+        ):
+            with self.subTest(call=call), self.assertRaises(InventoryLookupError):
+                call()
+
     def test_slow_rebuild_is_immediately_expired_and_exposes_external_plan(self) -> None:
         import buoy_search.command_center_local as local_module
 
@@ -388,8 +455,12 @@ class CompactDeltaInventoryTests(unittest.TestCase):
 
         self.assertIsNone(dashboard.active_row_count)
         self.assertEqual(dashboard.artifact_error_count, 1)
+        self.assertFalse(dashboard.artifact_errors_truncated)
         self.assertEqual(namespaces.items, [])
         self.assertEqual(plans.items, [])
+        for inventory in (namespaces, plans):
+            self.assertEqual(inventory.error_total, 1)
+            self.assertFalse(inventory.errors_truncated)
         for errors in (dashboard.artifact_errors, namespaces.errors, plans.errors):
             self.assertEqual([error.code for error in errors], ["malformed_state"])
             self.assertIn("primitives are unavailable", errors[0].message)
@@ -504,6 +575,8 @@ inventory = service.list_plans()
 if inventory.total != 1 or inventory.items[0].plan_id != plan_id:
     raise SystemExit('valid schema-v2 plan was not summary-qualified')
 service.dashboard()
+service.list_namespaces()
+service.list_artifact_errors()
 forbidden = {
     'buoy_search.apply', 'buoy_search.bigquery_relation', 'buoy_search.command_center_remote',
     'buoy_search.crawler', 'buoy_search.database_relation', 'buoy_search.duckdb_relation',
@@ -900,11 +973,30 @@ if loaded:
             )
             inventory = service.list_namespaces()
             errors = service.list_namespaces(local_status="error")
+            unknown = service.list_namespaces(source_kind="unknown")
+            unknown_errors = service.list_namespaces(
+                source_kind="unknown", local_status="error"
+            )
+            known_source_totals = {
+                kind: service.list_namespaces(source_kind=kind).total
+                for kind in ("website", "github_repo", "document", "database")
+            }
 
         self.assertEqual([item.namespace for item in inventory.items], ["error-namespace"])
         self.assertEqual([item.namespace for item in errors.items], ["error-namespace"])
+        self.assertEqual([item.namespace for item in unknown.items], ["error-namespace"])
+        self.assertEqual(
+            [item.namespace for item in unknown_errors.items], ["error-namespace"]
+        )
         self.assertEqual(errors.items[0].local_status, "error")
+        self.assertIsNone(errors.items[0].source)
         self.assertEqual(errors.total, 1)
+        self.assertEqual(unknown.total, 1)
+        self.assertEqual(unknown_errors.total, 1)
+        self.assertEqual(
+            known_source_totals,
+            {"website": 0, "github_repo": 0, "document": 0, "database": 0},
+        )
         self.assertEqual(
             {error.code for error in inventory.errors},
             {"malformed_plan", "malformed_state"},

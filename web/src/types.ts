@@ -143,6 +143,8 @@ export interface PlanInventory {
   offset: number
   limit: number
   errors: ArtifactError[]
+  error_total: number
+  errors_truncated: boolean
 }
 
 export type LocalNamespaceStatus = 'planned' | 'applied' | 'pending_changes' | 'conflict' | 'error'
@@ -191,6 +193,15 @@ export interface NamespaceInventory {
   offset: number
   limit: number
   errors: ArtifactError[]
+  error_total: number
+  errors_truncated: boolean
+}
+
+export interface ArtifactErrorInventory {
+  items: ArtifactError[]
+  total: number
+  offset: number
+  limit: number
 }
 
 export interface DashboardData {
@@ -203,6 +214,7 @@ export interface DashboardData {
   recent_plans: PlanSummary[]
   attention_items: Warning[]
   artifact_errors: ArtifactError[]
+  artifact_errors_truncated: boolean
 }
 
 export interface Capabilities {

@@ -32,6 +32,7 @@ MAX_PAGE_SIZE = 100
 MAX_PREVIEW_CHARS = 20_000
 MAX_CITATION_CHARS = 2_000
 MAX_FILTER_CHARS = 256
+ARTIFACT_ERROR_SAMPLE_LIMIT = 20
 SOURCE_KINDS = frozenset({"website", "github_repo", "document", "database", "unknown"})
 LOCAL_STATUSES = frozenset({"planned", "applied", "pending_changes", "conflict", "error"})
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -215,6 +216,8 @@ class PlanInventory:
     offset: int
     limit: int
     errors: list[SafeError]
+    error_total: int = 0
+    errors_truncated: bool = False
 
 
 @dataclass(frozen=True)
@@ -224,6 +227,16 @@ class NamespaceInventory:
     offset: int
     limit: int
     errors: list[SafeError]
+    error_total: int = 0
+    errors_truncated: bool = False
+
+
+@dataclass(frozen=True)
+class ArtifactErrorInventory:
+    items: list[SafeError]
+    total: int
+    offset: int
+    limit: int
 
 
 @dataclass(frozen=True)
@@ -283,6 +296,7 @@ class Dashboard:
     recent_plans: list[PlanSummary]
     attention_items: list[InventoryWarning]
     artifact_errors: list[SafeError]
+    artifact_errors_truncated: bool = False
 
 
 @dataclass(frozen=True)
@@ -375,7 +389,37 @@ class LocalInventoryService:
             )
         ]
         items = [record.summary for record in records]
-        return PlanInventory(items[offset : offset + limit], len(items), offset, limit, snapshot.errors)
+        error_sample = snapshot.errors[:ARTIFACT_ERROR_SAMPLE_LIMIT]
+        return PlanInventory(
+            items[offset : offset + limit],
+            len(items),
+            offset,
+            limit,
+            error_sample,
+            len(snapshot.errors),
+            len(error_sample) < len(snapshot.errors),
+        )
+
+    def list_artifact_errors(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        q: str | None = None,
+    ) -> ArtifactErrorInventory:
+        offset, limit = _validate_pagination(offset, limit)
+        query = _validate_query_filter(q)
+        errors = [
+            error
+            for error in self._snapshot().errors
+            if query is None
+            or query in error.code.casefold()
+            or query in error.message.casefold()
+            or query in error.artifact_id.casefold()
+        ]
+        return ArtifactErrorInventory(
+            errors[offset : offset + limit], len(errors), offset, limit
+        )
 
     def get_plan(self, plan_id: str) -> PlanDetail:
         record = self._plan_record(plan_id)
@@ -508,7 +552,16 @@ class LocalInventoryService:
                 local_status=local_status,
             )
         ]
-        return NamespaceInventory(items[offset : offset + limit], len(items), offset, limit, snapshot.errors)
+        error_sample = snapshot.errors[:ARTIFACT_ERROR_SAMPLE_LIMIT]
+        return NamespaceInventory(
+            items[offset : offset + limit],
+            len(items),
+            offset,
+            limit,
+            error_sample,
+            len(snapshot.errors),
+            len(error_sample) < len(snapshot.errors),
+        )
 
     def get_namespace(
         self,
@@ -590,7 +643,10 @@ class LocalInventoryService:
             artifact_error_count=len(snapshot.errors),
             recent_plans=[record.summary for record in snapshot.plans[:recent_limit]],
             attention_items=attention,
-            artifact_errors=snapshot.errors,
+            artifact_errors=snapshot.errors[:ARTIFACT_ERROR_SAMPLE_LIMIT],
+            artifact_errors_truncated=(
+                len(snapshot.errors) > ARTIFACT_ERROR_SAMPLE_LIMIT
+            ),
         )
 
     def _plan_record(self, plan_id: str) -> _PlanRecord:
@@ -1402,7 +1458,8 @@ def _namespace_matches_filters(
         (query is None or query in summary.namespace.casefold())
         and (
             source_kind is None
-            or (summary.source is not None and summary.source.kind == source_kind)
+            or (summary.source.kind if summary.source is not None else "unknown")
+            == source_kind
         )
         and (local_status is None or summary.local_status == local_status)
     )

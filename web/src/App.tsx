@@ -12,6 +12,7 @@ import {
 import { api, RequestError } from './api'
 import type {
   ArtifactError,
+  ArtifactErrorInventory,
   Capabilities,
   ChunkInventory,
   DashboardData,
@@ -120,6 +121,7 @@ function App() {
           <Route path="/plans" element={<Plans />} />
           <Route path="/plans/new" element={<ManagedPlanningRoute capabilities={capabilities}><StartPlan /></ManagedPlanningRoute>} />
           <Route path="/plans/:planId" element={<PlanScreen />} />
+          <Route path="/artifact-errors" element={<ArtifactErrors />} />
           <Route path="/plan-jobs" element={<ManagedPlanningRoute capabilities={capabilities}><PlanJobs /></ManagedPlanningRoute>} />
           <Route path="/plan-jobs/:jobId" element={<ManagedPlanningRoute capabilities={capabilities}><PlanJobScreen /></ManagedPlanningRoute>} />
           <Route path="/search" element={<Search />} />
@@ -215,6 +217,17 @@ function WarningList({ title, items }: { title: string; items: Warning[] | Artif
   )
 }
 
+function ArtifactErrorSample({ title, items, total, truncated }: { title: string; items: ArtifactError[]; total: number; truncated: boolean }) {
+  if (!total) return null
+  return (
+    <section className="panel warning-panel">
+      <div className="section-heading"><h2>{title}</h2><Link to="/artifact-errors">View artifact diagnostics</Link></div>
+      {truncated && <p className="muted">Showing {items.length} of {total.toLocaleString()} local artifact errors.</p>}
+      <ul>{items.map((item, index) => <li key={`${item.code}-${item.artifact_id}-${index}`}><strong>{item.code}</strong>: {item.message}</li>)}</ul>
+    </section>
+  )
+}
+
 function RemoteNotice({ snapshot, refreshError = null }: { snapshot: RemoteSnapshot | null; refreshError?: string | null }) {
   if (refreshError) {
     return <p className="notice" role="alert"><strong>Remote status: Latest refresh failed.</strong> No previous snapshot is being presented as current. {refreshError}</p>
@@ -306,7 +319,7 @@ function DashboardContent({ data, capabilities }: { data: DashboardData; capabil
         <section className="panel"><h2>Recent plans</h2>{data.recent_plans.length ? <PlanCards plans={data.recent_plans} /> : <Empty>Saved plans will appear here after a local plan is created.</Empty>}</section>
         <section className="panel"><h2>Attention</h2>{data.attention_items.length ? <ul className="attention-list">{data.attention_items.map((item, index) => <li key={`${item.code}-${index}`}><strong>{item.code}</strong><span>{item.message}</span></li>)}</ul> : <Empty>No local warnings require attention.</Empty>}</section>
       </div>
-      <WarningList title="Artifact errors" items={data.artifact_errors} />
+      <ArtifactErrorSample title="Artifact errors" items={data.artifact_errors} total={data.artifact_error_count} truncated={data.artifact_errors_truncated} />
     </>
   )
 }
@@ -409,7 +422,7 @@ function Namespaces({ remote }: { remote: RemoteState }) {
         <label>Local status <select value={localStatus} onChange={(event) => setLocalFilter('local_status', event.target.value)}><option value="all">All</option><option value="planned">Planned</option><option value="applied">Applied</option><option value="pending_changes">Pending changes</option><option value="conflict">Conflict</option><option value="error">Error</option></select></label>
       </section>
       {resource.error ? <ErrorState message={resource.error} retry={resource.retry} /> : !resource.data ? <Loading label="Loading local namespaces…" /> : <LocalNamespacePage inventory={resource.data} rows={localRows} setOffset={(next) => { const updated = new URLSearchParams(parameters); next ? updated.set('offset', String(next)) : updated.delete('offset'); setParameters(updated) }} />}
-      {resource.data && <WarningList title="Local artifact errors" items={resource.data.errors} />}
+      {resource.data && <ArtifactErrorSample title="Local artifact errors" items={resource.data.errors} total={resource.data.error_total} truncated={resource.data.errors_truncated} />}
       {remote.snapshot && <section className="panel" aria-labelledby="remote-only-heading">
         <div className="section-heading"><div><p className="eyebrow">Explicitly refreshed remote snapshot</p><h2 id="remote-only-heading">Remote namespaces without a local snapshot</h2></div><span>{remoteOnly.length} matching</span></div>
         <section className="filters remote-only-filters" aria-label="Remote-only namespace filters">
@@ -807,7 +820,46 @@ function Plans() {
         <label>Source kind <select value={source} onChange={(event) => setFilter('source_kind', event.target.value)}>{sourceOptions()}</select></label>
       </section>
       {resource.error ? <ErrorState message={resource.error} retry={resource.retry} /> : !resource.data ? <Loading label="Loading plan history…" /> : <>{resource.data.items.length ? <PlanTable inventory={resource.data} /> : <Empty>No saved plans match the current filters.</Empty>}<InventoryPagination offset={resource.data.offset} count={resource.data.items.length} total={resource.data.total} label="Plans" setOffset={setOffset} /></>}
-      {resource.data && <WarningList title="Artifact errors" items={resource.data.errors} />}
+      {resource.data && <ArtifactErrorSample title="Artifact errors" items={resource.data.errors} total={resource.data.error_total} truncated={resource.data.errors_truncated} />}
+    </>
+  )
+}
+
+function ArtifactErrors() {
+  const [parameters, setParameters] = useSearchParams()
+  const offset = boundedOffset(parameters.get('offset'))
+  const query = parameters.get('q') ?? ''
+  const resource = useResource(() => api.artifactErrors({ offset, q: query || undefined }), [offset, query])
+
+  function setQuery(next: string) {
+    const updated = new URLSearchParams(parameters)
+    next ? updated.set('q', next) : updated.delete('q')
+    updated.delete('offset')
+    setParameters(updated, { replace: true })
+  }
+
+  function setOffset(next: number) {
+    const updated = new URLSearchParams(parameters)
+    next ? updated.set('offset', String(next)) : updated.delete('offset')
+    setParameters(updated)
+  }
+
+  return (
+    <>
+      <PageTitle eyebrow="Local diagnostics" title="Artifact errors">Inspect isolated local artifact errors without repairing, deleting, or otherwise changing artifacts.</PageTitle>
+      <section className="panel filters" aria-label="Artifact error filters">
+        <label>Search artifact errors <input type="search" maxLength={256} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Code, message, or artifact ID" /></label>
+      </section>
+      {resource.error ? <ErrorState message={resource.error} retry={resource.retry} /> : !resource.data ? <Loading label="Loading artifact diagnostics…" /> : <ArtifactErrorPage inventory={resource.data} setOffset={setOffset} />}
+    </>
+  )
+}
+
+function ArtifactErrorPage({ inventory, setOffset }: { inventory: ArtifactErrorInventory; setOffset: (offset: number) => void }) {
+  return (
+    <>
+      {inventory.items.length ? <section className="table-wrap" aria-label={`${inventory.items.length} current-page artifact errors of ${inventory.total}`}><table><thead><tr><th>Code</th><th>Sanitized message</th><th>Safe artifact ID</th></tr></thead><tbody>{inventory.items.map((item, index) => <tr key={`${item.code}-${item.artifact_id}-${index}`}><td>{item.code}</td><td>{item.message}</td><td className="break-word">{item.artifact_id}</td></tr>)}</tbody></table></section> : <Empty>No local artifact errors match the current search.</Empty>}
+      <InventoryPagination offset={inventory.offset} count={inventory.items.length} total={inventory.total} label="Artifact errors" setOffset={setOffset} />
     </>
   )
 }
@@ -833,20 +885,26 @@ function PlanScreen() {
   const [staleError, setStaleError] = useState<string | null>(null)
   const [chunkLoading, setChunkLoading] = useState(false)
   const [staleLoading, setStaleLoading] = useState(false)
+  const [focusedRequest, setFocusedRequest] = useState<'chunks' | 'stale' | null>(null)
+  const focusedRequestRef = useRef<'chunks' | 'stale' | null>(null)
   const generation = useRef(0)
   const currentPlanId = useRef(planId)
   const chunkSequence = useRef(0)
   const staleSequence = useRef(0)
-  currentPlanId.current = planId
+  if (currentPlanId.current !== planId) {
+    currentPlanId.current = planId
+    focusedRequestRef.current = null
+  }
 
   useEffect(() => {
     const requestGeneration = ++generation.current
     chunkSequence.current += 1
     staleSequence.current += 1
+    focusedRequestRef.current = null
     setDetail(null); setChunks(null); setStaleRows(null)
     setChunkOffset(0); setStaleOffset(0)
     setInitialError(null); setChunkError(null); setStaleError(null)
-    setChunkLoading(false); setStaleLoading(false)
+    setChunkLoading(false); setStaleLoading(false); setFocusedRequest(null)
     api.review(planId).then((review) => {
       if (generation.current !== requestGeneration || currentPlanId.current !== planId) return
       setDetail(review.detail)
@@ -865,10 +923,13 @@ function PlanScreen() {
   }, [planId, attempt])
 
   async function loadChunks(offset: number) {
+    if (focusedRequestRef.current !== null) return
+    focusedRequestRef.current = 'chunks'
     const requestGeneration = generation.current
     const sequence = ++chunkSequence.current
     setChunkOffset(offset)
     setChunkLoading(true)
+    setFocusedRequest('chunks')
     setChunkError(null)
     try {
       const next = await api.chunks(planId, offset)
@@ -879,15 +940,22 @@ function PlanScreen() {
     } catch (reason) {
       if (generation.current === requestGeneration && currentPlanId.current === planId && chunkSequence.current === sequence) setChunkError(requestMessage(reason, 'Changed chunks could not be loaded.'))
     } finally {
-      if (generation.current === requestGeneration && currentPlanId.current === planId && chunkSequence.current === sequence) setChunkLoading(false)
+      if (generation.current === requestGeneration && currentPlanId.current === planId && chunkSequence.current === sequence) {
+        focusedRequestRef.current = null
+        setFocusedRequest(null)
+        setChunkLoading(false)
+      }
     }
   }
 
   async function loadStaleRows(offset: number) {
+    if (focusedRequestRef.current !== null) return
+    focusedRequestRef.current = 'stale'
     const requestGeneration = generation.current
     const sequence = ++staleSequence.current
     setStaleOffset(offset)
     setStaleLoading(true)
+    setFocusedRequest('stale')
     setStaleError(null)
     try {
       const next = await api.staleRows(planId, offset)
@@ -898,20 +966,24 @@ function PlanScreen() {
     } catch (reason) {
       if (generation.current === requestGeneration && currentPlanId.current === planId && staleSequence.current === sequence) setStaleError(requestMessage(reason, 'Stale rows could not be loaded.'))
     } finally {
-      if (generation.current === requestGeneration && currentPlanId.current === planId && staleSequence.current === sequence) setStaleLoading(false)
+      if (generation.current === requestGeneration && currentPlanId.current === planId && staleSequence.current === sequence) {
+        focusedRequestRef.current = null
+        setFocusedRequest(null)
+        setStaleLoading(false)
+      }
     }
   }
 
   if (initialError) return <><PageTitle eyebrow="Plan" title={planId}>Review this saved plan artifact.</PageTitle><ErrorState message={initialError} retry={() => setAttempt((value) => value + 1)} /></>
   if (!detail || detail.summary.plan_id !== planId || !chunks || !staleRows) return <Loading label="Loading fully verified changed-content review…" />
-  return <PlanContent detail={detail} chunks={chunks} staleRows={staleRows} chunkOffset={chunkOffset} loadChunks={loadChunks} staleOffset={staleOffset} loadStaleRows={loadStaleRows} chunkLoading={chunkLoading} staleLoading={staleLoading} chunkError={chunkError} staleError={staleError} />
+  return <PlanContent detail={detail} chunks={chunks} staleRows={staleRows} chunkOffset={chunkOffset} loadChunks={loadChunks} staleOffset={staleOffset} loadStaleRows={loadStaleRows} chunkLoading={chunkLoading} staleLoading={staleLoading} focusedRequest={focusedRequest} chunkError={chunkError} staleError={staleError} />
 }
 
-function SectionRequestState({ loading, error, retry, label }: { loading: boolean; error: string | null; retry: () => void; label: string }) {
-  return <>{loading && <p className="section-loading" role="status"><span className="spinner" />{label}</p>}{error && <div className="section-error" role="alert"><strong>{error}</strong> <button type="button" className="secondary-button" onClick={retry}>Retry this section</button></div>}</>
+function SectionRequestState({ loading, error, retry, label, disabled }: { loading: boolean; error: string | null; retry: () => void; label: string; disabled: boolean }) {
+  return <>{loading && <p className="section-loading" role="status"><span className="spinner" />{label}</p>}{error && <div className="section-error" role="alert"><strong>{error}</strong> <button type="button" className="secondary-button" disabled={disabled} onClick={retry}>Retry this section</button></div>}</>
 }
 
-function PlanContent({ detail, chunks, staleRows, chunkOffset, loadChunks, staleOffset, loadStaleRows, chunkLoading, staleLoading, chunkError, staleError }: { detail: PlanDetail; chunks: ChunkInventory; staleRows: StaleRowInventory; chunkOffset: number; loadChunks: (offset: number) => void; staleOffset: number; loadStaleRows: (offset: number) => void; chunkLoading: boolean; staleLoading: boolean; chunkError: string | null; staleError: string | null }) {
+function PlanContent({ detail, chunks, staleRows, chunkOffset, loadChunks, staleOffset, loadStaleRows, chunkLoading, staleLoading, focusedRequest, chunkError, staleError }: { detail: PlanDetail; chunks: ChunkInventory; staleRows: StaleRowInventory; chunkOffset: number; loadChunks: (offset: number) => void; staleOffset: number; loadStaleRows: (offset: number) => void; chunkLoading: boolean; staleLoading: boolean; focusedRequest: 'chunks' | 'stale' | null; chunkError: string | null; staleError: string | null }) {
   const plan = detail.summary
   const warehouse = plan.source.kind === 'database' && ['bigquery', 'snowflake'].includes(plan.source.database_backend ?? '')
   return (
@@ -923,8 +995,8 @@ function PlanContent({ detail, chunks, staleRows, chunkOffset, loadChunks, stale
       <section className="panel"><h2>Identity and provenance</h2><dl className="details-grid"><div><dt>Namespace</dt><dd><Link to={`/namespaces/${encodeURIComponent(plan.namespace)}`}>{plan.namespace}</Link></dd></div><div><dt>Candidate</dt><dd>{detail.namespace_candidate}</dd></div><div><dt>Site ID</dt><dd>{plan.site_id}</dd></div><div><dt>Created</dt><dd>{timestamp(plan.created_at)}</dd></div>{detail.originating_job_id && <div><dt>Originating plan job</dt><dd><Link to={`/plan-jobs/${encodeURIComponent(detail.originating_job_id)}`}>{detail.originating_job_id}</Link></dd></div>}<div><dt>Artifact hash</dt><dd className="break-word">{detail.artifact_hash}</dd></div><div><dt>Payload verification</dt><dd>{detail.payload_verification}</dd></div><div><dt>Applied baseline present</dt><dd>{value(detail.applied_state_present)}</dd></div><div><dt>Applied baseline hash</dt><dd className="break-word">{detail.applied_state_hash}</dd></div><div><dt>Desired pages / chunks</dt><dd>{value(plan.page_count)} / {value(plan.chunk_count)}</dd></div></dl><Source source={plan.source} /></section>
       <div className="two-column"><section className="panel"><h2>Source activity when this plan was created</h2><dl className="details-grid"><div><dt>Source credentials required</dt><dd>{value(detail.source_activity.credentials_required)}</dd></div><div><dt>Source API calls occurred</dt><dd>{value(detail.source_activity.api_calls_occurred)}</dd></div></dl><p className="muted">These fields describe recorded plan creation activity, not activity from opening this page.</p></section><section className="panel"><h2>Embedding and retrieval contract</h2><Retrieval settings={detail.retrieval} /></section></div>
       <section className="panel"><h2>Proposed diff</h2><Diff diff={plan.diff} /></section>
-      <section className="panel" aria-labelledby="chunks-heading"><div className="section-heading"><h2 id="chunks-heading">Changed and new chunks</h2><span>{chunks.total ? `${chunks.offset + 1}–${Math.min(chunks.offset + chunks.items.length, chunks.total)} of ${chunks.total}` : '0 changed chunks'}</span></div><SectionRequestState loading={chunkLoading} error={chunkError} retry={() => void loadChunks(chunkOffset)} label="Loading changed chunks…" />{chunks.items.length ? <div className="chunk-list">{chunks.items.map((chunk) => <article key={chunk.index}><h3>{chunk.title || `Chunk ${chunk.index + 1}`}</h3><p>{chunk.action.replaceAll('_', ' ')} · {chunk.section_path}</p><pre>{chunk.content}</pre><p className="muted"><SafeLink href={chunk.canonical_url}>{chunk.canonical_url || 'Citation unavailable'}</SafeLink>{chunk.truncated ? ' · Preview truncated' : ''}</p></article>)}</div> : <Empty>This plan contains no changed or new chunks.</Empty>}<div className="pagination"><button type="button" className="secondary-button" disabled={chunkOffset === 0} onClick={() => void loadChunks(Math.max(0, chunkOffset - 10))}>Previous chunks</button><button type="button" className="secondary-button" disabled={chunkOffset + 10 >= chunks.total} onClick={() => void loadChunks(chunkOffset + 10)}>Next chunks</button></div></section>
-      <section className="panel" aria-labelledby="stale-heading"><div className="section-heading"><h2 id="stale-heading">Stale row identities</h2><span>{staleRows.total ? `${staleRows.offset + 1}–${Math.min(staleRows.offset + staleRows.items.length, staleRows.total)} of ${staleRows.total}` : '0 stale rows'}</span></div><SectionRequestState loading={staleLoading} error={staleError} retry={() => void loadStaleRows(staleOffset)} label="Loading stale rows…" />{staleRows.items.length ? <div className="chunk-list">{staleRows.items.map((row) => <article key={row.index}><h3>{row.row_id}</h3><p>{row.category.replaceAll('_', ' ')} · prior status {row.prior_status.replaceAll('_', ' ')}</p><p><SafeLink href={row.canonical_url}>{row.canonical_url || 'Citation unavailable'}</SafeLink></p><p className="muted">{row.reason.replaceAll('_', ' ')}</p></article>)}</div> : <Empty>This plan contains no stale row identities.</Empty>}<div className="pagination"><button type="button" className="secondary-button" disabled={staleOffset === 0} onClick={() => void loadStaleRows(Math.max(0, staleOffset - 10))}>Previous stale rows</button><button type="button" className="secondary-button" disabled={staleOffset + 10 >= staleRows.total} onClick={() => void loadStaleRows(staleOffset + 10)}>Next stale rows</button></div></section>
+      <section className="panel" aria-labelledby="chunks-heading"><div className="section-heading"><h2 id="chunks-heading">Changed and new chunks</h2><span>{chunks.total ? `${chunks.offset + 1}–${Math.min(chunks.offset + chunks.items.length, chunks.total)} of ${chunks.total}` : '0 changed chunks'}</span></div><SectionRequestState loading={chunkLoading} error={chunkError} retry={() => void loadChunks(chunkOffset)} label="Loading changed chunks…" disabled={focusedRequest !== null} />{chunks.items.length ? <div className="chunk-list">{chunks.items.map((chunk) => <article key={chunk.index}><h3>{chunk.title || `Chunk ${chunk.index + 1}`}</h3><p>{chunk.action.replaceAll('_', ' ')} · {chunk.section_path}</p><pre>{chunk.content}</pre><p className="muted"><SafeLink href={chunk.canonical_url}>{chunk.canonical_url || 'Citation unavailable'}</SafeLink>{chunk.truncated ? ' · Preview truncated' : ''}</p></article>)}</div> : <Empty>This plan contains no changed or new chunks.</Empty>}<div className="pagination"><button type="button" className="secondary-button" disabled={focusedRequest !== null || chunkOffset === 0} onClick={() => void loadChunks(Math.max(0, chunkOffset - 10))}>Previous chunks</button><button type="button" className="secondary-button" disabled={focusedRequest !== null || chunkOffset + 10 >= chunks.total} onClick={() => void loadChunks(chunkOffset + 10)}>Next chunks</button></div></section>
+      <section className="panel" aria-labelledby="stale-heading"><div className="section-heading"><h2 id="stale-heading">Stale row identities</h2><span>{staleRows.total ? `${staleRows.offset + 1}–${Math.min(staleRows.offset + staleRows.items.length, staleRows.total)} of ${staleRows.total}` : '0 stale rows'}</span></div><SectionRequestState loading={staleLoading} error={staleError} retry={() => void loadStaleRows(staleOffset)} label="Loading stale rows…" disabled={focusedRequest !== null} />{staleRows.items.length ? <div className="chunk-list">{staleRows.items.map((row) => <article key={row.index}><h3>{row.row_id}</h3><p>{row.category.replaceAll('_', ' ')} · prior status {row.prior_status.replaceAll('_', ' ')}</p><p><SafeLink href={row.canonical_url}>{row.canonical_url || 'Citation unavailable'}</SafeLink></p><p className="muted">{row.reason.replaceAll('_', ' ')}</p></article>)}</div> : <Empty>This plan contains no stale row identities.</Empty>}<div className="pagination"><button type="button" className="secondary-button" disabled={focusedRequest !== null || staleOffset === 0} onClick={() => void loadStaleRows(Math.max(0, staleOffset - 10))}>Previous stale rows</button><button type="button" className="secondary-button" disabled={focusedRequest !== null || staleOffset + 10 >= staleRows.total} onClick={() => void loadStaleRows(staleOffset + 10)}>Next stale rows</button></div></section>
       <WarningList title="Plan warnings and errors" items={plan.warnings} />
     </>
   )
