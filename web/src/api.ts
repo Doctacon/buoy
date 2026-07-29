@@ -1,5 +1,6 @@
 import type {
   ApiError,
+  ArtifactErrorInventory,
   Capabilities,
   ChunkInventory,
   DashboardData,
@@ -79,9 +80,15 @@ export type NamespaceFilters = {
   local_status?: LocalNamespaceStatus
 }
 
+export type ArtifactErrorFilters = {
+  offset: number
+  q?: string
+}
+
 export const api = {
   capabilities: () => request<Capabilities>('/capabilities'),
   dashboard: () => request<DashboardData>('/dashboard'),
+  artifactErrors: (filters: ArtifactErrorFilters) => request<ArtifactErrorInventory>(queryPath('/artifact-errors', { ...filters, limit: PAGE_LIMIT })),
   namespaces: (filters: NamespaceFilters) => request<NamespaceInventory>(queryPath('/namespaces', { ...filters, limit: PAGE_LIMIT })),
   namespace: (namespace: string) =>
     request<NamespaceDetail>(`/namespaces/${encodeURIComponent(namespace)}?plan_offset=0&plan_limit=20`),

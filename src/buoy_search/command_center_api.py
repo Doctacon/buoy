@@ -717,6 +717,16 @@ def create_app(
     def dashboard(recent_limit: int = 10) -> Any:
         return _service_payload(inventory.dashboard(recent_limit=recent_limit))  # type: ignore[attr-defined]
 
+    @app.get(f"{API_PREFIX}/artifact-errors")
+    def artifact_errors(
+        offset: int = 0, limit: int = 50, q: str | None = None
+    ) -> Any:
+        return _service_payload(
+            inventory.list_artifact_errors(  # type: ignore[attr-defined]
+                offset=offset, limit=limit, q=q
+            )
+        )
+
     @app.get(f"{API_PREFIX}/namespaces")
     def namespaces(
         offset: int = 0,

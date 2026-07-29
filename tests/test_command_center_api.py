@@ -47,7 +47,11 @@ if UI_AVAILABLE:
         PlanJobStore,
         ServiceOwnershipError,
     )
-    from buoy_search.command_center_local import InventoryLookupError
+    from buoy_search.command_center_local import (
+        InventoryLookupError,
+        LocalInventoryService,
+        SafeError,
+    )
     from buoy_search.command_center_server import run_server
     from buoy_search.planning_service import validate_managed_public_source
 
@@ -61,6 +65,16 @@ class FakeInventory:
 
     def dashboard(self, *, recent_limit: int = 10):
         return {"resource": "dashboard", "recent_limit": recent_limit}
+
+    def list_artifact_errors(
+        self, *, offset: int = 0, limit: int = 50, q: str | None = None
+    ):
+        return {
+            "resource": "artifact-errors",
+            "offset": offset,
+            "limit": limit,
+            "q": q,
+        }
 
     def list_namespaces(
         self,
@@ -625,8 +639,12 @@ class CommandCenterApiTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200, response.text)
         self.assertIsNone(dashboard.json()["active_row_count"])
         self.assertEqual(dashboard.json()["artifact_error_count"], 1)
+        self.assertFalse(dashboard.json()["artifact_errors_truncated"])
         self.assertEqual(namespaces.json()["items"], [])
         self.assertEqual(plans.json()["items"], [])
+        for inventory in (namespaces.json(), plans.json()):
+            self.assertEqual(inventory["error_total"], 1)
+            self.assertFalse(inventory["errors_truncated"])
         for errors in (
             dashboard.json()["artifact_errors"],
             namespaces.json()["errors"],
@@ -945,6 +963,87 @@ class CommandCenterApiTests(unittest.TestCase):
             plan_response.json()["originating_job_id"], f"planjob_{'c' * 32}"
         )
 
+    def test_large_artifact_error_api_is_bounded_filterable_and_inert(self) -> None:
+        import buoy_search.command_center_local as local_module
+
+        errors = [
+            SafeError(
+                f"error_{index % 7}",
+                ("Needle diagnostic " if index % 100 == 0 else "Safe diagnostic ")
+                + str(index),
+                f"artifact-{9_999 - index:05d}",
+            )
+            for index in range(10_000)
+        ]
+        expected = sorted(errors, key=lambda item: (item.code, item.artifact_id))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts", state_root=root / "state"
+            )
+            _, client = self.make_client(root, local_inventory=service)
+            with patch(
+                "buoy_search.command_center_local._discover_plans",
+                return_value=([], errors),
+            ) as plans_scan, patch(
+                "buoy_search.command_center_local._discover_states",
+                return_value=([], [], set()),
+            ) as state_scan, patch(
+                "buoy_search.command_center_local._verify_plan_artifacts",
+                side_effect=AssertionError("diagnostics must not verify deltas"),
+            ) as verify:
+                dashboard = client.get("/api/v1/dashboard")
+                plans = client.get("/api/v1/plans")
+                namespaces = client.get("/api/v1/namespaces")
+                first_page = client.get("/api/v1/artifact-errors")
+                filtered = client.get(
+                    "/api/v1/artifact-errors?offset=5&limit=7&q=NEEDLE"
+                )
+                by_id = client.get(
+                    "/api/v1/artifact-errors?q=artifact-00000"
+                )
+                invalid = [
+                    client.get("/api/v1/artifact-errors?offset=-1"),
+                    client.get("/api/v1/artifact-errors?limit=101"),
+                    client.get("/api/v1/artifact-errors?q=" + "x" * 257),
+                ]
+
+        self.assertEqual(
+            (plans_scan.call_count, state_scan.call_count, verify.call_count),
+            (1, 1, 0),
+        )
+        for response in (dashboard, plans, namespaces, first_page, filtered, by_id):
+            self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(dashboard.json()["artifact_error_count"], 10_000)
+        self.assertEqual(len(dashboard.json()["artifact_errors"]), 20)
+        self.assertTrue(dashboard.json()["artifact_errors_truncated"])
+        for response in (plans, namespaces):
+            self.assertEqual(response.json()["error_total"], 10_000)
+            self.assertEqual(len(response.json()["errors"]), 20)
+            self.assertTrue(response.json()["errors_truncated"])
+            self.assertLess(len(response.content), 10_000)
+        self.assertEqual(first_page.json()["total"], 10_000)
+        self.assertEqual(first_page.json()["limit"], 50)
+        self.assertEqual(
+            [item["artifact_id"] for item in first_page.json()["items"]],
+            [item.artifact_id for item in expected[:50]],
+        )
+        matching = [item for item in expected if "needle" in item.message.casefold()]
+        self.assertEqual(filtered.json()["total"], 100)
+        self.assertEqual(
+            [item["artifact_id"] for item in filtered.json()["items"]],
+            [item.artifact_id for item in matching[5:12]],
+        )
+        self.assertEqual(by_id.json()["total"], 1)
+        self.assertEqual(by_id.json()["items"][0]["artifact_id"], "artifact-00000")
+        for response, code in zip(
+            invalid,
+            ("invalid_offset", "invalid_limit", "invalid_request"),
+            strict=True,
+        ):
+            self.assertEqual(response.status_code, 400, response.text)
+            self.assertEqual(response.json()["error"]["code"], code)
+
     def test_bounded_filters_namespace_history_and_review_api_contracts(self) -> None:
         import buoy_search.command_center_local as local_module
         from buoy_search.command_center_local import LocalInventoryService
@@ -992,6 +1091,16 @@ class CommandCenterApiTests(unittest.TestCase):
                 error_namespaces = client.get(
                     "/api/v1/namespaces?local_status=error"
                 )
+                unknown_namespaces = client.get(
+                    "/api/v1/namespaces?source_kind=unknown"
+                )
+                unknown_error_namespaces = client.get(
+                    "/api/v1/namespaces?source_kind=unknown&local_status=error"
+                )
+                known_source_namespaces = {
+                    kind: client.get(f"/api/v1/namespaces?source_kind={kind}")
+                    for kind in ("website", "github_repo", "document", "database")
+                }
                 namespace = client.get(
                     "/api/v1/namespaces/site-example-com-v1?plan_offset=0&plan_limit=1"
                 )
@@ -1018,6 +1127,9 @@ class CommandCenterApiTests(unittest.TestCase):
             plans,
             namespaces,
             error_namespaces,
+            unknown_namespaces,
+            unknown_error_namespaces,
+            *known_source_namespaces.values(),
             namespace,
             review,
             detail,
@@ -1032,6 +1144,21 @@ class CommandCenterApiTests(unittest.TestCase):
             error_namespaces.json()["items"][0]["namespace"], "broken-namespace"
         )
         self.assertEqual(error_namespaces.json()["items"][0]["local_status"], "error")
+        self.assertIsNone(error_namespaces.json()["items"][0]["source"])
+        for response in (unknown_namespaces, unknown_error_namespaces):
+            self.assertEqual(response.json()["total"], 1)
+            self.assertEqual(
+                response.json()["items"][0]["namespace"], "broken-namespace"
+            )
+            self.assertEqual(response.json()["items"][0]["local_status"], "error")
+            self.assertIsNone(response.json()["items"][0]["source"])
+        self.assertEqual(
+            {
+                kind: response.json()["total"]
+                for kind, response in known_source_namespaces.items()
+            },
+            {"website": 1, "github_repo": 0, "document": 0, "database": 0},
+        )
         self.assertEqual(
             {
                 key: namespace.json()[key]
@@ -1064,6 +1191,7 @@ class CommandCenterApiTests(unittest.TestCase):
             _, client = self.make_client(Path(tmp), local_inventory=FakeInventory())
             cases = [
                 ("/api/v1/dashboard?recent_limit=4", "dashboard"),
+                ("/api/v1/artifact-errors?offset=2&limit=3&q=broken", "artifact-errors"),
                 (
                     "/api/v1/namespaces?offset=2&limit=3&q=docs&source_kind=website&local_status=planned",
                     "namespaces",
@@ -1109,6 +1237,7 @@ class CommandCenterApiTests(unittest.TestCase):
         }
         sync_routes = {
             ("/api/v1/dashboard", "GET"),
+            ("/api/v1/artifact-errors", "GET"),
             ("/api/v1/namespaces", "GET"),
             ("/api/v1/namespaces/{namespace}", "GET"),
             ("/api/v1/plans", "GET"),
