@@ -7,7 +7,7 @@ Relates-To: .10x/tickets/2026-07-29-implement-remote-evidence-snapshot-foundatio
 
 ## What was observed
 
-Graph Phase 3A is implemented on `work/remote-evidence-snapshot-foundation` from base commit `606c168389e28b09105e8eb139f2cde063994a83` (`origin/main` fetched 2026-07-29). Initial implementation commit `cf37f5fff20cc05ffe561cbf3010165e779e74eb` received two independent fail reviews; the follow-up repair commit is the commit containing this updated record.
+Graph Phase 3A is implemented on `work/remote-evidence-snapshot-foundation` from base commit `606c168389e28b09105e8eb139f2cde063994a83` (`origin/main` fetched 2026-07-29). Initial implementation commit `cf37f5fff20cc05ffe561cbf3010165e779e74eb` received two independent fail reviews; repair commit `89a01bd7e23323d7e84088f5d504bf9a69b659fc` fixed those findings but a fresh re-review found write-marker and retry gaps. The second repair is the commit containing this updated record.
 
 The installed and locked official provider SDK is `turbopuffer==2.4.0`. The implementation uses `client.namespace(destination).branch_from(source_namespace=source)`, explicit strong ordered queries, `limit=10_000`, metadata reads, conditional ledger ownership/catalog completion writes, and no provider import during ordinary module import/help. No live provider call was made.
 
@@ -41,7 +41,9 @@ Branches are operationally immutable only: Buoy never writes them after `branch_
 
 The independent review found that deterministic namespace names cannot prove exclusive cleanup ownership across hosts. The repair marks creation only after definite success, uses conditional first-ledger inserts and exact affected IDs, tracks transport/count ambiguity separately, and issues no automatic namespace deletion. Failures report all definite/possible incomplete internal IDs. This preserves concurrent, preexisting, unknown, source, routing-catalog, and completed evidence and leaves retention/deletion for a separately ratified lifecycle. Tests observe zero `delete_all()` calls on branch, ledger, reconciliation, and catalog failures.
 
-SDK-shaped metadata tests return Python `datetime` values from `to_dict`-like objects; the implementation normalizes them to ISO strings and completes catalog serialization.
+SDK-shaped metadata tests return Python `datetime` values from `to_dict`-like objects; the implementation normalizes them to ISO strings and completes catalog serialization. Because installed SDK 2.4.0 declares `updated_at` as the namespace's last-modified-by-write field while official current metadata also documents `last_write_at`, branch observations use `last_write_at` when present and `updated_at` as the conservative canonical fallback. Tests observe later `updated_at` drift rejection and fail closed when both markers are absent.
+
+A forced post-ledger catalog-finalization failure leaves deterministic internals safely retained. The next identical invocation reuses the branch and ledger only after exact schema, complete ordered rows/hash/counts, deterministic identity, locked local fingerprints, and branch reconciliation; it writes no ledger row and completes the catalog. Partial and altered retained ledgers are rejected without overwrite or deletion.
 
 ## 100,000-row structural measurement
 
@@ -66,14 +68,16 @@ All commands ran from the task worktree after the repair:
 - `uv lock --check` — pass; 157 packages resolved.
 - `PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate_ranking_contract.py` — pass; 13 datasets, 369 judgments, dataset bundle `5a79f58aaca87a2d4f7cbec68fdcfbbcbf041131821587f8aba74a86daca99d9`.
 - `PYTHONDONTWRITEBYTECODE=1 uv run python scripts/c6_syntax_forecast.py validate` — pass; forecast `d5199276c19ae89779287eaa90824ce1e1cc684a3f060899f02f65d976016243`.
-- Focused evidence/applied-state/apply/remote-catalog/release/Command Center suite — 237 tests passed in 27.156s.
-- Full `unittest discover` — 848 tests passed in 103.760s; 39 skipped. Existing expected warning/argparse/log lines appeared; no failure.
+- Focused evidence/applied-state/apply/remote-catalog/release/Command Center suite — 241 tests passed in 27.326s.
+- Full `unittest discover` — 852 tests passed in 103.063s; 39 skipped. Existing expected warning/argparse/log lines appeared; no failure.
 - `uv build --out-dir dist` — pass; wheel and sdist built.
 - Package inspection — wheel 72 files, sdist 168 files; wheel contains all three evidence modules; sdist contains evidence modules, `docs/evidence-snapshots.md`, and all three focused test modules; no `state.duckdb`, `snapshot.json`, `evidence.duckdb`, or `node_modules` packaged.
 - Provider-blocked ordinary/evidence imports — pass; `turbopuffer` absent from `sys.modules`.
 - `buoy evidence estimate|snapshot|verify --help` — pass without credentials/provider import.
 - Restore `rm -rf dist web/node_modules; uv sync --locked; uv lock --check` — pass.
 - Final `git diff --check` — pass.
+
+One initial focused command used the prompt's suggested `tests.test_apply` name, which does not exist in this repository, and failed during test-module import. It was corrected to the repository's `tests.test_apply_cli`; the 241-test focused suite then passed as recorded above.
 
 Frontend source was unchanged, so packaged assets were not rebuilt and `npm ci/test/build` was not run, following the explicit unchanged-frontend boundary.
 
@@ -88,6 +92,6 @@ This supports that full evidence remains in turbopuffer branches, only bounded m
 - Branch immutability is detected, not access-controlled against external writers.
 - Strong consistency has the documented provider operational limits.
 - The authoritative catalog is not cryptographically signed against a privileged coherent rewrite.
-- Conservative failure handling reports and retains incomplete internals rather than risking unsafe cross-host deletion; no deletion/GC command exists.
+- Conservative failure handling reports and retains incomplete internals rather than risking unsafe cross-host deletion; exact deterministic retry is supported, but partial/mismatched internals require a separately ratified deletion/GC lifecycle.
 - The 100,000-row RSS includes in-process fake remote storage and is not a provider-backed client-only measurement.
 - No push, merge, PR, publish, release, source apply, source namespace write, LLM call, graph extraction, taxonomy/ontology creation, or UI build occurred.

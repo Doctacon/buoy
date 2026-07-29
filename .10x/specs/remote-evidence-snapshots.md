@@ -12,7 +12,7 @@ This specification supersedes any design that stores the full evidence corpus in
 
 ## Authority and provider contract
 
-The implementation MUST use the installed official turbopuffer Python SDK. The implementation baseline is SDK 2.4.0. It MUST use `Namespace.branch_from(source_namespace=...)`, metadata fields `approx_logical_bytes`, `approx_row_count`, `created_at`, `last_write_at`, `branching.parent`, and `sharding.num_shards`, strong queries, and ordered export pagination (`rank_by=("id", "asc")`, an advancing `id > last_id` filter, and `limit=10_000`). Namespace IDs MUST satisfy `[A-Za-z0-9-_.]{1,128}` and document IDs MUST be at most 64 bytes. Writes MUST be bounded well below the 512 MiB payload limit.
+The implementation MUST use the installed official turbopuffer Python SDK. The implementation baseline is SDK 2.4.0. It MUST use `Namespace.branch_from(source_namespace=...)`, metadata fields `approx_logical_bytes`, `approx_row_count`, `created_at`, `branching.parent`, and `sharding.num_shards`, strong queries, and ordered export pagination (`rank_by=("id", "asc")`, an advancing `id > last_id` filter, and `limit=10_000`). Branch drift detection MUST use official `last_write_at` when exposed and SDK 2.4.0's documented `updated_at` last-modified-by-write value as the conservative canonical fallback; a branch with neither usable marker MUST fail closed. Namespace IDs MUST satisfy `[A-Za-z0-9-_.]{1,128}` and document IDs MUST be at most 64 bytes. Writes MUST be bounded well below the 512 MiB payload limit.
 
 Official current documentation states that branching is unsupported for sharded namespaces. A selected namespace with `sharding` metadata MUST fail before branch creation. No fallback copy is permitted.
 
@@ -57,10 +57,10 @@ Snapshot creation MUST execute in this order:
 5. Derive deterministic identity and names.
 6. Check the evidence catalog for the exact ID. A matching complete row is remotely verified and reused; a conflicting row fails closed.
 7. Create or safely reuse one deterministic branch per source. A reused incomplete branch must have the exact parent and reconcile fully; an unknown/wrong-parent collision fails.
-8. Stream local rows again into bounded, idempotent full-row ledger upserts with explicit schema and exact affected-count checks.
+8. Stream local rows again into bounded, idempotent full-row ledger upserts with explicit schema and exact affected-count checks. An identical retry MAY reuse an existing deterministic ledger only after exact schema, snapshot/source/branch/document identity, complete row/hash/status-count, locked local-fingerprint, and branch reconciliation; partial or mismatched ledgers MUST fail without overwrite or deletion.
 9. Reconcile each branch through one ordered, bounded strong scan requesting only `canonical_url`, `page_hash`, `chunk_hash`, `embedding_text_hash`, `plan_id`, and `applied_at`; never vectors, content, title, tags, or unused metadata.
 10. Strong-scan and verify the ledger, exact counts, status counts, ledger logical hash, and snapshot logical hash.
-11. Re-read branch metadata and fail if parent or `last_write_at` changed. Write the complete evidence-catalog row last with insert-if-absent/idempotent semantics.
+11. Re-read branch metadata and fail if parent or the canonical write marker (`last_write_at`, otherwise SDK `updated_at`) changed. Write the complete evidence-catalog row last with insert-if-absent/idempotent semantics.
 12. Atomically write the bounded local manifest after remote completion.
 
 Buoy MUST never write to a branch after `branch_from`. The operational contract is: **Buoy treats evidence branches as immutable and detects later writes through metadata and complete reconciliation.** External writes are not technically prevented.

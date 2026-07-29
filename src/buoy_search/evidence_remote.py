@@ -221,6 +221,55 @@ def _metadata_value(metadata: Mapping[str, object], key: str) -> int:
     return value
 
 
+def _branch_write_marker(metadata: Mapping[str, object]) -> str:
+    """Return the strongest SDK-exposed timestamp that changes on branch writes."""
+
+    for key in ("last_write_at", "updated_at"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value:
+            return value
+    raise EvidenceSnapshotError(
+        "remote evidence branch metadata is missing a usable write marker"
+    )
+
+
+def _branch_observation(
+    metadata: Mapping[str, object], *, namespace: str, parent: str
+) -> dict[str, object]:
+    branching = _plain(metadata.get("branching"))
+    actual_parent = branching.get("parent") if isinstance(branching, dict) else None
+    if actual_parent != parent:
+        raise EvidenceSnapshotError(
+            f"evidence branch parent mismatch for namespace {namespace!r}"
+        )
+    return {
+        "namespace": namespace,
+        "parent": parent,
+        "created_at": metadata.get("created_at"),
+        # Canonical provider write marker. Official metadata exposes
+        # last_write_at; SDK 2.4.0 documents updated_at as its conservative
+        # last-modified-by-write fallback.
+        "last_write_at": _branch_write_marker(metadata),
+        "approx_row_count": metadata.get("approx_row_count"),
+        "approx_logical_bytes": metadata.get("approx_logical_bytes"),
+    }
+
+
+def _assert_branch_observation(
+    metadata: Mapping[str, object],
+    *,
+    expected: Mapping[str, object],
+    namespace: str,
+    parent: str,
+    phase: str,
+) -> None:
+    current = _branch_observation(metadata, namespace=namespace, parent=parent)
+    if current != expected:
+        raise EvidenceSnapshotError(
+            f"evidence branch metadata changed {phase} for namespace {namespace!r}"
+        )
+
+
 def _validate_source_metadata(
     *, namespace: str, metadata: Mapping[str, object], vector_dimensions: int
 ) -> dict[str, object]:
@@ -248,7 +297,9 @@ def _validate_source_metadata(
         "approximate_rows": _metadata_value(metadata, "approx_row_count"),
         "approximate_logical_bytes": _metadata_value(metadata, "approx_logical_bytes"),
         "created_at": str(metadata.get("created_at", "")),
-        "last_write_at": str(metadata.get("last_write_at", "")),
+        "last_write_at": str(
+            metadata.get("last_write_at", metadata.get("updated_at", ""))
+        ),
     }
 
 
@@ -807,6 +858,59 @@ def _reconcile_branch_with_ledger(
     return digest.hexdigest(), site_id, counts
 
 
+def _validate_existing_ledger(
+    *,
+    client: RemoteClient,
+    resource: NamespaceResource,
+    snapshot_id: str,
+    sources: Sequence[LocalEvidenceSource],
+    fingerprints: Sequence[StateFingerprint],
+    branch_namespaces: Mapping[str, str],
+    metrics: dict[str, int],
+) -> tuple[str, dict[str, int]]:
+    metadata = _metadata(resource, metrics=metrics)
+    _validate_exact_schema(metadata, LEDGER_SCHEMA)
+    ledger_hash, counts = _hash_ledger(
+        resource=resource, snapshot_id=snapshot_id, metrics=metrics
+    )
+    expected_counts = {
+        "active": sum(item.active_rows for item in fingerprints),
+        "retained_stale": sum(item.retained_stale_rows for item in fingerprints),
+        "deleted": sum(item.deleted_rows for item in fingerprints),
+        "total": sum(item.total_rows for item in fingerprints),
+    }
+    if counts != expected_counts:
+        raise EvidenceSnapshotError(
+            "incomplete snapshot ledger collision: status counts mismatch"
+        )
+    expected_by_namespace = {item.namespace: item for item in fingerprints}
+    for source in sources:
+        expected = expected_by_namespace[source.namespace]
+        source_hash, site_id, source_counts = _reconcile_branch_with_ledger(
+            branch=client.namespace(branch_namespaces[source.namespace]),
+            ledger=resource,
+            snapshot_id=snapshot_id,
+            source_namespace=source.namespace,
+            expected_branch_namespace=branch_namespaces[source.namespace],
+            metrics=metrics,
+        )
+        expected_source_counts = {
+            "active": expected.active_rows,
+            "retained_stale": expected.retained_stale_rows,
+            "deleted": expected.deleted_rows,
+            "total": expected.total_rows,
+        }
+        if (
+            source_hash != expected.logical_hash
+            or site_id != expected.site_id
+            or source_counts != expected_source_counts
+        ):
+            raise EvidenceSnapshotError(
+                f"incomplete snapshot ledger collision for namespace {source.namespace!r}"
+            )
+    return ledger_hash, counts
+
+
 def _catalog_row_id(snapshot_id: str) -> str:
     return snapshot_id
 
@@ -1029,17 +1133,13 @@ def verify_evidence_snapshot(
                 f"evidence branch for namespace {source_namespace!r} is missing"
             )
         metadata = _metadata(branch, metrics=metrics)
-        branching = _plain(metadata.get("branching"))
-        parent = branching.get("parent") if isinstance(branching, dict) else None
-        if parent != source_namespace:
-            raise EvidenceSnapshotError(
-                f"evidence branch parent mismatch for namespace {source_namespace!r}"
-            )
-        for field in ("created_at", "last_write_at", "approx_row_count", "approx_logical_bytes"):
-            if metadata.get(field) != observation.get(field):
-                raise EvidenceSnapshotError(
-                    f"evidence branch metadata changed for namespace {source_namespace!r}: {field}"
-                )
+        _assert_branch_observation(
+            metadata,
+            expected=observation,
+            namespace=str(branch_namespace),
+            parent=str(source_namespace),
+            phase="since snapshot creation",
+        )
         source_hash, site_id, source_counts = _reconcile_branch_with_ledger(
             branch=branch,
             ledger=ledger_resource,
@@ -1243,57 +1343,60 @@ def create_evidence_snapshot(
                     metrics["branch_create_count"] += 1
                     metrics["branch_calls"] += 1
                     metadata = _metadata(branch, metrics=metrics)
-                branching = _plain(metadata.get("branching"))
-                parent = branching.get("parent") if isinstance(branching, dict) else None
-                if parent != source.namespace:
-                    raise EvidenceSnapshotError(
-                        f"evidence branch parent mismatch for namespace {source.namespace!r}"
-                    )
-                observations[source.namespace] = {
-                    "namespace": branch_name,
-                    "parent": source.namespace,
-                    "created_at": metadata.get("created_at"),
-                    "last_write_at": metadata.get("last_write_at"),
-                    "approx_row_count": metadata.get("approx_row_count"),
-                    "approx_logical_bytes": metadata.get("approx_logical_bytes"),
-                }
+                observations[source.namespace] = _branch_observation(
+                    metadata, namespace=branch_name, parent=source.namespace
+                )
 
             ledger_resource = client.namespace(names.ledger_namespace)
-            if _resource_exists(ledger_resource, metrics=metrics):
-                raise EvidenceSnapshotError("incomplete snapshot ledger collision")
-            ledger_marked_created = False
-
-            def mark_ledger_created() -> None:
-                nonlocal ledger_marked_created
-                if not ledger_marked_created:
-                    created.append((names.ledger_namespace, None))
-                    ledger_marked_created = True
-                    uncertain.discard(names.ledger_namespace)
-
-            def mark_ledger_uncertain() -> None:
-                uncertain.add(names.ledger_namespace)
-
-            first_batch = True
-            for source in sources:
-                first_batch = _write_ledger(
+            ledger_exists = _resource_exists(ledger_resource, metrics=metrics)
+            if ledger_exists:
+                # Deterministic incomplete resources may be left by a prior
+                # post-ledger/pre-catalog failure. Reuse only a complete exact
+                # ledger that reconciles to the locked local fingerprints and
+                # the exact deterministic branches. Never patch a collision.
+                _validate_existing_ledger(
+                    client=client,
                     resource=ledger_resource,
-                    source=source,
-                    state_root=state_root,
                     snapshot_id=names.snapshot_id,
-                    branch_namespace=names.branches[source.namespace],
-                    first_batch=first_batch,
+                    sources=sources,
+                    fingerprints=fingerprints,
+                    branch_namespaces=names.branches,
                     metrics=metrics,
-                    mark_created=mark_ledger_created,
-                    mark_uncertain=mark_ledger_uncertain,
                 )
-            if first_batch:
-                response = _safe_call(
-                    "empty ledger schema write", ledger_resource.write, schema=LEDGER_SCHEMA
-                )
-                metrics["ledger_write_calls"] += 1
-                _write_count(response, expected=0, kind="empty ledger schema write")
-            ledger_metadata = _metadata(ledger_resource, metrics=metrics)
-            _validate_exact_schema(ledger_metadata, LEDGER_SCHEMA)
+            else:
+                ledger_marked_created = False
+
+                def mark_ledger_created() -> None:
+                    nonlocal ledger_marked_created
+                    if not ledger_marked_created:
+                        created.append((names.ledger_namespace, None))
+                        ledger_marked_created = True
+                        uncertain.discard(names.ledger_namespace)
+
+                def mark_ledger_uncertain() -> None:
+                    uncertain.add(names.ledger_namespace)
+
+                first_batch = True
+                for source in sources:
+                    first_batch = _write_ledger(
+                        resource=ledger_resource,
+                        source=source,
+                        state_root=state_root,
+                        snapshot_id=names.snapshot_id,
+                        branch_namespace=names.branches[source.namespace],
+                        first_batch=first_batch,
+                        metrics=metrics,
+                        mark_created=mark_ledger_created,
+                        mark_uncertain=mark_ledger_uncertain,
+                    )
+                if first_batch:
+                    response = _safe_call(
+                        "empty ledger schema write", ledger_resource.write, schema=LEDGER_SCHEMA
+                    )
+                    metrics["ledger_write_calls"] += 1
+                    _write_count(response, expected=0, kind="empty ledger schema write")
+                ledger_metadata = _metadata(ledger_resource, metrics=metrics)
+                _validate_exact_schema(ledger_metadata, LEDGER_SCHEMA)
 
             for source in sources:
                 branch = client.namespace(names.branches[source.namespace])
@@ -1305,11 +1408,13 @@ def create_evidence_snapshot(
                 )
                 after = _metadata(branch, metrics=metrics)
                 observation = observations[source.namespace]
-                for field in ("created_at", "last_write_at", "approx_row_count", "approx_logical_bytes"):
-                    if after.get(field) != observation.get(field):
-                        raise EvidenceSnapshotError(
-                            f"evidence branch changed during reconciliation for namespace {source.namespace!r}"
-                        )
+                _assert_branch_observation(
+                    after,
+                    expected=observation,
+                    namespace=names.branches[source.namespace],
+                    parent=source.namespace,
+                    phase="during reconciliation",
+                )
 
             ledger_hash, counts = _hash_ledger(
                 resource=ledger_resource,
@@ -1331,16 +1436,13 @@ def create_evidence_snapshot(
                     client.namespace(names.branches[source.namespace]), metrics=metrics
                 )
                 observation = observations[source.namespace]
-                branching = _plain(after.get("branching"))
-                if not isinstance(branching, dict) or branching.get("parent") != source.namespace:
-                    raise EvidenceSnapshotError(
-                        f"evidence branch parent changed before finalization for namespace {source.namespace!r}"
-                    )
-                for field in ("created_at", "last_write_at", "approx_row_count", "approx_logical_bytes"):
-                    if after.get(field) != observation.get(field):
-                        raise EvidenceSnapshotError(
-                            f"evidence branch changed before finalization for namespace {source.namespace!r}"
-                        )
+                _assert_branch_observation(
+                    after,
+                    expected=observation,
+                    namespace=names.branches[source.namespace],
+                    parent=source.namespace,
+                    phase="before finalization",
+                )
 
             source_hashes = {item.namespace: item.logical_hash for item in fingerprints}
             source_identity = snapshot_identity_payload(

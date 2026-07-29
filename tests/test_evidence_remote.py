@@ -405,6 +405,54 @@ class EvidenceRemoteTests(unittest.TestCase):
         observations = json.loads(str(row["branch_observations_json"]))
         self.assertIsInstance(observations["site-one-v1"]["created_at"], str)
 
+    def test_sdk_updated_at_fallback_detects_branch_write_drift(self) -> None:
+        original = FakeNamespace.metadata
+
+        def sdk_metadata(namespace, **kwargs):  # noqa: ANN001, ANN202
+            value = original(namespace, **kwargs)
+            last_write = value.pop("last_write_at", None)
+            value["updated_at"] = namespace.data.get("updated_at", last_write)
+            return SimpleNamespace(**value)
+
+        with patch.object(FakeNamespace, "metadata", sdk_metadata):
+            result = create_evidence_snapshot(
+                self.client, out_root=self.out, **self.kwargs()
+            )
+            branch = str(result["branch_namespaces"][0])
+            row = next(
+                iter(self.client.data["buoy-evidence-catalog-v1"]["rows"].values())
+            )
+            observation = json.loads(str(row["branch_observations_json"]))[
+                "site-one-v1"
+            ]
+            self.assertEqual(
+                observation["last_write_at"], "2026-07-29T00:01:00+00:00"
+            )
+            self.client.data[branch]["updated_at"] = "2026-07-29T09:00:00+00:00"
+            with self.assertRaisesRegex(EvidenceSnapshotError, "metadata changed"):
+                verify_evidence_snapshot(
+                    self.client, snapshot_id=str(result["snapshot_id"])
+                )
+
+    def test_branch_without_any_usable_write_marker_fails_closed(self) -> None:
+        original = FakeNamespace.metadata
+
+        def missing_marker(namespace, **kwargs):  # noqa: ANN001, ANN202
+            value = original(namespace, **kwargs)
+            if value.get("branching") is not None:
+                value.pop("last_write_at", None)
+                value.pop("updated_at", None)
+            return SimpleNamespace(**value)
+
+        with patch.object(FakeNamespace, "metadata", missing_marker):
+            with self.assertRaisesRegex(EvidenceSnapshotError, "usable write marker"):
+                create_evidence_snapshot(
+                    self.client, out_root=self.out, **self.kwargs()
+                )
+        self.assertFalse(
+            self.client.data.get("buoy-evidence-catalog-v1", {}).get("exists", False)
+        )
+
     def test_reuse_reports_current_no_write_activity_and_verification_metrics(self) -> None:
         create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
         writes_before = len(self.client.write_calls)
@@ -464,6 +512,55 @@ class EvidenceRemoteTests(unittest.TestCase):
         with self.assertRaisesRegex(EvidenceSnapshotError, "catalog finalization.*conservatively retained"):
             create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
         self.assertEqual(self.client.delete_calls, [])
+
+    def test_identical_retry_reuses_exact_ledger_after_catalog_failure(self) -> None:
+        self.client.fail_catalog = True
+        with self.assertRaisesRegex(EvidenceSnapshotError, "catalog finalization"):
+            create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
+        branch_calls = len(self.client.branch_calls)
+        ledger_writes = len(
+            [
+                name
+                for name, _ in self.client.write_calls
+                if name.startswith("buoy-evidence-ledger-")
+            ]
+        )
+        self.client.fail_catalog = False
+        result = create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
+        self.assertFalse(result["reused_snapshot"])
+        self.assertEqual(result["branch_reuse_count"], 1)
+        self.assertEqual(result["ledger_rows_written"], 0)
+        self.assertEqual(len(self.client.branch_calls), branch_calls)
+        self.assertEqual(
+            len(
+                [
+                    name
+                    for name, _ in self.client.write_calls
+                    if name.startswith("buoy-evidence-ledger-")
+                ]
+            ),
+            ledger_writes,
+        )
+
+    def test_incomplete_or_mismatched_existing_ledger_is_never_overwritten(self) -> None:
+        self.client.fail_catalog = True
+        with self.assertRaises(EvidenceSnapshotError):
+            create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
+        ledger = next(
+            name for name in self.client.data if name.startswith("buoy-evidence-ledger-")
+        )
+        writes_before = len(self.client.write_calls)
+        removed_id, removed = self.client.data[ledger]["rows"].popitem()
+        self.client.fail_catalog = False
+        with self.assertRaisesRegex(EvidenceSnapshotError, "ledger collision"):
+            create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
+        self.assertEqual(len(self.client.write_calls), writes_before)
+        self.client.data[ledger]["rows"][removed_id] = removed
+        first = next(iter(self.client.data[ledger]["rows"].values()))
+        first["page_hash"] = "altered"
+        with self.assertRaisesRegex(EvidenceSnapshotError, "mismatch|collision"):
+            create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
+        self.assertEqual(len(self.client.write_calls), writes_before)
 
     def test_verify_detects_branch_and_ledger_mutation(self) -> None:
         result = create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())

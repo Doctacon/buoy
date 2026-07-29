@@ -51,9 +51,22 @@ All supported findings were addressed in the follow-up diff:
 - Reuse performs zero writes, reports `internal_evidence_writes_occurred=false`, includes verification metrics in the same accumulator, writes only the local manifest, and preserves the completed snapshot's original manifest hash.
 - Explicit missing manifests fail. CLI tests now cover snapshot text and verify JSON paths. Distribution archive contents are independently inspected during final validation.
 
+## First independent re-review
+
+A fresh correctness re-review of commit `89a01bd7e23323d7e84088f5d504bf9a69b659fc` confirmed the prior six correctness repairs, then returned **fail** for two remaining findings:
+
+1. Installed SDK 2.4.0 declares `updated_at`, not `last_write_at`, so accepting an absent write marker let later writes evade metadata drift detection.
+2. Conservative retention after catalog-finalization failure left an exact deterministic ledger that an identical retry rejected permanently.
+
+## Second repair disposition
+
+The follow-up repair now canonicalizes branch write drift from official `last_write_at` when available or SDK-documented `updated_at` as fallback, fails closed when neither exists, and uses the same observation in reconciliation, final pre-publication checks, and remote verification. SDK-shaped regressions cover fallback drift and missing-marker failure.
+
+An existing deterministic ledger is reused only after exact schema validation, full ordered ledger hash/status scan, deterministic snapshot/source/branch/document identity, per-source site/count/fingerprint comparison to the locked local state, and complete branch reconciliation. Partial and altered ledgers fail without writes or deletion. A catalog-failure retry regression proves branch/ledger reuse and successful finalization.
+
 ## Current verdict
 
-**Concerns raised, repairs implemented; independent re-review required.** This history does not self-ratify the repair. The owning ticket remains open for the parent to obtain a fresh review and decide closure.
+**Concerns raised, second repairs implemented; independent re-review required.** This history does not self-ratify either repair. The owning ticket remains open for the parent to obtain a fresh review and decide closure.
 
 ## Residual risk
 
