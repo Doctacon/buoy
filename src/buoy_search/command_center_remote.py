@@ -608,6 +608,12 @@ def _validate_search_request(request: SearchRequest) -> ServiceError | None:
         return ServiceError("invalid_search_request", "Explicit namespaces must not repeat.", "validation")
     if any(_NAMESPACE_ID.fullmatch(value) is None for value in request.namespaces):
         return ServiceError("invalid_search_request", "An explicit namespace ID is invalid.", "validation")
+    if any(value.startswith("buoy-evidence-") for value in request.namespaces):
+        return ServiceError(
+            "invalid_search_request",
+            "Evidence infrastructure namespaces are not ordinary search sources.",
+            "validation",
+        )
     integer_bounds = (
         ("route_top_k", request.route_top_k, MAX_ROUTE_TOP_K),
         ("top_k", request.top_k, MAX_TOP_K),

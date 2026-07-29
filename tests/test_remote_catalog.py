@@ -771,6 +771,23 @@ class RemoteReadTests(unittest.TestCase):
         self.assertEqual([card.namespace for card in snapshot.eligible_cards], [eligible.namespace])
         self.assertEqual(snapshot.counts, CatalogCounts(5, 1, 4, 4, 1, 1, 1, 1, 1))
 
+    def test_internal_evidence_namespaces_are_not_content_or_missing_cards(self) -> None:
+        eligible = make_card("site-eligible-v1")
+        snapshot = classify_remote_catalog(
+            live_namespace_ids=[
+                REMOTE_CATALOG_NAMESPACE,
+                eligible.namespace,
+                "buoy-evidence-branch-deadbeef-source",
+                "buoy-evidence-ledger-deadbeef",
+            ],
+            cards=[eligible],
+            compatibility=self.compatibility(),
+        )
+        self.assertEqual(snapshot.live_namespace_ids, (eligible.namespace,))
+        self.assertEqual(snapshot.missing_card_ids, ())
+        self.assertEqual(snapshot.counts.content_live_count, 1)
+        self.assertEqual(snapshot.counts.listed_total, 4)
+
 
 class MutationAndMigrationTests(unittest.TestCase):
     def test_mutations_prevalidate_region_reserved_target_duplicates_and_revision(self) -> None:

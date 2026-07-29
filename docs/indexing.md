@@ -313,3 +313,16 @@ uv run buoy apply --approve --delete-stale
 ```
 
 This never deletes the namespace.
+
+## Freeze applied evidence remotely
+
+After at least one successful apply and compatible routing-card registration, an operator may explicitly freeze one or more namespaces for future graph derivation:
+
+```bash
+uv run buoy evidence estimate --namespace site-example-com-v1
+uv run buoy evidence snapshot --namespace site-example-com-v1
+```
+
+Run the estimate first because each turbopuffer branch may be billed from the source namespace's full approximate logical size. Snapshot holds the existing apply lock while it fingerprints local state, creates and reconciles the branch, publishes the compact active/retained/deleted remote ledger, and writes the completed evidence-catalog marker. This may temporarily block apply for the selected namespace; it does not change apply behavior or write the source namespace.
+
+Full content and vectors remain in turbopuffer. The laptop receives only a bounded `snapshot.json`; there is no local evidence corpus or `evidence.duckdb`. Sharded namespaces are rejected before branch creation because current branching does not support them, with no full-copy fallback. See [Remote evidence snapshots](evidence-snapshots.md) for eligibility, budgets, verification, immutability detection, billing, and lifecycle limits.
