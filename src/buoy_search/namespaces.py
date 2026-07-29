@@ -16,7 +16,11 @@ def list_namespace_ids(*, region: str, api_key: str, search: str | None = None) 
     try:
         client = tpuf.Turbopuffer(api_key=api_key, region=region)  # type: ignore[attr-defined]
         summaries: Iterable[object] = client.namespaces()
-        namespace_ids = {_namespace_id(summary) for summary in summaries}
+        namespace_ids = {
+            value
+            for summary in summaries
+            if not (value := _namespace_id(summary)).startswith("buoy-evidence-")
+        }
     except Exception as exc:
         message = str(exc) or exc.__class__.__name__
         raise RuntimeError(

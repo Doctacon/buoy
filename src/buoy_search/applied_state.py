@@ -131,6 +131,14 @@ class AppliedStateSummary:
     total_rows: int
 
 
+@dataclass(frozen=True)
+class AppliedStateRowStream:
+    """Descriptor-bound metadata and one-shot bounded applied-row iterator."""
+
+    summary: AppliedStateSummary
+    rows: Iterator[AppliedStateRow]
+
+
 def applied_state_paths(
     *,
     site_id: str,
@@ -348,6 +356,160 @@ def load_applied_state_summary(
                 "applied state contains an unknown status or contradictory row counts"
             )
         return summary
+
+
+@contextmanager
+def stream_applied_state_rows(
+    *,
+    database_path: Path,
+    state_root: Path = DEFAULT_STATE_ROOT,
+    batch_size: int = 1_000,
+) -> Iterator[AppliedStateRowStream]:
+    """Stream one exact applied-state ledger in deterministic ``row_id`` order.
+
+    The database and every path component stay descriptor-bound for the complete
+    read. DuckDB is opened read-only and rows are obtained only through
+    ``fetchmany``; callers cannot accidentally materialize the full ledger here.
+    """
+
+    if type(batch_size) is not int or batch_size < 1:
+        raise AppliedStateError("applied-state stream batch_size must be positive")
+    database_path = Path(database_path)
+    state_root = Path(state_root)
+    with _bind_summary_database(
+        database_path=database_path, state_root=state_root
+    ) as binding:
+        try:
+            with duckdb.connect(str(database_path), read_only=True) as connection:
+                _validate_database_schema(connection)
+                metadata_rows = connection.execute(
+                    """
+                    SELECT schema_version, site_id, namespace, base_url, updated_at,
+                           last_plan_id, last_apply_id
+                    FROM state_metadata
+                    """
+                ).fetchall()
+                if len(metadata_rows) != 1:
+                    raise AppliedStateError(
+                        "DuckDB applied state must contain exactly one metadata row"
+                    )
+                metadata = metadata_rows[0]
+                counts = connection.execute(
+                    """
+                    SELECT count(*) FILTER (WHERE status = 'active'),
+                           count(*) FILTER (WHERE status = 'retained_stale'),
+                           count(*) FILTER (WHERE status = 'deleted'),
+                           count(*)
+                    FROM applied_rows
+                    """
+                ).fetchone()
+                if counts is None or len(counts) != 4:
+                    raise AppliedStateError("DuckDB applied-state counts are invalid")
+                summary = AppliedStateSummary(
+                    schema_version=int(metadata[0]),
+                    site_id=str(metadata[1]),
+                    namespace=str(metadata[2]),
+                    base_url=validate_base_url(str(metadata[3])),
+                    updated_at=str(metadata[4]),
+                    last_plan_id=str(metadata[5]),
+                    last_apply_id=str(metadata[6]),
+                    active_rows=int(counts[0]),
+                    retained_stale_rows=int(counts[1]),
+                    deleted_rows=int(counts[2]),
+                    total_rows=int(counts[3]),
+                )
+                if summary.site_id != binding.site_id or summary.namespace != binding.namespace:
+                    raise AppliedStateError("applied state path does not match its identity")
+                validate_applied_state(
+                    AppliedState(
+                        schema_version=summary.schema_version,
+                        site_id=summary.site_id,
+                        namespace=summary.namespace,
+                        base_url=summary.base_url,
+                        updated_at=summary.updated_at,
+                        last_plan_id=summary.last_plan_id,
+                        last_apply_id=summary.last_apply_id,
+                    ),
+                    expected_site_id=binding.site_id,
+                    expected_namespace=binding.namespace,
+                    expected_base_url=summary.base_url,
+                )
+                if (
+                    summary.active_rows
+                    + summary.retained_stale_rows
+                    + summary.deleted_rows
+                    != summary.total_rows
+                ):
+                    raise AppliedStateError(
+                        "applied state contains an unknown status or contradictory row counts"
+                    )
+                cursor = connection.execute(
+                    """
+                    SELECT row_id, canonical_url, page_hash, chunk_hash,
+                           embedding_text_hash, plan_id, applied_at, status
+                    FROM applied_rows
+                    ORDER BY row_id
+                    """
+                )
+
+                def rows() -> Iterator[AppliedStateRow]:
+                    previous_id: str | None = None
+                    ordinal = 0
+                    while True:
+                        batch = cursor.fetchmany(batch_size)
+                        if not batch:
+                            break
+                        if len(batch) > batch_size:
+                            raise AppliedStateError(
+                                "applied-state stream returned more rows than requested"
+                            )
+                        for values in batch:
+                            row = AppliedStateRow(
+                                row_id=str(values[0]),
+                                canonical_url=str(values[1]),
+                                page_hash=str(values[2]),
+                                chunk_hash=str(values[3]),
+                                embedding_text_hash=str(values[4]),
+                                plan_id=str(values[5]),
+                                applied_at=str(values[6]),
+                                status=str(values[7]),  # type: ignore[arg-type]
+                            )
+                            if row.status not in VALID_ROW_STATUSES:
+                                raise AppliedStateError(
+                                    f"applied state row {ordinal} has invalid status {row.status!r}"
+                                )
+                            if previous_id is not None and row.row_id <= previous_id:
+                                raise AppliedStateError(
+                                    "applied-state row IDs are not strictly increasing"
+                                )
+                            for field_name in (
+                                "row_id",
+                                "canonical_url",
+                                "page_hash",
+                                "chunk_hash",
+                                "embedding_text_hash",
+                                "plan_id",
+                                "applied_at",
+                            ):
+                                if not getattr(row, field_name):
+                                    raise AppliedStateError(
+                                        f"applied state row {ordinal} has empty {field_name}"
+                                    )
+                            previous_id = row.row_id
+                            ordinal += 1
+                            yield row
+                    if ordinal != summary.total_rows:
+                        raise AppliedStateError(
+                            "applied-state stream count changed during inspection"
+                        )
+
+                yield AppliedStateRowStream(summary=summary, rows=rows())
+        except duckdb.Error as exc:
+            raise AppliedStateError(
+                f"could not stream DuckDB applied state: {exc}"
+            ) from exc
+        finally:
+            _assert_summary_database_identity(binding)
 
 
 def save_applied_state(
@@ -790,10 +952,61 @@ def _initialize_schema(connection: duckdb.DuckDBPyConnection) -> None:
 
 
 def _validate_database_schema(connection: duckdb.DuckDBPyConnection) -> None:
-    rows = connection.execute("SELECT schema_version FROM state_schema").fetchall()
-    if rows != [(DUCKDB_STATE_SCHEMA_VERSION,)]:
+    expected_columns = [
+        ["applied_rows", "row_id", "VARCHAR", "NO"],
+        ["applied_rows", "canonical_url", "VARCHAR", "NO"],
+        ["applied_rows", "page_hash", "VARCHAR", "NO"],
+        ["applied_rows", "chunk_hash", "VARCHAR", "NO"],
+        ["applied_rows", "embedding_text_hash", "VARCHAR", "NO"],
+        ["applied_rows", "plan_id", "VARCHAR", "NO"],
+        ["applied_rows", "applied_at", "VARCHAR", "NO"],
+        ["applied_rows", "status", "VARCHAR", "NO"],
+        ["apply_runs", "apply_id", "VARCHAR", "NO"],
+        ["apply_runs", "plan_id", "VARCHAR", "NO"],
+        ["apply_runs", "applied_at", "VARCHAR", "NO"],
+        ["apply_runs", "rows_upserted", "BIGINT", "NO"],
+        ["apply_runs", "rows_deleted", "BIGINT", "NO"],
+        ["apply_runs", "retained_stale_rows", "BIGINT", "NO"],
+        ["state_metadata", "schema_version", "INTEGER", "NO"],
+        ["state_metadata", "site_id", "VARCHAR", "NO"],
+        ["state_metadata", "namespace", "VARCHAR", "NO"],
+        ["state_metadata", "base_url", "VARCHAR", "NO"],
+        ["state_metadata", "updated_at", "VARCHAR", "NO"],
+        ["state_metadata", "last_plan_id", "VARCHAR", "NO"],
+        ["state_metadata", "last_apply_id", "VARCHAR", "NO"],
+        ["state_schema", "schema_version", "INTEGER", "NO"],
+    ]
+    rows = connection.execute(
+        """
+        SELECT
+            (SELECT list(
+                [table_name, column_name, data_type, is_nullable]
+                ORDER BY table_name, ordinal_position
+             ) FROM information_schema.columns WHERE table_schema = 'main'),
+            (SELECT list(table_name ORDER BY table_name)
+             FROM information_schema.tables WHERE table_schema = 'main'),
+            (SELECT list(
+                [table_name, constraint_column_names[1]] ORDER BY table_name
+             ) FROM duckdb_constraints()
+             WHERE schema_name = 'main' AND constraint_type = 'PRIMARY KEY'),
+            (SELECT list(schema_version ORDER BY schema_version) FROM state_schema)
+        """
+    ).fetchall()
+    expected_structure = (
+        expected_columns,
+        ["applied_rows", "apply_runs", "state_metadata", "state_schema"],
+        [
+            ["applied_rows", "row_id"],
+            ["apply_runs", "apply_id"],
+            ["state_schema", "schema_version"],
+        ],
+    )
+    if len(rows) != 1 or tuple(rows[0][:3]) != expected_structure:
+        raise AppliedStateError("DuckDB applied state does not match the current exact schema")
+    versions = rows[0][3]
+    if versions != [DUCKDB_STATE_SCHEMA_VERSION]:
         raise AppliedStateError(
-            f"unsupported DuckDB applied state schema version: {rows!r}; "
+            f"unsupported DuckDB applied state schema version: {versions!r}; "
             f"expected {DUCKDB_STATE_SCHEMA_VERSION}"
         )
 

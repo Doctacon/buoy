@@ -175,6 +175,35 @@ class FakeClock:
 
 
 class CompactDeltaInventoryTests(unittest.TestCase):
+    def test_internal_evidence_state_is_not_an_ordinary_namespace_row(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            save_applied_state(
+                build_applied_state(
+                    site_id="internal",
+                    namespace="buoy-evidence-ledger-test",
+                    base_url="https://example.com/",
+                    last_plan_id="plan_0123456789abcdef",
+                    last_apply_id="apply_0123456789abcdef",
+                    updated_at="2026-07-29T00:00:00+00:00",
+                    rows=[AppliedStateRow(
+                        row_id="ts_" + "1" * 32,
+                        canonical_url="https://example.com/one",
+                        page_hash="p" * 64,
+                        chunk_hash="c" * 64,
+                        embedding_text_hash="e" * 64,
+                        plan_id="plan_0123456789abcdef",
+                        applied_at="2026-07-29T00:00:00+00:00",
+                    )],
+                ),
+                state_root=root / "state",
+            )
+            inventory = LocalInventoryService(
+                artifacts_root=root / "artifacts", state_root=root / "state"
+            ).list_namespaces()
+        self.assertEqual(inventory.total, 0)
+        self.assertEqual(inventory.items, [])
+
     def test_plan_directories_are_leaves_before_any_parse_outcome(self) -> None:
         import os
 

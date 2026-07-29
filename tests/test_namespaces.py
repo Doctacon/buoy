@@ -23,6 +23,7 @@ class FakePaginator:
         yield {"id": "github-owner-repo-v1"}
         self.pages_consumed.append(2)
         yield SimpleNamespace(id="site-other-v1")
+        yield SimpleNamespace(id="buoy-evidence-ledger-internal")
         yield SimpleNamespace(id="site-Dagster-v1")
 
 
