@@ -2,49 +2,63 @@ Status: recorded
 Created: 2026-07-29
 Updated: 2026-07-29
 Target: work/remote-evidence-snapshot-foundation diff from 606c168389e28b09105e8eb139f2cde063994a83
-Verdict: pass
+Verdict: concerns
 
-# Remote Evidence Snapshot Foundation Review
+# Remote Evidence Snapshot Foundation Review History
 
 ## Target
 
 The Phase 3A implementation, tests, documentation, specification/research/ticket graph, and packaging changes on `work/remote-evidence-snapshot-foundation`.
 
-## Assumptions tested
+## Initial implementation self-review
 
-- Provider import and credentials remain lazy.
-- Full source content/vector data is retained only by turbopuffer branches, not locally or in the ledger.
-- Local applied rows and remote pages/batches remain bounded.
-- Apply locks cover the point-in-time state used for identity and publication.
-- Sharding, budgets, collisions, drift, and partial failures fail before a visible completed snapshot or clean only current internal artifacts.
-- Catalog completion is last and remote-only verification needs no current state database.
-- Internal evidence namespace IDs cannot become ordinary automatic-routing/discovery/Command Center source rows.
-- Documentation does not claim graph extraction, taxonomy, ontology, provider-enforced immutability, exact storage, retention, or deletion.
+The implementation writer initially recorded a pass after provider-free tests. That verdict was not independent and is superseded by the two independent reviews below. It missed official SDK model serialization, catalog-authentication, cleanup-concurrency, and bounded-memory gaps.
 
-## Findings
+## Independent review findings
 
-### No blocking correctness or safety finding
+Two fresh-context reviews of commit `cf37f5fff20cc05ffe561cbf3010165e779e74eb` returned **fail**. Their retained reports during repair were `/tmp/remote-evidence-correctness-review.md` and `/tmp/remote-evidence-validation-review.md`.
 
-Inspection of `evidence_snapshot.py:123-343`, `applied_state.py:362-488`, and `evidence_remote.py:323-1266` found deterministic identity, descriptor-bound `fetchmany` state reads, sorted locks, exact branch/ledger/catalog names, strong 10,000-row query pagination, bounded ledger upserts, exact reconciliation, catalog-last finalization, atomic bounded manifest writes, and guarded cleanup. Tests exercise the requested success/failure classes and the 100,000-row structural case.
+### Critical findings
 
-### Safe contract clarification — zero-row completed state
+1. SDK 2.4.0 metadata `to_dict()` preserves `datetime` objects; catalog JSON serialization failed after branch/ledger creation.
+2. Cleanup marked resources on ambiguous exceptions and could delete a preexisting, concurrent, or newly completed deterministic namespace.
 
-Turbopuffer 2.4.0 documents schema-only writes only for existing namespaces. An absent zero-row ledger cannot be created without a sentinel that would violate the one-row-per-state-row contract. The implementation therefore rejects zero-row applied state before remote creation and records that limit in the active spec and documentation. This is fail-closed and does not broaden remote mutation.
+### Significant findings
 
-### Compatibility preserved
+3. Remote-only verification trusted catalog source-state hashes instead of recomputing them from ordered ledger rows.
+4. Catalog branch names, plan/apply IDs, card revisions, approximate bytes, and other logical metadata were not coherently authenticated.
+5. Ledger writes were row-bounded but not byte-bounded below the provider's 512 MiB request limit.
+6. Ledger verification retained an O(total rows) ID set despite ordered pagination already detecting duplicate/out-of-order IDs.
+7. Branch metadata was not checked again after ledger verification immediately before catalog finalization.
+8. Internal `buoy-evidence-` identities could still appear through local Command Center inventory and combined remote rows.
+9. Completed-snapshot reuse reported writes that did not occur and omitted verification reads from returned metrics.
+10. An explicitly supplied missing manifest was silently treated as no manifest.
 
-`remote_catalog.py:464-467` subtracts `buoy-evidence-` IDs from content-live classification while retaining total listing semantics, so existing public routing-count output remains stable. Namespace CLI and explicit Command Center search also reject internal IDs. The full 839-test suite passes.
+### Minor finding
 
-### Operational limitations are stated accurately
+11. CLI snapshot/verify output and package-focused acceptance evidence was thinner than claimed.
 
-Branches are not technically immutable; metadata plus complete reconciliation detects external changes. Logical bytes are approximate and potentially billable. Live provider behavior was not exercised. Cleanup refuses deletion when completed catalog state cannot be ruled out.
+## Repair disposition
 
-## Verdict
+All supported findings were addressed in the follow-up diff:
 
-Pass. The diff implements the bounded Phase 3A contract without graph extraction, local corpus duplication, source mutation, lifecycle deletion commands, or UI scope.
+- `_plain()` normalizes provider datetime values to ISO 8601 strings; an SDK-shaped metadata test reaches completed catalog publication.
+- Branches are marked created only after a definite successful branch response. The ledger's first batch is conditional insert-if-absent, exact affected IDs prove ownership, and transport/count ambiguity is separately reported. Because deterministic names can be reused by another host without a remote lease, Phase 3A now conservatively retains and reports definite/possible incomplete resources rather than issuing an unsafe automatic delete. Completed or uncertain catalog state always suppresses cleanup.
+- The catalog stores the full safe deterministic source-identity payload. Verification recomputes each ordered source fingerprint and status counts from the ledger, checks site/ledger/branch/ordinal/document identity, binds plan/apply/card/embedding/schema metadata back to the snapshot-ID digest, enforces deterministic branch/ledger names, reconciles branch observations, and recomputes both snapshot and manifest hashes.
+- Ledger requests are capped at 1,000 rows and 16 MiB of canonical encoded payload. The full-ledger hash no longer retains a global ID set; ordered pagination is the duplicate/order authority.
+- Every branch's parent and metadata are checked again after ledger verification and immediately before catalog publication.
+- Local inventory, local-ID collection, and combined remote status rows all exclude the reserved prefix; focused local and remote Command Center tests cover this.
+- Reuse performs zero writes, reports `internal_evidence_writes_occurred=false`, includes verification metrics in the same accumulator, writes only the local manifest, and preserves the completed snapshot's original manifest hash.
+- Explicit missing manifests fail. CLI tests now cover snapshot text and verify JSON paths. Distribution archive contents are independently inspected during final validation.
+
+## Current verdict
+
+**Concerns raised, repairs implemented; independent re-review required.** This history does not self-ratify the repair. The owning ticket remains open for the parent to obtain a fresh review and decide closure.
 
 ## Residual risk
 
-- No opt-in live smoke was authorized, so fake-client behavior is the acceptance boundary for provider calls.
-- Provider strong consistency and metadata timestamp fidelity retain the official operational caveats.
-- The scale RSS figure includes fake remote state held in the test process; it proves the bounded code paths structurally, not production client RSS in isolation.
+- No opt-in live smoke was authorized; provider permissions and live response behavior remain unobserved.
+- Strong consistency and metadata timestamp fidelity retain the provider's documented operational limits.
+- Remote catalog rows are authoritative and not cryptographically signed; verification detects incoherent mutation and branch drift but cannot defend against a privileged actor coherently rewriting all authoritative remote metadata and content.
+- Conservative failure handling can leave reported internal resources. No deletion or garbage-collection lifecycle is introduced in this phase.
+- Scale RSS includes the in-process fake provider's retained branch/ledger state, not only Buoy's bounded buffers.

@@ -287,14 +287,14 @@ def validate_card_for_source(
         )
 
 
-def derive_snapshot_names(
+def snapshot_identity_payload(
     *,
     region: str,
     fingerprints: Sequence[StateFingerprint],
     cards: Mapping[str, NamespaceCard],
-) -> SnapshotNames:
+) -> dict[str, object]:
     ordered = sorted(fingerprints, key=lambda item: item.namespace)
-    identity = {
+    return {
         "schema_version": EVIDENCE_SCHEMA_VERSION,
         "region": region,
         "sources": [
@@ -309,7 +309,17 @@ def derive_snapshot_names(
             for item in ordered
         ],
     }
-    digest = logical_hash(identity)
+
+
+def derive_snapshot_names(
+    *,
+    region: str,
+    fingerprints: Sequence[StateFingerprint],
+    cards: Mapping[str, NamespaceCard],
+) -> SnapshotNames:
+    digest = logical_hash(
+        snapshot_identity_payload(region=region, fingerprints=fingerprints, cards=cards)
+    )
     snapshot_id = f"evidence_{digest[:16]}"
     short = digest[:16]
     branches = {
@@ -317,7 +327,7 @@ def derive_snapshot_names(
             f"buoy-evidence-branch-{short}-"
             f"{hashlib.sha256(item.namespace.encode('utf-8')).hexdigest()[:16]}"
         )
-        for item in ordered
+        for item in sorted(fingerprints, key=lambda value: value.namespace)
     }
     ledger = f"buoy-evidence-ledger-{short}"
     for value in [ledger, *branches.values()]:

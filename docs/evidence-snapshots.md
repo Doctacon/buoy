@@ -61,7 +61,7 @@ The compact ledger has one identity/provenance row for every local applied-state
 
 Creation scans every branch in strong, deterministic ID order while requesting only URL, hash, plan, and applied-time reconciliation attributes. Missing active/stale rows, present deleted rows, extra rows, mismatches, duplicate/out-of-order pages, and branch metadata changes fail. The remote ledger is then scanned and hashed. The completed catalog row is written last and is the authoritative validity marker.
 
-Before completion, cleanup is best-effort and may remove only exact internal namespaces proven absent before and created by the failing invocation. It never deletes a source, preexisting branch, unknown namespace, routing catalog, or completed snapshot. Cleanup leaks are reported. This phase deliberately has no snapshot delete, branch delete, retention, or garbage-collection command.
+Before completion, failures report every definitely or possibly created internal namespace. Buoy does not automatically delete these deterministic names in Phase 3A: without a remote ownership lease, another host could begin reusing or complete the same snapshot between a catalog check and deletion. Preserving and reporting an incomplete internal namespace is safer than deleting concurrent, preexisting, unknown, routing-catalog, source, or completed evidence. This phase deliberately has no snapshot delete, branch delete, retention, or garbage-collection command.
 
 ### Local artifact
 

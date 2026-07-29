@@ -35,9 +35,11 @@ from buoy_search.evidence_snapshot import (
     derive_snapshot_names,
     discover_local_sources,
     fingerprint_source,
+    ledger_document_id,
     ledger_row,
     logical_hash,
     manifest_hash,
+    snapshot_identity_payload,
     validate_card_for_source,
     validate_limits,
     validate_namespace_selection,
@@ -88,6 +90,8 @@ LEDGER_SCHEMA: dict[str, dict[str, object]] = {
     "applied_at": {"type": "string", "filterable": False},
     "ordinal": {"type": "uint", "filterable": False},
 }
+LEDGER_WRITE_MAX_BYTES = 16 * 1024 * 1024
+
 CATALOG_ATTRIBUTES = (
     "snapshot_id",
     "schema_version",
@@ -102,6 +106,7 @@ CATALOG_ATTRIBUTES = (
     "retained_stale_row_count",
     "deleted_row_count",
     "source_state_hashes_json",
+    "source_identity_json",
     "last_plan_ids_json",
     "last_apply_ids_json",
     "catalog_card_revisions_json",
@@ -126,6 +131,7 @@ CATALOG_SCHEMA: dict[str, dict[str, object]] = {
     "retained_stale_row_count": {"type": "uint", "filterable": False},
     "deleted_row_count": {"type": "uint", "filterable": False},
     "source_state_hashes_json": {"type": "string", "filterable": False},
+    "source_identity_json": {"type": "string", "filterable": False},
     "last_plan_ids_json": {"type": "string", "filterable": False},
     "last_apply_ids_json": {"type": "string", "filterable": False},
     "catalog_card_revisions_json": {"type": "string", "filterable": False},
@@ -156,6 +162,8 @@ CatalogReader = Callable[..., RemoteCatalogSnapshot]
 
 
 def _plain(value: object) -> object:
+    if isinstance(value, datetime):
+        return value.isoformat()
     if isinstance(value, Mapping):
         return {str(key): _plain(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
@@ -556,6 +564,55 @@ def _write_count(response: object, *, expected: int, kind: str) -> None:
         )
 
 
+def _send_ledger_batch(
+    *,
+    resource: NamespaceResource,
+    batch: list[dict[str, object]],
+    first_batch: bool,
+    metrics: dict[str, int],
+    mark_created: Callable[[], None],
+    mark_uncertain: Callable[[], None],
+) -> bool:
+    kwargs: dict[str, object] = {"upsert_rows": batch}
+    if first_batch:
+        # Insert-if-absent makes a concurrent creator observable. Only a fully
+        # successful first response proves this invocation created the ledger.
+        kwargs.update(
+            schema=LEDGER_SCHEMA,
+            upsert_condition=("id", "Eq", None),
+            return_affected_ids=True,
+        )
+    payload_bytes = len(canonical_json(kwargs).encode("utf-8"))
+    if payload_bytes > LEDGER_WRITE_MAX_BYTES:
+        raise EvidenceSnapshotError(
+            f"remote ledger write payload exceeds {LEDGER_WRITE_MAX_BYTES} bytes"
+        )
+    try:
+        response = _safe_call("ledger write", resource.write, **kwargs)
+    except Exception:
+        mark_uncertain()
+        raise
+    metrics["ledger_write_calls"] += 1
+    _capture_billing(response, metrics)
+    try:
+        _write_count(response, expected=len(batch), kind="ledger write")
+    except Exception:
+        if first_batch:
+            mark_uncertain()
+        raise
+    if first_batch:
+        plain = _plain(response)
+        affected_ids = plain.get("upserted_ids") if isinstance(plain, dict) else None
+        if affected_ids != [row["id"] for row in batch]:
+            mark_uncertain()
+            raise EvidenceSnapshotError(
+                "remote ledger first write did not prove namespace ownership"
+            )
+        mark_created()
+    metrics["ledger_rows_written"] += len(batch)
+    return False
+
+
 def _write_ledger(
     *,
     resource: NamespaceResource,
@@ -565,44 +622,52 @@ def _write_ledger(
     branch_namespace: str,
     first_batch: bool,
     metrics: dict[str, int],
+    mark_created: Callable[[], None],
+    mark_uncertain: Callable[[], None],
 ) -> bool:
     batch: list[dict[str, object]] = []
+    batch_bytes = len(canonical_json({"schema": LEDGER_SCHEMA, "upsert_rows": []}).encode("utf-8"))
     with stream_applied_state_rows(
         database_path=source.database_path,
         state_root=state_root,
         batch_size=LOCAL_ROW_BATCH_SIZE,
     ) as stream:
         for ordinal, row in enumerate(stream.rows):
-            batch.append(
-                ledger_row(
-                    snapshot_id=snapshot_id,
-                    source=source,
-                    branch_namespace=branch_namespace,
-                    row=row,
-                    ordinal=ordinal,
-                )
+            value = ledger_row(
+                snapshot_id=snapshot_id,
+                source=source,
+                branch_namespace=branch_namespace,
+                row=row,
+                ordinal=ordinal,
             )
-            if len(batch) == LEDGER_WRITE_BATCH_SIZE:
-                kwargs: dict[str, object] = {"upsert_rows": batch}
-                if first_batch:
-                    kwargs["schema"] = LEDGER_SCHEMA
-                response = _safe_call("ledger write", resource.write, **kwargs)
-                metrics["ledger_write_calls"] += 1
-                _capture_billing(response, metrics)
-                _write_count(response, expected=len(batch), kind="ledger write")
-                metrics["ledger_rows_written"] += len(batch)
-                first_batch = False
+            value_bytes = len(canonical_json(value).encode("utf-8")) + 1
+            if value_bytes >= LEDGER_WRITE_MAX_BYTES:
+                raise EvidenceSnapshotError("one remote ledger row exceeds the bounded write payload")
+            if batch and (
+                len(batch) == LEDGER_WRITE_BATCH_SIZE
+                or batch_bytes + value_bytes > LEDGER_WRITE_MAX_BYTES
+            ):
+                first_batch = _send_ledger_batch(
+                    resource=resource,
+                    batch=batch,
+                    first_batch=first_batch,
+                    metrics=metrics,
+                    mark_created=mark_created,
+                    mark_uncertain=mark_uncertain,
+                )
                 batch = []
+                batch_bytes = len(canonical_json({"upsert_rows": []}).encode("utf-8"))
+            batch.append(value)
+            batch_bytes += value_bytes
         if batch:
-            kwargs = {"upsert_rows": batch}
-            if first_batch:
-                kwargs["schema"] = LEDGER_SCHEMA
-            response = _safe_call("ledger write", resource.write, **kwargs)
-            metrics["ledger_write_calls"] += 1
-            _capture_billing(response, metrics)
-            _write_count(response, expected=len(batch), kind="ledger write")
-            metrics["ledger_rows_written"] += len(batch)
-            first_batch = False
+            first_batch = _send_ledger_batch(
+                resource=resource,
+                batch=batch,
+                first_batch=first_batch,
+                metrics=metrics,
+                mark_created=mark_created,
+                mark_uncertain=mark_uncertain,
+            )
     return first_batch
 
 
@@ -613,7 +678,6 @@ def _hash_ledger(
 
     digest = hashlib.sha256()
     counts = {"active": 0, "retained_stale": 0, "deleted": 0, "total": 0}
-    seen_ids: set[str] = set()
     for row in _query_rows(
         resource, include_attributes=LEDGER_ATTRIBUTES, metrics=metrics
     ):
@@ -624,10 +688,6 @@ def _hash_ledger(
         status = row.get("status")
         if status not in {"active", "retained_stale", "deleted"}:
             raise EvidenceSnapshotError("remote ledger row has invalid status")
-        row_id = str(row["id"])
-        if row_id in seen_ids:
-            raise EvidenceSnapshotError("remote ledger contains a duplicate row")
-        seen_ids.add(row_id)
         counts[str(status)] += 1
         counts["total"] += 1
         encoded = canonical_json(row).encode("utf-8")
@@ -655,9 +715,13 @@ def _reconcile_branch_with_ledger(
     *,
     branch: NamespaceResource,
     ledger: NamespaceResource,
+    snapshot_id: str,
     source_namespace: str,
+    expected_branch_namespace: str,
     metrics: dict[str, int],
-) -> None:
+) -> tuple[str, str, dict[str, int]]:
+    import hashlib
+
     remote = iter(
         _query_rows(
             branch,
@@ -666,11 +730,56 @@ def _reconcile_branch_with_ledger(
         )
     )
     branch_row = next(remote, None)
-    for expected in _ledger_rows_for_source(
-        ledger, source_namespace=source_namespace, metrics=metrics
+    digest = hashlib.sha256()
+    site_id: str | None = None
+    counts = {"active": 0, "retained_stale": 0, "deleted": 0, "total": 0}
+    for ordinal, expected in enumerate(
+        _ledger_rows_for_source(
+            ledger, source_namespace=source_namespace, metrics=metrics
+        )
     ):
         source_row_id = expected["source_row_id"]
-        if expected["status"] == "deleted":
+        if (
+            expected.get("snapshot_id") != snapshot_id
+            or expected.get("source_namespace") != source_namespace
+            or expected.get("branch_namespace") != expected_branch_namespace
+            or expected.get("ordinal") != ordinal
+            or expected.get("id")
+            != ledger_document_id(
+                snapshot_id=snapshot_id,
+                source_namespace=source_namespace,
+                source_row_id=str(source_row_id),
+            )
+        ):
+            raise EvidenceSnapshotError(
+                f"namespace {source_namespace!r} category ledger_identity row {source_row_id!r}"
+            )
+        row_site_id = expected.get("site_id")
+        if not isinstance(row_site_id, str) or not row_site_id or (
+            site_id is not None and row_site_id != site_id
+        ):
+            raise EvidenceSnapshotError(
+                f"namespace {source_namespace!r} category ledger_site row {source_row_id!r}"
+            )
+        site_id = row_site_id
+        status = str(expected["status"])
+        counts[status] += 1
+        counts["total"] += 1
+        fingerprint_row = {
+            "ordinal": ordinal,
+            "row_id": source_row_id,
+            "canonical_url": expected["canonical_url"],
+            "page_hash": expected["page_hash"],
+            "chunk_hash": expected["chunk_hash"],
+            "embedding_text_hash": expected["embedding_text_hash"],
+            "plan_id": expected["plan_id"],
+            "applied_at": expected["applied_at"],
+            "status": status,
+        }
+        encoded = canonical_json(fingerprint_row).encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+        if status == "deleted":
             if branch_row is not None and branch_row.get("id") == source_row_id:
                 raise EvidenceSnapshotError(
                     f"namespace {source_namespace!r} category deleted_present row {source_row_id!r}"
@@ -691,6 +800,11 @@ def _reconcile_branch_with_ledger(
         raise EvidenceSnapshotError(
             f"namespace {source_namespace!r} category unexpected row {str(branch_row.get('id'))!r}"
         )
+    if site_id is None:
+        raise EvidenceSnapshotError(
+            f"namespace {source_namespace!r} has no remote ledger rows"
+        )
+    return digest.hexdigest(), site_id, counts
 
 
 def _catalog_row_id(snapshot_id: str) -> str:
@@ -807,20 +921,82 @@ def _verify_catalog_row_shape(row: Mapping[str, object], *, snapshot_id: str) ->
         raise EvidenceSnapshotError("evidence catalog namespace count mismatch")
 
 
+def _verify_snapshot_identity(
+    row: Mapping[str, object], *, snapshot_id: str
+) -> tuple[dict[str, dict[str, object]], str]:
+    import hashlib
+
+    identity = _json_object_field(row, "source_identity_json")
+    sources_value = identity.get("sources")
+    if (
+        identity.get("schema_version") != EVIDENCE_SCHEMA_VERSION
+        or identity.get("region") != row.get("region")
+        or not isinstance(sources_value, list)
+    ):
+        raise EvidenceSnapshotError("catalog snapshot identity is invalid")
+    required = {
+        "namespace", "site_id", "last_plan_id", "last_apply_id",
+        "active_rows", "retained_stale_rows", "deleted_rows", "total_rows",
+        "logical_hash", "card_revision", "embedding_model",
+        "embedding_precision", "vector_dimensions", "plan_schema_version",
+    }
+    by_source: dict[str, dict[str, object]] = {}
+    for value in sources_value:
+        if not isinstance(value, dict) or set(value) != required:
+            raise EvidenceSnapshotError("catalog source identity is invalid")
+        namespace = value.get("namespace")
+        if not isinstance(namespace, str) or namespace in by_source:
+            raise EvidenceSnapshotError("catalog source identity is invalid")
+        by_source[namespace] = value
+    sources = list(row["source_namespaces"])
+    if list(by_source) != sources:
+        raise EvidenceSnapshotError("catalog source identity order mismatch")
+    identity_digest = logical_hash(identity)
+    if snapshot_id != f"evidence_{identity_digest[:16]}":
+        raise EvidenceSnapshotError("catalog source identity does not match snapshot ID")
+    expected_branches = [
+        f"buoy-evidence-branch-{identity_digest[:16]}-"
+        f"{hashlib.sha256(namespace.encode('utf-8')).hexdigest()[:16]}"
+        for namespace in sources
+    ]
+    if row.get("branch_namespaces") != expected_branches:
+        raise EvidenceSnapshotError("catalog branch names do not match snapshot identity")
+    if row.get("ledger_namespace") != f"buoy-evidence-ledger-{identity_digest[:16]}":
+        raise EvidenceSnapshotError("catalog ledger name does not match snapshot identity")
+    projections = {
+        "source_state_hashes_json": {name: value["logical_hash"] for name, value in by_source.items()},
+        "last_plan_ids_json": {name: value["last_plan_id"] for name, value in by_source.items()},
+        "last_apply_ids_json": {name: value["last_apply_id"] for name, value in by_source.items()},
+        "catalog_card_revisions_json": {name: value["card_revision"] for name, value in by_source.items()},
+    }
+    for field, expected in projections.items():
+        if _json_object_field(row, field) != expected:
+            raise EvidenceSnapshotError(f"catalog field {field} conflicts with snapshot identity")
+    return by_source, identity_digest
+
+
 def verify_evidence_snapshot(
     client: RemoteClient,
     *,
     snapshot_id: str,
     manifest_path: Path | None = None,
+    _metrics: dict[str, int] | None = None,
 ) -> dict[str, object]:
     if not isinstance(snapshot_id, str) or not snapshot_id.startswith("evidence_"):
         raise EvidenceSnapshotError("snapshot ID is invalid")
-    metrics = _new_metrics()
+    metrics = _new_metrics() if _metrics is None else _metrics
     row = _read_catalog_row(client, snapshot_id=snapshot_id, metrics=metrics)
     if row is None:
         raise EvidenceSnapshotError(f"completed snapshot {snapshot_id!r} was not found")
     _verify_catalog_row_shape(row, snapshot_id=snapshot_id)
+    identity_sources, identity_digest = _verify_snapshot_identity(
+        row, snapshot_id=snapshot_id
+    )
     observations = _json_object_field(row, "branch_observations_json")
+    sources = list(row["source_namespaces"])
+    branches = list(row["branch_namespaces"])
+    if set(observations) != set(sources):
+        raise EvidenceSnapshotError("catalog branch observations do not match sources")
     ledger_resource = client.namespace(str(row["ledger_namespace"]))
     if not _resource_exists(ledger_resource, metrics=metrics):
         raise EvidenceSnapshotError("snapshot ledger namespace is missing")
@@ -837,12 +1013,16 @@ def verify_evidence_snapshot(
     }
     if counts != expected_counts or ledger_hash != row.get("ledger_logical_hash"):
         raise EvidenceSnapshotError("remote snapshot ledger hash or counts mismatch")
-    sources = list(row["source_namespaces"])
-    branches = list(row["branch_namespaces"])
+    recomputed_source_hashes: dict[str, str] = {}
+    recomputed_source_counts = {"active": 0, "retained_stale": 0, "deleted": 0, "total": 0}
     for source_namespace, branch_namespace in zip(sources, branches, strict=True):
         observation = observations.get(source_namespace)
-        if not isinstance(observation, dict):
-            raise EvidenceSnapshotError("catalog branch observation is missing")
+        if (
+            not isinstance(observation, dict)
+            or observation.get("namespace") != branch_namespace
+            or observation.get("parent") != source_namespace
+        ):
+            raise EvidenceSnapshotError("catalog branch observation is invalid")
         branch = client.namespace(str(branch_namespace))
         if not _resource_exists(branch, metrics=metrics):
             raise EvidenceSnapshotError(
@@ -860,31 +1040,60 @@ def verify_evidence_snapshot(
                 raise EvidenceSnapshotError(
                     f"evidence branch metadata changed for namespace {source_namespace!r}: {field}"
                 )
-        _reconcile_branch_with_ledger(
+        source_hash, site_id, source_counts = _reconcile_branch_with_ledger(
             branch=branch,
             ledger=ledger_resource,
+            snapshot_id=snapshot_id,
             source_namespace=str(source_namespace),
+            expected_branch_namespace=str(branch_namespace),
             metrics=metrics,
         )
+        identity = identity_sources[str(source_namespace)]
+        if source_hash != identity.get("logical_hash") or site_id != identity.get("site_id"):
+            raise EvidenceSnapshotError(
+                f"remote ledger source fingerprint mismatch for namespace {source_namespace!r}"
+            )
+        expected_source_counts = {
+            "active": identity.get("active_rows"),
+            "retained_stale": identity.get("retained_stale_rows"),
+            "deleted": identity.get("deleted_rows"),
+            "total": identity.get("total_rows"),
+        }
+        if source_counts != expected_source_counts:
+            raise EvidenceSnapshotError(
+                f"remote ledger source counts mismatch for namespace {source_namespace!r}"
+            )
+        recomputed_source_hashes[str(source_namespace)] = source_hash
+        for key in recomputed_source_counts:
+            recomputed_source_counts[key] += source_counts[key]
+    if recomputed_source_counts != counts or recomputed_source_hashes != _json_object_field(
+        row, "source_state_hashes_json"
+    ):
+        raise EvidenceSnapshotError("remote ledger source fingerprints mismatch")
     snapshot_hash = logical_hash(
         {
-            "schema_version": row["schema_version"],
-            "snapshot_id": snapshot_id,
-            "source_state_hashes": _json_object_field(row, "source_state_hashes_json"),
+            "snapshot_identity_hash": identity_digest,
             "ledger_logical_hash": ledger_hash,
             "counts": counts,
         }
     )
     if snapshot_hash != row.get("snapshot_logical_hash"):
         raise EvidenceSnapshotError("evidence catalog snapshot logical hash mismatch")
-    if manifest_path is not None and Path(manifest_path).exists():
+    catalog_manifest = _manifest_from_catalog(
+        row, activity=_base_activity(writes=True, manifest=True)
+    )
+    if catalog_manifest.get("manifest_hash") != row.get("manifest_hash"):
+        raise EvidenceSnapshotError("evidence catalog manifest hash mismatch")
+    if manifest_path is not None:
+        if not Path(manifest_path).exists():
+            raise EvidenceSnapshotError("supplied local snapshot manifest does not exist")
         try:
             manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise EvidenceSnapshotError("local snapshot manifest is invalid") from exc
         if not isinstance(manifest, dict) or manifest_hash(manifest) != manifest.get("manifest_hash"):
             raise EvidenceSnapshotError("local snapshot manifest hash mismatch")
-        if manifest.get("snapshot_id") != snapshot_id or manifest.get("snapshot_logical_hash") != snapshot_hash:
+        if manifest != catalog_manifest:
             raise EvidenceSnapshotError("local snapshot manifest does not match remote snapshot")
     return {
         "command": "evidence verify",
@@ -932,6 +1141,7 @@ def create_evidence_snapshot(
     metrics = _new_metrics()
     _capture_catalog_metrics(routing, metrics)
     created: list[tuple[str, str | None]] = []
+    uncertain: set[str] = set()
     snapshot_id_for_cleanup: str | None = None
     finalized = False
     started = time.monotonic()
@@ -965,14 +1175,19 @@ def create_evidence_snapshot(
             existing = _read_catalog_row(
                 client, snapshot_id=names.snapshot_id, metrics=metrics
             )
-            activity = _base_activity(writes=True, manifest=True)
+            creation_activity = _base_activity(writes=True, manifest=True)
             if existing is not None:
-                verified = verify_evidence_snapshot(client, snapshot_id=names.snapshot_id)
+                verified = verify_evidence_snapshot(
+                    client, snapshot_id=names.snapshot_id, _metrics=metrics
+                )
                 if existing.get("ledger_namespace") != names.ledger_namespace or existing.get("branch_namespaces") != [names.branches[value] for value in selected]:
                     raise EvidenceSnapshotError("completed snapshot conflicts with deterministic identity")
-                manifest = _manifest_from_catalog(existing, activity=activity)
+                manifest = _manifest_from_catalog(
+                    existing, activity=creation_activity
+                )
                 if manifest["manifest_hash"] != existing.get("manifest_hash"):
                     raise EvidenceSnapshotError("completed snapshot manifest hash conflicts")
+                reuse_activity = _base_activity(writes=False, manifest=True)
                 path, local_bytes = _write_manifest(
                     out_root=out_root,
                     snapshot_id=names.snapshot_id,
@@ -990,12 +1205,15 @@ def create_evidence_snapshot(
                     "active_rows": verified["active_rows"],
                     "retained_stale_rows": verified["retained_stale_rows"],
                     "deleted_rows": verified["deleted_rows"],
-                    "approximate_remote_logical_bytes": approximate_bytes,
+                    "approximate_remote_logical_bytes": verified[
+                        "approximate_remote_logical_bytes"
+                    ],
                     "reused_snapshot": True,
-                    **activity,
+                    **reuse_activity,
                     **metrics,
                 }
 
+            activity = creation_activity
             observations: dict[str, dict[str, object]] = {}
             for source in sources:
                 branch_name = names.branches[source.namespace]
@@ -1017,12 +1235,10 @@ def create_evidence_snapshot(
                             source_namespace=source.namespace,
                         )
                     except Exception:
-                        # A transport failure can happen after server-side creation.
-                        # Track the deterministic destination so guarded cleanup can
-                        # inspect parentage instead of silently losing the resource.
-                        created.append((branch_name, source.namespace))
+                        uncertain.add(branch_name)
                         raise
                     _capture_billing(branch_response, metrics)
+                    # Only a definite success proves this invocation created it.
                     created.append((branch_name, source.namespace))
                     metrics["branch_create_count"] += 1
                     metrics["branch_calls"] += 1
@@ -1045,7 +1261,18 @@ def create_evidence_snapshot(
             ledger_resource = client.namespace(names.ledger_namespace)
             if _resource_exists(ledger_resource, metrics=metrics):
                 raise EvidenceSnapshotError("incomplete snapshot ledger collision")
-            created.append((names.ledger_namespace, None))
+            ledger_marked_created = False
+
+            def mark_ledger_created() -> None:
+                nonlocal ledger_marked_created
+                if not ledger_marked_created:
+                    created.append((names.ledger_namespace, None))
+                    ledger_marked_created = True
+                    uncertain.discard(names.ledger_namespace)
+
+            def mark_ledger_uncertain() -> None:
+                uncertain.add(names.ledger_namespace)
+
             first_batch = True
             for source in sources:
                 first_batch = _write_ledger(
@@ -1056,6 +1283,8 @@ def create_evidence_snapshot(
                     branch_namespace=names.branches[source.namespace],
                     first_batch=first_batch,
                     metrics=metrics,
+                    mark_created=mark_ledger_created,
+                    mark_uncertain=mark_ledger_uncertain,
                 )
             if first_batch:
                 response = _safe_call(
@@ -1095,12 +1324,32 @@ def create_evidence_snapshot(
             }
             if counts != expected_counts:
                 raise EvidenceSnapshotError("remote snapshot ledger status counts mismatch")
+            # Ledger verification is complete; branch metadata must remain stable
+            # through this final pre-publication check.
+            for source in sources:
+                after = _metadata(
+                    client.namespace(names.branches[source.namespace]), metrics=metrics
+                )
+                observation = observations[source.namespace]
+                branching = _plain(after.get("branching"))
+                if not isinstance(branching, dict) or branching.get("parent") != source.namespace:
+                    raise EvidenceSnapshotError(
+                        f"evidence branch parent changed before finalization for namespace {source.namespace!r}"
+                    )
+                for field in ("created_at", "last_write_at", "approx_row_count", "approx_logical_bytes"):
+                    if after.get(field) != observation.get(field):
+                        raise EvidenceSnapshotError(
+                            f"evidence branch changed before finalization for namespace {source.namespace!r}"
+                        )
+
             source_hashes = {item.namespace: item.logical_hash for item in fingerprints}
+            source_identity = snapshot_identity_payload(
+                region=region, fingerprints=fingerprints, cards=cards
+            )
+            identity_digest = logical_hash(source_identity)
             snapshot_hash = logical_hash(
                 {
-                    "schema_version": EVIDENCE_SCHEMA_VERSION,
-                    "snapshot_id": names.snapshot_id,
-                    "source_state_hashes": source_hashes,
+                    "snapshot_identity_hash": identity_digest,
                     "ledger_logical_hash": ledger_hash,
                     "counts": counts,
                 }
@@ -1141,6 +1390,7 @@ def create_evidence_snapshot(
                 "retained_stale_row_count": counts["retained_stale"],
                 "deleted_row_count": counts["deleted"],
                 "source_state_hashes_json": canonical_json(source_hashes),
+                "source_identity_json": canonical_json(source_identity),
                 "last_plan_ids_json": canonical_json({item.namespace: item.last_plan_id for item in fingerprints}),
                 "last_apply_ids_json": canonical_json({item.namespace: item.last_apply_id for item in fingerprints}),
                 "catalog_card_revisions_json": canonical_json({value: cards[value].card_revision for value in selected}),
@@ -1178,7 +1428,9 @@ def create_evidence_snapshot(
                     raise EvidenceSnapshotError(
                         "conditional catalog finalization conflicted with remote state"
                     )
-                verify_evidence_snapshot(client, snapshot_id=names.snapshot_id)
+                verify_evidence_snapshot(
+                    client, snapshot_id=names.snapshot_id, _metrics=metrics
+                )
                 manifest_preview = _manifest_from_catalog(raced, activity=activity)
                 if manifest_preview["manifest_hash"] != raced.get("manifest_hash"):
                     raise EvidenceSnapshotError(
@@ -1221,46 +1473,33 @@ def create_evidence_snapshot(
                 **metrics,
             }
     except Exception as primary:
-        leaked: list[str] = []
-        completed_during_failure = False
-        if not finalized and snapshot_id_for_cleanup is not None:
+        if finalized:
+            raise
+        completion_uncertain = False
+        if snapshot_id_for_cleanup is not None:
             try:
                 completed_row = _read_catalog_row(
                     client, snapshot_id=snapshot_id_for_cleanup, metrics=metrics
                 )
-                completed_during_failure = (
+                completion_uncertain = (
                     completed_row is not None and completed_row.get("state") == "complete"
                 )
             except Exception:
-                # An unreadable completion marker makes deletion unsafe.
-                completed_during_failure = True
-        if not finalized and not completed_during_failure:
-            for namespace, expected_parent in reversed(created):
-                resource = client.namespace(namespace)
-                try:
-                    if not namespace.startswith("buoy-evidence-"):
-                        leaked.append(namespace)
-                        continue
-                    if not _resource_exists(resource, metrics=metrics):
-                        continue
-                    metadata = _metadata(resource, metrics=metrics)
-                    if expected_parent is not None:
-                        branching = _plain(metadata.get("branching"))
-                        parent = branching.get("parent") if isinstance(branching, dict) else None
-                        if parent != expected_parent:
-                            leaked.append(namespace)
-                            continue
-                    else:
-                        _validate_exact_schema(metadata, LEDGER_SCHEMA)
-                    _safe_call("incomplete namespace cleanup", resource.delete_all)
-                except Exception:
-                    leaked.append(namespace)
-        if completed_during_failure:
+                completion_uncertain = True
+        incomplete = sorted(
+            {namespace for namespace, _ in created} | uncertain
+        )
+        # Deterministic names are shared by concurrent hosts. Even a definite
+        # create response cannot prove that another invocation has not begun
+        # reusing the namespace or finalized immediately after a catalog read.
+        # Report owned incomplete resources rather than risk deleting concurrent,
+        # preexisting, or completed evidence.
+        if completion_uncertain:
             raise EvidenceSnapshotError(
-                f"{primary}; completed catalog state could not be ruled out, so internal cleanup was skipped"
+                f"{primary}; completed catalog state exists or could not be ruled out, so internal cleanup was skipped"
             ) from primary
-        if leaked:
+        if incomplete:
             raise EvidenceSnapshotError(
-                f"{primary}; no valid snapshot was finalized; incomplete internal namespaces: {sorted(leaked)}"
+                f"{primary}; no valid snapshot was finalized; conservatively retained incomplete internal namespaces: {incomplete}"
             ) from primary
         raise

@@ -83,6 +83,42 @@ class EvidenceCliTests(unittest.TestCase):
         self.assertEqual(result, 2)
         self.assertEqual(json.loads(stdout.getvalue()), payload)
 
+    def test_snapshot_text_and_verify_json_outputs_follow_cli_conventions(self) -> None:
+        snapshot_payload = {
+            "command": "evidence snapshot",
+            "snapshot_id": "evidence_0123456789abcdef",
+            "reused_snapshot": False,
+        }
+        stdout = io.StringIO()
+        with patch.dict(os.environ, {"TURBOPUFFER_API_KEY": "secret"}, clear=True), patch(
+            "buoy_search.evidence_cli.EVIDENCE_CLIENT_FACTORY", return_value=object()
+        ), patch(
+            "buoy_search.evidence_remote.create_evidence_snapshot",
+            return_value=snapshot_payload,
+        ), redirect_stdout(stdout):
+            result = main(["evidence", "snapshot", "--namespace", "site-one-v1"])
+        self.assertEqual(result, 0)
+        self.assertIn("evidence snapshot:", stdout.getvalue())
+        self.assertIn("snapshot_id: evidence_0123456789abcdef", stdout.getvalue())
+
+        verify_payload = {
+            "command": "evidence verify",
+            "snapshot_id": "evidence_0123456789abcdef",
+            "verified": True,
+        }
+        stdout = io.StringIO()
+        with patch.dict(os.environ, {"TURBOPUFFER_API_KEY": "secret"}, clear=True), patch(
+            "buoy_search.evidence_cli.EVIDENCE_CLIENT_FACTORY", return_value=object()
+        ), patch(
+            "buoy_search.evidence_remote.verify_evidence_snapshot",
+            return_value=verify_payload,
+        ), redirect_stdout(stdout):
+            result = main([
+                "evidence", "verify", "--snapshot-id", "evidence_0123456789abcdef", "--json"
+            ])
+        self.assertEqual(result, 0)
+        self.assertEqual(json.loads(stdout.getvalue()), verify_payload)
+
     def test_import_and_help_are_provider_inert(self) -> None:
         code = """
 import builtins, sys

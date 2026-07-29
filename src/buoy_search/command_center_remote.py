@@ -249,13 +249,21 @@ class RemoteSnapshotService:
 
     def _local_namespace_ids(self) -> tuple[str, ...]:
         first = self._local_inventory.list_namespaces(offset=0, limit=100)
-        ids = [item.namespace for item in first.items]
+        ids = [
+            item.namespace
+            for item in first.items
+            if not item.namespace.startswith("buoy-evidence-")
+        ]
         offset = len(first.items)
         while offset < first.total:
             page = self._local_inventory.list_namespaces(offset=offset, limit=100)
             if not page.items:
                 break
-            ids.extend(item.namespace for item in page.items)
+            ids.extend(
+                item.namespace
+                for item in page.items
+                if not item.namespace.startswith("buoy-evidence-")
+            )
             offset += len(page.items)
         return tuple(sorted(set(ids)))
 
@@ -533,14 +541,36 @@ def _compatibility(config: RuntimeConfig) -> CompatibilityContract:
 def _combined_namespace_statuses(
     local_ids: Sequence[str], snapshot: RemoteCatalogSnapshot
 ) -> tuple[RemoteNamespaceStatus, ...]:
-    local = set(local_ids)
-    live = set(snapshot.live_namespace_ids)
-    cards = {card.namespace: card for card in snapshot.cards}
-    missing = set(snapshot.missing_card_ids)
-    stale = set(snapshot.stale_target_ids)
-    disabled = set(snapshot.disabled_ids)
-    incompatible = set(snapshot.incompatible_ids)
-    eligible = {card.namespace for card in snapshot.eligible_cards}
+    local = {value for value in local_ids if not value.startswith("buoy-evidence-")}
+    live = {
+        value for value in snapshot.live_namespace_ids
+        if not value.startswith("buoy-evidence-")
+    }
+    cards = {
+        card.namespace: card
+        for card in snapshot.cards
+        if not card.namespace.startswith("buoy-evidence-")
+    }
+    missing = {
+        value for value in snapshot.missing_card_ids
+        if not value.startswith("buoy-evidence-")
+    }
+    stale = {
+        value for value in snapshot.stale_target_ids
+        if not value.startswith("buoy-evidence-")
+    }
+    disabled = {
+        value for value in snapshot.disabled_ids
+        if not value.startswith("buoy-evidence-")
+    }
+    incompatible = {
+        value for value in snapshot.incompatible_ids
+        if not value.startswith("buoy-evidence-")
+    }
+    eligible = {
+        card.namespace for card in snapshot.eligible_cards
+        if not card.namespace.startswith("buoy-evidence-")
+    }
     rows: list[RemoteNamespaceStatus] = []
     for namespace in sorted(local | live | set(cards)):
         if namespace in eligible:

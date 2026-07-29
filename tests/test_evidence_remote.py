@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime
+import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import resource
@@ -12,6 +15,7 @@ from unittest.mock import patch
 
 import duckdb
 
+from buoy_search import evidence_remote
 from buoy_search.applied_state import (
     AppliedStateRow,
     acquire_namespace_apply_lock,
@@ -381,6 +385,42 @@ class EvidenceRemoteTests(unittest.TestCase):
         self.assertEqual(len(self.client.branch_calls), first_branches)
         self.assertEqual(len([name for name, _ in self.client.write_calls if name.startswith("buoy-evidence-ledger-")]), first_ledger_writes)
 
+    def test_sdk_datetime_metadata_is_normalized_before_catalog_serialization(self) -> None:
+        original = FakeNamespace.metadata
+
+        def sdk_typed_metadata(namespace, **kwargs):  # noqa: ANN001, ANN202
+            value = original(namespace, **kwargs)
+            value["created_at"] = datetime.fromisoformat(str(value["created_at"]))
+            value["last_write_at"] = datetime.fromisoformat(str(value["last_write_at"]))
+            return SimpleNamespace(**value)
+
+        with patch.object(FakeNamespace, "metadata", sdk_typed_metadata):
+            result = create_evidence_snapshot(
+                self.client, out_root=self.out, **self.kwargs()
+            )
+        self.assertTrue(result["snapshot_id"])
+        row = next(
+            iter(self.client.data["buoy-evidence-catalog-v1"]["rows"].values())
+        )
+        observations = json.loads(str(row["branch_observations_json"]))
+        self.assertIsInstance(observations["site-one-v1"]["created_at"], str)
+
+    def test_reuse_reports_current_no_write_activity_and_verification_metrics(self) -> None:
+        create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
+        writes_before = len(self.client.write_calls)
+        queries_before = len(self.client.query_calls)
+        reused = create_evidence_snapshot(
+            self.client, out_root=self.out, **self.kwargs()
+        )
+        self.assertTrue(reused["reused_snapshot"])
+        self.assertFalse(reused["internal_evidence_writes_occurred"])
+        self.assertTrue(reused["local_manifest_written"])
+        self.assertEqual(len(self.client.write_calls), writes_before)
+        self.assertGreater(len(self.client.query_calls), queries_before)
+        self.assertGreaterEqual(
+            reused["remote_queries"], len(self.client.query_calls) - queries_before
+        )
+
     def test_sharded_and_limits_fail_before_branch_creation(self) -> None:
         self.client.data["site-one-v1"]["sharded"] = True
         with self.assertRaisesRegex(EvidenceSnapshotError, "sharded"):
@@ -398,29 +438,32 @@ class EvidenceRemoteTests(unittest.TestCase):
             create_evidence_snapshot(self.client, out_root=self.out, maximum_remote_logical_bytes=100, **self.kwargs())
         self.assertEqual(self.client.branch_calls, [])
 
-    def test_reconciliation_failure_cleans_only_current_internal_namespaces(self) -> None:
+    def test_reconciliation_failure_reports_incomplete_namespaces_without_unsafe_delete(self) -> None:
         self.client.data["site-one-v1"]["rows"][self.rows[0].row_id]["page_hash"] = "wrong"
         self.client.data["preexisting"] = {"exists": True, "rows": {}, "schema": {}, "parent": None}
-        with self.assertRaisesRegex(EvidenceSnapshotError, "page_hash_mismatch"):
+        with self.assertRaisesRegex(
+            EvidenceSnapshotError,
+            "page_hash_mismatch.*conservatively retained incomplete internal namespaces",
+        ) as raised:
             create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
-        self.assertIn(self.client.branch_calls[0][0], self.client.delete_calls)
-        ledger = next(name for name in self.client.delete_calls if name.startswith("buoy-evidence-ledger-"))
-        self.assertIn(ledger, self.client.delete_calls)
-        self.assertNotIn("preexisting", self.client.delete_calls)
+        self.assertIn(self.client.branch_calls[0][0], str(raised.exception))
+        self.assertIn("buoy-evidence-ledger-", str(raised.exception))
+        self.assertNotIn("preexisting", str(raised.exception))
+        self.assertEqual(self.client.delete_calls, [])
         self.assertFalse(any(name == "buoy-evidence-catalog-v1" for name, _ in self.client.write_calls))
 
-    def test_ledger_count_mismatch_and_catalog_failure_cleanup(self) -> None:
+    def test_ledger_count_mismatch_and_catalog_failure_report_safe_leaks(self) -> None:
         self.client.bad_ledger_count = True
-        with self.assertRaisesRegex(EvidenceSnapshotError, "affected"):
+        with self.assertRaisesRegex(EvidenceSnapshotError, "affected.*conservatively retained"):
             create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
-        self.assertTrue(self.client.delete_calls)
+        self.assertEqual(self.client.delete_calls, [])
 
         self.client = FakeClient()
         self.client.add_source("site-one-v1", [remote_row(self.rows[0]), remote_row(self.rows[1])], logical_bytes=4096)
         self.client.fail_catalog = True
-        with self.assertRaisesRegex(EvidenceSnapshotError, "catalog finalization"):
+        with self.assertRaisesRegex(EvidenceSnapshotError, "catalog finalization.*conservatively retained"):
             create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
-        self.assertEqual(len(self.client.delete_calls), 2)
+        self.assertEqual(self.client.delete_calls, [])
 
     def test_verify_detects_branch_and_ledger_mutation(self) -> None:
         result = create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
@@ -454,7 +497,7 @@ class EvidenceRemoteTests(unittest.TestCase):
         self.assertEqual([source for _, source in self.client.branch_calls], ["site-one-v1", "site-two-v1"])
         self.assertEqual(result["approximate_remote_logical_bytes"], 6144)
 
-    def test_second_branch_failure_cleans_first_and_releases_all_locks(self) -> None:
+    def test_second_branch_failure_reports_first_and_releases_all_locks(self) -> None:
         second_rows = [state_row(10)]
         save_state(self.state, "site-two-v1", "two", second_rows)
         self.client.add_source("site-two-v1", [remote_row(second_rows[0])])
@@ -470,7 +513,7 @@ class EvidenceRemoteTests(unittest.TestCase):
                 out_root=self.out,
                 catalog_reader=reader_for([*self.cards, card("site-two-v1", "two")]),
             )
-        self.assertEqual(len(self.client.delete_calls), 1)
+        self.assertEqual(self.client.delete_calls, [])
         with acquire_namespace_apply_lock(site_id="one", namespace="site-one-v1", state_root=self.state):
             with acquire_namespace_apply_lock(site_id="two", namespace="site-two-v1", state_root=self.state):
                 pass
@@ -509,7 +552,7 @@ class EvidenceRemoteTests(unittest.TestCase):
         self.client.mutate_branch_on_query = True
         with self.assertRaisesRegex(EvidenceSnapshotError, "changed during reconciliation"):
             create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
-        self.assertTrue(self.client.delete_calls)
+        self.assertEqual(self.client.delete_calls, [])
 
     def test_ledger_writes_are_bounded_batches(self) -> None:
         rows = [state_row(index) for index in range(2501)]
@@ -534,6 +577,44 @@ class EvidenceRemoteTests(unittest.TestCase):
         ]
         self.assertEqual([len(call["upsert_rows"]) for call in ledger_writes], [1000, 1000, 501])
         self.assertEqual(result["ledger_write_calls"], 3)
+
+    def test_ledger_batches_are_byte_bounded(self) -> None:
+        rows = [state_row(index) for index in range(8)]
+        for index, row in enumerate(rows):
+            rows[index] = AppliedStateRow(
+                row_id=row.row_id,
+                canonical_url=row.canonical_url + ("x" * 400),
+                page_hash=row.page_hash,
+                chunk_hash=row.chunk_hash,
+                embedding_text_hash=row.embedding_text_hash,
+                plan_id=row.plan_id,
+                applied_at=row.applied_at,
+                status=row.status,
+            )
+        with tempfile.TemporaryDirectory() as temporary:
+            state_root = Path(temporary) / "state"
+            save_state(state_root, "site-byte-v1", "byte", rows)
+            client = FakeClient()
+            client.add_source("site-byte-v1", [remote_row(value) for value in rows])
+            with patch("buoy_search.evidence_remote.LEDGER_WRITE_MAX_BYTES", 2_500):
+                create_evidence_snapshot(
+                    client,
+                    namespaces=["site-byte-v1"],
+                    state_root=state_root,
+                    region=REGION,
+                    embedding_model=MODEL,
+                    embedding_precision="float32",
+                    out_root=Path(temporary) / "out",
+                    catalog_reader=reader_for([card("site-byte-v1", "byte")]),
+                )
+        writes = [
+            call for name, call in client.write_calls
+            if name.startswith("buoy-evidence-ledger-")
+        ]
+        self.assertGreater(len(writes), 1)
+        self.assertTrue(
+            all(len(json.dumps(call, separators=(",", ":"))) <= 2_500 for call in writes)
+        )
 
     def test_100000_row_snapshot_is_structurally_bounded(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -631,6 +712,23 @@ class EvidenceRemoteTests(unittest.TestCase):
             )
         )
         self.assertEqual(manifest_files, ["snapshot.json"])
+        if os.environ.get("BUOY_EVIDENCE_SCALE_REPORT") == "1":
+            print(json.dumps({
+                "rows": result["ledger_rows_written"],
+                "peak_rss_delta_bytes": rss_delta_bytes,
+                "local_manifest_bytes": result["local_bytes_written"],
+                "branch_calls": result["branch_calls"],
+                "remote_query_metric": result["remote_queries"],
+                "remote_query_calls": len(client.query_calls),
+                "ledger_write_calls": result["ledger_write_calls"],
+                "catalog_write_calls": result["catalog_write_calls"],
+                "billable_logical_bytes_queried": result["billable_logical_bytes_queried"],
+                "billable_logical_bytes_returned": result["billable_logical_bytes_returned"],
+                "approximate_remote_logical_bytes": result["approximate_remote_logical_bytes"],
+                "elapsed_reconciliation_seconds": result["elapsed_reconciliation_seconds"],
+                "wall_elapsed_seconds": round(elapsed, 6),
+                "manifest_files": manifest_files,
+            }, sort_keys=True))
 
     def test_reconciliation_rejects_missing_extra_deleted_and_attribute_mismatches(self) -> None:
         mutations = {
@@ -687,6 +785,61 @@ class EvidenceRemoteTests(unittest.TestCase):
         empty = FakeClient()
         with self.assertRaisesRegex(EvidenceSnapshotError, "not found"):
             verify_evidence_snapshot(empty, snapshot_id=snapshot_id)
+
+    def test_remote_verify_recomputes_source_identity_and_authenticates_catalog(self) -> None:
+        result = create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
+        snapshot_id = str(result["snapshot_id"])
+        catalog_row = next(
+            iter(self.client.data["buoy-evidence-catalog-v1"]["rows"].values())
+        )
+        original = copy.deepcopy(catalog_row)
+
+        catalog_row["source_state_hashes_json"] = json.dumps({"site-one-v1": "0" * 64})
+        with self.assertRaisesRegex(EvidenceSnapshotError, "conflicts with snapshot identity"):
+            verify_evidence_snapshot(self.client, snapshot_id=snapshot_id)
+        catalog_row.clear()
+        catalog_row.update(copy.deepcopy(original))
+
+        catalog_row["last_plan_ids_json"] = json.dumps({"site-one-v1": "wrong"})
+        with self.assertRaisesRegex(EvidenceSnapshotError, "conflicts with snapshot identity"):
+            verify_evidence_snapshot(self.client, snapshot_id=snapshot_id)
+        catalog_row.clear()
+        catalog_row.update(copy.deepcopy(original))
+
+        catalog_row["approximate_logical_bytes"] = 99
+        with self.assertRaisesRegex(EvidenceSnapshotError, "manifest hash"):
+            verify_evidence_snapshot(self.client, snapshot_id=snapshot_id)
+        catalog_row.clear()
+        catalog_row.update(copy.deepcopy(original))
+
+        catalog_row["branch_namespaces"] = ["buoy-evidence-branch-substitution"]
+        with self.assertRaisesRegex(EvidenceSnapshotError, "branch names"):
+            verify_evidence_snapshot(self.client, snapshot_id=snapshot_id)
+
+    def test_final_branch_metadata_check_runs_after_ledger_verification(self) -> None:
+        real_hash = evidence_remote._hash_ledger
+
+        def mutate_after_ledger(**kwargs):  # noqa: ANN003, ANN202
+            value = real_hash(**kwargs)
+            branch_name = self.client.branch_calls[0][0]
+            self.client.data[branch_name]["last_write_at"] = "2026-07-29T11:00:00+00:00"
+            return value
+
+        with patch("buoy_search.evidence_remote._hash_ledger", side_effect=mutate_after_ledger):
+            with self.assertRaisesRegex(EvidenceSnapshotError, "changed before finalization"):
+                create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
+        catalog = self.client.data.get("buoy-evidence-catalog-v1", {"rows": {}})
+        self.assertEqual(catalog["rows"], {})
+        self.assertEqual(self.client.delete_calls, [])
+
+    def test_explicit_missing_manifest_fails(self) -> None:
+        result = create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
+        with self.assertRaisesRegex(EvidenceSnapshotError, "does not exist"):
+            verify_evidence_snapshot(
+                self.client,
+                snapshot_id=str(result["snapshot_id"]),
+                manifest_path=self.out / "missing.json",
+            )
 
     def test_manifest_mismatch_and_post_completion_manifest_failure(self) -> None:
         result = create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
