@@ -66,6 +66,7 @@ from buoy_search.evals import (
     load_eval_cases,
     run_live_evals,
 )
+from buoy_search.evidence_cli import configure_evidence_parser
 from buoy_search.chunker import (
     DEFAULT_OVERLAP_SENTENCES,
     DEFAULT_TARGET_TOKENS,
@@ -698,6 +699,7 @@ def build_parser() -> argparse.ArgumentParser:
     namespaces_parser.set_defaults(func=_run_namespaces)
 
     configure_catalog_parser(subparsers)
+    configure_evidence_parser(subparsers)
 
     retrieve_parser = subparsers.add_parser(
         "retrieve",
@@ -966,6 +968,8 @@ def resolve_retrieval_namespaces(args: argparse.Namespace) -> list[str]:
     namespaces = [namespace.strip() for namespace in cli_namespaces]
     if any(not namespace for namespace in namespaces):
         raise ValueError("--namespace must contain a non-empty namespace ID.")
+    if any(namespace.startswith("buoy-evidence-") for namespace in namespaces):
+        raise ValueError("reserved evidence namespaces are not ordinary retrieval sources.")
     duplicate = next(
         (namespace for index, namespace in enumerate(namespaces) if namespace in namespaces[:index]),
         None,

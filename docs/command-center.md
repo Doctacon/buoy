@@ -1,6 +1,6 @@
 # Command Center
 
-Buoy Command Center is an optional, local-first console for one operator. Phase 1 review, inventory, remote-status, and search screens remain read-only. Implemented Phase 2A adds one bounded managed workflow: start a local plan for a credential-free HTTP(S) website or public GitHub repository root, observe durable progress, and open the resulting plan for review. It does not add apply, deletion, catalog, namespace, source-definition, local-file, database-source, credential, or graph authority.
+Buoy Command Center is an optional, local-first console for one operator. Phase 1 review, inventory, remote-status, and search screens remain read-only. Implemented Phase 2A adds one bounded managed workflow: start a local plan for a credential-free HTTP(S) website or public GitHub repository root, observe durable progress, and open the resulting plan for review. Graph Phase 3A remote evidence snapshots are CLI-only; Command Center does not create, verify, retain, or delete them. It does not add apply, deletion, catalog, namespace, source-definition, local-file, database-source, credential, or graph authority.
 
 ## Architecture
 
@@ -71,7 +71,7 @@ Submitting **Start plan** is the only source-acquisition workflow: it may crawl 
 
 Only two controls may perform turbopuffer reads:
 
-- **Refresh remote status** explicitly lists remote namespaces and reads compatible catalog cards. No refresh runs automatically.
+- **Refresh remote status** explicitly lists remote namespaces and reads compatible catalog cards. No refresh runs automatically. Names beginning `buoy-evidence-` are internal evidence infrastructure: they are excluded from ordinary source rows and automatic routing, while refresh may report only their bounded count.
 - **Search** explicitly performs retrieval. Automatic routing may read the remote catalog and load the local routing model; retrieval may load the local content embedding model and query selected namespaces.
 
 Both responses report whether credentials were required, API calls occurred, and writes occurred. Writes are always false for these Command Center operations. Multi-namespace search remains all-or-nothing if one selected namespace fails.
@@ -93,7 +93,7 @@ Do not put secrets in plan artifacts, URLs, browser storage, logs, screenshots, 
 - **Artifact errors** provides read-only, searchable, server-paginated access to every isolated local artifact error by code, sanitized message, and safe artifact ID. It requests and renders only the current 50-item page and has no show-all, repair, or deletion action.
 - **Plan detail** derives its initial detail and both bounded payload windows from one fresh complete verification; later changed/stale pagination verifies afresh through only the focused section endpoint, with at most one focused request accepted by that screen at a time. It shows identity, applied-state baseline, safe provenance, embedding and retrieval contracts, diff, paginated changed/new/reactivated chunks, paginated stale identities, an explicit unchanged-content omission notice, warnings, errors, and an originating job link when durable managed metadata establishes one.
 - **Search** supports explicit namespace selection or automatic routing with bounded ranking inputs, execution-impact disclosure, and citation-rich results.
-- **Graphs** explains the future evidence-backed graph flow. It contains no generated, placeholder, or inferred graph data.
+- **Graphs** explains the evidence-backed roadmap. Phase 3A's branch snapshots exist only through the CLI; the screen contains no snapshot creation, generated concepts, placeholder graph, inferred relationships, taxonomy, or ontology.
 
 Changed chunk content, progress, errors, citations, and result text are rendered as escaped plain text rather than executable HTML. A shared **Retry** button on a read-error card only repeats that idempotent GET; it does not retry, resume, or replay a plan job.
 
@@ -155,7 +155,7 @@ From the repository, run `cd web && npm ci && npm run build`, then restart the s
 
 ## Current non-goals
 
-Command Center does not provide plan apply or approval, cancellation, pause/resume, plan-job retry, saved source definitions, local-file/document or database planning, source credentials, private repositories, catalog registration or repair, namespace deletion, other provider writes, authentication, remote hosting, desktop packaging, background remote refresh, persisted remote snapshots, graph extraction, graph storage, taxonomy generation, or graph editing.
+Command Center does not provide plan apply or approval, cancellation, pause/resume, plan-job retry, saved source definitions, local-file/document or database planning, source credentials, private repositories, catalog registration or repair, namespace deletion, other provider writes, authentication, remote hosting, desktop packaging, background remote refresh, evidence snapshot creation/verification/retention/deletion, graph extraction, graph storage, taxonomy generation, or graph editing.
 
 ## Roadmap
 
@@ -163,5 +163,9 @@ Command Center does not provide plan apply or approval, cancellation, pause/resu
 
 Broader Phase 2 remains **unratified**. Possible managed apply, deletion, catalog, credential, source-definition, namespace, local-file, database, or other lifecycle workflows are not approved behavior and must not be inferred from Phase 2A; each would require its own ratified security, permission, lifecycle, and failure contract.
 
-- **Phase 3 — graph backend models (direction only):** derive versioned, evidence-linked graph snapshots and taxonomy or ontology models from selected namespaces. Graph facts must remain traceable to source chunks and citations.
-- **Phase 4 — graph interface (direction only):** add exploration and review of established backend snapshots, including provenance navigation and taxonomy or ontology views. It must not invent graph data in the browser.
+- **Phase 3A — remote evidence snapshots: implemented.** Explicit CLI commands create/reuse branch-backed point-in-time evidence, a compact active/retained/deleted remote ledger, one completed remote catalog row, and only bounded local `snapshot.json`. Full evidence remains in turbopuffer; see [Remote evidence snapshots](evidence-snapshots.md).
+- **Phase 3B — concepts and mentions: future.**
+- **Phase 3C — assertions and graph snapshots: future.**
+- **Phase 4 — graph review and visualization: future.**
+
+No taxonomy or ontology currently exists.
