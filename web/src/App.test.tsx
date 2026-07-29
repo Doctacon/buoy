@@ -53,6 +53,7 @@ const dashboard = {
   recent_plans: [plan],
   attention_items: [],
   artifact_errors: [],
+  artifact_errors_truncated: false,
 }
 
 const namespaces = {
@@ -69,7 +70,7 @@ const namespaces = {
       latest_planned_upserts: 0, latest_planned_stale_rows: 0, document_count: 1, chunk_count: 12, warnings: [],
     },
   ],
-  total: 2, offset: 0, limit: 100, errors: [],
+  total: 2, offset: 0, limit: 100, errors: [], error_total: 0, errors_truncated: false,
 }
 
 const capabilities = {
@@ -304,11 +305,138 @@ describe('Command Center', () => {
     expect(await screen.findByText('plan-1')).toBeInTheDocument()
   })
 
-  it('uses URL-backed server filters for one bounded local namespace page', async () => {
+  it('renders only the bounded artifact-error sample on ordinary inventory screens', async () => {
+    const sample = Array.from({ length: 20 }, (_, index) => ({
+      code: `error_${index}`,
+      message: `Safe diagnostic ${index}`,
+      artifact_id: `artifact-${index}`,
+    }))
+    mockApi((path) => {
+      if (path.includes('/dashboard')) return { ...dashboard, artifact_error_count: 10_000, artifact_errors: sample, artifact_errors_truncated: true }
+      if (path.startsWith('/api/v1/namespaces?')) return { ...namespaces, errors: sample, error_total: 10_000, errors_truncated: true }
+      if (path.startsWith('/api/v1/plans?')) return { items: [plan], total: 1, offset: 0, limit: 50, errors: sample, error_total: 10_000, errors_truncated: true }
+      throw new Error(`Unexpected path ${path}`)
+    })
+
+    for (const route of ['/', '/plans', '/namespaces']) {
+      const view = renderRoute(route)
+      const sampleLabel = await screen.findByText('Showing 20 of 10,000 local artifact errors.')
+      const panel = sampleLabel.closest('section')
+      expect(panel).not.toBeNull()
+      expect(within(panel as HTMLElement).getAllByRole('listitem')).toHaveLength(20)
+      expect(within(panel as HTMLElement).getByRole('link', { name: 'View artifact diagnostics' })).toHaveAttribute('href', '/artifact-errors')
+      view.unmount()
+    }
+  })
+
+  it('renders distinct artifact errors without duplicate React keys when code and artifact ID match', async () => {
+    const errors = [
+      { code: 'malformed_plan', message: 'First sanitized diagnostic', artifact_id: 'shared-artifact' },
+      { code: 'malformed_plan', message: 'Second sanitized diagnostic', artifact_id: 'shared-artifact' },
+    ]
+    mockApi((path) => {
+      if (path.includes('/dashboard')) return { ...dashboard, artifact_error_count: 2, artifact_errors: errors }
+      if (path.startsWith('/api/v1/artifact-errors?')) return { items: errors, total: 2, offset: 0, limit: 50 }
+      throw new Error(`Unexpected path ${path}`)
+    })
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const dashboardView = renderRoute('/')
+      expect(await screen.findByText((_, element) => element?.tagName === 'LI' && element.textContent === 'malformed_plan: First sanitized diagnostic')).toBeInTheDocument()
+      expect(screen.getByText((_, element) => element?.tagName === 'LI' && element.textContent === 'malformed_plan: Second sanitized diagnostic')).toBeInTheDocument()
+      dashboardView.unmount()
+
+      renderRoute('/artifact-errors')
+      expect(await screen.findByRole('table')).toBeInTheDocument()
+      expect(screen.getByText('First sanitized diagnostic')).toBeInTheDocument()
+      expect(screen.getByText('Second sanitized diagnostic')).toBeInTheDocument()
+      expect(consoleError.mock.calls.flat().join(' ')).not.toContain('same key')
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
+  it('requests and renders only one artifact-diagnostics page and resets offset on search', async () => {
     const user = userEvent.setup()
     const mock = mockApi((path) => {
+      if (!path.startsWith('/api/v1/artifact-errors?')) throw new Error(`Unexpected path ${path}`)
       const parameters = new URL(`http://localhost${path}`).searchParams
-      const items = parameters.get('local_status') === 'pending_changes' ? [] : parameters.get('source_kind') === 'github_repo' ? [namespaces.items[1]] : namespaces.items
+      const offset = Number(parameters.get('offset') ?? 0)
+      const query = parameters.get('q') ?? ''
+      const total = query ? 1 : 10_000
+      const count = Math.min(50, Math.max(0, total - offset))
+      return {
+        items: Array.from({ length: count }, (_, index) => ({
+          code: query ? 'needle_code' : `error_${offset + index}`,
+          message: query ? 'Needle diagnostic' : `Safe diagnostic ${offset + index}`,
+          artifact_id: query ? 'needle-artifact' : `artifact-${offset + index}`,
+        })),
+        total,
+        offset,
+        limit: 50,
+      }
+    })
+    renderRoute('/artifact-errors?offset=50')
+
+    const table = await screen.findByRole('table')
+    expect(within(table).getAllByRole('row')).toHaveLength(51)
+    expect(screen.getByText('51–100 of 10000')).toBeInTheDocument()
+    expect(mock.mock.calls.map(([path]) => String(path)).filter((path) => path.startsWith('/api/v1/artifact-errors?'))).toEqual([
+      '/api/v1/artifact-errors?offset=50&limit=50',
+    ])
+
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    expect(await screen.findByText('101–150 of 10000')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Previous' }))
+    expect(await screen.findByText('51–100 of 10000')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Search artifact errors'), { target: { value: 'needle' } })
+    expect(await screen.findByText('needle-artifact')).toBeInTheDocument()
+    expect(screen.getByText('1–1 of 1')).toBeInTheDocument()
+    expect(mock.mock.calls.map(([path]) => String(path)).filter((path) => path.startsWith('/api/v1/artifact-errors?'))).toEqual([
+      '/api/v1/artifact-errors?offset=50&limit=50',
+      '/api/v1/artifact-errors?offset=100&limit=50',
+      '/api/v1/artifact-errors?offset=50&limit=50',
+      '/api/v1/artifact-errors?offset=0&q=needle&limit=50',
+    ])
+    expect(screen.queryByRole('button', { name: /show all/i })).not.toBeInTheDocument()
+  })
+
+  it('does not let a stale artifact-diagnostics response replace a newer search', async () => {
+    const old = deferred<unknown>()
+    const mock = mockApi((path) => {
+      if (!path.startsWith('/api/v1/artifact-errors?')) throw new Error(`Unexpected path ${path}`)
+      const query = new URL(`http://localhost${path}`).searchParams.get('q')
+      if (query === 'old') return old.promise
+      return { items: [{ code: 'current', message: 'Current diagnostic', artifact_id: 'current-artifact' }], total: 1, offset: 0, limit: 50 }
+    })
+    renderRoute('/artifact-errors?offset=50&q=old')
+    await waitFor(() => expect(mock.mock.calls.map(([path]) => String(path)).filter((path) => path.startsWith('/api/v1/artifact-errors?'))).toEqual([
+      '/api/v1/artifact-errors?offset=50&q=old&limit=50',
+    ]))
+    fireEvent.change(screen.getByLabelText('Search artifact errors'), { target: { value: 'current' } })
+    expect(await screen.findByText('current-artifact')).toBeInTheDocument()
+    old.resolve({ items: [{ code: 'stale', message: 'Stale diagnostic', artifact_id: 'stale-artifact' }], total: 1, offset: 50, limit: 50 })
+    await act(async () => { await old.promise })
+    expect(screen.getByText('current-artifact')).toBeInTheDocument()
+    expect(screen.queryByText('stale-artifact')).not.toBeInTheDocument()
+  })
+
+  it('uses URL-backed server filters for one bounded local namespace page, including source-less errors as unknown', async () => {
+    const user = userEvent.setup()
+    const sourceLessError = {
+      ...namespaces.items[0],
+      namespace: 'error-namespace',
+      source: null,
+      local_status: 'error',
+    }
+    const mock = mockApi((path) => {
+      const parameters = new URL(`http://localhost${path}`).searchParams
+      const sourceKind = parameters.get('source_kind')
+      const localStatus = parameters.get('local_status')
+      const items = [...namespaces.items, sourceLessError].filter((item) => (
+        (sourceKind == null || (item.source?.kind ?? 'unknown') === sourceKind)
+        && (localStatus == null || item.local_status === localStatus)
+      ))
       return { ...namespaces, items, total: items.length, offset: Number(parameters.get('offset') ?? 0), limit: 50 }
     })
     renderRoute('/namespaces?offset=50')
@@ -320,10 +448,17 @@ describe('Command Center', () => {
     expect(screen.queryByRole('link', { name: 'docs-one' })).not.toBeInTheDocument()
     expect(String(mock.mock.calls.at(-1)?.[0])).toContain('offset=0')
     expect(String(mock.mock.calls.at(-1)?.[0])).toContain('source_kind=github_repo')
-    await user.selectOptions(screen.getByLabelText('Local status'), 'pending_changes')
-    expect(await screen.findByText(/No local namespaces match/)).toBeInTheDocument()
-    expect(String(mock.mock.calls.at(-1)?.[0])).toContain('local_status=pending_changes')
-    expect(mock.mock.calls.filter(([path]) => String(path).startsWith('/api/v1/namespaces?'))).toHaveLength(3)
+
+    await user.selectOptions(screen.getByLabelText('Local source kind'), 'unknown')
+    expect(await screen.findByRole('link', { name: 'error-namespace' })).toBeInTheDocument()
+    expect(screen.getByText('Unknown source')).toBeInTheDocument()
+    expect(String(mock.mock.calls.at(-1)?.[0])).toContain('source_kind=unknown')
+
+    await user.selectOptions(screen.getByLabelText('Local status'), 'error')
+    expect(await screen.findByRole('link', { name: 'error-namespace' })).toBeInTheDocument()
+    expect(String(mock.mock.calls.at(-1)?.[0])).toContain('source_kind=unknown')
+    expect(String(mock.mock.calls.at(-1)?.[0])).toContain('local_status=error')
+    expect(mock.mock.calls.filter(([path]) => String(path).startsWith('/api/v1/namespaces?'))).toHaveLength(4)
   })
 
   it('restores practical Plans and Namespaces filter history with coalesced text and meaningful select/page entries', async () => {
@@ -332,7 +467,7 @@ describe('Command Center', () => {
       if (path.startsWith('/api/v1/plans?')) {
         const parameters = new URL(`http://localhost${path}`).searchParams
         const offset = Number(parameters.get('offset') ?? 0)
-        return { items: [{ ...plan, plan_id: `plan-${offset}` }], total: 120, offset, limit: 50, errors: [] }
+        return { items: [{ ...plan, plan_id: `plan-${offset}` }], total: 120, offset, limit: 50, errors: [], error_total: 0, errors_truncated: false }
       }
       if (path.startsWith('/api/v1/namespaces?')) {
         const parameters = new URL(`http://localhost${path}`).searchParams
@@ -399,7 +534,7 @@ describe('Command Center', () => {
       }
       if (path.startsWith('/api/v1/plans?')) {
         if (parameters.get('q') === 'old') return oldPlans.promise
-        return { items: [{ ...plan, plan_id: 'current-plan' }], total: 1, offset: 0, limit: 50, errors: [] }
+        return { items: [{ ...plan, plan_id: 'current-plan' }], total: 1, offset: 0, limit: 50, errors: [], error_total: 0, errors_truncated: false }
       }
       throw new Error(`Unexpected path ${path}`)
     })
@@ -430,7 +565,7 @@ describe('Command Center', () => {
       '/api/v1/plans?offset=50&q=old&namespace=docs-one&source_kind=website&limit=50',
       '/api/v1/plans?offset=0&q=current&namespace=docs-one&source_kind=website&limit=50',
     ])
-    oldPlans.resolve({ items: [{ ...plan, plan_id: 'stale-plan' }], total: 1, offset: 50, limit: 50, errors: [] })
+    oldPlans.resolve({ items: [{ ...plan, plan_id: 'stale-plan' }], total: 1, offset: 50, limit: 50, errors: [], error_total: 0, errors_truncated: false })
     await act(async () => { await oldPlans.promise })
     expect(screen.getByRole('link', { name: 'current-plan' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'stale-plan' })).not.toBeInTheDocument()
@@ -544,7 +679,7 @@ describe('Command Center', () => {
   })
 
   it('renders deterministic plan history metadata and an empty plan state', async () => {
-    mockApi(() => ({ items: [plan], total: 1, offset: 0, limit: 100, errors: [] }))
+    mockApi(() => ({ items: [plan], total: 1, offset: 0, limit: 100, errors: [], error_total: 0, errors_truncated: false }))
     const view = renderRoute('/plans')
     expect(await screen.findByRole('link', { name: 'plan-1' })).toBeInTheDocument()
     expect(within(screen.getByRole('row', { name: /plan-1/ })).getByText('Website')).toBeInTheDocument()
@@ -554,7 +689,7 @@ describe('Command Center', () => {
     expect(screen.getByRole('columnheader', { name: 'Source API calls' })).toBeInTheDocument()
 
     view.unmount()
-    mockApi(() => ({ items: [], total: 0, offset: 0, limit: 100, errors: [] }))
+    mockApi(() => ({ items: [], total: 0, offset: 0, limit: 100, errors: [], error_total: 0, errors_truncated: false }))
     renderRoute('/plans')
     expect(await screen.findByText(/No saved plans match/)).toBeInTheDocument()
   })
@@ -726,7 +861,7 @@ describe('Command Center', () => {
     const mock = mockApi((path) => {
       const offset = Number(new URL(`http://localhost${path}`).searchParams.get('offset') ?? 0)
       if (path.startsWith('/api/v1/namespaces?')) return { ...namespaces, items: namespaceItems.slice(offset, offset + 50), total: 1_000, offset, limit: 50 }
-      if (path.startsWith('/api/v1/plans?')) return { items: planItems.slice(offset, offset + 50), total: 1_000, offset, limit: 50, errors: [] }
+      if (path.startsWith('/api/v1/plans?')) return { items: planItems.slice(offset, offset + 50), total: 1_000, offset, limit: 50, errors: [], error_total: 0, errors_truncated: false }
       const detail = detailFor({ ...plan, plan_id: 'plan-many' })
       const chunks = chunksAt(offset, 11, [{ index: offset, action: 'changed', row_id: `row-${offset}`, title: `Changed ${offset + 1}`, canonical_url: 'https://example.test/page', section_path: 'Intro', chunk_index: offset, content: `changed ${offset + 1}`, truncated: false }])
       const staleRows = staleAt(offset, 11, [{ index: offset, category: 'stale', row_id: `stale-${offset}`, canonical_url: 'https://example.test/old', prior_status: 'active', reason: 'not_in_desired_source' }])
@@ -845,53 +980,116 @@ describe('Command Center', () => {
     ])
   })
 
-  it('ignores slower focused chunk and stale pages without replacing newer windows', async () => {
-    const oldChunks = deferred<unknown>()
-    const oldStale = deferred<unknown>()
+  it('accepts only one rapid focused request and cross-disables chunk and stale pagination', async () => {
+    const focusedChunks = deferred<unknown>()
     const mock = mockApi((path) => {
       if (path.includes('/review?')) return reviewFor(
         detailFor(),
         chunksAt(0, 11, [{ index: 0, action: 'changed', row_id: 'initial-chunk', title: 'Initial chunk', canonical_url: '', section_path: '', chunk_index: 0, content: 'initial chunk window', truncated: false }]),
         staleAt(0, 11, [{ index: 0, category: 'stale', row_id: 'initial-stale', canonical_url: '', prior_status: 'active', reason: 'not_in_desired_source' }]),
       )
-      if (path.includes('/chunks?offset=10')) return oldChunks.promise
-      if (path.includes('/chunks?offset=0')) return chunksAt(0, 11, [{ index: 0, action: 'changed', row_id: 'new-chunk', title: 'New chunk', canonical_url: '', section_path: '', chunk_index: 0, content: 'newer chunk window', truncated: false }])
-      if (path.includes('/stale-rows?offset=10')) return oldStale.promise
-      if (path.includes('/stale-rows?offset=0')) return staleAt(0, 11, [{ index: 0, category: 'stale', row_id: 'newer-stale', canonical_url: '', prior_status: 'active', reason: 'not_in_desired_source' }])
+      if (path.includes('/chunks?offset=10')) return focusedChunks.promise
+      if (path.includes('/stale-rows')) throw new Error('A stale request must not be accepted while chunks are loading.')
+      throw new Error(`Unexpected path ${path}`)
+    })
+    renderRoute('/plans/plan-1')
+    expect(await screen.findByText('initial chunk window')).toBeInTheDocument()
+
+    const previousChunks = screen.getByRole('button', { name: 'Previous chunks' })
+    const nextChunks = screen.getByRole('button', { name: 'Next chunks' })
+    const previousStale = screen.getByRole('button', { name: 'Previous stale rows' })
+    const nextStale = screen.getByRole('button', { name: 'Next stale rows' })
+    act(() => {
+      nextChunks.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      nextChunks.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      nextStale.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading changed chunks')
+    for (const control of [previousChunks, nextChunks, previousStale, nextStale]) expect(control).toBeDisabled()
+    expect(screen.getByRole('heading', { name: 'plan-1' })).toBeInTheDocument()
+    expect(screen.getByText('initial chunk window')).toBeInTheDocument()
+    expect(screen.getByText('initial-stale')).toBeInTheDocument()
+    expect(mock.mock.calls.filter(([path]) => String(path).includes('/chunks?'))).toHaveLength(1)
+    expect(mock.mock.calls.filter(([path]) => String(path).includes('/stale-rows?'))).toHaveLength(0)
+
+    focusedChunks.resolve(chunksAt(10, 11, [{ index: 10, action: 'changed', row_id: 'chunk-ten', title: 'Accepted chunk', canonical_url: '', section_path: '', chunk_index: 10, content: 'accepted chunk window', truncated: false }]))
+    expect(await screen.findByText('accepted chunk window')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous chunks' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Next stale rows' })).toBeEnabled()
+  })
+
+  it('cross-disables focused retry, clears the guard after failure, and accepts one later request', async () => {
+    const focusedStale = deferred<unknown>()
+    const retriedChunks = deferred<unknown>()
+    let chunkRequests = 0
+    let staleRequests = 0
+    const mock = mockApi((path) => {
+      if (path.includes('/review?')) return reviewFor(
+        detailFor(),
+        chunksAt(0, 11, [{ index: 0, action: 'changed', row_id: 'initial-chunk', title: 'Initial chunk', canonical_url: '', section_path: '', chunk_index: 0, content: 'initial chunk window', truncated: false }]),
+        staleAt(0, 11, [{ index: 0, category: 'stale', row_id: 'initial-stale', canonical_url: '', prior_status: 'active', reason: 'not_in_desired_source' }]),
+      )
+      if (path.includes('/chunks?offset=10')) {
+        chunkRequests += 1
+        return chunkRequests === 1
+          ? json({ error: { code: 'chunk_failed', message: 'Changed chunk page failed.' } }, 500)
+          : retriedChunks.promise
+      }
+      if (path.includes('/stale-rows?offset=10')) {
+        staleRequests += 1
+        return focusedStale.promise
+      }
+      if (path.includes('/stale-rows?offset=0')) {
+        staleRequests += 1
+        return staleAt(0, 11, [{ index: 0, category: 'stale', row_id: 'returned-stale', canonical_url: '', prior_status: 'active', reason: 'not_in_desired_source' }])
+      }
       throw new Error(`Unexpected path ${path}`)
     })
     renderRoute('/plans/plan-1')
     expect(await screen.findByText('initial chunk window')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Next chunks' }))
-    expect(screen.getByRole('status')).toHaveTextContent('Loading changed chunks')
-    await userEvent.click(screen.getByRole('button', { name: 'Previous chunks' }))
-    expect(await screen.findByText('newer chunk window')).toBeInTheDocument()
-    oldChunks.resolve(chunksAt(10, 11, [{ index: 10, action: 'changed', row_id: 'old-chunk', title: 'Old chunk', canonical_url: '', section_path: '', chunk_index: 10, content: 'slower chunk window', truncated: false }]))
-    await act(async () => { await oldChunks.promise })
-    expect(screen.getByText('newer chunk window')).toBeInTheDocument()
-    expect(screen.queryByText('slower chunk window')).not.toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Changed chunk page failed.')
+    const retry = screen.getByRole('button', { name: 'Retry this section' })
+    expect(retry).toBeEnabled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Next stale rows' }))
     expect(screen.getByRole('status')).toHaveTextContent('Loading stale rows')
-    await userEvent.click(screen.getByRole('button', { name: 'Previous stale rows' }))
-    expect(await screen.findByText('newer-stale')).toBeInTheDocument()
-    oldStale.resolve(staleAt(10, 11, [{ index: 10, category: 'stale', row_id: 'slower-stale', canonical_url: '', prior_status: 'active', reason: 'not_in_desired_source' }]))
-    await act(async () => { await oldStale.promise })
-    expect(screen.getByText('newer-stale')).toBeInTheDocument()
-    expect(screen.queryByText('slower-stale')).not.toBeInTheDocument()
+    expect(retry).toBeDisabled()
+    for (const name of ['Previous chunks', 'Next chunks', 'Previous stale rows', 'Next stale rows']) {
+      expect(screen.getByRole('button', { name })).toBeDisabled()
+    }
+    expect(screen.getByRole('heading', { name: 'plan-1' })).toBeInTheDocument()
+    expect(screen.getByText('initial chunk window')).toBeInTheDocument()
+    expect(screen.getByText('initial-stale')).toBeInTheDocument()
+    fireEvent.click(retry)
+    expect(chunkRequests).toBe(1)
+    expect(staleRequests).toBe(1)
 
-    expect(mock.mock.calls.map(([path]) => String(path)).filter((path) => path.includes('/plans/plan-1'))).toEqual([
-      '/api/v1/plans/plan-1/review?chunk_offset=0&chunk_limit=10&max_chars=2000&stale_offset=0&stale_limit=10',
-      '/api/v1/plans/plan-1/chunks?offset=10&limit=10&max_chars=2000',
-      '/api/v1/plans/plan-1/chunks?offset=0&limit=10&max_chars=2000',
-      '/api/v1/plans/plan-1/stale-rows?offset=10&limit=10',
-      '/api/v1/plans/plan-1/stale-rows?offset=0&limit=10',
-    ])
+    focusedStale.resolve(staleAt(10, 11, [{ index: 10, category: 'stale', row_id: 'accepted-stale', canonical_url: '', prior_status: 'active', reason: 'not_in_desired_source' }]))
+    expect(await screen.findByText('accepted-stale')).toBeInTheDocument()
+    expect(retry).toBeEnabled()
+
+    act(() => {
+      retry.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      retry.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(screen.getByRole('status')).toHaveTextContent('Loading changed chunks')
+    expect(chunkRequests).toBe(2)
+    expect(staleRequests).toBe(1)
+    retriedChunks.resolve(chunksAt(10, 11, [{ index: 10, action: 'changed', row_id: 'retried-chunk', title: 'Retried chunk', canonical_url: '', section_path: '', chunk_index: 10, content: 'retried chunk window', truncated: false }]))
+    expect(await screen.findByText('retried chunk window')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Previous stale rows' }))
+    expect(await screen.findByText('returned-stale')).toBeInTheDocument()
+    expect(chunkRequests).toBe(2)
+    expect(staleRequests).toBe(2)
   })
 
-  it('invalidates a focused request on plan-ID change and resets both windows to the combined response', async () => {
+  it('invalidates a focused request on plan-ID change, clears the guard, and rejects old results', async () => {
     const oldFocused = deferred<unknown>()
+    const newFocused = deferred<unknown>()
     const mock = mockApi((path) => {
       if (path.includes('/plans/plan-1/review?')) return reviewFor(
         detailFor(),
@@ -901,9 +1099,10 @@ describe('Command Center', () => {
       if (path.includes('/plans/plan-1/chunks?offset=10')) return oldFocused.promise
       if (path.includes('/plans/plan-2/review?')) return reviewFor(
         detailFor({ ...plan, plan_id: 'plan-2' }),
-        chunksAt(0, 1, [{ index: 0, action: 'changed', row_id: 'plan-two-chunk', title: 'Plan two', canonical_url: '', section_path: '', chunk_index: 0, content: 'plan two chunk zero', truncated: false }]),
-        staleAt(0, 1, [{ index: 0, category: 'stale', row_id: 'plan-two-stale', canonical_url: '', prior_status: 'active', reason: 'not_in_desired_source' }]),
+        chunksAt(0, 11, [{ index: 0, action: 'changed', row_id: 'plan-two-chunk', title: 'Plan two', canonical_url: '', section_path: '', chunk_index: 0, content: 'plan two chunk zero', truncated: false }]),
+        staleAt(0, 11, [{ index: 0, category: 'stale', row_id: 'plan-two-stale', canonical_url: '', prior_status: 'active', reason: 'not_in_desired_source' }]),
       )
+      if (path.includes('/plans/plan-2/chunks?offset=10')) return newFocused.promise
       throw new Error(`Unexpected path ${path}`)
     })
     renderRouteWithLink('/plans/plan-1', '/plans/plan-2')
@@ -913,17 +1112,23 @@ describe('Command Center', () => {
     await userEvent.click(screen.getByRole('link', { name: 'Test route change' }))
     expect(await screen.findByText('plan two chunk zero')).toBeInTheDocument()
     expect(screen.getByText('plan-two-stale')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Previous chunks' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Previous stale rows' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next chunks' })).toBeEnabled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Next chunks' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Loading changed chunks')
+    expect(mock.mock.calls.filter(([path]) => String(path).includes('/plans/plan-2/chunks?'))).toHaveLength(1)
+    newFocused.resolve(chunksAt(10, 11, [{ index: 10, action: 'changed', row_id: 'new-focused', title: 'New focused', canonical_url: '', section_path: '', chunk_index: 10, content: 'new focused plan-two content', truncated: false }]))
+    expect(await screen.findByText('new focused plan-two content')).toBeInTheDocument()
 
     oldFocused.resolve(chunksAt(10, 11, [{ index: 10, action: 'changed', row_id: 'old-focused', title: 'Old focused', canonical_url: '', section_path: '', chunk_index: 10, content: 'old focused plan-one content', truncated: false }]))
     await act(async () => { await oldFocused.promise })
-    expect(screen.getByText('plan two chunk zero')).toBeInTheDocument()
+    expect(screen.getByText('new focused plan-two content')).toBeInTheDocument()
     expect(screen.queryByText('old focused plan-one content')).not.toBeInTheDocument()
     expect(mock.mock.calls.map(([path]) => String(path)).filter((path) => path.includes('/plans/'))).toEqual([
       '/api/v1/plans/plan-1/review?chunk_offset=0&chunk_limit=10&max_chars=2000&stale_offset=0&stale_limit=10',
       '/api/v1/plans/plan-1/chunks?offset=10&limit=10&max_chars=2000',
       '/api/v1/plans/plan-2/review?chunk_offset=0&chunk_limit=10&max_chars=2000&stale_offset=0&stale_limit=10',
+      '/api/v1/plans/plan-2/chunks?offset=10&limit=10&max_chars=2000',
     ])
   })
 
@@ -956,7 +1161,7 @@ describe('Command Center', () => {
     }
     const mock = mockApi((path) => {
       if (path.includes('/dashboard')) return dashboard
-      if (path.includes('/plans?')) return { items: [plan], total: 1, offset: 0, limit: 100, errors: [] }
+      if (path.includes('/plans?')) return { items: [plan], total: 1, offset: 0, limit: 100, errors: [], error_total: 0, errors_truncated: false }
       throw new Error(`Managed request was not expected: ${path}`)
     }, unavailable)
 
@@ -1377,15 +1582,16 @@ describe('Command Center', () => {
     const storageSet = vi.spyOn(Storage.prototype, 'setItem')
     mockApi((path) => {
       if (path.includes('/dashboard')) return dashboard
+      if (path.includes('/artifact-errors')) return { items: [], total: 0, offset: 0, limit: 50 }
       if (path === '/api/v1/namespaces/docs-one?plan_offset=0&plan_limit=20') return { summary: namespaces.items[0], plans: [plan], state: null, retrieval: null }
       if (path === `/api/v1/plan-jobs/${jobId}`) return planJob({ state: 'interrupted', completed_at: '2026-07-23T12:00:02Z', latest_progress: { stage: 'interrupted', message: 'Interrupted.', counts: {} } })
       if (path.includes('/plan-jobs')) return { items: [planJob()], total: 1, offset: 0, limit: 50 }
       if (path.includes('/namespaces')) return namespaces
       if (path.includes('/plans/plan-1/review?')) return reviewFor()
-      if (path.includes('/plans')) return { items: [plan], total: 1, offset: 0, limit: 50, errors: [] }
+      if (path.includes('/plans')) return { items: [plan], total: 1, offset: 0, limit: 50, errors: [], error_total: 0, errors_truncated: false }
       throw new Error(`Unexpected path ${path}`)
     })
-    for (const route of ['/', '/namespaces', '/namespaces/docs-one', '/plans', '/plans/new', '/plans/plan-1', '/plan-jobs', `/plan-jobs/${jobId}`, '/search', '/graphs']) {
+    for (const route of ['/', '/namespaces', '/namespaces/docs-one', '/plans', '/plans/new', '/plans/plan-1', '/artifact-errors', '/plan-jobs', `/plan-jobs/${jobId}`, '/search', '/graphs']) {
       const view = renderRoute(route)
       await screen.findByText('Local command center')
       const prohibitedControl = /\b(?:apply|approve|cancel|delete|retry plan job|replay|resume|register catalog|crawl source|manage namespace|manage source)\b/i
