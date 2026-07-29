@@ -31,6 +31,9 @@ MAX_PLAN_JSON_BYTES = 131_072
 MAX_PAGE_SIZE = 100
 MAX_PREVIEW_CHARS = 20_000
 MAX_CITATION_CHARS = 2_000
+MAX_FILTER_CHARS = 256
+SOURCE_KINDS = frozenset({"website", "github_repo", "document", "database", "unknown"})
+LOCAL_STATUSES = frozenset({"planned", "applied", "pending_changes", "conflict", "error"})
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 SAFE_MANAGED_JOB_ID = re.compile(r"^planjob_[0-9a-f]{32}$")
 SAFE_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -197,6 +200,10 @@ class NamespaceSummary:
 class NamespaceDetail:
     summary: NamespaceSummary
     plans: list[PlanSummary]
+    plan_total: int
+    plan_offset: int
+    plan_limit: int
+    plans_truncated: bool
     state: StateSummary | None
     retrieval: RetrievalSettings | None
 
@@ -259,6 +266,13 @@ class StaleRowInventory:
 
 
 @dataclass(frozen=True)
+class PlanReview:
+    detail: PlanDetail
+    chunks: ChunkInventory
+    stale_rows: StaleRowInventory
+
+
+@dataclass(frozen=True)
 class Dashboard:
     plan_count: int
     namespace_count: int
@@ -293,6 +307,7 @@ class _Snapshot:
     plans: list[_PlanRecord]
     states: list[StateSummary]
     errors: list[SafeError]
+    error_namespaces: frozenset[str]
 
 
 class LocalInventoryService:
@@ -332,10 +347,34 @@ class LocalInventoryService:
         except Exception:
             return
 
-    def list_plans(self, *, offset: int = 0, limit: int = 50) -> PlanInventory:
+    def list_plans(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        q: str | None = None,
+        namespace: str | None = None,
+        source_kind: str | None = None,
+    ) -> PlanInventory:
         offset, limit = _validate_pagination(offset, limit)
+        query = _validate_query_filter(q)
+        if namespace is not None:
+            _validate_filter_id(namespace, label="namespace")
+        source_kind = _validate_choice_filter(
+            source_kind, choices=SOURCE_KINDS, label="source_kind"
+        )
         snapshot = self._snapshot()
-        items = [record.summary for record in snapshot.plans]
+        records = [
+            record
+            for record in snapshot.plans
+            if _plan_matches_filters(
+                record.summary,
+                query=query,
+                namespace=namespace,
+                source_kind=source_kind,
+            )
+        ]
+        items = [record.summary for record in records]
         return PlanInventory(items[offset : offset + limit], len(items), offset, limit, snapshot.errors)
 
     def get_plan(self, plan_id: str) -> PlanDetail:
@@ -346,28 +385,7 @@ class LocalInventoryService:
             raise InventoryLookupError(
                 "plan_payload_invalid", "Plan delta could not be fully verified."
             ) from exc
-        plan = verified.plan
-        (
-            summary,
-            namespace_candidate,
-            artifact_hash,
-            retrieval,
-            source_activity,
-            originating_job_id,
-            _,
-        ) = _plan_response_fields(plan, warnings=record.summary.warnings)
-        applied_state = plan["applied_state"]
-        return PlanDetail(
-            summary=summary,
-            namespace_candidate=namespace_candidate,
-            artifact_hash=artifact_hash,
-            retrieval=retrieval,
-            source_activity=source_activity,
-            originating_job_id=originating_job_id,
-            payload_verification="verified",
-            applied_state_present=bool(applied_state["present"]),
-            applied_state_hash=str(applied_state["hash"]),
-        )
+        return _plan_detail(verified.plan, warnings=record.summary.warnings)
 
     def list_plan_chunks(
         self,
@@ -388,14 +406,12 @@ class LocalInventoryService:
             raise InventoryLookupError(
                 "plan_payload_invalid", "Plan delta could not be fully verified."
             ) from exc
-        return ChunkInventory(
-            [
-                _chunk_preview(index, row, max_chars=max_chars)
-                for index, row in enumerate(verified.upsert_rows, start=offset)
-            ],
-            int(verified.plan["delta"]["upsert_count"]),
-            offset,
-            limit,
+        return _chunk_inventory(
+            verified.plan,
+            verified.upsert_rows,
+            offset=offset,
+            limit=limit,
+            max_chars=max_chars,
         )
 
     def list_plan_stale_rows(
@@ -415,25 +431,94 @@ class LocalInventoryService:
             raise InventoryLookupError(
                 "plan_payload_invalid", "Plan delta could not be fully verified."
             ) from exc
-        return StaleRowInventory(
-            [
-                _stale_preview(index, row)
-                for index, row in enumerate(verified.stale_rows, start=offset)
-            ],
-            int(verified.plan["delta"]["stale_count"])
-            + int(verified.plan["delta"]["retained_stale_count"]),
-            offset,
-            limit,
+        return _stale_inventory(
+            verified.plan,
+            verified.stale_rows,
+            offset=offset,
+            limit=limit,
         )
 
-    def list_namespaces(self, *, offset: int = 0, limit: int = 50) -> NamespaceInventory:
+    def get_plan_review(
+        self,
+        plan_id: str,
+        *,
+        chunk_offset: int = 0,
+        chunk_limit: int = 10,
+        max_chars: int = 2_000,
+        stale_offset: int = 0,
+        stale_limit: int = 10,
+    ) -> PlanReview:
+        chunk_offset, chunk_limit = _validate_pagination(chunk_offset, chunk_limit)
+        stale_offset, stale_limit = _validate_pagination(stale_offset, stale_limit)
+        max_chars = _validate_preview_limit(max_chars)
+        record = self._plan_record(plan_id)
+        try:
+            verified = _verify_record(
+                record,
+                materialize=False,
+                upsert_window=(chunk_offset, chunk_limit),
+                stale_window=(stale_offset, stale_limit),
+            )
+        except (OSError, ValueError) as exc:
+            raise InventoryLookupError(
+                "plan_payload_invalid", "Plan delta could not be fully verified."
+            ) from exc
+        return PlanReview(
+            detail=_plan_detail(verified.plan, warnings=record.summary.warnings),
+            chunks=_chunk_inventory(
+                verified.plan,
+                verified.upsert_rows,
+                offset=chunk_offset,
+                limit=chunk_limit,
+                max_chars=max_chars,
+            ),
+            stale_rows=_stale_inventory(
+                verified.plan,
+                verified.stale_rows,
+                offset=stale_offset,
+                limit=stale_limit,
+            ),
+        )
+
+    def list_namespaces(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        q: str | None = None,
+        source_kind: str | None = None,
+        local_status: str | None = None,
+    ) -> NamespaceInventory:
         offset, limit = _validate_pagination(offset, limit)
+        query = _validate_query_filter(q)
+        source_kind = _validate_choice_filter(
+            source_kind, choices=SOURCE_KINDS, label="source_kind"
+        )
+        local_status = _validate_choice_filter(
+            local_status, choices=LOCAL_STATUSES, label="local_status"
+        )
         snapshot = self._snapshot()
-        items = _namespace_summaries(snapshot)
+        items = [
+            item
+            for item in _namespace_summaries(snapshot)
+            if _namespace_matches_filters(
+                item,
+                query=query,
+                source_kind=source_kind,
+                local_status=local_status,
+            )
+        ]
         return NamespaceInventory(items[offset : offset + limit], len(items), offset, limit, snapshot.errors)
 
-    def get_namespace(self, namespace: str) -> NamespaceDetail:
+    def get_namespace(
+        self,
+        namespace: str,
+        *,
+        plan_offset: int = 0,
+        plan_limit: int = 20,
+    ) -> NamespaceDetail:
         _validate_lookup_id(namespace, label="namespace")
+        plan_offset, plan_limit = _validate_pagination(plan_offset, plan_limit)
         snapshot = self._snapshot()
         summary = next(
             (item for item in _namespace_summaries(snapshot) if item.namespace == namespace),
@@ -450,9 +535,14 @@ class LocalInventoryService:
         plans = [record for record in snapshot.plans if record.summary.namespace == namespace]
         matching_states = [item for item in snapshot.states if item.namespace == namespace]
         state = matching_states[0] if len(matching_states) == 1 else None
+        selected_plans = plans[plan_offset : plan_offset + plan_limit]
         return NamespaceDetail(
             summary=summary,
-            plans=[record.summary for record in plans],
+            plans=[record.summary for record in selected_plans],
+            plan_total=len(plans),
+            plan_offset=plan_offset,
+            plan_limit=plan_limit,
+            plans_truncated=len(selected_plans) < len(plans),
             state=state,
             retrieval=plans[0].retrieval if plans else None,
         )
@@ -541,7 +631,7 @@ class LocalInventoryService:
             ):
                 return cached
             plans, plan_errors = _discover_plans(self.artifacts_root)
-            states, state_errors = _discover_states(self.state_root)
+            states, state_errors, error_namespaces = _discover_states(self.state_root)
             snapshot = _Snapshot(
                 plans=plans,
                 states=states,
@@ -549,6 +639,7 @@ class LocalInventoryService:
                     [*plan_errors, *state_errors],
                     key=lambda item: (item.code, item.artifact_id),
                 ),
+                error_namespaces=frozenset(error_namespaces),
             )
             self._cached_snapshot = snapshot
             self._cache_expires_at = rebuild_started_at + self._cache_ttl
@@ -726,30 +817,42 @@ def _verify_plan_artifacts(plan_path: Path, **kwargs: Any) -> Any:
 def _verify_record(record: _PlanRecord, **kwargs: Any) -> Any:
     """Fully verify exactly the inventory record selected before payload access."""
 
-    before = _record_path_identities(record)
+    before = _record_path_observations(record)
     expected = (
         record.directory_identity,
         record.plan_identity,
         record.delta_identity,
     )
-    if before != expected:
+    if tuple(item[:2] for item in before) != expected:
         raise ValueError("selected plan artifacts changed before verification")
+    selected_plan, selected_plan_observation = _bounded_plan_snapshot(record.plan_path)
+    if selected_plan_observation != before[1]:
+        raise ValueError("selected plan artifacts changed before verification")
+
     verified = _verify_plan_artifacts(record.plan_path, **kwargs)
-    plan = verified.plan
+
+    current_plan, current_plan_observation = _bounded_plan_snapshot(record.plan_path)
+    after = _record_path_observations(record)
     if (
-        str(plan["plan_id"]) != record.summary.plan_id
-        or str(plan["artifact_hash"]) != record.artifact_hash
-        or str(plan["namespace"]) != record.summary.namespace
+        str(verified.plan["plan_id"]) != record.summary.plan_id
+        or str(verified.plan["artifact_hash"]) != record.artifact_hash
+        or str(verified.plan["namespace"]) != record.summary.namespace
+        or after != before
+        or current_plan_observation != after[1]
+        or verified.plan != selected_plan
+        or current_plan != selected_plan
     ):
-        raise ValueError("selected plan identity changed during verification")
-    if _record_path_identities(record) != expected:
         raise ValueError("selected plan artifacts changed during verification")
     return verified
 
 
-def _record_path_identities(
+def _record_path_observations(
     record: _PlanRecord,
-) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int]]:
+) -> tuple[
+    tuple[int, int, int, int, int],
+    tuple[int, int, int, int, int],
+    tuple[int, int, int, int, int],
+]:
     directory = record.directory.lstat()
     plan = record.plan_path.lstat()
     delta = record.plan_path.with_name("delta.duckdb").lstat()
@@ -763,13 +866,30 @@ def _record_path_identities(
     ):
         raise ValueError("selected plan artifacts are no longer regular files")
     return (
-        (directory.st_dev, directory.st_ino),
-        (plan.st_dev, plan.st_ino),
-        (delta.st_dev, delta.st_ino),
+        _mutation_identity(directory),
+        _mutation_identity(plan),
+        _mutation_identity(delta),
+    )
+
+
+def _mutation_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
     )
 
 
 def _bounded_plan_object(path: Path) -> tuple[dict[str, Any], tuple[int, int]]:
+    value, observation = _bounded_plan_snapshot(path)
+    return value, observation[:2]
+
+
+def _bounded_plan_snapshot(
+    path: Path,
+) -> tuple[dict[str, Any], tuple[int, int, int, int, int]]:
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(path, flags)
     try:
@@ -780,37 +900,42 @@ def _bounded_plan_object(path: Path) -> tuple[dict[str, Any], tuple[int, int]]:
             text = handle.read(MAX_PLAN_JSON_BYTES + 1)
         if len(text.encode("utf-8")) > MAX_PLAN_JSON_BYTES:
             raise ValueError("plan.json exceeds the size limit")
+        opened_after = os.fstat(descriptor)
     finally:
         os.close(descriptor)
     value = json.loads(text)
     if not isinstance(value, dict):
         raise ValueError("plan.json must contain an object")
     current = path.lstat()
-    identity = (opened.st_dev, opened.st_ino)
+    observation = _mutation_identity(opened)
     if (
-        stat.S_ISLNK(current.st_mode)
+        _mutation_identity(opened_after) != observation
+        or stat.S_ISLNK(current.st_mode)
         or not stat.S_ISREG(current.st_mode)
-        or (current.st_dev, current.st_ino) != identity
+        or _mutation_identity(current) != observation
     ):
         raise ValueError("plan.json changed during summary qualification")
-    return value, identity
+    return value, observation
 
 
-def _discover_states(state_root: Path) -> tuple[list[StateSummary], list[SafeError]]:
+def _discover_states(
+    state_root: Path,
+) -> tuple[list[StateSummary], list[SafeError], set[str]]:
     if state_root.is_symlink():
-        return [], [SafeError("unsafe_state_root", "Applied-state root must not be a symlink.", "state_root")]
+        return [], [SafeError("unsafe_state_root", "Applied-state root must not be a symlink.", "state_root")], set()
     state_dir = state_root / "state"
     if not state_dir.exists():
-        return [], []
+        return [], [], set()
     if state_dir.is_symlink() or not state_dir.is_dir():
-        return [], [SafeError("unsafe_state_root", "Applied-state directory must be a regular directory.", "state_root")]
+        return [], [SafeError("unsafe_state_root", "Applied-state directory must be a regular directory.", "state_root")], set()
     try:
         trusted_root = state_root.resolve(strict=True)
         state_dir.resolve(strict=True).relative_to(trusted_root)
     except (OSError, ValueError):
-        return [], [SafeError("unsafe_state_root", "Applied-state directory escapes its configured root.", "state_root")]
+        return [], [SafeError("unsafe_state_root", "Applied-state directory escapes its configured root.", "state_root")], set()
     states: list[StateSummary] = []
     errors: list[SafeError] = []
+    error_namespaces: set[str] = set()
     for current, directories, files in os.walk(state_dir, followlinks=False):
         current_path = Path(current)
         try:
@@ -837,6 +962,9 @@ def _discover_states(state_root: Path) -> tuple[list[StateSummary], list[SafeErr
         artifact_id = _artifact_id(state_root, database_path)
         if database_path.is_symlink():
             errors.append(SafeError("unsafe_symlink", "Symlinked applied state is not inspected.", artifact_id))
+            namespace = _attributable_state_namespace(state_root, database_path)
+            if namespace is not None:
+                error_namespaces.add(namespace)
             continue
         try:
             database_path.resolve(strict=True).relative_to(trusted_root)
@@ -856,8 +984,31 @@ def _discover_states(state_root: Path) -> tuple[list[StateSummary], list[SafeErr
             ))
         except (AppliedStateError, OSError, ValueError) as exc:
             errors.append(SafeError("malformed_state", _safe_parse_message(exc), artifact_id))
+            namespace = _attributable_state_namespace(state_root, database_path)
+            if namespace is not None and not _state_summary_capability_error(exc):
+                error_namespaces.add(namespace)
     states.sort(key=lambda item: item.namespace)
-    return states, errors
+    return states, errors, error_namespaces
+
+
+def _state_summary_capability_error(exc: Exception) -> bool:
+    return str(exc) == "applied state safe summary descriptor primitives are unavailable"
+
+
+def _attributable_state_namespace(state_root: Path, database_path: Path) -> str | None:
+    try:
+        relative = database_path.absolute().relative_to(state_root.absolute())
+    except ValueError:
+        return None
+    if (
+        len(relative.parts) != 4
+        or relative.parts[0] != "state"
+        or relative.parts[3] != "state.duckdb"
+        or SAFE_ID.fullmatch(relative.parts[1]) is None
+        or SAFE_ID.fullmatch(relative.parts[2]) is None
+    ):
+        return None
+    return relative.parts[2]
 
 
 def _namespace_summaries(snapshot: _Snapshot) -> list[NamespaceSummary]:
@@ -868,7 +1019,9 @@ def _namespace_summaries(snapshot: _Snapshot) -> list[NamespaceSummary]:
     for state in snapshot.states:
         state_groups.setdefault(state.namespace, []).append(state)
     summaries: list[NamespaceSummary] = []
-    for namespace in sorted(set(plan_groups) | set(state_groups)):
+    for namespace in sorted(
+        set(plan_groups) | set(state_groups) | set(snapshot.error_namespaces)
+    ):
         plans = plan_groups.get(namespace, [])
         states = state_groups.get(namespace, [])
         state = states[0] if len(states) == 1 else None
@@ -890,7 +1043,9 @@ def _namespace_summaries(snapshot: _Snapshot) -> list[NamespaceSummary]:
             )
         )
         local_status: Literal["planned", "applied", "pending_changes", "conflict", "error"]
-        if identity_conflict:
+        if namespace in snapshot.error_namespaces:
+            local_status = "error"
+        elif identity_conflict:
             local_status = "conflict"
         elif pending_changes:
             local_status = "pending_changes"
@@ -1148,6 +1303,111 @@ def _diff_summary(value: Any) -> DiffSummary:
     )
 
 
+def _plan_detail(
+    plan: dict[str, Any], *, warnings: list[InventoryWarning]
+) -> PlanDetail:
+    (
+        summary,
+        namespace_candidate,
+        artifact_hash,
+        retrieval,
+        source_activity,
+        originating_job_id,
+        _,
+    ) = _plan_response_fields(plan, warnings=warnings)
+    applied_state = plan["applied_state"]
+    return PlanDetail(
+        summary=summary,
+        namespace_candidate=namespace_candidate,
+        artifact_hash=artifact_hash,
+        retrieval=retrieval,
+        source_activity=source_activity,
+        originating_job_id=originating_job_id,
+        payload_verification="verified",
+        applied_state_present=bool(applied_state["present"]),
+        applied_state_hash=str(applied_state["hash"]),
+    )
+
+
+def _chunk_inventory(
+    plan: dict[str, Any],
+    rows: tuple[dict[str, Any], ...],
+    *,
+    offset: int,
+    limit: int,
+    max_chars: int,
+) -> ChunkInventory:
+    return ChunkInventory(
+        [
+            _chunk_preview(index, row, max_chars=max_chars)
+            for index, row in enumerate(rows, start=offset)
+        ],
+        int(plan["delta"]["upsert_count"]),
+        offset,
+        limit,
+    )
+
+
+def _stale_inventory(
+    plan: dict[str, Any],
+    rows: tuple[dict[str, Any], ...],
+    *,
+    offset: int,
+    limit: int,
+) -> StaleRowInventory:
+    return StaleRowInventory(
+        [
+            _stale_preview(index, row)
+            for index, row in enumerate(rows, start=offset)
+        ],
+        int(plan["delta"]["stale_count"])
+        + int(plan["delta"]["retained_stale_count"]),
+        offset,
+        limit,
+    )
+
+
+def _plan_matches_filters(
+    summary: PlanSummary,
+    *,
+    query: str | None,
+    namespace: str | None,
+    source_kind: str | None,
+) -> bool:
+    if namespace is not None and summary.namespace != namespace:
+        return False
+    if source_kind is not None and summary.source.kind != source_kind:
+        return False
+    if query is None:
+        return True
+    return any(
+        query in value.casefold()
+        for value in (
+            summary.plan_id,
+            summary.namespace,
+            summary.source.title or "",
+            summary.source.uri or "",
+        )
+    )
+
+
+def _namespace_matches_filters(
+    summary: NamespaceSummary,
+    *,
+    query: str | None,
+    source_kind: str | None,
+    local_status: str | None,
+) -> bool:
+    return (
+        (query is None or query in summary.namespace.casefold())
+        and (
+            source_kind is None
+            or (summary.source is not None and summary.source.kind == source_kind)
+        )
+        and (local_status is None or summary.local_status == local_status)
+    )
+
+
 def _chunk_preview(index: int, chunk: dict[str, Any], *, max_chars: int) -> ChunkPreview:
     content, truncated = _bounded_text(str(chunk["content"]), max_chars)
     return ChunkPreview(
@@ -1172,6 +1432,31 @@ def _stale_preview(index: int, row: dict[str, Any]) -> StaleRowPreview:
         prior_status=str(row["prior_status"]),
         reason=str(row["reason"]),
     )
+
+
+def _validate_query_filter(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or len(value) > MAX_FILTER_CHARS:
+        raise InventoryLookupError(
+            "invalid_request", f"q must contain at most {MAX_FILTER_CHARS} characters."
+        )
+    return value.casefold()
+
+
+def _validate_filter_id(value: str, *, label: str) -> None:
+    if not isinstance(value, str) or SAFE_ID.fullmatch(value) is None:
+        raise InventoryLookupError("invalid_request", f"{label} is invalid.")
+
+
+def _validate_choice_filter(
+    value: str | None, *, choices: frozenset[str], label: str
+) -> str | None:
+    if value is not None and value not in choices:
+        raise InventoryLookupError(
+            "invalid_request", f"{label} is not a supported filter value."
+        )
+    return value
 
 
 def _validate_pagination(offset: int, limit: int) -> tuple[int, int]:

@@ -718,20 +718,74 @@ def create_app(
         return _service_payload(inventory.dashboard(recent_limit=recent_limit))  # type: ignore[attr-defined]
 
     @app.get(f"{API_PREFIX}/namespaces")
-    def namespaces(offset: int = 0, limit: int = 50) -> Any:
-        return _service_payload(inventory.list_namespaces(offset=offset, limit=limit))  # type: ignore[attr-defined]
+    def namespaces(
+        offset: int = 0,
+        limit: int = 50,
+        q: str | None = None,
+        source_kind: str | None = None,
+        local_status: str | None = None,
+    ) -> Any:
+        return _service_payload(
+            inventory.list_namespaces(  # type: ignore[attr-defined]
+                offset=offset,
+                limit=limit,
+                q=q,
+                source_kind=source_kind,
+                local_status=local_status,
+            )
+        )
 
     @app.get(f"{API_PREFIX}/namespaces/{{namespace}}")
-    def namespace_detail(namespace: str) -> Any:
-        return _service_payload(inventory.get_namespace(namespace))  # type: ignore[attr-defined]
+    def namespace_detail(
+        namespace: str, plan_offset: int = 0, plan_limit: int = 20
+    ) -> Any:
+        return _service_payload(
+            inventory.get_namespace(  # type: ignore[attr-defined]
+                namespace, plan_offset=plan_offset, plan_limit=plan_limit
+            )
+        )
 
     @app.get(f"{API_PREFIX}/plans")
-    def plans(offset: int = 0, limit: int = 50) -> Any:
-        return _service_payload(inventory.list_plans(offset=offset, limit=limit))  # type: ignore[attr-defined]
+    def plans(
+        offset: int = 0,
+        limit: int = 50,
+        q: str | None = None,
+        namespace: str | None = None,
+        source_kind: str | None = None,
+    ) -> Any:
+        return _service_payload(
+            inventory.list_plans(  # type: ignore[attr-defined]
+                offset=offset,
+                limit=limit,
+                q=q,
+                namespace=namespace,
+                source_kind=source_kind,
+            )
+        )
 
     @app.get(f"{API_PREFIX}/plans/{{plan_id}}")
     def plan_detail(plan_id: str) -> Any:
         return _service_payload(inventory.get_plan(plan_id))  # type: ignore[attr-defined]
+
+    @app.get(f"{API_PREFIX}/plans/{{plan_id}}/review")
+    def plan_review(
+        plan_id: str,
+        chunk_offset: int = 0,
+        chunk_limit: int = 10,
+        max_chars: int = 2_000,
+        stale_offset: int = 0,
+        stale_limit: int = 10,
+    ) -> Any:
+        return _service_payload(
+            inventory.get_plan_review(  # type: ignore[attr-defined]
+                plan_id,
+                chunk_offset=chunk_offset,
+                chunk_limit=chunk_limit,
+                max_chars=max_chars,
+                stale_offset=stale_offset,
+                stale_limit=stale_limit,
+            )
+        )
 
     @app.get(f"{API_PREFIX}/plans/{{plan_id}}/chunks")
     def plan_chunks(

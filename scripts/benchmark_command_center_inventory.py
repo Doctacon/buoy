@@ -304,6 +304,7 @@ def build_fixture(
     root: Path,
     *,
     plan_count: int = 1_000,
+    plan_namespace_count: int = 1,
     large_state_rows: int = 100_003,
     small_state_count: int = 4,
     small_state_rows: int = 257,
@@ -312,6 +313,8 @@ def build_fixture(
     legacy_depth: int = 32,
     legacy_files: int = 5_000,
 ) -> dict[str, Any]:
+    if plan_namespace_count < 1 or plan_namespace_count > plan_count:
+        raise ValueError("plan_namespace_count must be between 1 and plan_count")
     artifacts_root = root / "artifacts"
     state_root = root / "state-root"
     artifacts_root.mkdir(parents=True)
@@ -326,6 +329,9 @@ def build_fixture(
         else:
             plan = json.loads(json.dumps(selected_plan))
             plan["crawl_options"] = {"inventory_fixture": index}
+            if plan_namespace_count > 1:
+                namespace_index = 1 + (index - 1) % (plan_namespace_count - 1)
+                plan["namespace"] = f"benchmark-namespace-{namespace_index:04d}"
             plan["artifact_hash"] = stable_hash(artifact_identity(plan))
             plan["plan_id"] = f"plan_{plan['artifact_hash'][:16]}"
             validate_plan_document(plan)
@@ -377,6 +383,8 @@ def build_fixture(
         "namespace": NAMESPACE,
         "counts": {
             "summary_plans": plan_count,
+            "plan_namespaces": plan_namespace_count,
+            "selected_namespace_plans": plan_count if plan_namespace_count == 1 else 1,
             "near_limit_plan_bytes": MAX_PLAN_JSON_BYTES,
             "delta_sentinels": plan_count - 1,
             "selected_upserts": selected_upserts,
@@ -422,7 +430,9 @@ def _validate_operation_result(
 ) -> None:
     counts = fixture["counts"]
     plan_count = int(counts["summary_plans"])
-    namespace_count = int(counts["small_state_databases"]) + 1
+    namespace_count = int(counts.get("plan_namespaces", 1)) + int(
+        counts["small_state_databases"]
+    )
     selected_upserts = int(counts["selected_upserts"])
     selected_stale = int(counts["selected_stale"])
 
@@ -441,10 +451,15 @@ def _validate_operation_result(
             and any(item.namespace == fixture["namespace"] for item in result.items)
         )
     elif name == "namespace_detail":
+        namespace_plan_count = int(counts.get("selected_namespace_plans", plan_count))
         valid = (
             result.summary.namespace == fixture["namespace"]
-            and result.summary.plan_count == plan_count
-            and len(result.plans) == plan_count
+            and result.summary.plan_count == namespace_plan_count
+            and result.plan_total == namespace_plan_count
+            and result.plan_offset == 0
+            and result.plan_limit == 20
+            and len(result.plans) == min(20, namespace_plan_count)
+            and result.plans_truncated == (namespace_plan_count > 20)
             and result.state is not None
         )
     elif name == "plan_detail":

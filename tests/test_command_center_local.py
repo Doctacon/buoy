@@ -635,6 +635,49 @@ if loaded:
         self.assertEqual({error.code for error in inventory.errors}, {"malformed_plan"})
         self.assertNotIn(str(root), json.dumps([error.__dict__ for error in inventory.errors]))
 
+    def test_combined_review_loads_no_provider_model_or_source_specific_adapter(self) -> None:
+        script = """
+import sys
+from pathlib import Path
+from buoy_search.command_center_local import LocalInventoryService
+service = LocalInventoryService(artifacts_root=Path(sys.argv[1]), state_root=Path(sys.argv[2]))
+review = service.get_plan_review(sys.argv[3], chunk_limit=1, stale_limit=1)
+if review.detail.summary.plan_id != sys.argv[3]:
+    raise SystemExit('combined review returned the wrong plan')
+forbidden = {
+    'buoy_search.apply', 'buoy_search.bigquery_relation',
+    'buoy_search.command_center_remote', 'buoy_search.duckdb_relation',
+    'buoy_search.github_repo', 'buoy_search.planning_service',
+    'buoy_search.retriever', 'buoy_search.snowflake_relation',
+    'turbopuffer', 'sentence_transformers', 'transformers',
+    'google.cloud.bigquery', 'snowflake.connector',
+}
+loaded = sorted(forbidden.intersection(sys.modules))
+if loaded:
+    raise SystemExit(','.join(loaded))
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = changed_and_stale_state(root / "fixture")
+            plan_id, _ = write_plan(
+                root / "artifacts" / "current", state=state, state_present=True
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    script,
+                    str(root / "artifacts"),
+                    str(root / "state"),
+                    plan_id,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
     def test_selected_detail_fully_verifies_and_chunks_and_stale_are_bounded(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -682,6 +725,9 @@ if loaded:
 
             operations = (
                 lambda: service.get_plan(plan_id),
+                lambda: service.get_plan_review(
+                    plan_id, chunk_limit=1, stale_limit=1
+                ),
                 lambda: service.list_plan_chunks(plan_id, limit=1),
                 lambda: service.list_plan_stale_rows(plan_id, limit=1),
             )
@@ -712,7 +758,52 @@ if loaded:
                         with self.assertRaisesRegex(InventoryLookupError, "fully verified"):
                             operation()
 
-    def test_selected_detail_reconstructs_identity_excluded_metadata_after_cached_rewrite(self) -> None:
+    def test_all_payload_routes_reject_transient_identity_excluded_metadata_aba(self) -> None:
+        from buoy_search.plan_artifacts import verify_plan_artifacts
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = changed_and_stale_state(root)
+            plan_id, output = write_plan(
+                root / "artifacts" / "current", state=state, state_present=True
+            )
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts", state_root=root / "state"
+            )
+            record = service._plan_record(plan_id)
+            plan_path = output / "plan.json"
+            original_plan = plan_path.read_bytes()
+            transient = json.loads(original_plan)
+            transient["created_at"] = "2026-07-28T23:59:59+00:00"
+            transient["originating_job_id"] = "planjob_" + "e" * 32
+            transient_plan = json.dumps(transient).encode("utf-8")
+
+            operations = (
+                lambda: service.get_plan(plan_id),
+                lambda: service.get_plan_review(
+                    plan_id, chunk_limit=1, stale_limit=1
+                ),
+                lambda: service.list_plan_chunks(plan_id, limit=1),
+                lambda: service.list_plan_stale_rows(plan_id, limit=1),
+            )
+            for operation in operations:
+                def verify_transient_then_restore(path, **kwargs):  # noqa: ANN001, ANN202
+                    plan_path.write_bytes(transient_plan)
+                    try:
+                        return verify_plan_artifacts(path, **kwargs)
+                    finally:
+                        plan_path.write_bytes(original_plan)
+
+                with self.subTest(operation=operation), patch.object(
+                    service, "_plan_record", return_value=record
+                ), patch(
+                    "buoy_search.command_center_local._verify_plan_artifacts",
+                    side_effect=verify_transient_then_restore,
+                ):
+                    with self.assertRaisesRegex(InventoryLookupError, "fully verified"):
+                        operation()
+
+    def test_payload_routes_reconstruct_identity_excluded_metadata_after_cached_rewrite(self) -> None:
         import buoy_search.command_center_local as local_module
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -736,14 +827,14 @@ if loaded:
                 "buoy_search.command_center_local._verify_plan_artifacts",
                 wraps=local_module._verify_plan_artifacts,
             ) as verify:
-                first = service.get_plan(plan_id)
-                second = service.get_plan(plan_id)
+                detail = service.get_plan(plan_id)
+                review = service.get_plan_review(plan_id)
 
         self.assertNotEqual(cached.created_at, rewritten_created_at)
-        self.assertEqual(first.summary.created_at, rewritten_created_at)
-        self.assertEqual(first.originating_job_id, rewritten_job_id)
-        self.assertEqual(second.summary.created_at, rewritten_created_at)
-        self.assertEqual(second.originating_job_id, rewritten_job_id)
+        self.assertEqual(detail.summary.created_at, rewritten_created_at)
+        self.assertEqual(detail.originating_job_id, rewritten_job_id)
+        self.assertEqual(review.detail.summary.created_at, rewritten_created_at)
+        self.assertEqual(review.detail.originating_job_id, rewritten_job_id)
         self.assertEqual(verify.call_count, 2)
 
     def test_selected_corrupt_delta_fails_without_breaking_summary_inventory(self) -> None:
@@ -755,8 +846,14 @@ if loaded:
                 artifacts_root=root / "artifacts", state_root=root / "state"
             )
             self.assertEqual(service.list_plans().total, 1)
-            with self.assertRaisesRegex(InventoryLookupError, "fully verified"):
-                service.get_plan(plan_id)
+            for operation in (
+                lambda: service.get_plan(plan_id),
+                lambda: service.get_plan_review(plan_id),
+            ):
+                with self.subTest(operation=operation), self.assertRaisesRegex(
+                    InventoryLookupError, "fully verified"
+                ):
+                    operation()
 
     def test_namespace_combines_summary_plan_and_compact_applied_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -777,6 +874,47 @@ if loaded:
         self.assertEqual(namespace.summary.active_rows, 2)
         self.assertEqual(dashboard.plan_count, 1)
         self.assertEqual(dashboard.pending_namespace_count, 1)
+
+    def test_namespace_error_status_uses_only_attributable_snapshot_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            attributable = (
+                root
+                / "state"
+                / "state"
+                / "error-site"
+                / "error-namespace"
+                / "state.duckdb"
+            )
+            attributable.parent.mkdir(parents=True)
+            attributable.write_bytes(b"malformed state")
+            unattributable = root / "state" / "state" / "not-a-namespace" / "state.duckdb"
+            unattributable.parent.mkdir(parents=True)
+            unattributable.write_bytes(b"malformed state")
+            malformed_plan = root / "artifacts" / "fabricated-namespace"
+            malformed_plan.mkdir(parents=True)
+            (malformed_plan / "plan.json").write_text("{bad", encoding="utf-8")
+
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts", state_root=root / "state"
+            )
+            inventory = service.list_namespaces()
+            errors = service.list_namespaces(local_status="error")
+
+        self.assertEqual([item.namespace for item in inventory.items], ["error-namespace"])
+        self.assertEqual([item.namespace for item in errors.items], ["error-namespace"])
+        self.assertEqual(errors.items[0].local_status, "error")
+        self.assertEqual(errors.total, 1)
+        self.assertEqual(
+            {error.code for error in inventory.errors},
+            {"malformed_plan", "malformed_state"},
+        )
+        self.assertNotIn(
+            "fabricated-namespace", [item.namespace for item in inventory.items]
+        )
+        self.assertNotIn(
+            "not-a-namespace", [item.namespace for item in inventory.items]
+        )
 
     def test_summary_maps_every_schema_v2_source_without_adapter_imports(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -806,18 +944,36 @@ if loaded:
                 plan = json.loads(json.dumps(template))
                 plan["source"] = source
                 plan["site_id"] = site_id_for_url(source["uri"])
+                plan["namespace"] = f"source-kind-{index}"
                 plan["namespace_candidate"] = namespace_candidate(source["uri"])
                 plan["artifact_hash"] = stable_hash(artifact_identity(plan))
                 plan["plan_id"] = f"plan_{plan['artifact_hash'][:16]}"
                 (directory / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
                 (directory / "delta.duckdb").write_bytes(b"")
             with patch.dict("sys.modules", {"buoy_search.bigquery_relation": None, "buoy_search.snowflake_relation": None}):
-                items = LocalInventoryService(
+                service = LocalInventoryService(
                     artifacts_root=artifacts, state_root=root / "state"
-                ).list_plans(limit=100).items
+                )
+                items = service.list_plans(limit=100).items
+                plan_kind_counts = {
+                    kind: service.list_plans(source_kind=kind).total
+                    for kind in ("website", "github_repo", "document", "database", "unknown")
+                }
+                namespace_kind_counts = {
+                    kind: service.list_namespaces(source_kind=kind).total
+                    for kind in ("website", "github_repo", "document", "database", "unknown")
+                }
 
         by_uri = {item.source.uri: item for item in items}
         self.assertEqual(len(by_uri), len(sources))
+        self.assertEqual(
+            plan_kind_counts,
+            {"website": 1, "github_repo": 1, "document": 2, "database": 3, "unknown": 0},
+        )
+        self.assertEqual(
+            namespace_kind_counts,
+            {"website": 1, "github_repo": 1, "document": 2, "database": 3, "unknown": 0},
+        )
         self.assertEqual(by_uri["https://github.com/acme/docs"].source.repository, "acme/docs")
         self.assertEqual(by_uri["file://notes-source"].source.filename, "notes.md")
         self.assertEqual(by_uri["pdf://guide-source"].source.filename, "guide.pdf")
@@ -842,21 +998,132 @@ if loaded:
         self.assertEqual(detail.summary.source.uri, "https://example.com/docs")
         self.assertEqual(detail.summary.source_activity.credentials_required, False)
 
-    def test_pagination_and_preview_bounds_fail_safely(self) -> None:
+    def test_namespace_plan_history_is_bounded_with_accurate_window_metadata(self) -> None:
+        from buoy_search.plan_artifacts import artifact_identity, stable_hash
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, template_output = write_plan(root / "template")
+            template = json.loads(
+                (template_output / "plan.json").read_text(encoding="utf-8")
+            )
+            artifacts = root / "artifacts"
+            for index in range(125):
+                directory = artifacts / f"plan-{index:03d}"
+                directory.mkdir(parents=True)
+                plan = json.loads(json.dumps(template))
+                plan["crawl_options"] = {"history_fixture": index}
+                plan["created_at"] = f"2026-07-28T00:{index // 60:02d}:{index % 60:02d}+00:00"
+                plan["artifact_hash"] = stable_hash(artifact_identity(plan))
+                plan["plan_id"] = f"plan_{plan['artifact_hash'][:16]}"
+                (directory / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+                (directory / "delta.duckdb").write_bytes(b"summary-only")
+            service = LocalInventoryService(
+                artifacts_root=artifacts, state_root=root / "state"
+            )
+
+            first = service.get_namespace("site-example-com-v1")
+            middle = service.get_namespace(
+                "site-example-com-v1", plan_offset=20, plan_limit=100
+            )
+            end = service.get_namespace(
+                "site-example-com-v1", plan_offset=120, plan_limit=100
+            )
+
+        self.assertEqual(
+            (first.plan_total, first.plan_offset, first.plan_limit), (125, 0, 20)
+        )
+        self.assertEqual(len(first.plans), 20)
+        self.assertTrue(first.plans_truncated)
+        self.assertEqual(len(middle.plans), 100)
+        self.assertTrue(middle.plans_truncated)
+        self.assertEqual(len(end.plans), 5)
+        self.assertTrue(end.plans_truncated)
+        self.assertEqual(
+            [item.plan_id for item in middle.plans],
+            [item.summary.plan_id for item in service._snapshot().plans[20:120]],
+        )
+
+    def test_combined_review_and_standalone_routes_each_verify_exactly_once(self) -> None:
+        import buoy_search.command_center_local as local_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = changed_and_stale_state(root)
+            plan_id, _ = write_plan(
+                root / "artifacts" / "current", state=state, state_present=True
+            )
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts", state_root=root / "state"
+            )
+            with patch(
+                "buoy_search.command_center_local._verify_plan_artifacts",
+                wraps=local_module._verify_plan_artifacts,
+            ) as verify:
+                review = service.get_plan_review(
+                    plan_id,
+                    chunk_offset=0,
+                    chunk_limit=1,
+                    max_chars=8,
+                    stale_offset=1,
+                    stale_limit=1,
+                )
+                self.assertEqual(verify.call_count, 1)
+                self.assertEqual(
+                    verify.call_args.kwargs,
+                    {
+                        "materialize": False,
+                        "upsert_window": (0, 1),
+                        "stale_window": (1, 1),
+                    },
+                )
+                service.get_plan(plan_id)
+                self.assertEqual(verify.call_count, 2)
+                service.list_plan_chunks(plan_id, limit=1)
+                self.assertEqual(verify.call_count, 3)
+                service.list_plan_stale_rows(plan_id, limit=1)
+                self.assertEqual(verify.call_count, 4)
+
+        self.assertEqual(review.detail.summary.plan_id, plan_id)
+        self.assertEqual(review.detail.payload_verification, "verified")
+        self.assertEqual(review.chunks.total, 1)
+        self.assertEqual(len(review.chunks.items[0].content), 8)
+        self.assertEqual(review.stale_rows.total, 2)
+        self.assertEqual(review.stale_rows.items[0].index, 1)
+
+    def test_pagination_filters_and_review_windows_fail_before_verification(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             plan_id, _ = write_plan(root / "artifacts" / "plan")
             service = LocalInventoryService(
                 artifacts_root=root / "artifacts", state_root=root / "state"
             )
-            for operation in (
-                lambda: service.list_plans(offset=-1),
-                lambda: service.list_plan_chunks(plan_id, limit=101),
-                lambda: service.list_plan_chunks(plan_id, max_chars=20_001),
-                lambda: service.list_plan_stale_rows(plan_id, limit=0),
-            ):
-                with self.subTest(operation=operation), self.assertRaises(InventoryLookupError):
-                    operation()
+            with patch(
+                "buoy_search.command_center_local._verify_plan_artifacts"
+            ) as verify:
+                for operation in (
+                    lambda: service.list_plans(offset=-1),
+                    lambda: service.list_plans(q="x" * 257),
+                    lambda: service.list_plans(namespace="not/a/namespace"),
+                    lambda: service.list_plans(source_kind="pdf"),
+                    lambda: service.list_namespaces(source_kind="local_file"),
+                    lambda: service.list_namespaces(local_status="broken"),
+                    lambda: service.get_namespace(
+                        "site-example-com-v1", plan_limit=101
+                    ),
+                    lambda: service.list_plan_chunks(plan_id, limit=101),
+                    lambda: service.list_plan_chunks(plan_id, max_chars=20_001),
+                    lambda: service.list_plan_stale_rows(plan_id, limit=0),
+                    lambda: service.get_plan_review(plan_id, chunk_offset=-1),
+                    lambda: service.get_plan_review(plan_id, chunk_limit=101),
+                    lambda: service.get_plan_review(plan_id, stale_limit=0),
+                    lambda: service.get_plan_review(plan_id, max_chars=20_001),
+                ):
+                    with self.subTest(operation=operation), self.assertRaises(
+                        InventoryLookupError
+                    ):
+                        operation()
+                verify.assert_not_called()
 
     def test_large_delta_review_is_windowed_and_deterministic(self) -> None:
         import duckdb
@@ -941,10 +1208,12 @@ if loaded:
             "SELECT * FROM stale_rows ORDER BY ordinal LIMIT ? OFFSET ?", [10, 99_990]
         )
 
-    def test_many_summary_inventory_is_payload_independent(self) -> None:
+    def test_many_summary_inventory_filters_before_pagination_and_reuses_snapshot(self) -> None:
+        import buoy_search.command_center_local as local_module
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            plan_id, output = write_plan(root / "template")
+            _, output = write_plan(root / "template")
             template = json.loads((output / "plan.json").read_text(encoding="utf-8"))
             artifacts = root / "artifacts"
             from buoy_search.plan_artifacts import artifact_identity, stable_hash
@@ -956,6 +1225,7 @@ if loaded:
                 directory = artifacts / f"plan-{index:04d}"
                 directory.mkdir(parents=True)
                 plan = json.loads(json.dumps(template))
+                plan["namespace"] = f"fixture-{index:04d}"
                 plan["crawl_options"] = {"inventory_fixture": index}
                 plan["artifact_hash"] = stable_hash(artifact_identity(plan))
                 plan["plan_id"] = f"plan_{plan['artifact_hash'][:16]}"
@@ -983,13 +1253,49 @@ if loaded:
                 side_effect=AssertionError("inventory connected to DuckDB"),
             ), patch(
                 "buoy_search.command_center_local.os.open", side_effect=reject_delta_open
-            ):
+            ), patch(
+                "buoy_search.command_center_local._discover_plans",
+                wraps=local_module._discover_plans,
+            ) as scans:
                 inventory = service.list_plans(limit=100)
+                expected = [
+                    record.summary.plan_id
+                    for record in service._snapshot().plans
+                    if "fixture-09" in record.summary.namespace
+                ]
+                filtered = service.list_plans(q="FIXTURE-09", offset=10, limit=15)
+                exact = service.list_plans(namespace="fixture-0999")
+                by_uri = service.list_plans(q="EXAMPLE.COM/DOCS", limit=100)
+                by_kind = service.list_plans(source_kind="website", limit=100)
+                missing_kind = service.list_plans(source_kind="unknown")
+                namespaces = service.list_namespaces(
+                    q="FIXTURE-09", offset=10, limit=15
+                )
+                namespace_kind = service.list_namespaces(
+                    source_kind="website", limit=100
+                )
+                namespace_status = service.list_namespaces(
+                    local_status="pending_changes", limit=100
+                )
                 dashboard = service.dashboard()
             elapsed = time.perf_counter() - started
 
+        self.assertEqual(scans.call_count, 1)
         self.assertEqual(inventory.total, 1_000)
         self.assertEqual(len(inventory.items), 100)
+        self.assertEqual(filtered.total, 100)
+        self.assertEqual(
+            [item.plan_id for item in filtered.items], expected[10:25]
+        )
+        self.assertEqual(exact.total, 1)
+        self.assertEqual(exact.items[0].namespace, "fixture-0999")
+        self.assertEqual(by_uri.total, 1_000)
+        self.assertEqual(by_kind.total, 1_000)
+        self.assertEqual(missing_kind.total, 0)
+        self.assertEqual(namespaces.total, 100)
+        self.assertEqual(len(namespaces.items), 15)
+        self.assertEqual(namespace_kind.total, 1_000)
+        self.assertEqual(namespace_status.total, 1_000)
         self.assertEqual(dashboard.plan_count, 1_000)
         self.assertLess(elapsed, 10.0)
 
