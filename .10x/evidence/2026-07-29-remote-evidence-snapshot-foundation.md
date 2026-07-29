@@ -7,7 +7,7 @@ Relates-To: .10x/tickets/2026-07-29-implement-remote-evidence-snapshot-foundatio
 
 ## What was observed
 
-Graph Phase 3A is implemented on `work/remote-evidence-snapshot-foundation` from base commit `606c168389e28b09105e8eb139f2cde063994a83` (`origin/main` fetched 2026-07-29). Initial implementation commit `cf37f5fff20cc05ffe561cbf3010165e779e74eb` received two independent fail reviews; repair commit `89a01bd7e23323d7e84088f5d504bf9a69b659fc` fixed those findings but a fresh re-review found write-marker and retry gaps. The second repair is the commit containing this updated record.
+Graph Phase 3A is implemented on `work/remote-evidence-snapshot-foundation` from base commit `606c168389e28b09105e8eb139f2cde063994a83` (`origin/main` fetched 2026-07-29). Initial implementation commit `cf37f5fff20cc05ffe561cbf3010165e779e74eb` received two independent fail reviews; repair commit `89a01bd7e23323d7e84088f5d504bf9a69b659fc` fixed those findings but a fresh re-review found write-marker and retry gaps. The second repair is `5a3a7c81c4f88b806897449465ff78e01d10a426`; the final pre-publication exact-ledger repair is the commit containing this updated record.
 
 The installed and locked official provider SDK is `turbopuffer==2.4.0`. The implementation uses `client.namespace(destination).branch_from(source_namespace=source)`, explicit strong ordered queries, `limit=10_000`, metadata reads, conditional ledger ownership/catalog completion writes, and no provider import during ordinary module import/help. No live provider call was made.
 
@@ -45,14 +45,16 @@ SDK-shaped metadata tests return Python `datetime` values from `to_dict`-like ob
 
 A forced post-ledger catalog-finalization failure leaves deterministic internals safely retained. The next identical invocation reuses the branch and ledger only after exact schema, complete ordered rows/hash/counts, deterministic identity, locked local fingerprints, and branch reconciliation; it writes no ledger row and completes the catalog. Partial and altered retained ledgers are rejected without overwrite or deletion.
 
+Immediately before every catalog completion—new ledger or exact retry—the implementation repeats the full remote ledger-to-locked-local validation and branch reconciliation, then performs the final branch metadata comparison. Focused mutation regressions alter a new ledger hash field after acknowledged writes and a reused ledger provenance field after its initial exact check; both fail with no completed catalog row. Normal new-snapshot creation still performs one ordered branch reconciliation scan per source; the earlier redundant local/branch scan was removed.
+
 ## 100,000-row structural measurement
 
 A provider-free 100,000-row DuckDB state plus matching lean fake branch was run in a temporary directory after the independent-review repairs. DuckDB uses `fetchmany(1_000)`, remote scans use 10,000-row strong pages, and ledger writes use at most 1,000 rows and 16 MiB encoded payload. The global O(total rows) verification ID set was removed. No content/vector attribute was requested. The fake retains 100,000 branch and ledger rows in-process, so RSS includes fake remote state and is an upper-bound harness measurement, not solely Buoy buffer memory.
 
-Observed JSON:
+Observed JSON after the final exact-ledger repair:
 
 ```json
-{"approximate_remote_logical_bytes":50000000,"billable_logical_bytes_queried":2200,"billable_logical_bytes_returned":2000000,"branch_calls":1,"catalog_write_calls":1,"elapsed_reconciliation_seconds":6.336577,"ledger_write_calls":100,"local_manifest_bytes":1018,"manifest_files":["snapshot.json"],"peak_rss_delta_bytes":204177408,"remote_query_calls":22,"remote_query_metric":30,"rows":100000,"wall_elapsed_seconds":6.352428}
+{"approximate_remote_logical_bytes":50000000,"billable_logical_bytes_queried":3300,"billable_logical_bytes_returned":3000000,"branch_calls":1,"catalog_write_calls":1,"elapsed_reconciliation_seconds":9.165245,"ledger_write_calls":100,"local_manifest_bytes":1018,"manifest_files":["snapshot.json"],"peak_rss_delta_bytes":202145792,"remote_query_calls":33,"remote_query_metric":41,"rows":100000,"wall_elapsed_seconds":9.180069}
 ```
 
 `/usr/bin/time -l` reported 447,184,896 bytes maximum process RSS for the complete fake-provider test process. No latency pass/fail threshold is asserted.
@@ -68,10 +70,10 @@ All commands ran from the task worktree after the repair:
 - `uv lock --check` — pass; 157 packages resolved.
 - `PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate_ranking_contract.py` — pass; 13 datasets, 369 judgments, dataset bundle `5a79f58aaca87a2d4f7cbec68fdcfbbcbf041131821587f8aba74a86daca99d9`.
 - `PYTHONDONTWRITEBYTECODE=1 uv run python scripts/c6_syntax_forecast.py validate` — pass; forecast `d5199276c19ae89779287eaa90824ce1e1cc684a3f060899f02f65d976016243`.
-- Focused evidence/applied-state/apply/remote-catalog/release/Command Center suite — 241 tests passed in 27.326s.
-- Full `unittest discover` — 852 tests passed in 103.063s; 39 skipped. Existing expected warning/argparse/log lines appeared; no failure.
+- Focused evidence/applied-state/apply/remote-catalog/release/Command Center suite — 250 tests passed in 29.892s after one expected assertion update for the final metadata-check phase; an earlier run exposed and removed a redundant second normal branch scan.
+- Full `unittest discover` — 854 tests passed in 106.633s; 39 skipped. Existing expected warning/argparse/log lines appeared; no failure.
 - `uv build --out-dir dist` — pass; wheel and sdist built.
-- Package inspection — wheel 72 files, sdist 168 files; wheel contains all three evidence modules; sdist contains evidence modules, `docs/evidence-snapshots.md`, and all three focused test modules; no `state.duckdb`, `snapshot.json`, `evidence.duckdb`, or `node_modules` packaged.
+- Package inspection — wheel 72 files, sdist 168 files; wheel contains all three evidence modules; sdist contains evidence modules, `docs/evidence-snapshots.md`, and all three focused test modules; no `state.duckdb`, `snapshot.json`, `evidence.duckdb`, or `node_modules` packaged. This remains an explicit build-time check rather than a nested-build unit test, avoiding ordinary-test repository artifacts and runtime.
 - Provider-blocked ordinary/evidence imports — pass; `turbopuffer` absent from `sys.modules`.
 - `buoy evidence estimate|snapshot|verify --help` — pass without credentials/provider import.
 - Restore `rm -rf dist web/node_modules; uv sync --locked; uv lock --check` — pass.

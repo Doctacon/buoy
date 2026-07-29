@@ -64,9 +64,17 @@ The follow-up repair now canonicalizes branch write drift from official `last_wr
 
 An existing deterministic ledger is reused only after exact schema validation, full ordered ledger hash/status scan, deterministic snapshot/source/branch/document identity, per-source site/count/fingerprint comparison to the locked local state, and complete branch reconciliation. Partial and altered ledgers fail without writes or deletion. A catalog-failure retry regression proves branch/ledger reuse and successful finalization.
 
+## Final independent re-review and repair
+
+Fresh reviews of commit `5a3a7c81c4f88b806897449465ff78e01d10a426` confirmed the prior repairs. The validation review passed with one minor package-regression concern. The correctness review found one final blocker: a newly written ledger received only hash/status validation before completion, so a provider-side mutation after an acknowledged write could be incorporated into a complete catalog row; a reused ledger had the same mutation window after its initial exact collision check.
+
+The final repair replaces the pre-publication hash/status-only pass with a complete exact validation for both paths. Immediately before catalog publication, it re-reads the ledger, validates deterministic row/source/branch/site/ordinal identity, recomputes each per-source fingerprint and counts against the locked local fingerprints, and reconciles each source branch against that ledger. The final branch metadata comparison remains after this exact pass. Focused regressions mutate `page_hash` after a new ledger write is acknowledged and `plan_id` after a reused ledger's initial validation; both now fail before any catalog row is written.
+
+No archive-building test was added to the normal suite. Existing release-test conventions inspect package configuration and release artifacts without running a nested repository build; adding `uv build` to ordinary unit discovery would create repository artifacts and materially slow every suite run. The provider-free manual `uv build` plus exact wheel/sdist inventory remains an independently repeated, non-blocking validation limit: 72 wheel entries and 168 sdist entries, all evidence modules/docs/tests present where required, and no state/snapshot/node_modules content.
+
 ## Current verdict
 
-**Concerns raised, second repairs implemented; independent re-review required.** This history does not self-ratify either repair. The owning ticket remains open for the parent to obtain a fresh review and decide closure.
+**Concerns addressed; final repair implemented and validated; independent final acceptance remains with the parent.** This history does not self-ratify the final repair. The owning ticket remains open for fresh acceptance review and closure decision.
 
 ## Residual risk
 

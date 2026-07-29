@@ -542,6 +542,56 @@ class EvidenceRemoteTests(unittest.TestCase):
             ledger_writes,
         )
 
+    def test_new_ledger_mutation_after_acknowledged_write_cannot_finalize(self) -> None:
+        real_hash = evidence_remote._hash_ledger
+        mutated = False
+
+        def mutate_after_hash(**kwargs):  # noqa: ANN003, ANN202
+            nonlocal mutated
+            value = real_hash(**kwargs)
+            if not mutated:
+                mutated = True
+                ledger = kwargs["resource"].name
+                first = next(iter(self.client.data[ledger]["rows"].values()))
+                first["page_hash"] = "altered-after-write"
+            return value
+
+        with patch(
+            "buoy_search.evidence_remote._hash_ledger", side_effect=mutate_after_hash
+        ):
+            with self.assertRaisesRegex(EvidenceSnapshotError, "page_hash_mismatch"):
+                create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
+        catalog = self.client.data.get("buoy-evidence-catalog-v1", {"rows": {}})
+        self.assertEqual(catalog["rows"], {})
+
+    def test_reused_ledger_mutation_after_initial_validation_cannot_finalize(self) -> None:
+        self.client.fail_catalog = True
+        with self.assertRaisesRegex(EvidenceSnapshotError, "catalog finalization"):
+            create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
+        self.client.fail_catalog = False
+        real_validate = evidence_remote._validate_existing_ledger
+        validations = 0
+
+        def mutate_after_initial_validation(**kwargs):  # noqa: ANN003, ANN202
+            nonlocal validations
+            value = real_validate(**kwargs)
+            validations += 1
+            if validations == 1:
+                ledger = kwargs["resource"].name
+                first = next(iter(self.client.data[ledger]["rows"].values()))
+                first["plan_id"] = "plan_altered_after_retry_validation"
+            return value
+
+        with patch(
+            "buoy_search.evidence_remote._validate_existing_ledger",
+            side_effect=mutate_after_initial_validation,
+        ):
+            with self.assertRaisesRegex(EvidenceSnapshotError, "plan_id_mismatch"):
+                create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
+        catalog = self.client.data.get("buoy-evidence-catalog-v1", {"rows": {}})
+        self.assertEqual(catalog["rows"], {})
+        self.assertEqual(validations, 1)
+
     def test_incomplete_or_mismatched_existing_ledger_is_never_overwritten(self) -> None:
         self.client.fail_catalog = True
         with self.assertRaises(EvidenceSnapshotError):
@@ -647,7 +697,7 @@ class EvidenceRemoteTests(unittest.TestCase):
 
     def test_branch_change_during_reconciliation_is_detected(self) -> None:
         self.client.mutate_branch_on_query = True
-        with self.assertRaisesRegex(EvidenceSnapshotError, "changed during reconciliation"):
+        with self.assertRaisesRegex(EvidenceSnapshotError, "changed before finalization"):
             create_evidence_snapshot(self.client, out_root=self.out, **self.kwargs())
         self.assertEqual(self.client.delete_calls, [])
 

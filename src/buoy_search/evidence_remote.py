@@ -519,64 +519,6 @@ def _row_matches(expected: Mapping[str, object], actual: Mapping[str, object]) -
     return None
 
 
-def _reconcile_branch_with_local(
-    *,
-    resource: NamespaceResource,
-    source: LocalEvidenceSource,
-    state_root: Path,
-    metrics: dict[str, int],
-) -> None:
-    remote = iter(
-        _query_rows(
-            resource,
-            include_attributes=RECONCILIATION_ATTRIBUTES,
-            metrics=metrics,
-        )
-    )
-    current_remote = next(remote, None)
-    with stream_applied_state_rows(
-        database_path=source.database_path,
-        state_root=state_root,
-        batch_size=LOCAL_ROW_BATCH_SIZE,
-    ) as stream:
-        for local in stream.rows:
-            if local.status == "deleted":
-                if current_remote is not None and current_remote.get("id") == local.row_id:
-                    raise EvidenceSnapshotError(
-                        f"namespace {source.namespace!r} category deleted_present row {local.row_id!r}"
-                    )
-                continue
-            if current_remote is None:
-                raise EvidenceSnapshotError(
-                    f"namespace {source.namespace!r} category missing row {local.row_id!r}"
-                )
-            remote_id = current_remote.get("id")
-            if remote_id != local.row_id:
-                category = "unexpected" if str(remote_id) < local.row_id else "missing"
-                raise EvidenceSnapshotError(
-                    f"namespace {source.namespace!r} category {category} row {str(remote_id if category == 'unexpected' else local.row_id)!r}"
-                )
-            expected = {
-                "id": local.row_id,
-                "canonical_url": local.canonical_url,
-                "page_hash": local.page_hash,
-                "chunk_hash": local.chunk_hash,
-                "embedding_text_hash": local.embedding_text_hash,
-                "plan_id": local.plan_id,
-                "applied_at": local.applied_at,
-            }
-            mismatch = _row_matches(expected, current_remote)
-            if mismatch is not None:
-                raise EvidenceSnapshotError(
-                    f"namespace {source.namespace!r} category {mismatch}_mismatch row {local.row_id!r}"
-                )
-            current_remote = next(remote, None)
-    if current_remote is not None:
-        raise EvidenceSnapshotError(
-            f"namespace {source.namespace!r} category unexpected row {str(current_remote.get('id'))!r}"
-        )
-
-
 def _normalize_schema(metadata: Mapping[str, object]) -> dict[str, dict[str, object]]:
     raw = _plain(metadata.get("schema"))
     if not isinstance(raw, dict):
@@ -1398,39 +1340,22 @@ def create_evidence_snapshot(
                 ledger_metadata = _metadata(ledger_resource, metrics=metrics)
                 _validate_exact_schema(ledger_metadata, LEDGER_SCHEMA)
 
-            for source in sources:
-                branch = client.namespace(names.branches[source.namespace])
-                _reconcile_branch_with_local(
-                    resource=branch,
-                    source=source,
-                    state_root=state_root,
-                    metrics=metrics,
-                )
-                after = _metadata(branch, metrics=metrics)
-                observation = observations[source.namespace]
-                _assert_branch_observation(
-                    after,
-                    expected=observation,
-                    namespace=names.branches[source.namespace],
-                    parent=source.namespace,
-                    phase="during reconciliation",
-                )
-
-            ledger_hash, counts = _hash_ledger(
+            # Re-read every remote ledger row and reconcile it to both the
+            # locked local fingerprints and its immutable branch immediately
+            # before publication. This deliberately repeats validation for a
+            # reused ledger so a mutation after the initial collision check
+            # cannot be finalized.
+            ledger_hash, counts = _validate_existing_ledger(
+                client=client,
                 resource=ledger_resource,
                 snapshot_id=names.snapshot_id,
+                sources=sources,
+                fingerprints=fingerprints,
+                branch_namespaces=names.branches,
                 metrics=metrics,
             )
-            expected_counts = {
-                "active": sum(item.active_rows for item in fingerprints),
-                "retained_stale": sum(item.retained_stale_rows for item in fingerprints),
-                "deleted": sum(item.deleted_rows for item in fingerprints),
-                "total": total_rows,
-            }
-            if counts != expected_counts:
-                raise EvidenceSnapshotError("remote snapshot ledger status counts mismatch")
-            # Ledger verification is complete; branch metadata must remain stable
-            # through this final pre-publication check.
+            # Exact ledger verification is complete; branch metadata must
+            # remain stable through this final pre-publication check.
             for source in sources:
                 after = _metadata(
                     client.namespace(names.branches[source.namespace]), metrics=metrics
