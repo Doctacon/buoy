@@ -62,19 +62,76 @@ class FakeInventory:
     def dashboard(self, *, recent_limit: int = 10):
         return {"resource": "dashboard", "recent_limit": recent_limit}
 
-    def list_namespaces(self, *, offset: int = 0, limit: int = 50):
-        return {"resource": "namespaces", "offset": offset, "limit": limit}
+    def list_namespaces(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        q: str | None = None,
+        source_kind: str | None = None,
+        local_status: str | None = None,
+    ):
+        return {
+            "resource": "namespaces",
+            "offset": offset,
+            "limit": limit,
+            "q": q,
+            "source_kind": source_kind,
+            "local_status": local_status,
+        }
 
-    def get_namespace(self, namespace: str):
+    def get_namespace(
+        self, namespace: str, *, plan_offset: int = 0, plan_limit: int = 20
+    ):
         if namespace == "missing":
             raise InventoryLookupError("namespace_not_found", "Namespace was not found.")
-        return {"resource": "namespace", "namespace": namespace}
+        return {
+            "resource": "namespace",
+            "namespace": namespace,
+            "plan_offset": plan_offset,
+            "plan_limit": plan_limit,
+        }
 
-    def list_plans(self, *, offset: int = 0, limit: int = 50):
-        return {"resource": "plans", "offset": offset, "limit": limit}
+    def list_plans(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        q: str | None = None,
+        namespace: str | None = None,
+        source_kind: str | None = None,
+    ):
+        return {
+            "resource": "plans",
+            "offset": offset,
+            "limit": limit,
+            "q": q,
+            "namespace": namespace,
+            "source_kind": source_kind,
+        }
 
     def get_plan(self, plan_id: str):
         return {"resource": "plan", "plan_id": plan_id}
+
+    def get_plan_review(
+        self,
+        plan_id: str,
+        *,
+        chunk_offset: int = 0,
+        chunk_limit: int = 10,
+        max_chars: int = 2_000,
+        stale_offset: int = 0,
+        stale_limit: int = 10,
+    ):
+        return {
+            "resource": "review",
+            "plan_id": plan_id,
+            "chunk_offset": chunk_offset,
+            "chunk_limit": chunk_limit,
+            "max_chars": max_chars,
+            "stale_offset": stale_offset,
+            "stale_limit": stale_limit,
+        }
 
     def list_plan_chunks(
         self,
@@ -113,10 +170,24 @@ class BlockingInventory(FakeInventory):
             self._block()
         return super().dashboard(recent_limit=recent_limit)
 
-    def list_plans(self, *, offset: int = 0, limit: int = 50):
+    def list_plans(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        q: str | None = None,
+        namespace: str | None = None,
+        source_kind: str | None = None,
+    ):
         if self.blocked_resource == "plans":
             self._block()
-        return super().list_plans(offset=offset, limit=limit)
+        return super().list_plans(
+            offset=offset,
+            limit=limit,
+            q=q,
+            namespace=namespace,
+            source_kind=source_kind,
+        )
 
 
 def _start_threaded_call(
@@ -874,15 +945,142 @@ class CommandCenterApiTests(unittest.TestCase):
             plan_response.json()["originating_job_id"], f"planjob_{'c' * 32}"
         )
 
+    def test_bounded_filters_namespace_history_and_review_api_contracts(self) -> None:
+        import buoy_search.command_center_local as local_module
+        from buoy_search.command_center_local import LocalInventoryService
+        from tests.test_command_center_local import changed_and_stale_state, write_plan
+
+        class InertPlanJobs:
+            def shutdown(self, *, wait: bool) -> None:
+                del wait
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = changed_and_stale_state(root / "fixture")
+            plan_id, _ = write_plan(
+                root / "artifacts" / "current", state=state, state_present=True
+            )
+            broken_state = (
+                root
+                / "state"
+                / "state"
+                / "broken-site"
+                / "broken-namespace"
+                / "state.duckdb"
+            )
+            broken_state.parent.mkdir(parents=True)
+            broken_state.write_bytes(b"malformed state")
+            service = LocalInventoryService(
+                artifacts_root=root / "artifacts", state_root=root / "state"
+            )
+            app = create_app(
+                artifacts_root=root / "artifacts",
+                state_root=root / "state",
+                local_inventory=service,
+                plan_job_service_factory=InertPlanJobs,
+            )
+            with patch(
+                "buoy_search.command_center_local._verify_plan_artifacts",
+                wraps=local_module._verify_plan_artifacts,
+            ) as verify, TestClient(app, base_url="http://localhost") as client:
+                plans = client.get(
+                    "/api/v1/plans?q=EXAMPLE.COM%2FDOCS&namespace=site-example-com-v1&source_kind=website&limit=1"
+                )
+                namespaces = client.get(
+                    "/api/v1/namespaces?q=SITE-EXAMPLE&source_kind=website&local_status=pending_changes&limit=1"
+                )
+                error_namespaces = client.get(
+                    "/api/v1/namespaces?local_status=error"
+                )
+                namespace = client.get(
+                    "/api/v1/namespaces/site-example-com-v1?plan_offset=0&plan_limit=1"
+                )
+                review = client.get(
+                    f"/api/v1/plans/{plan_id}/review?chunk_offset=0&chunk_limit=1&max_chars=8&stale_offset=1&stale_limit=1"
+                )
+                self.assertEqual(verify.call_count, 1)
+                detail = client.get(f"/api/v1/plans/{plan_id}")
+                chunks = client.get(
+                    f"/api/v1/plans/{plan_id}/chunks?offset=0&limit=1"
+                )
+                stale = client.get(
+                    f"/api/v1/plans/{plan_id}/stale-rows?offset=0&limit=1"
+                )
+                self.assertEqual(verify.call_count, 4)
+                invalid_filter = client.get("/api/v1/plans?source_kind=pdf")
+                invalid_query = client.get("/api/v1/namespaces?q=" + "x" * 257)
+                invalid_window = client.get(
+                    f"/api/v1/plans/{plan_id}/review?chunk_limit=101"
+                )
+                self.assertEqual(verify.call_count, 4)
+
+        for response in (
+            plans,
+            namespaces,
+            error_namespaces,
+            namespace,
+            review,
+            detail,
+            chunks,
+            stale,
+        ):
+            self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(plans.json()["total"], 1)
+        self.assertEqual(namespaces.json()["total"], 1)
+        self.assertEqual(error_namespaces.json()["total"], 1)
+        self.assertEqual(
+            error_namespaces.json()["items"][0]["namespace"], "broken-namespace"
+        )
+        self.assertEqual(error_namespaces.json()["items"][0]["local_status"], "error")
+        self.assertEqual(
+            {
+                key: namespace.json()[key]
+                for key in (
+                    "plan_total",
+                    "plan_offset",
+                    "plan_limit",
+                    "plans_truncated",
+                )
+            },
+            {
+                "plan_total": 1,
+                "plan_offset": 0,
+                "plan_limit": 1,
+                "plans_truncated": False,
+            },
+        )
+        self.assertEqual(review.json()["detail"]["summary"]["plan_id"], plan_id)
+        self.assertEqual(review.json()["chunks"]["limit"], 1)
+        self.assertEqual(len(review.json()["chunks"]["items"][0]["content"]), 8)
+        self.assertEqual(review.json()["stale_rows"]["offset"], 1)
+        for response in (invalid_filter, invalid_query):
+            self.assertEqual(response.status_code, 400, response.text)
+            self.assertEqual(response.json()["error"]["code"], "invalid_request")
+        self.assertEqual(invalid_window.status_code, 400)
+        self.assertEqual(invalid_window.json()["error"]["code"], "invalid_limit")
+
     def test_all_inventory_detail_and_pagination_routes_delegate_to_service(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _, client = self.make_client(Path(tmp), local_inventory=FakeInventory())
             cases = [
                 ("/api/v1/dashboard?recent_limit=4", "dashboard"),
-                ("/api/v1/namespaces?offset=2&limit=3", "namespaces"),
-                ("/api/v1/namespaces/site-example-v1", "namespace"),
-                ("/api/v1/plans?offset=1&limit=2", "plans"),
+                (
+                    "/api/v1/namespaces?offset=2&limit=3&q=docs&source_kind=website&local_status=planned",
+                    "namespaces",
+                ),
+                (
+                    "/api/v1/namespaces/site-example-v1?plan_offset=2&plan_limit=3",
+                    "namespace",
+                ),
+                (
+                    "/api/v1/plans?offset=1&limit=2&q=docs&namespace=site-example-v1&source_kind=website",
+                    "plans",
+                ),
                 ("/api/v1/plans/plan-1", "plan"),
+                (
+                    "/api/v1/plans/plan-1/review?chunk_offset=2&chunk_limit=3&max_chars=123&stale_offset=4&stale_limit=5",
+                    "review",
+                ),
                 ("/api/v1/plans/plan-1/chunks?offset=2&limit=3&max_chars=123", "chunks"),
                 ("/api/v1/plans/plan-1/stale-rows?offset=2&limit=3", "stale"),
             ]
@@ -915,6 +1113,7 @@ class CommandCenterApiTests(unittest.TestCase):
             ("/api/v1/namespaces/{namespace}", "GET"),
             ("/api/v1/plans", "GET"),
             ("/api/v1/plans/{plan_id}", "GET"),
+            ("/api/v1/plans/{plan_id}/review", "GET"),
             ("/api/v1/plans/{plan_id}/chunks", "GET"),
             ("/api/v1/plans/{plan_id}/stale-rows", "GET"),
             ("/api/v1/plan-jobs", "GET"),

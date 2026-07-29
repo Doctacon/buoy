@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Link,
   NavLink,
@@ -17,6 +17,7 @@ import type {
   DashboardData,
   DiffSummary,
   NamespaceDetail,
+  NamespaceInventory,
   NamespaceSummary,
   PlanDetail,
   PlanInventory,
@@ -315,71 +316,136 @@ function PlanCards({ plans }: { plans: PlanSummary[] }) {
 }
 
 function remoteFor(namespace: string, snapshot: RemoteSnapshot | null): RemoteNamespaceStatus | null {
-  return snapshot?.namespaces.find((item) => item.namespace === namespace) ?? null
+  return snapshot?.namespaces.find((item) => item.namespace === namespace && item.local_present) ?? null
 }
 
 function remoteStatusLabel(status: RemoteStatus | undefined) {
   return (status ?? 'not_checked').replaceAll('_', ' ')
 }
 
-type MergedNamespace = { namespace: string; local: NamespaceSummary | null; remote: RemoteNamespaceStatus | null }
+type MergedNamespace = { namespace: string; local: NamespaceSummary; remote: RemoteNamespaceStatus | null }
+const INVENTORY_PAGE_SIZE = 50
+
+function boundedOffset(value: string | null) {
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0
+}
+
+function InventoryPagination({ offset, count, total, label, setOffset }: { offset: number; count: number; total: number; label: string; setOffset: (offset: number) => void }) {
+  const end = Math.min(offset + count, total)
+  return (
+    <nav className="inventory-pagination" aria-label={`${label} pagination`}>
+      <span>{count ? `${offset + 1}–${end} of ${total}` : total ? `0 of ${total}` : `0 ${label.toLowerCase()}`}</span>
+      <div className="pagination">
+        <button type="button" className="secondary-button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - INVENTORY_PAGE_SIZE))}>Previous</button>
+        <button type="button" className="secondary-button" disabled={end >= total} onClick={() => setOffset(offset + INVENTORY_PAGE_SIZE)}>Next</button>
+      </div>
+    </nav>
+  )
+}
+
+function sourceOptions() {
+  return <><option value="all">All</option><option value="website">Website</option><option value="github_repo">GitHub repository</option><option value="document">Document</option><option value="database">Database</option><option value="unknown">Unknown</option></>
+}
 
 function Namespaces({ remote }: { remote: RemoteState }) {
-  const resource = useResource(api.namespaces)
-  const [query, setQuery] = useState('')
-  const [source, setSource] = useState('all')
-  const [local, setLocal] = useState('all')
+  const [parameters, setParameters] = useSearchParams()
+  const offset = boundedOffset(parameters.get('offset'))
+  const query = parameters.get('q') ?? ''
+  const source = parameters.get('source_kind') ?? 'all'
+  const localStatus = parameters.get('local_status') ?? 'all'
+  const resource = useResource(() => api.namespaces({
+    offset,
+    q: query || undefined,
+    source_kind: source === 'all' ? undefined : source as SourceProvenance['kind'],
+    local_status: localStatus === 'all' ? undefined : localStatus as NamespaceSummary['local_status'],
+  }), [offset, query, source, localStatus])
+  const [remoteQuery, setRemoteQuery] = useState('')
+  const [remoteSource, setRemoteSource] = useState('all')
   const [remoteFilter, setRemoteFilter] = useState('all')
   const [catalog, setCatalog] = useState('all')
-  const merged = useMemo(() => {
-    const rows = new Map<string, MergedNamespace>()
-    for (const item of resource.data?.items ?? []) rows.set(item.namespace, { namespace: item.namespace, local: item, remote: null })
-    for (const item of remote.snapshot?.namespaces ?? []) {
-      const current = rows.get(item.namespace)
-      rows.set(item.namespace, { namespace: item.namespace, local: current?.local ?? null, remote: item })
-    }
-    return [...rows.values()].sort((left, right) => left.namespace.localeCompare(right.namespace))
-  }, [resource.data, remote.snapshot])
-  const filtered = useMemo(() => merged.filter((item) => {
-    const sourceKind = item.local?.source?.kind ?? item.remote?.source_kind ?? 'unknown'
-    const localStatus = item.local?.local_status ?? 'remote-only'
-    return item.namespace.toLowerCase().includes(query.toLowerCase())
-      && (source === 'all' || sourceKind === source)
-      && (local === 'all' || local === localStatus)
-      && (remoteFilter === 'all' || remoteStatusLabel(item.remote?.status) === remoteFilter)
-      && (catalog === 'all' || (catalog === 'present' ? item.remote?.card_present === true : catalog === 'missing' ? item.remote?.card_present === false : item.remote?.card_present == null))
-  }), [merged, query, source, local, remoteFilter, catalog])
+  const [remoteOffset, setRemoteOffset] = useState(0)
+
+  function setLocalFilter(name: string, next: string, replace = false) {
+    const updated = new URLSearchParams(parameters)
+    if (!next || next === 'all') updated.delete(name)
+    else updated.set(name, next)
+    updated.delete('offset')
+    setParameters(updated, { replace })
+  }
+
+  const localRows = useMemo(() => (resource.data?.items ?? []).map((item) => ({
+    namespace: item.namespace,
+    local: item,
+    remote: remoteFor(item.namespace, remote.snapshot),
+  })), [resource.data, remote.snapshot])
+  const remoteOnly = useMemo(() => (remote.snapshot?.namespaces ?? []).filter((item) => !item.local_present).filter((item) => (
+    item.namespace.toLowerCase().includes(remoteQuery.toLowerCase())
+    && (remoteSource === 'all' || (item.source_kind ?? 'unknown') === remoteSource)
+    && (remoteFilter === 'all' || remoteStatusLabel(item.status) === remoteFilter)
+    && (catalog === 'all' || (catalog === 'present' ? item.card_present === true : catalog === 'missing' ? item.card_present === false : item.card_present == null))
+  )).sort((left, right) => left.namespace.localeCompare(right.namespace)), [remote.snapshot, remoteQuery, remoteSource, remoteFilter, catalog])
+  const remotePage = remoteOnly.slice(remoteOffset, remoteOffset + INVENTORY_PAGE_SIZE)
+
+  useEffect(() => {
+    if (remoteOffset >= remoteOnly.length && remoteOffset !== 0) setRemoteOffset(Math.max(0, Math.floor(Math.max(0, remoteOnly.length - 1) / INVENTORY_PAGE_SIZE) * INVENTORY_PAGE_SIZE))
+  }, [remoteOffset, remoteOnly.length])
+
+  function setRemoteScoped(setter: (next: string) => void, next: string) {
+    setter(next)
+    setRemoteOffset(0)
+  }
 
   return (
     <>
       <PageTitle eyebrow="Applied snapshots" title="Namespaces">Namespaces are searchable applied snapshots. Catalog cards describe them and support routing; they do not originate source knowledge.</PageTitle>
-      <RemoteNotice snapshot={remote.snapshot} refreshError={remote.refreshError} />
-      <section className="panel filters" aria-label="Namespace filters">
-        <label>Namespace <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter by ID" /></label>
-        <label>Source kind <select value={source} onChange={(event) => setSource(event.target.value)}><option value="all">All</option><option value="website">Website</option><option value="github_repo">GitHub repository</option><option value="document">Document</option><option value="database">Database</option><option value="unknown">Unknown</option></select></label>
-        <label>Local status <select value={local} onChange={(event) => setLocal(event.target.value)}><option value="all">All</option><option value="planned">Planned</option><option value="applied">Applied</option><option value="pending_changes">Pending changes</option><option value="conflict">Conflict</option><option value="error">Error</option><option value="remote-only">No local snapshot</option></select></label>
-        <label>Remote status <select value={remoteFilter} onChange={(event) => setRemoteFilter(event.target.value)}><option value="all">All</option><option value="not checked">Not checked</option><option value="eligible">Eligible</option><option value="local only">Local only</option><option value="missing card">Missing card</option><option value="stale target">Stale target</option><option value="disabled">Disabled</option><option value="incompatible">Incompatible</option></select></label>
-        <label>Catalog card <select value={catalog} onChange={(event) => setCatalog(event.target.value)}><option value="all">All</option><option value="not-checked">Not checked</option><option value="present">Present</option><option value="missing">Missing</option></select></label>
+      <section className="panel remote-panel" aria-labelledby="namespace-remote-heading">
+        <div className="section-heading"><h2 id="namespace-remote-heading">Explicit remote namespace status</h2><button type="button" onClick={remote.refresh} disabled={remote.refreshing}>{remote.refreshing ? 'Refreshing…' : 'Refresh remote status'}</button></div>
+        <RemoteNotice snapshot={remote.snapshot} refreshError={remote.refreshError} />
       </section>
-      {resource.error ? <ErrorState message={resource.error} retry={resource.retry} /> : !resource.data ? <Loading label="Loading namespaces…" /> : !filtered.length ? <Empty>No namespaces match the current filters.</Empty> : <NamespaceTable items={filtered} total={merged.length} />}
+      <section className="panel filters local-filters" aria-label="Local namespace filters">
+        <label>Local namespace <input type="search" maxLength={256} value={query} onChange={(event) => setLocalFilter('q', event.target.value, true)} placeholder="Filter local IDs" /></label>
+        <label>Local source kind <select value={source} onChange={(event) => setLocalFilter('source_kind', event.target.value)}>{sourceOptions()}</select></label>
+        <label>Local status <select value={localStatus} onChange={(event) => setLocalFilter('local_status', event.target.value)}><option value="all">All</option><option value="planned">Planned</option><option value="applied">Applied</option><option value="pending_changes">Pending changes</option><option value="conflict">Conflict</option><option value="error">Error</option></select></label>
+      </section>
+      {resource.error ? <ErrorState message={resource.error} retry={resource.retry} /> : !resource.data ? <Loading label="Loading local namespaces…" /> : <LocalNamespacePage inventory={resource.data} rows={localRows} setOffset={(next) => { const updated = new URLSearchParams(parameters); next ? updated.set('offset', String(next)) : updated.delete('offset'); setParameters(updated) }} />}
       {resource.data && <WarningList title="Local artifact errors" items={resource.data.errors} />}
+      {remote.snapshot && <section className="panel" aria-labelledby="remote-only-heading">
+        <div className="section-heading"><div><p className="eyebrow">Explicitly refreshed remote snapshot</p><h2 id="remote-only-heading">Remote namespaces without a local snapshot</h2></div><span>{remoteOnly.length} matching</span></div>
+        <section className="filters remote-only-filters" aria-label="Remote-only namespace filters">
+          <label>Remote-only namespace <input type="search" value={remoteQuery} onChange={(event) => setRemoteScoped(setRemoteQuery, event.target.value)} placeholder="Filter remote-only IDs" /></label>
+          <label>Remote-only source kind <select value={remoteSource} onChange={(event) => setRemoteScoped(setRemoteSource, event.target.value)}>{sourceOptions()}</select></label>
+          <label>Remote-only status <select value={remoteFilter} onChange={(event) => setRemoteScoped(setRemoteFilter, event.target.value)}><option value="all">All</option><option value="not checked">Not checked</option><option value="eligible">Eligible</option><option value="local only">Local only</option><option value="missing card">Missing card</option><option value="stale target">Stale target</option><option value="disabled">Disabled</option><option value="incompatible">Incompatible</option></select></label>
+          <label>Remote-only catalog card <select value={catalog} onChange={(event) => setRemoteScoped(setCatalog, event.target.value)}><option value="all">All</option><option value="not-checked">Not checked</option><option value="present">Present</option><option value="missing">Missing</option></select></label>
+        </section>
+        {remotePage.length ? <RemoteNamespaceTable items={remotePage} /> : <Empty>No remote-only namespaces match these section filters.</Empty>}
+        <InventoryPagination offset={remoteOffset} count={remotePage.length} total={remoteOnly.length} label="Remote-only namespaces" setOffset={setRemoteOffset} />
+      </section>}
     </>
   )
 }
 
+function LocalNamespacePage({ inventory, rows, setOffset }: { inventory: NamespaceInventory; rows: MergedNamespace[]; setOffset: (offset: number) => void }) {
+  return <>{rows.length ? <NamespaceTable items={rows} total={inventory.total} /> : <Empty>No local namespaces match the current filters.</Empty>}<InventoryPagination offset={inventory.offset} count={rows.length} total={inventory.total} label="Local namespaces" setOffset={setOffset} /></>
+}
+
 function NamespaceTable({ items, total }: { items: MergedNamespace[]; total: number }) {
   return (
-    <section className="table-wrap" aria-label={`${items.length} of ${total} namespaces`}>
+    <section className="table-wrap" aria-label={`${items.length} current-page local namespaces of ${total}`}>
       <table><thead><tr><th>Namespace</th><th>Source</th><th>Local</th><th>Remote</th><th>Catalog</th><th>Plans</th><th>Active rows</th><th>Retained stale</th><th>Planned upserts</th><th>Planned stale</th></tr></thead>
         <tbody>{items.map((item) => {
           const status = item.remote
-          const source = item.local?.source ? sourceLabel(item.local.source) : status?.source_kind?.replaceAll('_', ' ') ?? 'Unknown source'
-          const sourceTitle = item.local?.source?.title ?? status?.title
-          const localStatus = item.local?.local_status
-          return <tr key={item.namespace}><th scope="row">{item.local ? <Link to={`/namespaces/${encodeURIComponent(item.namespace)}`}>{item.namespace}</Link> : item.namespace}</th><td>{source}{sourceTitle && <span className="muted"> · {sourceTitle}</span>}</td><td><Badge tone={localStatus === 'applied' ? 'good' : localStatus === 'pending_changes' || localStatus === 'conflict' || localStatus === 'error' ? 'warn' : 'neutral'}>{!item.local ? 'No local snapshot' : localStatus ? localStatus.replaceAll('_', ' ') : 'Unknown'}</Badge></td><td><Badge tone={status?.status === 'eligible' ? 'good' : status?.status && status.status !== 'not_checked' && status.status !== 'local_only' ? 'warn' : 'neutral'}>{remoteStatusLabel(status?.status)}</Badge></td><td>{status?.card_present == null ? 'Not checked' : value(status.card_present)}</td><td>{value(item.local?.plan_count)}</td><td>{value(item.local?.active_rows)}</td><td>{value(item.local?.retained_stale_rows)}</td><td>{value(item.local?.latest_planned_upserts)}</td><td>{value(item.local?.latest_planned_stale_rows)}</td></tr>
+          const source = item.local.source ? sourceLabel(item.local.source) : 'Unknown source'
+          const sourceTitle = item.local.source?.title
+          const localStatus = item.local.local_status
+          return <tr key={item.namespace}><th scope="row"><Link to={`/namespaces/${encodeURIComponent(item.namespace)}`}>{item.namespace}</Link></th><td>{source}{sourceTitle && <span className="muted"> · {sourceTitle}</span>}</td><td><Badge tone={localStatus === 'applied' ? 'good' : localStatus === 'pending_changes' || localStatus === 'conflict' || localStatus === 'error' ? 'warn' : 'neutral'}>{localStatus.replaceAll('_', ' ')}</Badge></td><td><Badge tone={status?.status === 'eligible' ? 'good' : status?.status && status.status !== 'not_checked' && status.status !== 'local_only' ? 'warn' : 'neutral'}>{remoteStatusLabel(status?.status)}</Badge></td><td>{status?.card_present == null ? 'Not checked' : value(status.card_present)}</td><td>{value(item.local.plan_count)}</td><td>{value(item.local.active_rows)}</td><td>{value(item.local.retained_stale_rows)}</td><td>{value(item.local.latest_planned_upserts)}</td><td>{value(item.local.latest_planned_stale_rows)}</td></tr>
         })}</tbody></table>
     </section>
   )
+}
+
+function RemoteNamespaceTable({ items }: { items: RemoteNamespaceStatus[] }) {
+  return <section className="table-wrap" aria-label={`${items.length} current-page remote-only namespaces`}><table><thead><tr><th>Namespace</th><th>Source</th><th>Remote</th><th>Catalog</th><th>Tags</th></tr></thead><tbody>{items.map((item) => <tr key={item.namespace}><th scope="row">{item.namespace}</th><td>{item.source_kind?.replaceAll('_', ' ') ?? 'Unknown source'}{item.title && <span className="muted"> · {item.title}</span>}</td><td><Badge tone={item.status === 'eligible' ? 'good' : item.status !== 'not_checked' && item.status !== 'local_only' ? 'warn' : 'neutral'}>{remoteStatusLabel(item.status)}</Badge></td><td>{item.card_present == null ? 'Not checked' : value(item.card_present)}</td><td>{item.tags.length ? item.tags.join(', ') : 'None'}</td></tr>)}</tbody></table></section>
 }
 
 function NamespaceScreen({ remote }: { remote: RemoteState }) {
@@ -399,7 +465,7 @@ function NamespaceContent({ detail, remote }: { detail: NamespaceDetail; remote:
       <section className="metric-grid" aria-label="Namespace overview"><article className="metric"><span>Local state</span><strong>{item.local_status.replaceAll('_', ' ')}</strong></article><article className="metric"><span>Remote status</span><strong>{remote ? remoteStatusLabel(remote.status) : 'Not checked'}</strong></article><article className="metric"><span>Catalog status</span><strong>{remote ? remote.card_present === true ? 'Present' : remote.card_present === false ? 'Missing' : 'Not checked' : 'Not checked'}</strong></article><article className="metric"><span>Plans</span><strong>{item.plan_count}</strong></article><article className="metric"><span>Active rows</span><strong>{value(item.active_rows)}</strong></article><article className="metric"><span>Retained stale rows</span><strong>{value(item.retained_stale_rows)}</strong></article><article className="metric"><span>Documents / pages</span><strong>{value(item.document_count)}</strong></article><article className="metric"><span>Chunks</span><strong>{value(item.chunk_count)}</strong></article><article className="metric"><span>Latest plan</span><strong>{value(item.latest_plan_id)}</strong></article><article className="metric"><span>Latest apply</span><strong>{value(item.last_apply_id)}</strong></article><article className="metric"><span>Planned upserts</span><strong>{value(item.latest_planned_upserts)}</strong></article><article className="metric"><span>Planned stale</span><strong>{value(item.latest_planned_stale_rows)}</strong></article></section>
       <div className="two-column"><section className="panel"><h2>Safe source provenance</h2><Source source={item.source} /></section><section className="panel"><h2>Retrieval settings</h2><Retrieval settings={detail.retrieval} /></section></div>
       <section className="panel"><h2>Applied state</h2>{detail.state ? <dl className="details-grid"><div><dt>Updated</dt><dd>{timestamp(detail.state.updated_at)}</dd></div><div><dt>Last plan</dt><dd>{value(detail.state.last_plan_id)}</dd></div><div><dt>Active rows</dt><dd>{detail.state.active_rows}</dd></div><div><dt>Retained stale rows</dt><dd>{detail.state.retained_stale_rows}</dd></div></dl> : item.applied ? <p>Multiple applied-state identities claim this namespace. Applied-state identity is ambiguous, so row counts and last-apply details are unknown.</p> : <p>No applied state is present. Plans remain proposals until reviewed through the CLI workflow.</p>}</section>
-      <section className="panel"><h2>Plans and diffs</h2>{detail.plans.length ? <div className="plan-detail-list">{detail.plans.map((plan) => <article key={plan.plan_id}><h3><Link to={`/plans/${encodeURIComponent(plan.plan_id)}`}>{plan.plan_id}</Link></h3><p>{timestamp(plan.created_at)}</p><Diff diff={plan.diff} /></article>)}</div> : <Empty>No saved plans are associated with this namespace.</Empty>}</section>
+      <section className="panel"><div className="section-heading"><h2>Plans and diffs</h2><span>{detail.plan_total ? `${detail.plan_offset + 1}–${Math.min(detail.plan_offset + detail.plans.length, detail.plan_total)} of ${detail.plan_total}` : '0 plans'}</span></div>{detail.plans.length ? <div className="plan-detail-list">{detail.plans.map((plan) => <article key={plan.plan_id}><h3><Link to={`/plans/${encodeURIComponent(plan.plan_id)}`}>{plan.plan_id}</Link></h3><p>{timestamp(plan.created_at)}</p><Diff diff={plan.diff} /></article>)}</div> : <Empty>No saved plans are associated with this namespace.</Empty>}{detail.plans_truncated && <p><Link to={`/plans?namespace=${encodeURIComponent(item.namespace)}`}>View all plans for this namespace</Link></p>}</section>
       <section className="panel placeholder-panel"><p className="eyebrow">Future capability</p><h2>Evidence-backed semantic graph</h2><p>No knowledge graph has been built for this namespace.</p><Link to="/graphs">See the proposed flow</Link></section>
       <WarningList title="Namespace warnings" items={item.warnings} />
     </>
@@ -706,52 +772,146 @@ function PlanJobContent({ job, events, streamState, progressErrors }: { job: Pla
 }
 
 function Plans() {
-  const resource = useResource(api.plans)
+  const [parameters, setParameters] = useSearchParams()
+  const offset = boundedOffset(parameters.get('offset'))
+  const query = parameters.get('q') ?? ''
+  const namespace = parameters.get('namespace') ?? ''
+  const source = parameters.get('source_kind') ?? 'all'
+  const resource = useResource(() => api.plans({
+    offset,
+    q: query || undefined,
+    namespace: namespace || undefined,
+    source_kind: source === 'all' ? undefined : source as SourceProvenance['kind'],
+  }), [offset, query, namespace, source])
+
+  function setFilter(name: string, next: string, replace = false) {
+    const updated = new URLSearchParams(parameters)
+    if (!next || next === 'all') updated.delete(name)
+    else updated.set(name, next)
+    updated.delete('offset')
+    setParameters(updated, { replace })
+  }
+
+  function setOffset(next: number) {
+    const updated = new URLSearchParams(parameters)
+    next ? updated.set('offset', String(next)) : updated.delete('offset')
+    setParameters(updated)
+  }
+
   return (
     <>
       <PageTitle eyebrow="Reviewed snapshots and proposals" title="Plan history">Saved plans are deterministic local artifacts: reviewed snapshots and proposed changes, not source-of-truth content.</PageTitle>
-      {resource.error ? <ErrorState message={resource.error} retry={resource.retry} /> : !resource.data ? <Loading label="Loading plan history…" /> : !resource.data.items.length ? <Empty>Saved plan history will appear here.</Empty> : <PlanTable inventory={resource.data} />}
+      <section className="panel filters plan-filters" aria-label="Plan filters">
+        <label>Search plans <input type="search" maxLength={256} value={query} onChange={(event) => setFilter('q', event.target.value, true)} placeholder="Plan, namespace, title, or URI" /></label>
+        <label>Namespace <input maxLength={128} value={namespace} onChange={(event) => setFilter('namespace', event.target.value, true)} placeholder="Exact namespace ID" /></label>
+        <label>Source kind <select value={source} onChange={(event) => setFilter('source_kind', event.target.value)}>{sourceOptions()}</select></label>
+      </section>
+      {resource.error ? <ErrorState message={resource.error} retry={resource.retry} /> : !resource.data ? <Loading label="Loading plan history…" /> : <>{resource.data.items.length ? <PlanTable inventory={resource.data} /> : <Empty>No saved plans match the current filters.</Empty>}<InventoryPagination offset={resource.data.offset} count={resource.data.items.length} total={resource.data.total} label="Plans" setOffset={setOffset} /></>}
       {resource.data && <WarningList title="Artifact errors" items={resource.data.errors} />}
     </>
   )
 }
 
 function PlanTable({ inventory }: { inventory: PlanInventory }) {
-  return <section className="table-wrap" aria-label={`${inventory.total} plans`}><table><thead><tr><th>Plan</th><th>Created</th><th>Namespace</th><th>Source</th><th>Pages</th><th>Chunks</th><th>Proposed rows</th><th>First apply</th><th>Source credentials</th><th>Source API calls</th></tr></thead><tbody>{inventory.items.map((plan) => <tr key={plan.plan_id}><th scope="row"><Link to={`/plans/${encodeURIComponent(plan.plan_id)}`}>{plan.plan_id}</Link></th><td>{timestamp(plan.created_at)}</td><td>{plan.namespace}</td><td>{sourceLabel(plan.source)}</td><td>{value(plan.page_count)}</td><td>{value(plan.chunk_count)}</td><td>{value(plan.diff.rows_to_upsert)}</td><td>{value(plan.diff.first_apply)}</td><td>{value(plan.source_activity.credentials_required)}</td><td>{value(plan.source_activity.api_calls_occurred)}</td></tr>)}</tbody></table></section>
+  return <section className="table-wrap" aria-label={`${inventory.items.length} current-page plans of ${inventory.total}`}><table><thead><tr><th>Plan</th><th>Created</th><th>Namespace</th><th>Source</th><th>Pages</th><th>Chunks</th><th>Proposed rows</th><th>First apply</th><th>Source credentials</th><th>Source API calls</th></tr></thead><tbody>{inventory.items.map((plan) => <tr key={plan.plan_id}><th scope="row"><Link to={`/plans/${encodeURIComponent(plan.plan_id)}`}>{plan.plan_id}</Link></th><td>{timestamp(plan.created_at)}</td><td>{plan.namespace}</td><td>{sourceLabel(plan.source)}</td><td>{value(plan.page_count)}</td><td>{value(plan.chunk_count)}</td><td>{value(plan.diff.rows_to_upsert)}</td><td>{value(plan.diff.first_apply)}</td><td>{value(plan.source_activity.credentials_required)}</td><td>{value(plan.source_activity.api_calls_occurred)}</td></tr>)}</tbody></table></section>
+}
+
+function requestMessage(reason: unknown, fallback: string) {
+  return reason instanceof Error ? reason.message : fallback
 }
 
 function PlanScreen() {
   const { planId = '' } = useParams()
-  const [chunkOffset, setChunkOffset] = useState(0)
-  const [staleOffset, setStaleOffset] = useState(0)
   const [attempt, setAttempt] = useState(0)
   const [detail, setDetail] = useState<PlanDetail | null>(null)
   const [chunks, setChunks] = useState<ChunkInventory | null>(null)
   const [staleRows, setStaleRows] = useState<StaleRowInventory | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [chunkOffset, setChunkOffset] = useState(0)
+  const [staleOffset, setStaleOffset] = useState(0)
+  const [initialError, setInitialError] = useState<string | null>(null)
+  const [chunkError, setChunkError] = useState<string | null>(null)
+  const [staleError, setStaleError] = useState<string | null>(null)
+  const [chunkLoading, setChunkLoading] = useState(false)
+  const [staleLoading, setStaleLoading] = useState(false)
+  const generation = useRef(0)
+  const currentPlanId = useRef(planId)
+  const chunkSequence = useRef(0)
+  const staleSequence = useRef(0)
+  currentPlanId.current = planId
 
   useEffect(() => {
-    let current = true
-    setDetail(null); setChunks(null); setStaleRows(null); setError(null)
-    Promise.all([
-      api.plan(planId),
-      api.chunks(planId, chunkOffset),
-      api.staleRows(planId, staleOffset),
-    ]).then(([nextDetail, nextChunks, nextStale]) => {
-      if (!current) return
-      setDetail(nextDetail); setChunks(nextChunks); setStaleRows(nextStale)
-    }, (reason: unknown) => current && setError(reason instanceof Error ? reason.message : 'Plan detail could not be loaded.'))
-    return () => { current = false }
-  }, [planId, chunkOffset, staleOffset, attempt])
+    const requestGeneration = ++generation.current
+    chunkSequence.current += 1
+    staleSequence.current += 1
+    setDetail(null); setChunks(null); setStaleRows(null)
+    setChunkOffset(0); setStaleOffset(0)
+    setInitialError(null); setChunkError(null); setStaleError(null)
+    setChunkLoading(false); setStaleLoading(false)
+    api.review(planId).then((review) => {
+      if (generation.current !== requestGeneration || currentPlanId.current !== planId) return
+      setDetail(review.detail)
+      setChunks(review.chunks)
+      setStaleRows(review.stale_rows)
+      setChunkOffset(review.chunks.offset)
+      setStaleOffset(review.stale_rows.offset)
+    }, (reason: unknown) => {
+      if (generation.current === requestGeneration && currentPlanId.current === planId) setInitialError(requestMessage(reason, 'Plan review could not be loaded.'))
+    })
+    return () => {
+      if (generation.current === requestGeneration) generation.current += 1
+      chunkSequence.current += 1
+      staleSequence.current += 1
+    }
+  }, [planId, attempt])
 
-  useEffect(() => { setChunkOffset(0); setStaleOffset(0) }, [planId])
+  async function loadChunks(offset: number) {
+    const requestGeneration = generation.current
+    const sequence = ++chunkSequence.current
+    setChunkOffset(offset)
+    setChunkLoading(true)
+    setChunkError(null)
+    try {
+      const next = await api.chunks(planId, offset)
+      if (generation.current === requestGeneration && currentPlanId.current === planId && chunkSequence.current === sequence) {
+        setChunks(next)
+        setChunkOffset(next.offset)
+      }
+    } catch (reason) {
+      if (generation.current === requestGeneration && currentPlanId.current === planId && chunkSequence.current === sequence) setChunkError(requestMessage(reason, 'Changed chunks could not be loaded.'))
+    } finally {
+      if (generation.current === requestGeneration && currentPlanId.current === planId && chunkSequence.current === sequence) setChunkLoading(false)
+    }
+  }
 
-  if (error) return <><PageTitle eyebrow="Plan" title={planId}>Review this saved plan artifact.</PageTitle><ErrorState message={error} retry={() => setAttempt((value) => value + 1)} /></>
-  if (!detail || !chunks || !staleRows) return <Loading label="Loading fully verified changed-content review…" />
-  return <PlanContent detail={detail} chunks={chunks} staleRows={staleRows} chunkOffset={chunkOffset} setChunkOffset={setChunkOffset} staleOffset={staleOffset} setStaleOffset={setStaleOffset} />
+  async function loadStaleRows(offset: number) {
+    const requestGeneration = generation.current
+    const sequence = ++staleSequence.current
+    setStaleOffset(offset)
+    setStaleLoading(true)
+    setStaleError(null)
+    try {
+      const next = await api.staleRows(planId, offset)
+      if (generation.current === requestGeneration && currentPlanId.current === planId && staleSequence.current === sequence) {
+        setStaleRows(next)
+        setStaleOffset(next.offset)
+      }
+    } catch (reason) {
+      if (generation.current === requestGeneration && currentPlanId.current === planId && staleSequence.current === sequence) setStaleError(requestMessage(reason, 'Stale rows could not be loaded.'))
+    } finally {
+      if (generation.current === requestGeneration && currentPlanId.current === planId && staleSequence.current === sequence) setStaleLoading(false)
+    }
+  }
+
+  if (initialError) return <><PageTitle eyebrow="Plan" title={planId}>Review this saved plan artifact.</PageTitle><ErrorState message={initialError} retry={() => setAttempt((value) => value + 1)} /></>
+  if (!detail || detail.summary.plan_id !== planId || !chunks || !staleRows) return <Loading label="Loading fully verified changed-content review…" />
+  return <PlanContent detail={detail} chunks={chunks} staleRows={staleRows} chunkOffset={chunkOffset} loadChunks={loadChunks} staleOffset={staleOffset} loadStaleRows={loadStaleRows} chunkLoading={chunkLoading} staleLoading={staleLoading} chunkError={chunkError} staleError={staleError} />
 }
 
-function PlanContent({ detail, chunks, staleRows, chunkOffset, setChunkOffset, staleOffset, setStaleOffset }: { detail: PlanDetail; chunks: ChunkInventory; staleRows: StaleRowInventory; chunkOffset: number; setChunkOffset: (offset: number) => void; staleOffset: number; setStaleOffset: (offset: number) => void }) {
+function SectionRequestState({ loading, error, retry, label }: { loading: boolean; error: string | null; retry: () => void; label: string }) {
+  return <>{loading && <p className="section-loading" role="status"><span className="spinner" />{label}</p>}{error && <div className="section-error" role="alert"><strong>{error}</strong> <button type="button" className="secondary-button" onClick={retry}>Retry this section</button></div>}</>
+}
+
+function PlanContent({ detail, chunks, staleRows, chunkOffset, loadChunks, staleOffset, loadStaleRows, chunkLoading, staleLoading, chunkError, staleError }: { detail: PlanDetail; chunks: ChunkInventory; staleRows: StaleRowInventory; chunkOffset: number; loadChunks: (offset: number) => void; staleOffset: number; loadStaleRows: (offset: number) => void; chunkLoading: boolean; staleLoading: boolean; chunkError: string | null; staleError: string | null }) {
   const plan = detail.summary
   const warehouse = plan.source.kind === 'database' && ['bigquery', 'snowflake'].includes(plan.source.database_backend ?? '')
   return (
@@ -763,8 +923,8 @@ function PlanContent({ detail, chunks, staleRows, chunkOffset, setChunkOffset, s
       <section className="panel"><h2>Identity and provenance</h2><dl className="details-grid"><div><dt>Namespace</dt><dd><Link to={`/namespaces/${encodeURIComponent(plan.namespace)}`}>{plan.namespace}</Link></dd></div><div><dt>Candidate</dt><dd>{detail.namespace_candidate}</dd></div><div><dt>Site ID</dt><dd>{plan.site_id}</dd></div><div><dt>Created</dt><dd>{timestamp(plan.created_at)}</dd></div>{detail.originating_job_id && <div><dt>Originating plan job</dt><dd><Link to={`/plan-jobs/${encodeURIComponent(detail.originating_job_id)}`}>{detail.originating_job_id}</Link></dd></div>}<div><dt>Artifact hash</dt><dd className="break-word">{detail.artifact_hash}</dd></div><div><dt>Payload verification</dt><dd>{detail.payload_verification}</dd></div><div><dt>Applied baseline present</dt><dd>{value(detail.applied_state_present)}</dd></div><div><dt>Applied baseline hash</dt><dd className="break-word">{detail.applied_state_hash}</dd></div><div><dt>Desired pages / chunks</dt><dd>{value(plan.page_count)} / {value(plan.chunk_count)}</dd></div></dl><Source source={plan.source} /></section>
       <div className="two-column"><section className="panel"><h2>Source activity when this plan was created</h2><dl className="details-grid"><div><dt>Source credentials required</dt><dd>{value(detail.source_activity.credentials_required)}</dd></div><div><dt>Source API calls occurred</dt><dd>{value(detail.source_activity.api_calls_occurred)}</dd></div></dl><p className="muted">These fields describe recorded plan creation activity, not activity from opening this page.</p></section><section className="panel"><h2>Embedding and retrieval contract</h2><Retrieval settings={detail.retrieval} /></section></div>
       <section className="panel"><h2>Proposed diff</h2><Diff diff={plan.diff} /></section>
-      <section className="panel"><div className="section-heading"><h2>Changed and new chunks</h2><span>{chunks.total ? `${chunkOffset + 1}–${Math.min(chunkOffset + chunks.items.length, chunks.total)} of ${chunks.total}` : '0 changed chunks'}</span></div>{chunks.items.length ? <div className="chunk-list">{chunks.items.map((chunk) => <article key={chunk.index}><h3>{chunk.title || `Chunk ${chunk.index + 1}`}</h3><p>{chunk.action.replaceAll('_', ' ')} · {chunk.section_path}</p><pre>{chunk.content}</pre><p className="muted"><SafeLink href={chunk.canonical_url}>{chunk.canonical_url || 'Citation unavailable'}</SafeLink>{chunk.truncated ? ' · Preview truncated' : ''}</p></article>)}</div> : <Empty>This plan contains no changed or new chunks.</Empty>}<div className="pagination"><button type="button" className="secondary-button" disabled={chunkOffset === 0} onClick={() => setChunkOffset(Math.max(0, chunkOffset - 10))}>Previous chunks</button><button type="button" className="secondary-button" disabled={chunkOffset + chunks.items.length >= chunks.total} onClick={() => setChunkOffset(chunkOffset + 10)}>Next chunks</button></div></section>
-      <section className="panel"><div className="section-heading"><h2>Stale row identities</h2><span>{staleRows.total ? `${staleOffset + 1}–${Math.min(staleOffset + staleRows.items.length, staleRows.total)} of ${staleRows.total}` : '0 stale rows'}</span></div>{staleRows.items.length ? <div className="chunk-list">{staleRows.items.map((row) => <article key={row.index}><h3>{row.row_id}</h3><p>{row.category.replaceAll('_', ' ')} · prior status {row.prior_status.replaceAll('_', ' ')}</p><p><SafeLink href={row.canonical_url}>{row.canonical_url || 'Citation unavailable'}</SafeLink></p><p className="muted">{row.reason.replaceAll('_', ' ')}</p></article>)}</div> : <Empty>This plan contains no stale row identities.</Empty>}<div className="pagination"><button type="button" className="secondary-button" disabled={staleOffset === 0} onClick={() => setStaleOffset(Math.max(0, staleOffset - 10))}>Previous stale rows</button><button type="button" className="secondary-button" disabled={staleOffset + staleRows.items.length >= staleRows.total} onClick={() => setStaleOffset(staleOffset + 10)}>Next stale rows</button></div></section>
+      <section className="panel" aria-labelledby="chunks-heading"><div className="section-heading"><h2 id="chunks-heading">Changed and new chunks</h2><span>{chunks.total ? `${chunks.offset + 1}–${Math.min(chunks.offset + chunks.items.length, chunks.total)} of ${chunks.total}` : '0 changed chunks'}</span></div><SectionRequestState loading={chunkLoading} error={chunkError} retry={() => void loadChunks(chunkOffset)} label="Loading changed chunks…" />{chunks.items.length ? <div className="chunk-list">{chunks.items.map((chunk) => <article key={chunk.index}><h3>{chunk.title || `Chunk ${chunk.index + 1}`}</h3><p>{chunk.action.replaceAll('_', ' ')} · {chunk.section_path}</p><pre>{chunk.content}</pre><p className="muted"><SafeLink href={chunk.canonical_url}>{chunk.canonical_url || 'Citation unavailable'}</SafeLink>{chunk.truncated ? ' · Preview truncated' : ''}</p></article>)}</div> : <Empty>This plan contains no changed or new chunks.</Empty>}<div className="pagination"><button type="button" className="secondary-button" disabled={chunkOffset === 0} onClick={() => void loadChunks(Math.max(0, chunkOffset - 10))}>Previous chunks</button><button type="button" className="secondary-button" disabled={chunkOffset + 10 >= chunks.total} onClick={() => void loadChunks(chunkOffset + 10)}>Next chunks</button></div></section>
+      <section className="panel" aria-labelledby="stale-heading"><div className="section-heading"><h2 id="stale-heading">Stale row identities</h2><span>{staleRows.total ? `${staleRows.offset + 1}–${Math.min(staleRows.offset + staleRows.items.length, staleRows.total)} of ${staleRows.total}` : '0 stale rows'}</span></div><SectionRequestState loading={staleLoading} error={staleError} retry={() => void loadStaleRows(staleOffset)} label="Loading stale rows…" />{staleRows.items.length ? <div className="chunk-list">{staleRows.items.map((row) => <article key={row.index}><h3>{row.row_id}</h3><p>{row.category.replaceAll('_', ' ')} · prior status {row.prior_status.replaceAll('_', ' ')}</p><p><SafeLink href={row.canonical_url}>{row.canonical_url || 'Citation unavailable'}</SafeLink></p><p className="muted">{row.reason.replaceAll('_', ' ')}</p></article>)}</div> : <Empty>This plan contains no stale row identities.</Empty>}<div className="pagination"><button type="button" className="secondary-button" disabled={staleOffset === 0} onClick={() => void loadStaleRows(Math.max(0, staleOffset - 10))}>Previous stale rows</button><button type="button" className="secondary-button" disabled={staleOffset + 10 >= staleRows.total} onClick={() => void loadStaleRows(staleOffset + 10)}>Next stale rows</button></div></section>
       <WarningList title="Plan warnings and errors" items={plan.warnings} />
     </>
   )

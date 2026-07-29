@@ -3,15 +3,17 @@ import type {
   Capabilities,
   ChunkInventory,
   DashboardData,
+  LocalNamespaceStatus,
   NamespaceDetail,
   NamespaceInventory,
-  PlanDetail,
   PlanInventory,
   PlanJob,
   PlanJobInventory,
   PlanJobRequest,
+  PlanReview,
   RemoteSnapshot,
   SearchResponse,
+  SourceProvenance,
   StaleRowInventory,
 } from './types'
 
@@ -34,7 +36,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
       headers: init?.body ? { 'Content-Type': 'application/json', ...init.headers } : init?.headers,
     })
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
     throw new RequestError('The local Buoy server could not be reached. Check that it is running, then retry.')
   }
 
@@ -51,30 +54,41 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T
 }
 
-type Paged<T> = { items: T[]; total: number; offset: number; limit: number }
+const guardedPost = { method: 'POST', headers: { 'X-Buoy-Command-Center': '1' } }
+const PAGE_LIMIT = 50
 
-async function allPages<T, P extends Paged<T>>(path: string): Promise<P> {
-  const limit = 100
-  const first = await request<P>(`${path}${path.includes('?') ? '&' : '?'}offset=0&limit=${limit}`)
-  const items = [...first.items]
-  while (items.length < first.total) {
-    const page = await request<P>(`${path}${path.includes('?') ? '&' : '?'}offset=${items.length}&limit=${limit}`)
-    if (!page.items.length) throw new RequestError('The local inventory response ended before all records were returned.')
-    items.push(...page.items)
+function queryPath(path: string, values: Record<string, string | number | undefined>) {
+  const parameters = new URLSearchParams()
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== undefined && value !== '') parameters.set(key, String(value))
   }
-  return { ...first, items, offset: 0, limit: items.length || limit } as P
+  return `${path}?${parameters}`
 }
 
-const guardedPost = { method: 'POST', headers: { 'X-Buoy-Command-Center': '1' } }
+export type PlanFilters = {
+  offset: number
+  q?: string
+  namespace?: string
+  source_kind?: SourceProvenance['kind']
+}
+
+export type NamespaceFilters = {
+  offset: number
+  q?: string
+  source_kind?: SourceProvenance['kind']
+  local_status?: LocalNamespaceStatus
+}
 
 export const api = {
   capabilities: () => request<Capabilities>('/capabilities'),
   dashboard: () => request<DashboardData>('/dashboard'),
-  namespaces: () => allPages<NamespaceInventory['items'][number], NamespaceInventory>('/namespaces'),
+  namespaces: (filters: NamespaceFilters) => request<NamespaceInventory>(queryPath('/namespaces', { ...filters, limit: PAGE_LIMIT })),
   namespace: (namespace: string) =>
-    request<NamespaceDetail>(`/namespaces/${encodeURIComponent(namespace)}`),
-  plans: () => allPages<PlanInventory['items'][number], PlanInventory>('/plans'),
-  plan: (planId: string) => request<PlanDetail>(`/plans/${encodeURIComponent(planId)}`),
+    request<NamespaceDetail>(`/namespaces/${encodeURIComponent(namespace)}?plan_offset=0&plan_limit=20`),
+  plans: (filters: PlanFilters) => request<PlanInventory>(queryPath('/plans', { ...filters, limit: PAGE_LIMIT })),
+  review: (planId: string) => request<PlanReview>(
+    `/plans/${encodeURIComponent(planId)}/review?chunk_offset=0&chunk_limit=10&max_chars=2000&stale_offset=0&stale_limit=10`,
+  ),
   planJobs: () => request<PlanJobInventory>('/plan-jobs?offset=0&limit=50'),
   planJob: (jobId: string) => request<PlanJob>(`/plan-jobs/${encodeURIComponent(jobId)}`),
   startPlanJob: async (payload: PlanJobRequest) => {
@@ -87,7 +101,7 @@ export const api = {
     })
   },
   chunks: (planId: string, offset: number) =>
-    request<ChunkInventory>(`/plans/${encodeURIComponent(planId)}/chunks?offset=${offset}&limit=10`),
+    request<ChunkInventory>(`/plans/${encodeURIComponent(planId)}/chunks?offset=${offset}&limit=10&max_chars=2000`),
   staleRows: (planId: string, offset: number) =>
     request<StaleRowInventory>(`/plans/${encodeURIComponent(planId)}/stale-rows?offset=${offset}&limit=10`),
   refreshRemote: () => request<RemoteSnapshot>('/remote/snapshot', guardedPost),

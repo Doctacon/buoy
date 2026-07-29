@@ -168,6 +168,10 @@ export interface NamespaceSummary {
 export interface NamespaceDetail {
   summary: NamespaceSummary
   plans: PlanSummary[]
+  plan_total: number
+  plan_offset: number
+  plan_limit: number
+  plans_truncated: boolean
   state: {
     namespace: string
     site_id: string
@@ -254,6 +258,12 @@ export interface StaleRowInventory {
   total: number
   offset: number
   limit: number
+}
+
+export interface PlanReview {
+  detail: PlanDetail
+  chunks: ChunkInventory
+  stale_rows: StaleRowInventory
 }
 
 export type RemoteStatus =
