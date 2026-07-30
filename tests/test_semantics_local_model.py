@@ -189,6 +189,19 @@ class DoctorContractTests(unittest.TestCase):
         bodies = [request["body"] for request in transport.requests if request["body"]]
         self.assertFalse(any(b"evidence_snapshot" in body for body in bodies))
 
+    def test_ollama_raw_digest_is_canonicalized_and_matches_prefixed_pin(self) -> None:
+        raw_digest = "a" * 64
+        transport = FakeTransport([
+            response({"data": [{"id": "local-model"}]}),
+            response({"version": "0.11.10"}),
+            response({"models": [{"name": "local-model", "digest": raw_digest}]}),
+            response({"models": [{"name": "local-model", "digest": raw_digest, "context_length": 8192}]}),
+            chat({"ok": True, "label": "local"}),
+        ])
+        result = client(transport, model_revision=DIGEST).doctor()
+        self.assertEqual(result["model_contract"]["model_revision"], DIGEST)
+        self.assertEqual(result["model_contract"]["revision_verification"], "runtime_digest")
+
     def test_unavailable_model_revision_mismatch_context_mismatch_and_missing_revision_fail(self) -> None:
         unavailable = FakeTransport([response({"data": [{"id": "other"}]})])
         with self.assertRaises(LocalModelError) as caught:
@@ -443,6 +456,35 @@ class DirectTransportTests(unittest.TestCase):
         self.assertEqual(self.Connection.last_headers["Host"], "localhost:11434")
         self.assertNotIn("Authorization", self.Connection.last_headers)
         self.assertNotIn("Cookie", self.Connection.last_headers)
+
+    def test_completed_content_length_response_does_not_touch_closed_socket(self) -> None:
+        sock = self.Sock()
+
+        class ClosingSocketResponse(self.Response):
+            def read1(inner_self, limit: int):
+                value = inner_self.read(limit)
+                if inner_self._offset == len(inner_self._body):
+                    sock.closed = True
+                return value
+
+            def isclosed(inner_self):
+                return getattr(sock, "closed", False)
+
+        original_settimeout = sock.settimeout
+
+        def fail_if_closed(value: float) -> None:
+            if getattr(sock, "closed", False):
+                raise OSError(9, "closed socket")
+            original_settimeout(value)
+
+        sock.settimeout = fail_if_closed  # type: ignore[method-assign]
+        self.Connection.response = ClosingSocketResponse(body=b"{}", length="2")
+        result, _ = self.request(
+            sock=sock,
+            method="GET", url="http://127.0.0.1:11434/v1/models",
+            body=None, timeout_seconds=1, maximum_response_bytes=100,
+        )
+        self.assertEqual(result.body, b"{}")
 
     def test_https_preserves_loopback_hostname_for_tls_sni(self) -> None:
         self.Connection.response = self.Response()

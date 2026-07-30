@@ -42,6 +42,7 @@ DEFAULT_MAX_OUTPUT_TOKENS = 1_024
 DOCTOR_PROMPT_CONTRACT_VERSION = "semantics-doctor-v1"
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _OLLAMA_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+_OLLAMA_RAW_DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_REVISION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+@-]{0,511}$")
 _SAFE_QUANTIZATION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$")
 _WINDOWS_DRIVE_PATH = re.compile(r"^[A-Za-z]:")
@@ -276,6 +277,12 @@ def _read_response_with_deadline(
     total = 0
     reader = getattr(response, "read1", response.read)
     while True:
+        # http.client closes its response stream after consuming a declared
+        # Content-Length. Some servers close the underlying socket at the same
+        # point, so avoid setting a timeout on an already-complete response.
+        is_closed = getattr(response, "isclosed", None)
+        if callable(is_closed) and is_closed():
+            break
         sock.settimeout(_remaining_seconds(deadline))
         # read1 performs at most one underlying socket read, allowing the
         # monotonic deadline to be recomputed even for slow-drip responses.
@@ -314,12 +321,19 @@ def _ollama_digest(
 ) -> str | None:
     if value is None and not required:
         return None
-    if not isinstance(value, str) or _OLLAMA_DIGEST.fullmatch(value) is None:
+    if not isinstance(value, str):
         raise LocalModelError(
             f"local Ollama runtime returned an invalid {source} digest",
             code="revision_invalid",
         )
-    return value
+    if _OLLAMA_RAW_DIGEST.fullmatch(value) is not None:
+        return f"sha256:{value}"
+    if _OLLAMA_DIGEST.fullmatch(value) is not None:
+        return value
+    raise LocalModelError(
+        f"local Ollama runtime returned an invalid {source} digest",
+        code="revision_invalid",
+    )
 
 
 def _safe_runtime_version(value: object) -> str | None:
