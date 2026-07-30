@@ -1,4 +1,4 @@
-"""Pure local incremental diffing for generic site RAG plans.
+"""Pure local incremental diffing for focused source-index plans.
 
 This module compares a desired plan manifest to local applied state. It does
 not read credentials, load embedding models, crawl, or call turbopuffer.

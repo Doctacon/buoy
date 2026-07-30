@@ -202,7 +202,7 @@ class CliTests(unittest.TestCase):
 
         stdout = StringIO()
         with redirect_stdout(stdout):
-            print_retrieval_text(Output({"dry_run": False, "hits": [], "fusion": "server_rrf", "ranking_mode": "page", "ranking_profile": "none", "ranking_aggregation": "max", "embedding_precision": "float16"}))
+            print_retrieval_text(Output({"dry_run": False, "namespace": "site-example-v1", "hits": [], "fusion": "server_rrf", "ranking_mode": "page", "ranking_profile": "none", "ranking_aggregation": "max", "embedding_precision": "float16"}))
             for dry_run in (True, False):
                 print_eval_text({"dry_run": dry_run, "namespace": "site-example-v1", "region": "gcp-us-central1", "embedding_precision": "float16", "total": 0, "top_k": 5, "candidates": 50, "ranking_mode": "page", "ranking_profile": "none", "ranking_aggregation": "max", "passed": 0, "pass_rate": 0.0, "cases": []})
 
@@ -213,6 +213,7 @@ class CliTests(unittest.TestCase):
             def to_dict(self) -> dict[str, object]:
                 return {
                     "dry_run": False,
+                    "namespace": "site-example-v1",
                     "fusion": "server_rrf",
                     "ranking_mode": "page",
                     "ranking_profile": "none",
@@ -349,21 +350,22 @@ class CliTests(unittest.TestCase):
     def test_help_mentions_current_safe_workflow_commands(self) -> None:
         parser = build_parser()
         help_text = parser.format_help()
-        retrieve_help = parser._subparsers._group_actions[0].choices["retrieve"].format_help()
+        choices = parser._subparsers._group_actions[0].choices
+        self.assertEqual(set(choices), {"crawl", "plan", "apply", "retrieve", "evals"})
+        retrieve_help = choices["retrieve"].format_help()
         apply_help = parser._subparsers._group_actions[0].choices["apply"].format_help()
 
         self.assertIn("local-only", help_text)
-        self.assertNotIn("index", help_text)
         self.assertIn("crawl", help_text)
         self.assertIn("plan", help_text)
         self.assertIn("apply", help_text)
         self.assertIn("retrieve", help_text)
         self.assertIn("evals", help_text)
-        self.assertIn("live automatic or explicit namespace routing", " ".join(help_text.split()))
+        self.assertIn("website, repository, document, DuckDB, BigQuery, and Snowflake", " ".join(help_text.split()))
         normalized_retrieve_help = " ".join(retrieve_help.split())
-        self.assertIn("Compatibility no-op; retrieval is live by default", normalized_retrieve_help)
-        self.assertIn("explicit --namespace remains local and credential-free", normalized_retrieve_help)
-        self.assertIn("TURBOPUFFER_NAMESPACE is ignored", retrieve_help)
+        self.assertIn("exactly one explicitly selected namespace", normalized_retrieve_help)
+        self.assertIn("--namespace NAMESPACE", normalized_retrieve_help)
+        self.assertNotIn("--live", normalized_retrieve_help)
         self.assertNotIn("--catalog", retrieve_help)
         normalized_apply_help = " ".join(apply_help.split())
         self.assertIn("Plain interactive apply displays the complete local preflight", normalized_apply_help)
@@ -1306,6 +1308,49 @@ class CliTests(unittest.TestCase):
         self.assertIn("repo_path", include_attributes)
         self.assertNotIn("vector", include_attributes)
 
+    def test_retrieve_rejects_repeated_empty_and_reserved_namespaces(self) -> None:
+        cases = (
+            (
+                ["--namespace", "site-first-v1", "--namespace", "site-second-v1"],
+                "exactly once",
+            ),
+            (["--namespace", ""], "non-empty namespace ID"),
+            (["--namespace", "buoy-evidence-ledger-legacy"], "reserved Buoy control namespaces"),
+            (["--namespace", "buoy-routing-catalog-v1"], "reserved Buoy control namespaces"),
+        )
+        for namespace_args, expected in cases:
+            with self.subTest(namespace_args=namespace_args):
+                stdout = StringIO()
+                stderr = StringIO()
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    result = main(
+                        [
+                            "retrieve",
+                            "What are DORA metrics?",
+                            "--dry-run",
+                            *namespace_args,
+                            "--json",
+                        ]
+                    )
+
+                self.assertEqual(result, 2)
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertIn(expected, stderr.getvalue())
+
+    def test_plan_and_apply_reject_reserved_control_namespaces_during_parsing(self) -> None:
+        parser = build_parser()
+        for command in ("plan", "apply"):
+            argv = (
+                [command, "https://example.com", "--namespace", "buoy-routing-catalog-v1"]
+                if command == "plan"
+                else [command, "--namespace", "buoy-evidence-ledger-legacy"]
+            )
+            with self.subTest(command=command), redirect_stderr(StringIO()), self.assertRaises(
+                SystemExit
+            ) as raised:
+                parser.parse_args(argv)
+            self.assertEqual(raised.exception.code, 2)
+
     def test_retrieve_command_uses_repo_defaults_for_github_namespace_in_dry_run(self) -> None:
         stdout = StringIO()
         with redirect_stdout(stdout):
@@ -1430,31 +1475,41 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["ranking_pool"], 20)
         self.assertEqual(payload["ranking_aggregation"], "max")
 
-    def test_plain_and_compatibility_live_explicit_retrieval_require_api_key(self) -> None:
-        for extra in ([], ["--live"]):
-            stdout = StringIO()
-            stderr = StringIO()
-            with self.subTest(extra=extra), patch.dict("os.environ", {}, clear=True):
-                with redirect_stdout(stdout), redirect_stderr(stderr):
-                    result = main(
-                        [
-                            "retrieve",
-                            "How does LinkExtractor filter links?",
-                            "--namespace",
-                            "site-scrapling-readthedocs-io-v1",
-                            *extra,
-                            "--json",
-                        ]
-                    )
+    def test_plain_explicit_retrieval_requires_api_key(self) -> None:
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch.dict("os.environ", {}, clear=True):
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                result = main(
+                    [
+                        "retrieve",
+                        "How does LinkExtractor filter links?",
+                        "--namespace",
+                        "site-scrapling-readthedocs-io-v1",
+                        "--json",
+                    ]
+                )
 
-            self.assertEqual(result, 2)
-            self.assertEqual(stdout.getvalue(), "")
-            self.assertIn("TURBOPUFFER_API_KEY must be set", stderr.getvalue())
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("TURBOPUFFER_API_KEY must be set", stderr.getvalue())
 
     def test_evals_command_dry_run_lists_cases_without_credentials(self) -> None:
         stdout = StringIO()
         with redirect_stdout(stdout):
-            result = main(["evals", "--dry-run", "--top-k", "3", "--candidates", "30", "--json"])
+            result = main(
+                [
+                    "evals",
+                    "--dry-run",
+                    "--namespace",
+                    "site-scrapling-readthedocs-io-v1",
+                    "--top-k",
+                    "3",
+                    "--candidates",
+                    "30",
+                    "--json",
+                ]
+            )
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(result, 0)

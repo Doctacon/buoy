@@ -1,8 +1,17 @@
 Status: active
 Created: 2026-07-12
 Updated: 2026-07-24
+Amended-By: .10x/specs/focused-buoy-boundary.md
 
 # Compact DuckDB Applied State
+
+## Focused-boundary amendment
+
+This specification remains active for the exact local applied-state schema,
+incremental diff baseline, apply-run history, locking, and atomic state commit.
+Catalog registration, Command Center inventory, evidence streaming/summary
+APIs, and other cross-namespace consumers are superseded and are not part of
+the focused package.
 
 ## Purpose and scope
 

@@ -1,4 +1,4 @@
-"""Dry-run website crawling helpers for generic site RAG indexing.
+"""Dry-run source acquisition helpers for focused indexing.
 
 This module intentionally contains no turbopuffer write path and does not read
 credentials. Scrapling is imported lazily by the crawl execution path so helper

@@ -7,7 +7,6 @@ import os
 import shlex
 import tempfile
 from pathlib import Path
-from types import SimpleNamespace
 import threading
 import unittest
 from unittest.mock import patch
@@ -37,14 +36,6 @@ from buoy_search.applied_state import (
     save_applied_state,
 )
 from buoy_search.cli import build_parser, main
-from buoy_search.catalog import ROUTING_DIMENSIONS, catalog_revision
-from buoy_search.remote_catalog import (
-    CatalogCounts,
-    MutationResult,
-    ReadMetrics,
-    RemoteCatalogSnapshot,
-    remote_card_id,
-)
 from buoy_search.chunker import process_corpus
 from buoy_search.config import RuntimeConfig
 from buoy_search.plan_artifacts import (
@@ -95,45 +86,6 @@ class FakeEmbedder:
         FakeEmbedder.texts.extend(list(texts))
         FakeEmbedder.batch_sizes.append(batch_size)
         return [[float(index), 0.0, 1.0] for index, _ in enumerate(texts, start=1)]
-
-
-class FixedRoutingEmbedder:
-    def encode(self, texts):
-        return [[1.0] + [0.0] * (ROUTING_DIMENSIONS - 1) for _ in texts]
-
-
-class FakeRemoteCatalog:
-    def __init__(self) -> None:
-        self.cards = []
-        self.client = SimpleNamespace(namespace=lambda _name: object())
-
-    def snapshot(self, _client, *, region, compatibility):  # noqa: ANN001
-        del compatibility
-        live = tuple(sorted({card.namespace for card in self.cards}))
-        counts = CatalogCounts(
-            listed_total=1 + len(live), control_plane_count=1,
-            content_live_count=len(live), card_count=len(self.cards),
-            stale_target_count=0, missing_card_count=0, disabled_count=0,
-            incompatible_count=0, eligible_count=len(self.cards),
-        )
-        return RemoteCatalogSnapshot(
-            cards=tuple(self.cards), eligible_cards=tuple(self.cards),
-            live_namespace_ids=live, missing_card_ids=(), stale_target_ids=(),
-            disabled_ids=(), incompatible_ids=(),
-            snapshot_revision=catalog_revision(self.cards), counts=counts,
-            metrics=ReadMetrics(2, 1, 2, ()),
-        )
-
-    def create(self, _resource, cards, *, region):  # noqa: ANN001
-        del region
-        self.cards.extend(cards)
-        card = cards[0]
-        return MutationResult(True, card, 1, (remote_card_id(card.namespace),))
-
-    def update(self, _resource, card, *, expected_revision, region):  # noqa: ANN001
-        del expected_revision, region
-        self.cards = [item for item in self.cards if item.namespace != card.namespace] + [card]
-        return MutationResult(True, card, 1, (remote_card_id(card.namespace),))
 
 
 class FakeWriter:
@@ -318,18 +270,6 @@ def build_one_page_plan_with_stale_state(root: Path, state_root: Path):
 class ApplyCliTests(unittest.TestCase):
     def setUp(self) -> None:
         reset_fakes()
-        self.remote_catalog = FakeRemoteCatalog()
-        patchers = [
-            patch("buoy_search.catalog.load_routing_embedder", return_value=FixedRoutingEmbedder()),
-            patch("buoy_search.apply.REMOTE_CATALOG_CLIENT_FACTORY", return_value=self.remote_catalog.client),
-            patch("buoy_search.apply.read_remote_catalog", side_effect=self.remote_catalog.snapshot),
-            patch("buoy_search.apply.create_remote_cards", side_effect=self.remote_catalog.create),
-            patch("buoy_search.apply.update_remote_card", side_effect=self.remote_catalog.update),
-            patch("buoy_search.remote_catalog.create_client", side_effect=AssertionError("real SDK factory used")),
-        ]
-        for patcher in patchers:
-            patcher.start()
-            self.addCleanup(patcher.stop)
 
     def test_apply_batch_size_defaults_and_embedding_batch_validation(self) -> None:
         parser = build_parser()
@@ -403,6 +343,14 @@ class ApplyCliTests(unittest.TestCase):
                 model,
                 "--embedding-precision",
                 "float16",
+                "--ranking-mode",
+                "page",
+                "--ranking-profile",
+                "none",
+                "--ranking-pool",
+                "20",
+                "--ranking-aggregation",
+                "max",
             ],
         )
         self.assertEqual(shlex.split(payload["retrieval_commands"]["preview"]), [*live, "--dry-run"])
@@ -453,7 +401,6 @@ class ApplyCliTests(unittest.TestCase):
         for label, response in responses.items():
             with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
                 reset_fakes()
-                self.remote_catalog.cards = []
                 root = Path(tmp)
                 state_root = root / "state"
                 artifacts, plan_path = build_saved_plan(root, state_root=state_root)
@@ -485,16 +432,13 @@ class ApplyCliTests(unittest.TestCase):
                 self.assertEqual(payload["confirmation"], "declined_or_unavailable")
                 self.assertFalse(payload["turbopuffer_api_calls"])
                 self.assertFalse(payload["state_updated"])
-                self.assertFalse(payload["catalog_updated"])
-                self.assertIn("Website RAG apply preflight", stderr)
+                self.assertIn("Source index apply preflight", stderr)
                 self.assertTrue(stderr.endswith("Apply this plan? [y/N] "))
                 self.assertTrue(plan_path.exists())
                 self.assertFalse(paths.database_path.exists())
-                self.assertFalse((state_root / "catalog-pending").exists())
                 self.assertEqual(file_snapshot(obsolete), before)
                 self.assertEqual(FakeEmbedder.texts, [])
                 self.assertEqual(FakeWriter.rows, [])
-                self.assertEqual(self.remote_catalog.cards, [])
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -505,7 +449,7 @@ class ApplyCliTests(unittest.TestCase):
                 stdin=FailingPromptInput(),
             )
         self.assertEqual(result, 0, stderr)
-        self.assertIn("Website RAG apply preflight", stdout)
+        self.assertIn("Source index apply preflight", stdout)
         self.assertTrue(stdout.endswith("Apply cancelled; nothing was written.\n"))
         self.assertTrue(stderr.endswith("Apply this plan? [y/N] "))
 
@@ -543,7 +487,6 @@ class ApplyCliTests(unittest.TestCase):
         for response in ("y\n", "yes\n", " Y \n", " YeS\t\n"):
             with self.subTest(response=response), tempfile.TemporaryDirectory() as tmp:
                 reset_fakes()
-                self.remote_catalog.cards = []
                 root = Path(tmp)
                 state_root = root / "state"
                 artifacts, plan_path = build_saved_plan(root, state_root=state_root)
@@ -569,9 +512,9 @@ class ApplyCliTests(unittest.TestCase):
                 self.assertTrue(payload["approved"])
                 self.assertFalse(payload["dry_run"])
                 self.assertTrue(payload["state_updated"])
-                self.assertTrue(payload["catalog_updated"])
+                self.assertEqual(payload["receipt_schema_version"], 1)
                 self.assertEqual(confirm.call_count, 1)
-                self.assertIn("Website RAG apply preflight", stderr)
+                self.assertIn("Source index apply preflight", stderr)
                 self.assertIn("Apply this plan? [y/N] ", stderr)
                 self.assertFalse(plan_path.exists())
                 self.assertEqual(file_snapshot(obsolete), obsolete_before)
@@ -681,6 +624,14 @@ class ApplyCliTests(unittest.TestCase):
                 "BAAI/bge-small-en-v1.5",
                 "--embedding-precision",
                 "float32",
+                "--ranking-mode",
+                "page",
+                "--ranking-profile",
+                "none",
+                "--ranking-pool",
+                "20",
+                "--ranking-aggregation",
+                "max",
             ],
         )
         self.assertEqual(
@@ -725,6 +676,12 @@ class ApplyCliTests(unittest.TestCase):
             region="region with spaces",
             embedding_model="model/$(touch nope)",
             embedding_precision="precision; false",
+            ranking={
+                "ranking_mode": "page",
+                "ranking_profile": "none",
+                "ranking_pool": 20,
+                "ranking_aggregation": "max",
+            },
         )
         live = [
             "buoy",
@@ -738,6 +695,14 @@ class ApplyCliTests(unittest.TestCase):
             "model/$(touch nope)",
             "--embedding-precision",
             "precision; false",
+            "--ranking-mode",
+            "page",
+            "--ranking-profile",
+            "none",
+            "--ranking-pool",
+            "20",
+            "--ranking-aggregation",
+            "max",
         ]
         self.assertEqual(shlex.split(commands["live"]), live)
         self.assertEqual(shlex.split(commands["preview"]), [*live, "--dry-run"])
@@ -878,7 +843,6 @@ class ApplyCliTests(unittest.TestCase):
     def test_confirmed_apply_matches_first_apply_behavior_with_obsolete_json_present(self) -> None:
         def run_case(root: Path, *, obsolete: bool) -> tuple[dict[str, object], dict[Path, tuple[int, int, int, int, bytes]]]:
             reset_fakes()
-            self.remote_catalog.cards = []
             state_root = root / "state"
             artifacts, plan_path = build_saved_plan(root, state_root=state_root)
             paths = applied_state_paths(
@@ -926,7 +890,7 @@ class ApplyCliTests(unittest.TestCase):
                 for key in (
                     "approved", "dry_run", "state_first_apply", "rows_to_upsert", "rows_upserted",
                     "embeddings_to_generate", "embeddings_generated", "stale_rows",
-                    "retained_stale_rows", "state_updated", "catalog_updated",
+                    "retained_stale_rows", "state_updated", "receipt_schema_version",
                 )
             }
             projection["written_row_ids"] = sorted(str(row["id"]) for row in FakeWriter.rows)
@@ -1886,9 +1850,10 @@ class ApplyCliTests(unittest.TestCase):
         self.assertEqual(zero_batch["rows_upserted"], 0)
         self.assertEqual(zero_batch["embeddings_generated"], 0)
         self.assertEqual(zero_batch["timing"]["pipeline_mode"], "depth_one")
-        self.assertEqual(len(self.remote_catalog.cards), 1)
-        self.assertEqual(self.remote_catalog.cards[0].plan_schema_version, 2)
-        self.assertEqual(self.remote_catalog.cards[0].last_plan_id, artifacts.plan.plan_id)
+        self.assertEqual(one_batch["receipt_schema_version"], 1)
+        self.assertEqual(one_batch["source"], artifacts.plan.source)
+        self.assertEqual(one_batch["ranking"]["ranking_mode"], "page")
+        self.assertEqual(zero_batch["receipt_schema_version"], 1)
         self.assertEqual(len(zero_summaries), 2)
         self.assertEqual(zero_summaries[-1].plan_id, artifacts.plan.plan_id)
         self.assertEqual(zero_summaries[-1].rows_upserted, 0)
@@ -2397,18 +2362,10 @@ class ApplyCliTests(unittest.TestCase):
             with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "must-not-read"}, clear=True), patch(
                 "buoy_search.apply.os.read", side_effect=swap_restore_then_read
             ), patch(
-                "buoy_search.apply.prospective_card_for_apply",
-                side_effect=AssertionError("catalog projection called"),
-            ), patch(
-                "buoy_search.apply.REMOTE_CATALOG_CLIENT_FACTORY",
-                side_effect=AssertionError("remote client called"),
-            ), patch(
                 "buoy_search.apply.SentenceTransformerEmbedder",
                 side_effect=AssertionError("embedder called"),
             ), patch(
                 "buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
-            ), patch(
-                "buoy_search.apply.create_pending", side_effect=AssertionError("pending created")
             ):
                 with self.assertRaisesRegex(ApplyPlanError, "Applied state changed"):
                     run_approved_apply(
@@ -2419,7 +2376,6 @@ class ApplyCliTests(unittest.TestCase):
                     )
 
             self.assertTrue(swapped)
-            self.assertFalse((state_root / "pending").exists())
             self.assertTrue(plan_path.exists())
 
     def test_under_lock_drift_fails_before_approved_side_effects(self) -> None:
@@ -2452,10 +2408,6 @@ class ApplyCliTests(unittest.TestCase):
             with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "must-not-read"}, clear=True), patch(
                 "buoy_search.apply.acquire_namespace_apply_lock", drifting_lock
             ), patch(
-                "buoy_search.apply.prospective_card_for_apply", side_effect=AssertionError("catalog projection called")
-            ), patch(
-                "buoy_search.apply.REMOTE_CATALOG_CLIENT_FACTORY", side_effect=AssertionError("remote client called")
-            ), patch(
                 "buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")
             ), patch(
                 "buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")
@@ -2468,7 +2420,6 @@ class ApplyCliTests(unittest.TestCase):
                         batch_size=64,
                     )
 
-            self.assertFalse((state_root / "pending").exists())
             self.assertTrue(plan_path.exists())
 
     def test_delta_actions_must_match_exact_baseline_classification(self) -> None:

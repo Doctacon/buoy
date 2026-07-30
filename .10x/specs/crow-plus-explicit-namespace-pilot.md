@@ -1,4 +1,4 @@
-Status: active
+Status: superseded
 Created: 2026-07-20
 Updated: 2026-07-20
 

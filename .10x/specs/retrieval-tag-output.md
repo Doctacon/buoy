@@ -1,8 +1,16 @@
 Status: active
 Created: 2026-07-19
 Updated: 2026-07-19
+Amended-By: .10x/specs/focused-buoy-boundary.md
 
 # Retrieval Tag Output
+
+## Focused-boundary amendment
+
+This specification remains active only for preserving and rendering tags on
+results returned from one explicitly selected namespace. Multi-namespace
+fusion, automatic routing, catalog-selected output, and route metadata are
+superseded.
 
 ## Purpose and scope
 

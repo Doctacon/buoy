@@ -1,55 +1,110 @@
 #!/usr/bin/env python3
-"""Deterministic, side-effect-free release validation and state planning."""
+"""Read-only validation while Buoy release publication is paused."""
 
 from __future__ import annotations
 
 import argparse
-import base64
 import hashlib
 import json
-import os
 from pathlib import Path
-import re
-import subprocess
 import sys
 import tarfile
 import tomllib
-from datetime import date
-from typing import Any
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
+from typing import Any, Sequence
 import zipfile
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
-REPOSITORY = "Doctacon/buoy"
-WORKFLOW = "release.yml"
-SOURCE_REF = "refs/heads/main"
-LEGACY_V040_REPOSITORY = "Doctacon/buoy-search"
-LEGACY_V040_TAG = "v0.4.0"
-LEGACY_V040_SHA = "c49dc0582bf3f06a16eafdcca0707d1e64e1c58d"
-LEGACY_V040_SOURCE_REF = "refs/tags/v0.4.0"
-LEGACY_V040_ASSETS = {
-    "buoy_search-0.4.0-py3-none-any.whl": "89b84c6beba2979ab6ffd0d244d1d0f5c1af938cfbec021a89094a7109e5c4c8",
-    "buoy_search-0.4.0.tar.gz": "9c0469d2fc03b8e03780b06793537736391c21f0ed07c43adab9e674988ffd3a",
-}
-VERSION_RE = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)")
-RELEASE_POLICY_GLOBS = (
-    ".github/workflows/*.yml",
-    ".github/workflows/*.yaml",
-    "scripts/*release*.py",
-    "scripts/*release*.sh",
+PAUSED_MESSAGE = (
+    "Buoy release publication is paused while tag-derived versioning and "
+    "publication policy are reconciled; no tag or GitHub Release was planned."
 )
-FORBIDDEN_RELEASE_SERVICES = re.compile(
-    rf"\b(?:{'py' + 'pi'}|{'turbo' + 'puffer'})\b", re.IGNORECASE
+READ_ONLY_WORKFLOWS = (
+    ".github/workflows/ci.yml",
+    ".github/workflows/release-readiness.yml",
+    ".github/workflows/release.yml",
 )
-BOT = {
-    "name": "github-actions[bot]",
-    "email": "41898282+github-actions[bot]@users.noreply.github.com",
-}
+FORBIDDEN_WORKFLOW_MARKERS = (
+    "contents: write",
+    "id-token: write",
+    "packages: write",
+    "pull-requests: write",
+    "write-all",
+    "gh release",
+    "git tag",
+    "actions/attest",
+    "actions/upload-artifact",
+    "/releases",
+    "/git/refs",
+)
+REMOVED_PACKAGE_MEMBERS = (
+    "buoy_search/catalog.py",
+    "buoy_search/catalog_cli.py",
+    "buoy_search/catalog_pending.py",
+    "buoy_search/command_center_api.py",
+    "buoy_search/command_center_jobs.py",
+    "buoy_search/command_center_local.py",
+    "buoy_search/command_center_remote.py",
+    "buoy_search/command_center_server.py",
+    "buoy_search/evidence_cli.py",
+    "buoy_search/evidence_remote.py",
+    "buoy_search/evidence_snapshot.py",
+    "buoy_search/experimental_baseline.py",
+    "buoy_search/namespaces.py",
+    "buoy_search/remote_catalog.py",
+    "buoy_search/routing.py",
+)
+REMOVED_ARCHIVE_MEMBERS = (
+    "docs/catalog.md",
+    "docs/command-center.md",
+    "docs/evidence-snapshots.md",
+    "scripts/benchmark_command_center_bounded_review.py",
+    "scripts/benchmark_command_center_inventory.py",
+    "tests/test_automatic_routing.py",
+    "tests/test_catalog.py",
+    "tests/test_catalog_cli.py",
+    "tests/test_catalog_pending.py",
+    "tests/test_command_center_api.py",
+    "tests/test_command_center_bounded_review_benchmark.py",
+    "tests/test_command_center_cli.py",
+    "tests/test_command_center_inventory_benchmark.py",
+    "tests/test_command_center_jobs.py",
+    "tests/test_command_center_local.py",
+    "tests/test_command_center_remote.py",
+    "tests/test_cutover_isolation.py",
+    "tests/test_evidence_cli.py",
+    "tests/test_evidence_remote.py",
+    "tests/test_evidence_snapshot.py",
+    "tests/test_experimental_baseline.py",
+    "tests/test_multi_namespace_retrieval.py",
+    "tests/test_namespaces.py",
+    "tests/test_remote_catalog.py",
+    "tests/test_semantic_routing_representative.py",
+)
+REMOVED_ARCHIVE_PREFIXES = (
+    "autoresearch/runs/semantic-routing-representative-20260715/",
+)
+REQUIRED_PACKAGE_MEMBERS = (
+    "buoy_search/__init__.py",
+    "buoy_search/__main__.py",
+    "buoy_search/_version.py",
+    "buoy_search/applied_state.py",
+    "buoy_search/apply.py",
+    "buoy_search/cli.py",
+    "buoy_search/planning_service.py",
+    "buoy_search/retriever.py",
+)
+TOKENIZER_MEMBER_SUFFIXES = (
+    "data/bge-small-en-v1.5/5c38ec7c405ec4b44b94cc5a9bb96e735b38267a/special_tokens_map.json",
+    "data/bge-small-en-v1.5/5c38ec7c405ec4b44b94cc5a9bb96e735b38267a/tokenizer.json",
+    "data/bge-small-en-v1.5/5c38ec7c405ec4b44b94cc5a9bb96e735b38267a/tokenizer_config.json",
+    "data/bge-small-en-v1.5/5c38ec7c405ec4b44b94cc5a9bb96e735b38267a/vocab.txt",
+)
 
 
 class ReleaseError(ValueError):
-    """A release invariant was not satisfied."""
+    """A source or read-only release invariant was not satisfied."""
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
@@ -57,76 +112,74 @@ def _load_toml(path: Path) -> dict[str, Any]:
         return tomllib.load(handle)
 
 
-def versions(root: Path = ROOT) -> dict[str, str]:
-    project = str(_load_toml(root / "pyproject.toml")["project"]["version"])
-    module_text = (root / "src" / "buoy_search" / "__init__.py").read_text()
-    match = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', module_text, re.MULTILINE)
-    if match is None:
-        raise ReleaseError("module does not declare __version__")
-    lock = _load_toml(root / "uv.lock")
-    locked = [str(item["version"]) for item in lock["package"] if item["name"] == "buoy-search"]
-    if len(locked) != 1:
-        raise ReleaseError("uv.lock must contain exactly one buoy-search package")
-    return {"project": project, "module": match.group(1), "lock": locked[0]}
+def _load_read_only_workflow(path: Path) -> dict[str, Any]:
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise ReleaseError(f"{path} is not valid workflow YAML") from exc
+    if not isinstance(payload, dict):
+        raise ReleaseError(f"{path} must contain a workflow object")
+    if payload.get("permissions") != {"contents": "read"}:
+        raise ReleaseError(f"{path} must declare read-only contents: read")
+    jobs = payload.get("jobs")
+    if not isinstance(jobs, dict) or not jobs:
+        raise ReleaseError(f"{path} must contain a non-empty jobs object")
+    for job_name, job in jobs.items():
+        if not isinstance(job_name, str) or not isinstance(job, dict):
+            raise ReleaseError(f"{path} contains an invalid job")
+        if "permissions" in job and job["permissions"] != {"contents": "read"}:
+            raise ReleaseError(
+                f"{path} job {job_name!r} may not escalate workflow permissions"
+            )
+    return payload
 
 
-def validate_versions(root: Path = ROOT) -> str:
-    observed = versions(root)
-    if len(set(observed.values())) != 1:
-        raise ReleaseError(f"version mismatch: {observed}")
-    version = observed["project"]
-    if VERSION_RE.fullmatch(version) is None:
-        raise ReleaseError(f"version must be stable MAJOR.MINOR.PATCH: {version!r}")
-    return version
+def _member_matches(name: str, member: str) -> bool:
+    return name == member or name.endswith(f"/{member}")
 
 
-def validate_changelog(version: str, root: Path = ROOT) -> None:
-    text = (root / "CHANGELOG.md").read_text()
-    headings = list(re.finditer(r"^## (.+)$", text, re.MULTILINE))
-    if not headings or headings[0].group(1) != "[Unreleased]":
-        raise ReleaseError("CHANGELOG must begin release history with [Unreleased]")
-    unreleased = text[headings[0].end() : headings[1].start() if len(headings) > 1 else len(text)]
-    if unreleased.strip():
-        raise ReleaseError("CHANGELOG Unreleased section must be empty")
-    expected = f"[{version}] - pending"
-    if sum(heading.group(1) == expected for heading in headings) != 1:
-        raise ReleaseError(f"CHANGELOG must contain exactly '## {expected}'")
-    dated = re.compile(r"\[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})")
-    released = [heading.group(1) for heading in headings if heading.group(1).startswith("[")]
-    for heading in released[2:]:
-        match = dated.fullmatch(heading)
-        if match is None:
-            raise ReleaseError(f"older CHANGELOG release must have ISO date: {heading!r}")
-        try:
-            date.fromisoformat(match.group(2))
-        except ValueError as exc:
-            raise ReleaseError(f"older CHANGELOG release has invalid ISO date: {heading!r}") from exc
-
-
-def validate_release_policy(root: Path = ROOT) -> None:
-    relevant = sorted({path for pattern in RELEASE_POLICY_GLOBS for path in root.glob(pattern)})
-    violations = [
-        str(path.relative_to(root))
-        for path in relevant
-        if FORBIDDEN_RELEASE_SERVICES.search(path.read_text())
-    ]
-    if violations:
-        raise ReleaseError(
-            "release behavior references a forbidden publication service: " + ", ".join(violations)
+def _validate_archive_members(names: list[str], *, archive: str) -> None:
+    forbidden = [
+        name
+        for name in names
+        if "/.10x/" in f"/{name}"
+        or "/web/" in f"/{name}"
+        or "/node_modules/" in f"/{name}"
+        or "/command_center_static/" in f"/{name}"
+        or any(_member_matches(name, member) for member in REMOVED_PACKAGE_MEMBERS)
+        or any(_member_matches(name, member) for member in REMOVED_ARCHIVE_MEMBERS)
+        or any(
+            f"/{prefix}" in f"/{name}" for prefix in REMOVED_ARCHIVE_PREFIXES
         )
+    ]
+    if forbidden:
+        raise ReleaseError(f"{archive} contains removed product surfaces: {forbidden}")
+    missing = [
+        member
+        for member in REQUIRED_PACKAGE_MEMBERS
+        if not any(_member_matches(name, member) for name in names)
+    ]
+    if missing:
+        raise ReleaseError(f"{archive} is missing focused package members: {missing}")
+    missing_tokenizer = [
+        suffix
+        for suffix in TOKENIZER_MEMBER_SUFFIXES
+        if not any(name.endswith(suffix) for name in names)
+    ]
+    if missing_tokenizer:
+        raise ReleaseError(f"{archive} is missing bundled tokenizer files: {missing_tokenizer}")
 
 
-def validate_repository(root: Path = ROOT) -> str:
-    version = validate_versions(root)
-    validate_changelog(version, root)
-    return version
+def _metadata_version(payload: bytes) -> str:
+    for line in payload.decode("utf-8").splitlines():
+        if line.startswith("Version: "):
+            version = line.removeprefix("Version: ").strip()
+            if version:
+                return version
+    raise ReleaseError("distribution metadata has no version")
 
 
-def expected_asset_names(version: str) -> list[str]:
-    return [f"buoy_search-{version}-py3-none-any.whl", f"buoy_search-{version}.tar.gz"]
-
-
-def sha256_file(path: Path) -> str:
+def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -134,365 +187,179 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _metadata_version(payload: bytes) -> str:
-    match = re.search(rb"^Version: ([^\r\n]+)", payload, re.MULTILINE)
-    if match is None:
-        raise ReleaseError("distribution metadata has no Version")
-    return match.group(1).decode()
+def validate_distribution(dist: Path) -> dict[str, object]:
+    """Inspect one diagnostic wheel/sdist pair without publishing it."""
 
-
-def _forbidden_inventory(names: list[str]) -> list[str]:
-    return [
-        name
-        for name in names
-        if ".10x/" in name
-        or "turbo-search" in name
-        or "turbo_search" in name
-        or "legacy_main" in name
-    ]
-
-
-def verify_artifacts(dist: Path, root: Path = ROOT) -> dict[str, Any]:
-    version = validate_versions(root)
-    expected = expected_asset_names(version)
-    actual = (
-        sorted(path.name for path in dist.iterdir() if path.is_file() and path.name != ".gitignore")
-        if dist.is_dir()
-        else []
+    dist = Path(dist)
+    files = sorted(
+        path for path in dist.iterdir() if path.is_file() and path.name != ".gitignore"
     )
-    if actual != expected:
-        raise ReleaseError(f"asset names mismatch: expected {expected}, received {actual}")
-    wheel, sdist = (dist / name for name in expected)
+    wheels = [path for path in files if path.suffix == ".whl"]
+    sdists = [path for path in files if path.name.endswith(".tar.gz")]
+    if len(wheels) != 1 or len(sdists) != 1 or len(files) != 2:
+        raise ReleaseError("distribution directory must contain exactly one wheel and one sdist")
+    wheel = wheels[0]
+    sdist = sdists[0]
+
     with zipfile.ZipFile(wheel) as archive:
         wheel_names = archive.namelist()
-        forbidden = _forbidden_inventory(wheel_names)
-        if forbidden:
-            raise ReleaseError(f"forbidden wheel inventory: {forbidden}")
-        metadata_names = [name for name in wheel_names if name.endswith(".dist-info/METADATA")]
-        entry_names = [name for name in wheel_names if name.endswith(".dist-info/entry_points.txt")]
-        if len(metadata_names) != 1 or _metadata_version(archive.read(metadata_names[0])) != version:
-            raise ReleaseError("wheel metadata version mismatch")
-        if len(entry_names) != 1:
-            raise ReleaseError("wheel must contain entry_points.txt")
-        entry_points = archive.read(entry_names[0]).decode().strip()
+        _validate_archive_members(wheel_names, archive="wheel")
+        metadata = [name for name in wheel_names if name.endswith(".dist-info/METADATA")]
+        entries = [name for name in wheel_names if name.endswith(".dist-info/entry_points.txt")]
+        if len(metadata) != 1:
+            raise ReleaseError("wheel must contain exactly one METADATA file")
+        if len(entries) != 1:
+            raise ReleaseError("wheel must contain exactly one entry_points.txt")
+        wheel_version = _metadata_version(archive.read(metadata[0]))
+        entry_points = archive.read(entries[0]).decode("utf-8").strip()
         if entry_points != "[console_scripts]\nbuoy = buoy_search.cli:main":
-            raise ReleaseError(f"wheel entry points mismatch: {entry_points!r}")
-        tokenizer_suffixes = ("special_tokens_map.json", "tokenizer.json", "tokenizer_config.json", "vocab.txt")
-        for suffix in tokenizer_suffixes:
-            if not any(name.endswith("/data/bge-small-en-v1.5/5c38ec7c405ec4b44b94cc5a9bb96e735b38267a/" + suffix) for name in wheel_names):
-                raise ReleaseError(f"wheel missing bundled tokenizer file {suffix}")
+            raise ReleaseError("wheel must expose only the buoy console entry point")
+
     with tarfile.open(sdist, "r:gz") as archive:
         sdist_names = archive.getnames()
-        forbidden = _forbidden_inventory(sdist_names)
-        if forbidden:
-            raise ReleaseError(f"forbidden sdist inventory: {forbidden}")
-        metadata = [member for member in archive.getmembers() if member.name.endswith("/PKG-INFO")]
+        _validate_archive_members(sdist_names, archive="sdist")
+        metadata = [
+            member for member in archive.getmembers() if member.name.endswith("/PKG-INFO")
+        ]
         if len(metadata) != 1:
-            raise ReleaseError("sdist must contain one PKG-INFO")
+            raise ReleaseError("sdist must contain exactly one PKG-INFO")
         extracted = archive.extractfile(metadata[0])
-        if extracted is None or _metadata_version(extracted.read()) != version:
-            raise ReleaseError("sdist metadata version mismatch")
-        for suffix in tokenizer_suffixes:
-            if not any(
-                name.endswith(
-                    "/src/buoy_search/data/bge-small-en-v1.5/"
-                    "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a/" + suffix
-                )
-                for name in sdist_names
-            ):
-                raise ReleaseError(f"sdist missing bundled tokenizer file {suffix}")
-    assets = [{"name": name, "sha256": sha256_file(dist / name)} for name in expected]
-    return {"version": version, "tag": f"v{version}", "assets": assets}
+        if extracted is None:
+            raise ReleaseError("sdist PKG-INFO could not be read")
+        sdist_version = _metadata_version(extracted.read())
+        if not any(name.endswith("/images/buoy.svg") for name in sdist_names):
+            raise ReleaseError("sdist must contain images/buoy.svg")
 
-
-def write_json(path: Path, value: Any) -> None:
-    path.write_text(json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n")
-
-
-def _asset_map(assets: list[dict[str, Any]]) -> dict[str, str]:
-    return {str(asset["name"]): str(asset["sha256"]) for asset in assets}
-
-
-def _asset_pairs(assets: list[dict[str, Any]]) -> list[tuple[str, str]]:
-    return sorted((str(asset["name"]), str(asset["sha256"])) for asset in assets)
-
-
-def expected_provenance(
-    manifest: dict[str, Any],
-    sha: str,
-    *,
-    repository: str = REPOSITORY,
-    source_ref: str = SOURCE_REF,
-) -> list[dict[str, str]]:
-    return [
-        {
-            "name": asset["name"],
-            "sha256": asset["sha256"],
-            "repository": repository,
-            "workflow": WORKFLOW,
-            "source_ref": source_ref,
-            "source_commit": sha,
-        }
-        for asset in manifest["assets"]
-    ]
-
-
-def _is_legacy_v040(manifest: dict[str, Any], sha: str) -> bool:
-    return (
-        manifest.get("version") == "0.4.0"
-        and manifest.get("tag") == LEGACY_V040_TAG
-        and sha == LEGACY_V040_SHA
-        and _asset_pairs(manifest.get("assets", [])) == sorted(LEGACY_V040_ASSETS.items())
-    )
-
-
-def evaluate_state(snapshot: dict[str, Any], manifest: dict[str, Any], sha: str) -> str:
-    tag = snapshot.get("tag")
-    release = snapshot.get("release")
-    if tag is None and release is None:
-        return "create"
-    if tag is None or release is None:
-        raise ReleaseError("permanent failure: tag-only or Release-only state")
-    expected_tag = manifest["tag"]
-    if tag.get("name") != expected_tag or tag.get("object_type") != "tag":
-        raise ReleaseError("permanent failure: tag is missing or lightweight")
-    if tag.get("peel_sha") != sha:
-        raise ReleaseError("permanent failure: annotated tag peels to another commit")
-    legacy_v040 = _is_legacy_v040(manifest, sha)
-    expected_release = {
-        "tag_name": expected_tag,
-        "name": "Buoy v0.4.0" if legacy_v040 else f"Buoy {manifest['version']}",
-        "draft": False,
-        "prerelease": False,
-        "target": expected_tag,
-    }
-    for field, expected in expected_release.items():
-        if release.get(field) != expected:
-            raise ReleaseError(f"permanent failure: Release {field} mismatch")
-    if _asset_pairs(release.get("assets", [])) != _asset_pairs(manifest["assets"]):
-        raise ReleaseError("permanent failure: Release asset names or digests mismatch")
-    actual_provenance = snapshot.get("provenance", [])
-    provenance_repository = LEGACY_V040_REPOSITORY if legacy_v040 else REPOSITORY
-    source_ref = LEGACY_V040_SOURCE_REF if legacy_v040 else SOURCE_REF
-    wanted_provenance = expected_provenance(
-        manifest, sha, repository=provenance_repository, source_ref=source_ref
-    )
-    if any(item not in actual_provenance for item in wanted_provenance):
-        raise ReleaseError("permanent failure: provenance mismatch")
-    return "noop"
-
-
-def make_plan(snapshot: dict[str, Any], manifest: dict[str, Any], sha: str) -> dict[str, Any]:
-    if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
-        raise ReleaseError("source commit must be a full 40-character SHA")
-    action = evaluate_state(snapshot, manifest, sha)
-    legacy_v040_noop = action == "noop" and _is_legacy_v040(manifest, sha)
-    plan = {
-        "schema": 1,
-        "action": action,
-        "repository": LEGACY_V040_REPOSITORY if legacy_v040_noop else REPOSITORY,
-        "workflow": WORKFLOW,
-        "source_ref": LEGACY_V040_SOURCE_REF if legacy_v040_noop else SOURCE_REF,
-        "source_commit": sha,
-        "version": manifest["version"],
-        "tag": manifest["tag"],
-        "tag_message": f"Buoy {manifest['version']}",
-        "tagger": BOT,
-        "release_name": "Buoy v0.4.0" if legacy_v040_noop else f"Buoy {manifest['version']}",
-        "assets": manifest["assets"],
-        "provenance": expected_provenance(
-            manifest,
-            sha,
-            repository=LEGACY_V040_REPOSITORY if legacy_v040_noop else REPOSITORY,
-            source_ref=LEGACY_V040_SOURCE_REF if legacy_v040_noop else SOURCE_REF,
-        ),
-    }
-    encoded = json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()
-    return {"plan": plan, "sha256": hashlib.sha256(encoded).hexdigest()}
-
-
-def validate_policy(
-    *,
-    head_repository: str,
-    head_ref: str,
-    base_sha: str,
-    head_sha: str,
-    snapshot: dict[str, Any],
-    root: Path = ROOT,
-) -> str:
-    if (head_repository, head_ref) != (REPOSITORY, "develop"):
-        raise ReleaseError("release PR head must be Doctacon/buoy:develop")
-    parents = subprocess.run(
-        ["git", "rev-list", "--parents", "-n", "1", "HEAD"],
-        cwd=root,
-        text=True,
-        check=True,
-        capture_output=True,
-    ).stdout.split()
-    if len(parents) != 3 or parents[1:] != [base_sha, head_sha]:
-        raise ReleaseError("checkout is not GitHub's exact prospective merge commit")
-    version = validate_repository(root)
-    validate_release_policy(root)
-    if snapshot.get("tag") is not None or snapshot.get("release") is not None:
-        raise ReleaseError(f"v{version} already has a tag or GitHub Release")
-    return version
-
-
-def _api(path: str, token: str, *, accept: str = "application/vnd.github+json") -> Any:
-    request = Request(
-        f"https://api.github.com{path}",
-        headers={
-            "Accept": accept,
-            "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "buoy-release-automation",
-        },
-    )
-    try:
-        with urlopen(request, timeout=30) as response:
-            payload = response.read()
-            return json.loads(payload) if payload else None
-    except HTTPError as exc:
-        if exc.code == 404:
-            return None
-        raise ReleaseError(f"GitHub API {path} returned HTTP {exc.code}") from exc
-
-
-def _attestation_statement(item: dict[str, Any]) -> dict[str, Any] | None:
-    envelope = item.get("bundle", {}).get("dsseEnvelope", {})
-    payload = envelope.get("payload")
-    if not payload:
-        return None
-    return json.loads(base64.b64decode(payload))
-
-
-def _normalize_provenance(statement: dict[str, Any], asset_name: str, digest: str) -> dict[str, str] | None:
-    subjects = statement.get("subject", [])
-    if not any(subject.get("name") == asset_name and subject.get("digest", {}).get("sha256") == digest for subject in subjects):
-        return None
-    predicate = statement.get("predicate", {})
-    build = predicate.get("buildDefinition", {})
-    external = build.get("externalParameters", {}).get("workflow", {})
-    dependencies = build.get("resolvedDependencies", [])
-    commit = next((item.get("digest", {}).get("gitCommit") for item in dependencies if item.get("digest", {}).get("gitCommit")), None)
-    repository = str(external.get("repository", ""))
-    for prefix in ("git+https://github.com/", "https://github.com/"):
-        if repository.startswith(prefix):
-            repository = repository.removeprefix(prefix)
-            break
-    repository = repository.removesuffix(".git")
-    workflow_path = str(external.get("path", ""))
+    if wheel_version != sdist_version:
+        raise ReleaseError("wheel and sdist metadata versions do not match")
     return {
-        "name": asset_name,
-        "sha256": digest,
-        "repository": repository,
-        "workflow": workflow_path.rsplit("/", 1)[-1],
-        "source_ref": str(external.get("ref", "")),
-        "source_commit": str(commit or ""),
+        "version": wheel_version,
+        "wheel": {
+            "name": wheel.name,
+            "files": len(wheel_names),
+            "sha256": _sha256(wheel),
+        },
+        "sdist": {
+            "name": sdist.name,
+            "files": len(sdist_names),
+            "sha256": _sha256(sdist),
+        },
+        "publication_occurred": False,
     }
 
 
-def github_snapshot(tag_name: str, manifest: dict[str, Any], token: str) -> dict[str, Any]:
-    ref = _api(f"/repos/{REPOSITORY}/git/ref/tags/{tag_name}", token)
-    tag: dict[str, Any] | None = None
-    if ref is not None:
-        object_type = ref["object"]["type"]
-        peel_sha = ref["object"]["sha"]
-        if object_type == "tag":
-            tag_object = _api(f"/repos/{REPOSITORY}/git/tags/{peel_sha}", token)
-            peel_sha = tag_object["object"]["sha"]
-        tag = {"name": tag_name, "object_type": object_type, "peel_sha": peel_sha}
-    hosted = _api(f"/repos/{REPOSITORY}/releases/tags/{tag_name}", token)
-    release: dict[str, Any] | None = None
-    provenance: list[dict[str, str]] = []
-    if hosted is not None:
-        assets: list[dict[str, str]] = []
-        expected_assets = _asset_map(manifest.get("assets", []))
-        for asset in hosted.get("assets", []):
-            name = str(asset["name"])
-            digest = str(asset.get("digest") or "")
-            if digest.startswith("sha256:"):
-                digest = digest.removeprefix("sha256:")
-            else:
-                raise ReleaseError(f"GitHub asset {name!r} has no authoritative SHA-256 digest")
-            assets.append({"name": name, "sha256": digest})
-            if expected_assets.get(name) == digest:
-                attestations = _api(f"/repos/{REPOSITORY}/attestations/sha256:{digest}", token) or {}
-                for item in attestations.get("attestations", []):
-                    statement = _attestation_statement(item)
-                    if statement is not None:
-                        normalized = _normalize_provenance(statement, name, digest)
-                        if normalized is not None:
-                            provenance.append(normalized)
-        release = {
-            "tag_name": hosted.get("tag_name"),
-            "name": hosted.get("name"),
-            "draft": hosted.get("draft"),
-            "prerelease": hosted.get("prerelease"),
-            # An existing tag makes tag_name the immutable Release target identity;
-            # target_commitish is only GitHub's mutable branch-name creation hint.
-            "target": hosted.get("tag_name"),
-            "assets": assets,
-        }
-    return {"tag": tag, "release": release, "provenance": provenance}
+def validate_source(root: Path = ROOT) -> dict[str, object]:
+    """Validate dynamic source metadata without deriving or publishing a version."""
+
+    pyproject = _load_toml(root / "pyproject.toml")
+    project = pyproject.get("project", {})
+    if "version" in project:
+        raise ReleaseError("project.version must remain absent under Hatch VCS")
+    if project.get("dynamic") != ["version"]:
+        raise ReleaseError("project.dynamic must be exactly ['version']")
+
+    build = pyproject.get("build-system", {})
+    if build.get("build-backend") != "hatchling.build":
+        raise ReleaseError("build backend must remain hatchling.build")
+    if build.get("requires") != ["hatchling==1.31.0", "hatch-vcs==0.5.0"]:
+        raise ReleaseError("Hatch and Hatch-VCS build requirements must remain exactly pinned")
+    if pyproject.get("tool", {}).get("hatch", {}).get("version") != {"source": "vcs"}:
+        raise ReleaseError("Hatch version authority must remain VCS")
+    hook = (
+        pyproject.get("tool", {})
+        .get("hatch", {})
+        .get("build", {})
+        .get("hooks", {})
+        .get("vcs")
+    )
+    if hook != {"version-file": "src/buoy_search/_version.py"}:
+        raise ReleaseError("Hatch VCS must generate src/buoy_search/_version.py")
+
+    module = (root / "src/buoy_search/__init__.py").read_text(encoding="utf-8")
+    if "from ._version import __version__" not in module:
+        raise ReleaseError("buoy_search.__version__ must come from generated _version.py")
+    ignored = (root / ".gitignore").read_text(encoding="utf-8").splitlines()
+    if "src/buoy_search/_version.py" not in ignored:
+        raise ReleaseError("generated _version.py must remain ignored")
+
+    lock = _load_toml(root / "uv.lock")
+    roots = [package for package in lock.get("package", []) if package.get("name") == "buoy-search"]
+    if len(roots) != 1:
+        raise ReleaseError("uv.lock must contain exactly one buoy-search root package")
+    locked_root = roots[0]
+    if "version" in locked_root or locked_root.get("source") != {"editable": "."}:
+        raise ReleaseError("uv.lock root package must be editable and versionless")
+
+    changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
+    headings = [line for line in changelog.splitlines() if line.startswith("## ")]
+    if len(headings) < 2 or headings[0] != "## Unreleased":
+        raise ReleaseError("CHANGELOG must begin with an Unreleased section")
+    if headings[1] != "## [0.4.0] - 2026-07-21":
+        raise ReleaseError("published changelog history must remain frozen through v0.4.0")
+    if any(" - pending" in heading for heading in headings):
+        raise ReleaseError("paused publication must not stage a pending release heading")
+
+    for relative in READ_ONLY_WORKFLOWS:
+        path = root / relative
+        _load_read_only_workflow(path)
+        text = path.read_text(encoding="utf-8")
+        marker = next(
+            (item for item in FORBIDDEN_WORKFLOW_MARKERS if item.casefold() in text.casefold()),
+            None,
+        )
+        if marker is not None:
+            raise ReleaseError(f"{relative} contains forbidden publication marker {marker!r}")
+
+    return {
+        "dynamic_version": True,
+        "generated_version_file": "src/buoy_search/_version.py",
+        "published_history_through": "0.4.0",
+        "publication_paused": True,
+        "workflows_read_only": list(READ_ONLY_WORKFLOWS),
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("validate")
-    assets = commands.add_parser("artifacts")
-    assets.add_argument("--dist", type=Path, required=True)
-    assets.add_argument("--output", type=Path, required=True)
-    state = commands.add_parser("state")
-    state.add_argument("--snapshot", type=Path, required=True)
-    state.add_argument("--manifest", type=Path, required=True)
-    state.add_argument("--sha", required=True)
-    state.add_argument("--output", type=Path, required=True)
-    snapshot = commands.add_parser("github-snapshot")
-    snapshot.add_argument("--manifest", type=Path, required=True)
-    snapshot.add_argument("--output", type=Path, required=True)
-    policy = commands.add_parser("policy")
-    policy.add_argument("--head-repository", required=True)
-    policy.add_argument("--head-ref", required=True)
-    policy.add_argument("--base-sha", required=True)
-    policy.add_argument("--head-sha", required=True)
-    policy.add_argument("--snapshot", type=Path, required=True)
+    commands.add_parser(
+        "validate-source",
+        help="validate dynamic source metadata and read-only workflows",
+    )
+    distribution = commands.add_parser(
+        "validate-distribution",
+        help="inspect a diagnostic wheel/sdist pair without publication",
+    )
+    distribution.add_argument("dist", type=Path)
+    for legacy in ("validate", "artifacts", "state", "github-snapshot", "policy"):
+        commands.add_parser(
+            legacy,
+            help="disabled while release publication is paused",
+            add_help=False,
+        )
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+def main(argv: Sequence[str] | None = None) -> int:
+    values = list(sys.argv[1:] if argv is None else argv)
+    if values and values[0] in {"validate", "artifacts", "state", "github-snapshot", "policy"}:
+        print(PAUSED_MESSAGE, file=sys.stderr)
+        return 2
+    args = build_parser().parse_args(values)
     try:
-        if args.command == "validate":
-            print(validate_repository())
-        elif args.command == "artifacts":
-            write_json(args.output, verify_artifacts(args.dist))
-        elif args.command == "state":
-            snapshot = json.loads(args.snapshot.read_text())
-            manifest = json.loads(args.manifest.read_text())
-            write_json(args.output, make_plan(snapshot, manifest, args.sha))
-        elif args.command == "github-snapshot":
-            token = os.environ.get("GITHUB_TOKEN", "")
-            if not token:
-                raise ReleaseError("GITHUB_TOKEN is required")
-            manifest = json.loads(args.manifest.read_text())
-            write_json(args.output, github_snapshot(manifest["tag"], manifest, token))
-        else:
-            snapshot = json.loads(args.snapshot.read_text())
-            print(
-                validate_policy(
-                    head_repository=args.head_repository,
-                    head_ref=args.head_ref,
-                    base_sha=args.base_sha,
-                    head_sha=args.head_sha,
-                    snapshot=snapshot,
-                )
-            )
-    except (OSError, ReleaseError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+        result = (
+            validate_source()
+            if args.command == "validate-source"
+            else validate_distribution(args.dist)
+        )
+    except (OSError, ReleaseError, tarfile.TarError, tomllib.TOMLDecodeError, zipfile.BadZipFile) as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    return 0
+    if args.command in {"validate-source", "validate-distribution"}:
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    print(PAUSED_MESSAGE, file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

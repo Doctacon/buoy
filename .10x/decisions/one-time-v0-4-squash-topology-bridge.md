@@ -1,8 +1,17 @@
-Status: active
+Status: superseded
 Created: 2026-07-21
-Updated: 2026-07-21
+Updated: 2026-07-30
 
 # One-Time v0.4 Squash Topology Bridge
+
+## 2026-07-30 disposition
+
+This one-time topology exception is consumed and no longer grants branch or
+release authority. In particular, it does not authorize PR #93, a
+`develop -> main` promotion, tag or Release creation, or the former automatic
+release process. `.10x/decisions/release-publication-is-paused.md` governs the
+current repository. The rationale below is retained as historical context
+only.
 
 ## Context
 

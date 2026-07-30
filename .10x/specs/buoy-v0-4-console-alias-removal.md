@@ -1,8 +1,16 @@
 Status: active
 Created: 2026-07-19
 Updated: 2026-07-19
+Amended-By: .10x/specs/focused-buoy-boundary.md
 
 # Buoy 0.4 Console Alias Removal
+
+## Focused-boundary amendment
+
+The sole `buoy` console identity and removal of the old executable remain
+active. Historical compatibility clauses for `--live`, automatic routing,
+catalog options, namespace discovery, and other removed commands/options are
+superseded and must not be restored.
 
 ## Purpose and scope
 

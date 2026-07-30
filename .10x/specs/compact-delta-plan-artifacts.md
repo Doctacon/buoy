@@ -1,8 +1,17 @@
 Status: active
 Created: 2026-07-24
 Updated: 2026-07-24
+Amended-By: .10x/specs/focused-buoy-boundary.md
 
 # Compact Delta Plan Artifacts
+
+## Focused-boundary amendment
+
+This specification remains active for compact artifact identity, review,
+baseline binding, verification, and one-namespace apply. Catalog
+staging/recovery, routing-card writes, Command Center readers, managed jobs,
+and frontend presentation are superseded. A no-change apply performs no
+catalog write.
 
 ## Purpose and scope
 

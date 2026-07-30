@@ -1,8 +1,16 @@
 Status: active
 Created: 2026-07-19
 Updated: 2026-07-19
+Amended-By: .10x/specs/focused-buoy-boundary.md
 
 # Buoy 0.4 Environment Alias Removal
+
+## Focused-boundary amendment
+
+The removed branded embedding aliases remain rejected exactly as specified.
+Clauses for removed catalog, routing, discovery, evidence, or Command Center
+commands no longer create compatibility authority. `TURBOPUFFER_NAMESPACE` is
+ignored; retrieval and evals require one explicit CLI namespace.
 
 ## Purpose and scope
 
