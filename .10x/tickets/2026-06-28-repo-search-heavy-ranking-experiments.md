@@ -1,9 +1,26 @@
-Status: active
+Status: superseded
 Created: 2026-06-28
-Updated: 2026-07-21
+Updated: 2026-07-30
 Depends-On: .10x/evidence/2026-06-28-repo-search-file-ranking-promotion-validation.md, .10x/research/2026-06-28-repo-search-precision-state-of-art.md
 
 # Repo Search Heavy Ranking Experiments
+
+## 2026-07-30 focused-boundary disposition
+
+This parent and all unfinished C3-C9/follow-up children are superseded as
+executable Buoy authority by `.10x/decisions/buoy-is-a-focused-indexer.md` and
+`.10x/specs/focused-buoy-boundary.md`.
+
+The completed single-source ranking, tokenizer, and syntax-chunking
+implementation history remains evidence for the focused product. The removed
+experimental baseline executor, account-wide candidate capture, shared
+cross-namespace experiment cache, routed-profile selector/productization,
+catalog participation, and further Crow-Plus operation are cancelled from
+Buoy's active work graph. They may be reconsidered only under a new explicit
+owner: Kite for cross-source/catalog/routing work, or a new focused Buoy ticket
+for a bounded one-source/one-namespace indexing or ranking change. Nothing
+below authorizes credentials, provider calls, namespace writes, model
+operations, product changes, or release activity.
 
 ## Outcome
 

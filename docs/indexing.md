@@ -232,11 +232,23 @@ uv run buoy apply --dry-run
 
 By default, apply selects the newest plan under `artifacts/site-crawls/`. Use `--plan <path>` when multiple plans exist. Plain apply requires an interactive stdin; scripts must choose `--dry-run` or `--approve`, and piped input cannot confirm.
 
-Preflight fully verifies the schema-v2 metadata and delta, row identities, embedding-text hashes, artifact integrity, and exact applied-state baseline. If applied state changed after planning, apply fails with replanning guidance before credentials, models, provider calls, or writes. Because preflight does not contact Turbopuffer, remote catalog state and the resulting registration action remain unknown until approved. Its text identifies the automatically selected plan path and source, artifact hash, namespace and region, verified embedding model and precision, first-apply state, upsert/embedding/unchanged/stale counts, and an explicit `retain N` or `delete N` stale-row intent.
+Preflight fully verifies the schema-v2 metadata and delta, row identities,
+embedding-text hashes, artifact integrity, and exact applied-state baseline. If
+applied state changed after planning, apply fails with replanning guidance
+before credentials, models, provider calls, or writes. Its text identifies the
+selected plan path and source, artifact hash, namespace and region, verified
+embedding model and precision, first-apply state,
+upsert/embedding/unchanged/stale counts, and an explicit `retain N` or `delete
+N` stale-row intent.
 
-Use `--region REGION` to override `TURBOPUFFER_REGION` and bind that region into the registered retrieval contract. The remote catalog namespace is fixed as `buoy-routing-catalog-v1`; local catalog path options and `BUOY_CATALOG_PATH` are not supported.
+Use `--region REGION` to override `TURBOPUFFER_REGION` and bind that region into
+the retrieval handoff and approved apply receipt.
 
-Preflight does not read `TURBOPUFFER_API_KEY`, load an embedding model, mutate the catalog, or contact turbopuffer. It also prints shell-safe preview and live retrieval commands labeled for use after a successful apply; the approved apply repeats them as the next step. Replace the quoted `<query>` placeholder with the question to search while preserving the recorded namespace, region, model, and precision.
+Preflight does not read `TURBOPUFFER_API_KEY`, load an embedding model, list
+namespaces, or contact Turbopuffer. It prints shell-safe preview and live
+retrieval commands labeled for use after a successful apply; the approved
+apply repeats them as the next step. Replace the quoted `<query>` placeholder
+while preserving the namespace, region, model, precision, and ranking flags.
 
 ## Confirmed apply
 
@@ -260,7 +272,12 @@ If credentials live in this repository's `.env`, load them only into the command
 )
 ```
 
-Approved apply acquires a fail-fast lock for the target namespace before catalog-card embedding, pending-state creation, credential lookup, or remote work, and retains it through applied-state and catalog commit. It validates and persists a secret-free pending card before remote writes, overlaps one local content-embedding batch with one ordered remote upsert, and commits applied state only after all remote work succeeds. Successful apply then conditionally commits one remote catalog card; manual semantic fields and disabled state are preserved.
+Approved apply acquires a fail-fast lock for the target namespace before
+credential lookup or remote work, reverifies the plan and exact baseline under
+that lock, overlaps one local content-embedding batch with one ordered remote
+upsert, performs only explicitly requested exact-ID stale deletion, and commits
+local applied state only after remote work succeeds. It writes no catalog or
+other namespace.
 
 It never runs concurrent embeddings or concurrent writes. Interactive runs show confirmed batches/rows on one stderr line; the final summary separates elapsed, embedding, and write time, whose stage totals may exceed wall time because they overlap. Tune the two independent batch controls only after measuring the workload:
 
@@ -292,9 +309,19 @@ It stores current row identity/status plus compact apply summaries, not full sna
 
 A same-namespace approved apply fails fast if another apply holds its lock. Different namespaces have independent ledgers and may apply concurrently. State is local to this machine; it is not a shared service.
 
-Pending, preflighted, and failed plans remain available. Catalog registration pending files live under `<state-root>/catalog-pending/`. Any pending file blocks automatic apply reruns so Buoy cannot unknowingly repeat remote writes after a crash. A successful approved apply removes its pending file and exact plan directory after remote work, state commit, and catalog commit. A newly written verified plan removes older sibling plans for the same namespace. Copy a plan elsewhere before approval if it must be retained for audit.
+Preflighted and failed plans remain available. A successful approved apply
+removes its exact plan directory after remote work and local state commit. A
+newly written verified plan removes older sibling plans for the same namespace.
+Copy a plan elsewhere before approval if it must be retained for audit.
 
-If remote work and applied state succeed but pending confirmation, remote catalog commit, or pending cleanup fails, apply exits 2 with `remote_apply_succeeded=true`, a retained recoverable pending path, and an exact `buoy catalog reconcile` command. Output reports the phase truthfully: a cleanup-only failure keeps `catalog_updated=true`, includes catalog/card revisions, and sets `pending_cleanup=false`; earlier local failures report `catalog_updated=false`. Do not rerun apply; run the repair command instead. Reconcile can recover an interrupted confirmation only when the exact bound applied-state ledger proves a new matching success. Otherwise an unconfirmed pending file represents indeterminate remote state and can be removed only with the separately reviewed `buoy catalog abandon-pending ... --approve` flow described in the catalog guide.
+Remote upserts and exact-ID deletes are deterministic. If remote content work
+succeeds but the local state commit fails, retain the unchanged baseline-bound
+plan and investigate before repeating it. Buoy has no catalog-pending or
+catalog-reconcile phase.
+
+Successful JSON output includes `receipt_schema_version=1`, source identity,
+namespace/region, plan/apply IDs, artifact hash, embedding and ranking
+contracts, counts, and retrieval commands. That is the supported Kite handoff.
 
 DuckDB is the only applied-state authority. Obsolete JSON applied-state files are ignored and left unchanged; when no `state.duckdb` exists, apply uses normal first-apply behavior.
 
@@ -313,16 +340,3 @@ uv run buoy apply --approve --delete-stale
 ```
 
 This never deletes the namespace.
-
-## Freeze applied evidence remotely
-
-After at least one successful apply and compatible routing-card registration, an operator may explicitly freeze one or more namespaces for future graph derivation:
-
-```bash
-uv run buoy evidence estimate --namespace site-example-com-v1
-uv run buoy evidence snapshot --namespace site-example-com-v1
-```
-
-Run the estimate first because each turbopuffer branch may be billed from the source namespace's full approximate logical size. Snapshot holds the existing apply lock while it fingerprints local state, creates and reconciles the branch, publishes the compact active/retained/deleted remote ledger, and writes the completed evidence-catalog marker. This may temporarily block apply for the selected namespace; it does not change apply behavior or write the source namespace.
-
-Full content and vectors remain in turbopuffer. The laptop receives only a bounded `snapshot.json`; there is no local evidence corpus or `evidence.duckdb`. Sharded namespaces are rejected before branch creation because current branching does not support them, with no full-copy fallback. See [Remote evidence snapshots](evidence-snapshots.md) for eligibility, budgets, verification, immutability detection, billing, and lifecycle limits.

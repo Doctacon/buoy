@@ -2,33 +2,28 @@ from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
-import inspect
 import json
-import os
 from pathlib import Path
 from types import SimpleNamespace
-import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 import duckdb
+
 from buoy_search.chunker import process_corpus
 from buoy_search.cli import main
 from buoy_search.crawler import CrawlExecution, CrawlOptions
 from buoy_search.database_relation import DatabaseRelationError
-from buoy_search.plan_artifacts import PLAN_SCHEMA_VERSION, verify_plan_artifacts, write_plan_artifacts
+from buoy_search.plan_artifacts import verify_plan_artifacts, write_plan_artifacts
 from buoy_search.planning_service import (
-    MAX_MANAGED_SOURCE_URL_LENGTH,
     MAX_PROGRESS_MESSAGE_LENGTH,
     MAX_PROGRESS_STAGE_LENGTH,
-    ManagedPublicPlanningRequest,
     PlanProgress,
     PlanningRequest,
     PlanningService,
     emit_progress,
 )
-import buoy_search.planning_service as planning_service
 
 
 def write_page(pages_dir: Path) -> None:
@@ -96,248 +91,39 @@ def crawl_summary(options: CrawlOptions) -> dict[str, object]:
 
 
 class PlanningServiceTests(unittest.TestCase):
-    def test_managed_website_writes_unique_verified_artifacts_with_progress(self) -> None:
+    def test_one_source_writes_one_verified_namespace_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            out_dir = root / "artifacts/command-center/plans/job-1"
-            state_root = root / "state"
-            calls: list[CrawlOptions] = []
+            out_dir = root / "plan"
             events: list[PlanProgress] = []
 
             def fake_crawl(_source: object, options: CrawlOptions) -> CrawlExecution:
-                calls.append(options)
+                write_page(options.out_dir / "pages")
                 if options.progress_callback is not None:
                     options.progress_callback("crawl: pages=1; chunks=1")
-                write_page(options.out_dir / "pages")
                 return CrawlExecution(
                     summary=crawl_summary(options),
                     indexing_plan=process_corpus(options.out_dir / "pages"),
                 )
 
-            request = ManagedPublicPlanningRequest(
-                source_url="https://example.com/docs/",
-                out_dir=out_dir,
-                state_root=state_root,
-                max_pages_or_files=7,
-                max_chunks=11,
-                namespace="review-docs-v1",
-                include_paths=("/docs/**",),
-                exclude_paths=("/docs/archive/**",),
-                originating_job_id=f"planjob_{'a' * 32}",
-            )
-            forbidden_adapters = {
-                "buoy_search.duckdb_relation",
-                "buoy_search.bigquery_relation",
-                "buoy_search.snowflake_relation",
-                "markitdown",
-            }
-            before_modules = set(sys.modules)
-            environment_get = os.environ.get
-
-            def guarded_environment_get(key: str, default: str | None = None) -> str | None:
-                if key == "TURBOPUFFER_API_KEY":
-                    raise AssertionError("turbopuffer credentials read")
-                return environment_get(key, default)
-
-            with patch.object(os.environ, "get", side_effect=guarded_environment_get), patch(
-                "buoy_search.chunker.SentenceTransformerEmbedder",
-                side_effect=AssertionError("embedding model loaded"),
-            ) as embedder:
-                result = PlanningService(crawl_runner=fake_crawl).plan(
-                    request, progress_callback=events.append
-                )
-
-            self.assertEqual(result.source_kind, "website")
-            self.assertEqual(result.summary["namespace"], "review-docs-v1")
-            self.assertFalse(result.summary["turbopuffer_credentials_required"])
-            self.assertFalse(result.summary["turbopuffer_api_calls"])
-            self.assertEqual(result.summary["originating_job_id"], f"planjob_{'a' * 32}")
-            self.assertEqual((calls[0].max_pages, calls[0].max_chunks), (7, 11))
-            self.assertEqual(calls[0].include_paths, ("/docs/**",))
-            self.assertEqual(calls[0].exclude_paths, ("/docs/archive/**",))
-            self.assertEqual(events[1].counts, {"pages": 1, "chunks": 1})
-            self.assertEqual(events[-1].stage, "complete")
-            self.assertTrue(all(len(event.stage) <= 64 and len(event.message) <= 500 for event in events))
-            self.assertEqual(
-                {"plan.json", "delta.duckdb"},
-                {path.name for path in out_dir.iterdir()},
-            )
-            plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
-            self.assertEqual(plan["schema_version"], PLAN_SCHEMA_VERSION)
-            self.assertEqual(plan["originating_job_id"], f"planjob_{'a' * 32}")
-            self.assertEqual(result.summary["originating_job_id"], f"planjob_{'a' * 32}")
-            verified = verify_plan_artifacts(out_dir / "plan.json")
-            self.assertEqual(verified.plan["plan_id"], result.summary["plan_id"])
-            self.assertEqual(verified.plan["source"], {
-                "kind": "website", "uri": "https://example.com/docs/",
-                "title": "example.com", "attributes": {},
-            })
-            self.assertFalse((state_root / "state").exists())
-            embedder.assert_not_called()
-            self.assertFalse(forbidden_adapters & (set(sys.modules) - before_modules))
-            self.assertNotIn("subprocess", inspect.getsource(planning_service))
-
-            with self.assertRaisesRegex(ValueError, "output directory already exists"):
-                PlanningService(crawl_runner=fake_crawl).plan(request)
-            self.assertEqual(len(calls), 1)
-
-    def test_private_staged_managed_plan_persists_only_logical_artifact_paths(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp).resolve()
-            out_dir = root / "artifacts/command-center/plans/job-1"
-            out_dir.mkdir(parents=True)
-            descriptor = os.open(
-                out_dir,
-                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-            )
-            write_dirs: list[Path] = []
-
-            def fake_crawl(_source: object, options: CrawlOptions) -> CrawlExecution:
-                write_dirs.append(options.out_dir)
-                write_page(options.out_dir / "pages")
-                return CrawlExecution(
-                    summary=crawl_summary(options),
-                    indexing_plan=process_corpus(options.out_dir / "pages"),
-                )
-
-            request = ManagedPublicPlanningRequest(
-                source_url="https://example.com/docs/",
-                out_dir=out_dir,
-                state_root=root / "state",
-                precreated_output_identity=(
-                    os.fstat(descriptor).st_dev,
-                    os.fstat(descriptor).st_ino,
+            result = PlanningService(
+                crawl_runner=fake_crawl,
+                cleanup_runner=lambda *_args, **_kwargs: [],
+            ).plan(
+                PlanningRequest(
+                    source="https://example.com/docs/",
+                    out_dir=out_dir,
+                    state_root=root / "state",
+                    namespace="docs-explicit-v1",
                 ),
-                precreated_output_ancestor_identities=tuple(
-                    (ancestor.stat().st_dev, ancestor.stat().st_ino)
-                    for ancestor in (root / "artifacts", root / "artifacts/command-center", out_dir.parent)
-                ),
-                precreated_output_descriptor=descriptor,
+                progress_callback=events.append,
             )
-            try:
-                result = PlanningService(crawl_runner=fake_crawl).plan(request)
-            finally:
-                os.close(descriptor)
 
-            self.assertEqual(len(write_dirs), 1)
-            self.assertNotEqual(write_dirs[0], out_dir)
-            self.assertIn("buoy-managed-plan-", write_dirs[0].name)
-            self.assertFalse(write_dirs[0].exists())
-            plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
+            self.assertEqual(result.summary["namespace"], "docs-explicit-v1")
             self.assertEqual({path.name for path in out_dir.iterdir()}, {"plan.json", "delta.duckdb"})
-            self.assertNotIn("manifest_path", plan)
-            self.assertNotIn("chunks_path", plan)
-            self.assertNotIn("pages_dir", plan)
-            self.assertNotIn("state_path", plan)
-            self.assertEqual(result.summary["out_dir"], str(out_dir))
-            self.assertEqual(result.out_dir, out_dir)
-            persisted = b"\n".join(
-                path.read_bytes()
-                for path in out_dir.rglob("*")
-                if path.is_file()
-            )
-            self.assertNotIn(b"buoy-managed-plan-", persisted)
-            self.assertNotIn(b"/dev/fd/", persisted)
-            self.assertNotIn(b"/proc/", persisted)
-
-    def test_managed_github_request_uses_current_defaults_and_rejects_advanced_forms(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            request = ManagedPublicPlanningRequest(
-                source_url="https://github.com/Doctacon/buoy",
-                out_dir=root / "job",
-                state_root=root / "state",
-            ).to_planning_request()
-
-            self.assertEqual(request.source, "https://github.com/Doctacon/buoy")
-            self.assertIsNone(request.max_pages)
-            self.assertIsNone(request.max_chunks)
-            self.assertTrue(request.require_new_output)
-            self.assertFalse(request.cleanup_superseded)
-            self.assertIsNone(request.originating_job_id)
-            with self.assertRaisesRegex(ValueError, "safe managed plan-job ID"):
-                ManagedPublicPlanningRequest(
-                    source_url="https://example.com/docs",
-                    out_dir=root / "unsafe-origin",
-                    state_root=root / "state",
-                    originating_job_id="../../../job",
-                ).to_planning_request()
-            website_with_query_and_fragment = ManagedPublicPlanningRequest(
-                source_url="https://example.com/docs?language=en#install",
-                out_dir=root / "website",
-                state_root=root / "state",
-            ).to_planning_request()
-            self.assertEqual(
-                website_with_query_and_fragment.source,
-                "https://example.com/docs?language=en",
-            )
-            exact_length_url = "https://example.com/" + "x" * (
-                MAX_MANAGED_SOURCE_URL_LENGTH - len("https://example.com/")
-            )
-            self.assertEqual(
-                ManagedPublicPlanningRequest(
-                    source_url=exact_length_url,
-                    out_dir=root / "exact",
-                    state_root=root / "state",
-                ).to_planning_request().source,
-                exact_length_url,
-            )
-            for valid_authority in (
-                "https://bücher.example/docs",
-                "https://127.0.0.1:1/docs",
-                "https://[::1]:65535/docs",
-            ):
-                with self.subTest(valid_authority=valid_authority):
-                    self.assertEqual(
-                        ManagedPublicPlanningRequest(
-                            source_url=valid_authority,
-                            out_dir=root / "valid-authority",
-                            state_root=root / "state",
-                        ).to_planning_request().source,
-                        valid_authority,
-                    )
-            for source_url in (
-                "https://github.com/Doctacon/buoy/tree/main/src",
-                "https://github.com/Doctacon/buoy/blob/main/README.md",
-                "https://user@example.com/docs",
-                "file:///tmp/document.pdf",
-                "https://example.com:bad/docs",
-                "https://example.com:99999/docs",
-                "https://example.com:0/docs",
-                "https://example.com:/docs",
-                "https://:443/docs",
-                "https://exa mple.com/docs",
-                " https://example.com/docs",
-                "https://example.com/docs\t",
-                "https://-invalid.example/docs",
-                "https://example..com/docs",
-                "https://999.999.999.999/docs",
-                "https://[v1.fe]/docs",
-                exact_length_url + "x",
-            ):
-                with self.subTest(source_url=source_url[:80]):
-                    with self.assertRaises(ValueError):
-                        ManagedPublicPlanningRequest(
-                            source_url=source_url,
-                            out_dir=root / "other",
-                            state_root=root / "state",
-                        ).to_planning_request()
-
-    def test_managed_output_rejects_dangling_symlink(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            out_dir = root / "job"
-            out_dir.symlink_to(root / "missing", target_is_directory=True)
-            request = ManagedPublicPlanningRequest(
-                source_url="https://example.com/docs/",
-                out_dir=out_dir,
-                state_root=root / "state",
-            )
-
-            with self.assertRaisesRegex(ValueError, "output directory already exists"):
-                PlanningService(
-                    crawl_runner=lambda _source, _options: self.fail("crawl must not run")
-                ).plan(request)
+            verified = verify_plan_artifacts(out_dir / "plan.json")
+            self.assertEqual(verified.plan["namespace"], "docs-explicit-v1")
+            self.assertEqual(events[-1].stage, "complete")
 
     def test_progress_stage_and_message_are_sanitized_and_bounded(self) -> None:
         events: list[PlanProgress] = []
@@ -352,7 +138,7 @@ class PlanningServiceTests(unittest.TestCase):
         self.assertEqual(len(events[0].message), MAX_PROGRESS_MESSAGE_LENGTH)
         self.assertNotRegex(events[0].stage + events[0].message, r"[\n\t]")
 
-    def test_chunks_integrity_failure_prevents_service_success(self) -> None:
+    def test_delta_integrity_failure_prevents_service_success(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             events: list[PlanProgress] = []
@@ -369,18 +155,20 @@ class PlanningServiceTests(unittest.TestCase):
                 with duckdb.connect(str(out_dir / "delta.duckdb")) as connection:
                     connection.execute("UPDATE upsert_rows SET content = 'tampered'")
 
-            request = ManagedPublicPlanningRequest(
-                source_url="https://example.com/docs/",
-                out_dir=root / "job",
+            request = PlanningRequest(
+                source="https://example.com/docs/",
+                out_dir=root / "plan",
                 state_root=root / "state",
             )
             with self.assertRaisesRegex(ValueError, "logical hash does not match"):
                 PlanningService(
-                    crawl_runner=fake_crawl, artifact_writer=corrupt_writer
+                    crawl_runner=fake_crawl,
+                    artifact_writer=corrupt_writer,
+                    cleanup_runner=lambda *_args, **_kwargs: [],
                 ).plan(request, progress_callback=events.append)
             self.assertNotIn("complete", [event.stage for event in events])
 
-    def test_unexpected_retained_output_prevents_service_success(self) -> None:
+    def test_unexpected_output_prevents_service_success(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             events: list[PlanProgress] = []
@@ -396,14 +184,16 @@ class PlanningServiceTests(unittest.TestCase):
                 write_plan_artifacts(artifacts, out_dir)
                 (out_dir / "unexpected.txt").write_text("must not persist", encoding="utf-8")
 
-            request = ManagedPublicPlanningRequest(
-                source_url="https://example.com/docs/",
-                out_dir=root / "job",
+            request = PlanningRequest(
+                source="https://example.com/docs/",
+                out_dir=root / "plan",
                 state_root=root / "state",
             )
             with self.assertRaisesRegex(ValueError, "must contain exactly"):
                 PlanningService(
-                    crawl_runner=fake_crawl, artifact_writer=corrupt_writer
+                    crawl_runner=fake_crawl,
+                    artifact_writer=corrupt_writer,
+                    cleanup_runner=lambda *_args, **_kwargs: [],
                 ).plan(request, progress_callback=events.append)
             self.assertNotIn("complete", [event.stage for event in events])
 

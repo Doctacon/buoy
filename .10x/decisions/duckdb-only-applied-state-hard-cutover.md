@@ -1,8 +1,17 @@
 Status: active
 Created: 2026-07-18
 Updated: 2026-07-18
+Amended-By: .10x/specs/focused-buoy-boundary.md
 
 # DuckDB-Only Applied-State Hard Cutover
+
+## Focused-boundary amendment
+
+This record remains active only for Buoy's local DuckDB applied-state
+authority, migration safety, locking, and content-apply ordering. Any clause
+requiring pending catalog state, catalog recovery, or a post-commit remote
+catalog write is superseded. Focused Buoy writes one content namespace and its
+local applied state only.
 
 ## Context
 

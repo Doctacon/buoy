@@ -1,100 +1,100 @@
+<p align="center">
+  <img src="images/buoy.svg" alt="Buoy" width="160">
+</p>
+
 # Buoy
 
-[![CI](https://github.com/Doctacon/buoy/actions/workflows/ci.yml/badge.svg)](https://github.com/Doctacon/buoy/actions/workflows/ci.yml)
-[![License: Apache-2.0](https://img.shields.io/github/license/Doctacon/buoy)](LICENSE)
+*Search that stays anchored to the source.* [![CI](https://github.com/Doctacon/buoy/actions/workflows/ci.yml/badge.svg)](https://github.com/Doctacon/buoy/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-<img src="src/buoy_search/command_center_static/buoy.svg" height="120" alt="Buoy navigation marker logo" />
+Buoy turns one source into one reviewed Turbopuffer search index. It can
+acquire a website, public GitHub repository, local document, or one
+document-shaped DuckDB, BigQuery, or Snowflake relation; create a compact local
+plan; apply the approved delta to one namespace; and search that namespace with
+anchored citations.
 
-Turn an HTTP(S) website, GitHub repository, local document, or already-shaped DuckDB, BigQuery, or Snowflake relation into a reviewed, incremental [turbopuffer](https://turbopuffer.com/) search index.
+Buoy is deliberately not an account-wide catalog, semantic router, ontology
+engine, or operator console. Those cross-source capabilities now belong to
+[Kite](https://github.com/Doctacon/kite).
 
-**Search that stays anchored to the source.**
-
-## Quick start
-
-Requires [uv](https://docs.astral.sh/uv/): `uv sync`
-
-Build and search a website index:
-
-```bash
-# 1. Fetch, chunk, and plan locally. No Turbopuffer credentials, embeddings, or calls.
-uv run buoy plan https://example.com/
-# 2. Verify the plan and preview its diff. Still local-only and prompt-free.
-uv run buoy apply --dry-run
-# 3. Run the normal interactive flow: preflight, then exact [y/N] confirmation.
-export TURBOPUFFER_API_KEY="..."
-uv run buoy apply
-# 4. Search through authenticated automatic remote routing.
-uv run buoy retrieve "How does this feature work?"
-```
-
-`plan` may fetch a public source, but it does not read Turbopuffer credentials, load embeddings, or contact Turbopuffer. Plain interactive `apply` displays that local preflight and writes only after exact `y`/`yes`; use `apply --dry-run` for prompt-free preflight or `apply --approve` for non-interactive automation. Retrieval is live by default and requires `TURBOPUFFER_API_KEY`; use `retrieve --dry-run` (or `--plan`) for preview. Explicit `--namespace` retrieval previews remain local-only, while automatic previews perform read-only remote discovery and catalog reads. Compatibility flag `retrieve --live` remains accepted as a no-op.
-
-## Choose a source
-
-The same workflow accepts websites, repositories, documents, and database relations:
+## Workflow
 
 ```bash
-# Website
-uv run buoy plan https://example.com/
-# Public GitHub repository
-uv run buoy plan https://github.com/owner/repository
-# Local document
-uv run buoy plan ./research-notes.pdf
-# DuckDB table or view (backend is inferred for this compatible form)
-uv run buoy plan ./knowledge.duckdb --relation main.documents --source-id product-docs
-# BigQuery table or view (Application Default Credentials)
-uv run buoy plan --database-backend bigquery \
-  --relation source-project.corpus.documents --source-id product-docs
-# Snowflake table or view (named connector connection)
-uv run buoy plan --database-backend snowflake \
-  --relation ANALYTICS.CORPUS.DOCUMENTS --source-id product-docs \
-  --snowflake-connection analytics
+# 1. Inspect one source without writing to Turbopuffer.
+buoy crawl --base-url https://example.com/docs --json
+
+# 2. Create reviewable plan.json + delta.duckdb artifacts.
+buoy plan https://example.com/docs \
+  --namespace site-example-docs-v1 \
+  --out-dir artifacts/example-plan
+
+# 3. Review locally.
+buoy apply --plan artifacts/example-plan/plan.json --dry-run
+
+# 4. Apply only after review.
+export TURBOPUFFER_API_KEY=...
+buoy apply --plan artifacts/example-plan/plan.json --approve --json
+
+# 5. Search the one explicit index.
+buoy retrieve "How does authentication work?" \
+  --namespace site-example-docs-v1
 ```
 
-Install remote warehouse support only when needed:
+Plain interactive `apply` shows the same local preflight and accepts only exact
+`y`/`yes` before live work. Automation must request `--json` to receive the
+versioned receipt and shell-safe preview/live retrieval commands; that receipt
+is Kite's integration boundary.
+
+`retrieve` and `evals` require one singular `--namespace`.
+`TURBOPUFFER_NAMESPACE` is intentionally not routing authority.
+
+## Source support
+
+- HTTP(S) websites through Scrapling, with exact-host, sitemap, language,
+  docs-version, path, and resource limits;
+- public GitHub repositories through a bounded shallow clone;
+- local PDF, DOCX, PPTX, XLS/XLSX, and other MarkItDown-supported documents;
+- one document-shaped DuckDB, BigQuery, or Snowflake table/view.
+
+Database ingestion expects an already-shaped relation with stable ID and
+content columns. Upstream extraction, transformation, replay, and warehouse
+orchestration stay outside Buoy.
+
+## Safety model
+
+- Planning never reads Turbopuffer credentials or writes to Turbopuffer.
+- Plans are content-addressed, baseline-bound, and fully reverified before
+  apply.
+- Apply acquires a namespace lock, writes only the plan's namespace, commits
+  local DuckDB state after remote success, and deletes stale IDs only when
+  explicitly requested.
+- Retrieval previews are local and credential-free.
+- Buoy performs no namespace listing, routing-catalog read/write, evidence
+  snapshot, or cross-namespace fusion.
+
+## Install and develop
+
+Buoy requires Python 3.11 or newer.
 
 ```bash
-uv sync --extra bigquery
-uv sync --extra snowflake
+uv sync --locked --python 3.13
+uv run buoy --help
+PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*.py' -q
 ```
 
-Buoy does not run dlt, dbt, SQLMesh, API extraction, or upstream transformations. Any number of normalized upstream tables may feed one final document-shaped table or view, but each Buoy command reads exactly one final relation. One row is one logical document with `document_id` and `content`, plus optional `title`; a long row may become multiple chunks and vector rows. Ordinary mappings remain available through `--id-column`, `--content-column`, and `--title-column`.
+Optional warehouse adapters:
 
-Remote `plan` and `crawl` authenticate only to the selected source warehouse and make source API calls. They do not read turbopuffer credentials or write to turbopuffer. `apply`, including `apply --dry-run`, reads only the integrity-verified saved plan and never reconnects to DuckDB, BigQuery, or Snowflake. Logical identities depend only on backend and `--source-id`, not paths, billing projects, connection profiles, credentials, job IDs, or relation contents. See [Index sources safely](docs/indexing.md) for the complete contract, BigQuery cost controls, Snowflake timeout behavior, provenance, and v1 exclusions.
+```bash
+uv sync --locked --extra bigquery
+uv sync --locked --extra snowflake
+```
 
-## What happens
+## Documentation
 
-1. **Plan** — Scrapling, git, MarkItDown, or a read-only DuckDB/BigQuery/Snowflake relation scan produces local Markdown and deterministic chunks.
-2. **Preflight** — `apply --dry-run` verifies artifacts and compares them with the local DuckDB ledger.
-3. **Confirmed apply** — plain interactive `apply` prompts after preflight; the local BGE model then embeds only new or changed chunks and turbopuffer upserts them.
-4. **Retrieve** — hybrid ANN + BM25 search returns ranked, citable source chunks.
+- [Indexing and applying](docs/indexing.md)
+- [Single-namespace retrieval](docs/retrieval.md)
+- [Evaluation](docs/evaluation.md)
+- [Buoy/Kite split and legacy-state handling](docs/kite-split.md)
+- [Migration](docs/migrating-to-buoy.md)
+- [Release process](docs/releasing.md)
 
-Schema-v2 plans live under `artifacts/` as exactly `plan.json` plus `delta.duckdb`; unchanged content is omitted. New applied state lives under `.buoy/`. Both are generated, local, and gitignored. Existing schema-v1 artifacts remain inert and are not migrated or automatically deleted. Existing users should read [Migrating from turbo-search](docs/migrating-to-buoy.md).
-## Remote evidence snapshots
-Graph Phase 3A can freeze explicitly selected applied namespaces without downloading their corpus. Run `uv run buoy evidence estimate --namespace <id>` first: turbopuffer branch storage may be billed from the source's full logical size. `evidence snapshot` creates one point-in-time branch per source, a compact remote active/retained/deleted membership ledger, one completed remote catalog row, and only a bounded local `snapshot.json`. Full content and vectors stay in turbopuffer. Identical snapshots are verified and reused; snapshots are never scheduled automatically, and this phase has no graph extraction, automatic retention, or deletion. See [Remote evidence snapshots](docs/evidence-snapshots.md).
-## Optional Command Center
-
-Run `uv sync --extra ui && uv run buoy serve` for a loopback-only local console. Inventory reads bounded schema-v2 summaries without opening deltas; selecting a plan fully verifies and paginates its changed/new chunks and stale identities. Reviews remain read-only; **Start plan** may fetch one credential-free HTTP(S) website or public GitHub repository root at a time and writes ordinary two-file local plan artifacts. Managed website planning validates HTTP(S) syntax and accepts no source credentials, but it is not a public-routability or SSRF firewall. The Command Center must remain loopback-only and under the control of the local operator.
-
-On platforms without the filesystem primitives required for safe durable jobs, the read-only Command Center still starts while managed planning and durable job history report unavailable. New jobs retain at most 5,000 durable lifecycle/progress events: one coalescing notice replaces further intermediate updates and the terminal event is always preserved. Graceful shutdown waits for an active in-process job because Phase 2A has no cancellation; genuinely interrupted process termination is recorded as `interrupted` on restart and never resumes automatically. Applying a successful plan remains a separate explicit `buoy apply --plan …` CLI action; the console has no apply, cancel, retry/resume, source-definition, local-file, database-source, delete, catalog-mutation, or graph authority. Remote refresh and search also run only when explicitly requested. See the [Command Center guide](docs/command-center.md).
-
-## Details on demand
-
-- [Index sources safely](docs/indexing.md) — source support, crawl controls, plan artifacts, incremental state, approved apply, and stale deletion.
-- [Retrieve and rank results](docs/retrieval.md) — dry runs, live search, citations, and namespace-aware ranking.
-- [Manage the remote namespace catalog](docs/catalog.md) or [freeze remote evidence](docs/evidence-snapshots.md) — authenticated routing cards plus estimate-first branch snapshots and compact membership ledgers.
-- [Evaluate search quality](docs/evaluation.md) — smoke datasets, repository metrics, and one-shot autoresearch.
-- [Migrate to Buoy 0.2](docs/migrating-to-buoy.md) — command, import, environment, state, and plan compatibility.
-- [Contribute](CONTRIBUTING.md) or [prepare a GitHub release](docs/releasing.md).
-
-The CLI is the exhaustive option reference: `uv run buoy --help` and `uv run buoy plan --help`.
-
-## Optional global command
-
-Run `uv tool install --editable . --force`, then `buoy --help`. Generated artifacts and state are created in the command's working directory.
-
-## Development
-
-Run `uv run python -m unittest discover -s tests -p 'test_*.py'`.
-
-Licensed under [Apache-2.0](LICENSE).
+Buoy is licensed under Apache-2.0.

@@ -26,7 +26,11 @@ If this skill is installed globally by symlink, resolve the symlink target to fi
 )
 ```
 
-Do not print, persist, or copy the key. `TURBOPUFFER_REGION`, `TURBOPUFFER_NAMESPACE`, `BUOY_EMBEDDING_MODEL`, and `BUOY_EMBEDDING_PRECISION` remain optional non-secret environment overrides; CLI flags can override them for retrieval/evals. Apply always uses the precision recorded in its reviewed plan.
+Do not print, persist, or copy the key. `TURBOPUFFER_REGION`,
+`BUOY_EMBEDDING_MODEL`, and `BUOY_EMBEDDING_PRECISION` remain optional
+non-secret environment overrides. Retrieval and evals require exactly one
+explicit CLI `--namespace`; `TURBOPUFFER_NAMESPACE` is not routing authority.
+Apply uses the namespace and precision recorded in its reviewed plan.
 
 ## Compact applied state
 

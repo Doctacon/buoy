@@ -83,23 +83,7 @@ class DuckDBRelationCliTests(unittest.TestCase):
             self.assertTrue(payload["document_limit_reached"])
             self.assertFalse(payload["credentials_required"])
             self.assertFalse(payload["turbopuffer_api_calls"])
-            self.assertEqual(
-                payload["catalog_registration"],
-                {
-                    "action": "unknown_until_approved",
-                    "catalog_namespace": "buoy-routing-catalog-v1",
-                    "manual_semantics_preservation": "unknown_until_approved",
-                    "namespace": "duckdb-gong-calls-v1",
-                    "ranking_aggregation": "max",
-                    "ranking_mode": "page",
-                    "ranking_pool": 20,
-                    "ranking_profile": "none",
-                    "region": "gcp-us-central1",
-                    "remote_catalog_state": "unknown_until_approved",
-                    "source_kind": "database",
-                    "vector_dimensions": 384,
-                },
-            )
+            self.assertNotIn("catalog_registration", payload)
             plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
             verified = verify_plan_artifacts(out_dir / "plan.json")
             self.assertEqual({path.name for path in out_dir.iterdir()}, {"plan.json", "delta.duckdb"})

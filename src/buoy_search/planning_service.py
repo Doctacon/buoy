@@ -2,24 +2,19 @@
 
 The service materializes source content and writes verified review artifacts. It
 never embeds content, reads turbopuffer credentials, calls turbopuffer, or
-updates applied state or routing catalogs.
+updates applied state.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
-import json
-import os
 from pathlib import Path
 import re
 import shutil
-import stat
-import tempfile
-from typing import Any, Callable, Literal
+from typing import Any, Callable
 
 from buoy_search.applied_state import applied_state_paths, load_applied_state
-from buoy_search.config import DEFAULT_EMBEDDING_PRECISION, DEFAULT_REGION
+from buoy_search.config import DEFAULT_EMBEDDING_PRECISION
 from buoy_search.crawler import (
     DEFAULT_CRAWL_CONCURRENT_REQUESTS,
     DEFAULT_CRAWL_CONCURRENT_REQUESTS_PER_DOMAIN,
@@ -57,18 +52,12 @@ from buoy_search.plan_artifacts import (
 )
 from buoy_search.plan_cleanup import cleanup_superseded_plan_directories
 from buoy_search.plan_diff import IncrementalPlanDiff
-from buoy_search.source_url import validate_http_url_authority
-from buoy_search.remote_catalog import REMOTE_CATALOG_NAMESPACE
-from buoy_search.retriever import ranking_defaults_for_namespace
 
 JsonObject = dict[str, Any]
-SourceKind = Literal["website", "github_repo"]
-MAX_MANAGED_SOURCE_URL_LENGTH = 2_048
 MAX_PROGRESS_STAGE_LENGTH = 64
 MAX_PROGRESS_MESSAGE_LENGTH = 500
 _COUNT_PATTERN = re.compile(r"(?:^|[;\s])([a-z][a-z0-9_]*)=(\d+)(?=$|[;/\s])")
 _DATABASE_KINDS = {"duckdb_relation", "bigquery_relation", "snowflake_relation"}
-_MANAGED_JOB_ID = re.compile(r"planjob_[0-9a-f]{32}")
 
 
 @dataclass(frozen=True)
@@ -122,60 +111,6 @@ class PlanningRequest:
     bigquery_maximum_bytes_billed: int | None = None
     snowflake_connection: str | None = None
     source_query_timeout: float | None = None
-    require_new_output: bool = False
-    cleanup_superseded: bool = True
-    precreated_output_identity: tuple[int, int] | None = None
-    precreated_output_ancestor_identities: tuple[tuple[int, int], ...] = ()
-    precreated_output_descriptor: int | None = None
-    originating_job_id: str | None = None
-
-
-@dataclass(frozen=True)
-class ManagedPublicPlanningRequest:
-    """Narrow request for one credential-free HTTP(S) or public GitHub source."""
-
-    source_url: str
-    out_dir: Path
-    state_root: Path
-    max_pages_or_files: int | None = None
-    max_chunks: int | None = None
-    namespace: str | None = None
-    include_paths: tuple[str, ...] = ()
-    exclude_paths: tuple[str, ...] = ()
-    precreated_output_identity: tuple[int, int] | None = None
-    precreated_output_ancestor_identities: tuple[tuple[int, int], ...] = ()
-    precreated_output_descriptor: int | None = None
-    originating_job_id: str | None = None
-
-    def to_planning_request(self) -> PlanningRequest:
-        source = validate_managed_public_source(self.source_url)
-        if (
-            self.originating_job_id is not None
-            and _MANAGED_JOB_ID.fullmatch(self.originating_job_id) is None
-        ):
-            raise ValueError("originating_job_id must be a safe managed plan-job ID")
-        for name, value in (
-            ("max_pages_or_files", self.max_pages_or_files),
-            ("max_chunks", self.max_chunks),
-        ):
-            if value is not None and (type(value) is not int or value <= 0):
-                raise ValueError(f"{name} must be a positive integer")
-        return PlanningRequest(
-            source=source.base_url,
-            state_root=Path(self.state_root),
-            out_dir=Path(self.out_dir),
-            namespace=self.namespace,
-            max_pages=self.max_pages_or_files,
-            max_chunks=self.max_chunks,
-            include_paths=tuple(self.include_paths),
-            exclude_paths=tuple(self.exclude_paths),
-            require_new_output=True,
-            cleanup_superseded=False,
-            precreated_output_identity=self.precreated_output_identity,
-            precreated_output_ancestor_identities=self.precreated_output_ancestor_identities,
-            precreated_output_descriptor=self.precreated_output_descriptor,
-            originating_job_id=self.originating_job_id,
-        )
 
 
 @dataclass(frozen=True)
@@ -217,45 +152,11 @@ class PlanningService:
 
     def plan(
         self,
-        request: PlanningRequest | ManagedPublicPlanningRequest,
+        request: PlanningRequest,
         *,
         progress_callback: ProgressCallback | None = None,
     ) -> PlanningResult:
-        if isinstance(request, ManagedPublicPlanningRequest):
-            request = request.to_planning_request()
-        if request.precreated_output_identity is None:
-            result = self._plan_to_directory(request, progress_callback=progress_callback)
-        else:
-            validate_precreated_output(request, require_empty=True)
-            staging_path, staging_descriptor = create_private_staging_directory()
-            published = False
-            try:
-                result = self._plan_to_directory(
-                    request,
-                    progress_callback=progress_callback,
-                    write_out_dir=staging_path,
-                )
-                copy_staged_artifacts(
-                    request,
-                    staging_descriptor,
-                    require_complete=True,
-                )
-                published = True
-                validate_precreated_output(request)
-            except Exception:
-                if not published:
-                    try:
-                        copy_staged_artifacts(
-                            request,
-                            staging_descriptor,
-                            require_complete=False,
-                        )
-                    except Exception:
-                        pass
-                raise
-            finally:
-                os.close(staging_descriptor)
-                shutil.rmtree(staging_path, ignore_errors=True)
+        result = self._plan_to_directory(request, progress_callback=progress_callback)
         emit_progress(
             progress_callback,
             "complete",
@@ -272,7 +173,6 @@ class PlanningService:
         request: PlanningRequest,
         *,
         progress_callback: ProgressCallback | None,
-        write_out_dir: Path | None = None,
     ) -> PlanningResult:
         source = source_from_request(request)
         base_url = str(getattr(source, "base_url"))
@@ -294,20 +194,11 @@ class PlanningService:
                 else DEFAULT_CRAWL_MAX_CHUNKS
             )
         out_dir = request.out_dir or default_plan_out_dir(source, base_url)
-        write_out_dir = write_out_dir or out_dir
-        if request.require_new_output:
-            if request.precreated_output_identity is None:
-                if out_dir.exists() or out_dir.is_symlink():
-                    raise ValueError(f"managed plan output directory already exists: {out_dir}")
-            else:
-                validate_precreated_output(request, require_empty=True)
-                if write_out_dir == out_dir:
-                    raise ValueError("managed plan output requires a private staging directory")
 
         emit_progress(progress_callback, "plan: preparing", f"plan: preparing {base_url}")
         options = CrawlOptions(
             base_url=base_url,
-            out_dir=write_out_dir,
+            out_dir=out_dir,
             max_pages=max_pages,
             max_chunks=max_chunks,
             repo_max_file_bytes=request.repo_max_file_bytes,
@@ -335,12 +226,7 @@ class PlanningService:
         )
         plan_started_at = observe_monotonic()
         crawl_execution = self._crawl_runner(source, options)
-        validate_precreated_output(request)
         crawl_summary = crawl_execution.summary
-        if write_out_dir != out_dir:
-            # Persist stable logical paths, never the process-local descriptor alias.
-            crawl_summary["out_dir"] = str(out_dir)
-            crawl_summary["pages_dir"] = str(out_dir / "pages")
         namespace = request.namespace or str(crawl_summary["namespace_candidate"])
 
         site_id = site_id_for_url(base_url)
@@ -374,24 +260,16 @@ class PlanningService:
             applied_state=state,
             state_present=state_present,
             source_summary=crawl_summary,
-            originating_job_id=request.originating_job_id,
         )
         diff = artifacts.diff
         diff_seconds = elapsed_since(diff_started_at)
         artifact_seconds = elapsed_since(artifact_started_at)
-        catalog_preview = plan_catalog_registration_preview(
-            artifacts,
-            region=os.environ.get("TURBOPUFFER_REGION", DEFAULT_REGION),
-        )
-
         emit_progress(progress_callback, "write", "plan: writing review artifacts")
-        validate_precreated_output(request)
         publication_started_at = observe_monotonic()
-        self._artifact_writer(artifacts, write_out_dir)
-        remove_source_staging(write_out_dir)
-        if {path.name for path in write_out_dir.iterdir()} != {"plan.json", "delta.duckdb"}:
+        self._artifact_writer(artifacts, out_dir)
+        remove_source_staging(out_dir)
+        if {path.name for path in out_dir.iterdir()} != {"plan.json", "delta.duckdb"}:
             raise ValueError("successful compact plan output must contain exactly plan.json and delta.duckdb")
-        validate_precreated_output(request)
         publication_seconds = elapsed_since(publication_started_at)
 
         source_timing = crawl_summary.get("timing")
@@ -417,22 +295,16 @@ class PlanningService:
             artifacts=artifacts,
             diff=diff,
             state_first_apply=state.first_apply,
-            catalog_registration=catalog_preview,
-            originating_job_id=request.originating_job_id,
         )
-        validate_precreated_output(request)
         self._artifact_verifier(
-            write_out_dir / "plan.json", request.state_root, artifacts.plan.plan_id
+            out_dir / "plan.json", request.state_root, artifacts.plan.plan_id
         )
-        validate_precreated_output(request)
 
-        warnings: list[str] = []
-        if request.cleanup_superseded:
-            warnings = self._cleanup_runner(
-                out_dir / "plan.json",
-                namespace=namespace,
-                state_root=request.state_root,
-            )
+        warnings = self._cleanup_runner(
+            out_dir / "plan.json",
+            namespace=namespace,
+            state_root=request.state_root,
+        )
         return PlanningResult(
             summary=summary,
             artifacts=artifacts,
@@ -441,266 +313,6 @@ class PlanningService:
             source_kind=str(getattr(source, "kind", "unknown")),
             cleanup_warnings=tuple(warnings),
         )
-
-
-def validate_precreated_output(
-    request: PlanningRequest, *, require_empty: bool = False
-) -> None:
-    """Fail closed if a descriptor-created managed output path was replaced."""
-
-    identity = request.precreated_output_identity
-    if identity is None:
-        return
-    out_dir = request.out_dir
-    descriptor = request.precreated_output_descriptor
-    if out_dir is None or descriptor is None:
-        raise ValueError("managed precreated output requires a held directory descriptor")
-    try:
-        opened = os.fstat(descriptor)
-    except OSError as exc:
-        raise ValueError("managed plan output descriptor is unavailable") from exc
-    if not stat.S_ISDIR(opened.st_mode) or (opened.st_dev, opened.st_ino) != identity:
-        raise ValueError("managed plan output descriptor is unsafe or was replaced")
-    ancestors = request.precreated_output_ancestor_identities
-    if len(ancestors) != 3:
-        raise ValueError("managed plan output directory has no verified ancestry")
-    for ancestor, expected in zip(
-        (out_dir.parents[2], out_dir.parents[1], out_dir.parents[0]),
-        ancestors,
-        strict=True,
-    ):
-        try:
-            current_ancestor = os.lstat(ancestor)
-        except OSError as exc:
-            raise ValueError(
-                "managed plan output ancestry is unavailable or was replaced"
-            ) from exc
-        if (
-            not stat.S_ISDIR(current_ancestor.st_mode)
-            or stat.S_ISLNK(current_ancestor.st_mode)
-            or (current_ancestor.st_dev, current_ancestor.st_ino) != expected
-        ):
-            raise ValueError("managed plan output ancestry is unsafe or was replaced")
-    try:
-        current = os.lstat(out_dir)
-    except OSError as exc:
-        raise ValueError("managed plan output directory is unavailable or was replaced") from exc
-    if (
-        not stat.S_ISDIR(current.st_mode)
-        or stat.S_ISLNK(current.st_mode)
-        or (current.st_dev, current.st_ino) != identity
-    ):
-        raise ValueError("managed plan output directory is unsafe or was replaced")
-    if require_empty:
-        if os.listdir not in os.supports_fd:
-            raise ValueError("managed descriptor-relative directory inspection is unsupported")
-        try:
-            if os.listdir(descriptor):
-                raise ValueError("managed plan output directory is not empty")
-        except OSError as exc:
-            raise ValueError("managed plan output directory could not be inspected safely") from exc
-
-
-_MANAGED_ARTIFACT_FILES = frozenset({"plan.json", "delta.duckdb"})
-_MANAGED_ARTIFACT_ROOTS = _MANAGED_ARTIFACT_FILES
-
-
-def create_private_staging_directory() -> tuple[Path, int]:
-    """Create and retain one private directory for existing path-based writers."""
-
-    path = Path(tempfile.mkdtemp(prefix="buoy-managed-plan-"))
-    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
-    try:
-        os.chmod(path, 0o700)
-        descriptor = os.open(path, flags)
-        opened = os.fstat(descriptor)
-        current = os.lstat(path)
-        if (
-            not stat.S_ISDIR(opened.st_mode)
-            or stat.S_ISLNK(current.st_mode)
-            or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
-            or opened.st_mode & 0o077
-        ):
-            os.close(descriptor)
-            raise ValueError("managed plan staging directory is unsafe")
-        return path, descriptor
-    except Exception:
-        shutil.rmtree(path, ignore_errors=True)
-        raise
-
-
-def copy_staged_artifacts(
-    request: PlanningRequest,
-    staging_descriptor: int,
-    *,
-    require_complete: bool,
-) -> None:
-    """Copy only ordinary review artifacts into the held final directory."""
-
-    destination = request.precreated_output_descriptor
-    if destination is None:
-        raise ValueError("managed plan output requires a held directory descriptor")
-    source_names = set(os.listdir(staging_descriptor))
-    selected = source_names & _MANAGED_ARTIFACT_ROOTS
-    if require_complete and selected != _MANAGED_ARTIFACT_ROOTS:
-        raise ValueError("managed plan staging artifacts are incomplete")
-    if os.listdir(destination):
-        if require_complete:
-            raise ValueError("managed plan output directory is not empty")
-        return
-    for name in sorted(selected):
-        _copy_staged_file(staging_descriptor, destination, name)
-    _fsync_directory_descriptor(destination)
-    source_hashes = _ordinary_tree_hashes(staging_descriptor, selected)
-    destination_hashes = _ordinary_tree_hashes(destination, selected)
-    if source_hashes != destination_hashes or set(os.listdir(destination)) != selected:
-        raise ValueError("managed plan artifacts failed post-copy integrity verification")
-
-
-def _copy_staged_directory(source_parent: int, destination_parent: int, name: str) -> None:
-    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
-    source = os.open(name, flags, dir_fd=source_parent)
-    try:
-        opened = os.fstat(source)
-        if not stat.S_ISDIR(opened.st_mode):
-            raise ValueError("managed plan staging artifact is not an ordinary directory")
-        os.mkdir(name, 0o700, dir_fd=destination_parent)
-        destination = os.open(name, flags, dir_fd=destination_parent)
-        try:
-            for child in sorted(os.listdir(source)):
-                child_stat = os.stat(child, dir_fd=source, follow_symlinks=False)
-                if stat.S_ISDIR(child_stat.st_mode):
-                    _copy_staged_directory(source, destination, child)
-                elif stat.S_ISREG(child_stat.st_mode):
-                    _copy_staged_file(source, destination, child)
-                else:
-                    raise ValueError("managed plan staging artifact is not ordinary")
-            _fsync_directory_descriptor(destination)
-        finally:
-            os.close(destination)
-    finally:
-        os.close(source)
-
-
-def _copy_staged_file(source_parent: int, destination_parent: int, name: str) -> None:
-    source = os.open(
-        name,
-        os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0),
-        dir_fd=source_parent,
-    )
-    try:
-        source_stat = os.fstat(source)
-        if not stat.S_ISREG(source_stat.st_mode) or source_stat.st_nlink != 1:
-            raise ValueError("managed plan staging artifact is not a private regular file")
-        destination = os.open(
-            name,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0),
-            0o600,
-            dir_fd=destination_parent,
-        )
-        try:
-            while True:
-                block = os.read(source, 64 * 1024)
-                if not block:
-                    break
-                offset = 0
-                while offset < len(block):
-                    written = os.write(destination, block[offset:])
-                    if written <= 0:
-                        raise OSError("managed artifact copy made no progress")
-                    offset += written
-            os.fsync(destination)
-            copied = os.fstat(destination)
-            if not stat.S_ISREG(copied.st_mode) or copied.st_nlink != 1:
-                raise ValueError("managed plan destination artifact is not a private regular file")
-        finally:
-            os.close(destination)
-    finally:
-        os.close(source)
-
-
-def _ordinary_tree_hashes(directory: int, roots: set[str]) -> dict[str, str]:
-    hashes: dict[str, str] = {}
-    for name in sorted(roots):
-        _collect_ordinary_hashes(directory, name, name, hashes)
-    return hashes
-
-
-def _collect_ordinary_hashes(
-    parent: int,
-    name: str,
-    relative: str,
-    hashes: dict[str, str],
-) -> None:
-    opened = os.stat(name, dir_fd=parent, follow_symlinks=False)
-    if stat.S_ISDIR(opened.st_mode):
-        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
-        descriptor = os.open(name, flags, dir_fd=parent)
-        try:
-            bound = os.fstat(descriptor)
-            if (bound.st_dev, bound.st_ino) != (opened.st_dev, opened.st_ino):
-                raise ValueError("managed plan artifact directory was replaced during verification")
-            hashes[f"{relative}/"] = "directory"
-            for child in sorted(os.listdir(descriptor)):
-                _collect_ordinary_hashes(descriptor, child, f"{relative}/{child}", hashes)
-        finally:
-            os.close(descriptor)
-        return
-    if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
-        raise ValueError("managed plan artifact tree contains a non-ordinary entry")
-    descriptor = os.open(
-        name,
-        os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0),
-        dir_fd=parent,
-    )
-    try:
-        bound = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(bound.st_mode)
-            or bound.st_nlink != 1
-            or (bound.st_dev, bound.st_ino) != (opened.st_dev, opened.st_ino)
-        ):
-            raise ValueError("managed plan artifact file was replaced during verification")
-        digest = hashlib.sha256()
-        while True:
-            block = os.read(descriptor, 64 * 1024)
-            if not block:
-                break
-            digest.update(block)
-        hashes[relative] = digest.hexdigest()
-    finally:
-        os.close(descriptor)
-
-
-def _fsync_directory_descriptor(descriptor: int) -> None:
-    try:
-        os.fsync(descriptor)
-    except OSError as exc:
-        raise ValueError("managed plan artifact directory could not be synced") from exc
-
-
-def validate_managed_public_source(source_url: str) -> object:
-    """Validate a credential-free HTTP(S) website or public GitHub repository root."""
-
-    if not isinstance(source_url, str) or not source_url.strip():
-        raise ValueError("source_url must be a non-empty HTTP(S) URL")
-    if len(source_url) > MAX_MANAGED_SOURCE_URL_LENGTH:
-        raise ValueError(
-            f"source_url must be at most {MAX_MANAGED_SOURCE_URL_LENGTH} characters"
-        )
-    validate_http_url_authority(source_url)
-    source = detect_source(source_url)
-    if isinstance(source, GitHubRepoSource) and (
-        source.tree_ref is not None or source.blob_hint is not None
-    ):
-        raise ValueError("managed GitHub source_url must be a repository root URL")
-    if getattr(source, "kind", None) not in {"website", "github_repo"}:
-        raise ValueError(
-            "managed source_url must identify a credential-free HTTP(S) website or public GitHub repository root"
-        )
-    return source
-
-
 def source_from_request(request: PlanningRequest) -> object:
     """Detect one source, importing database adapters only for requested database modes."""
 
@@ -899,7 +511,6 @@ def plan_summary(
     artifacts: PlanArtifacts,
     diff: IncrementalPlanDiff,
     state_first_apply: bool,
-    catalog_registration: JsonObject | None = None,
     originating_job_id: str | None = None,
 ) -> JsonObject:
     plan_dict = artifacts.plan_dict()
@@ -935,41 +546,9 @@ def plan_summary(
             **diff_summary,
         }
     )
-    if catalog_registration is not None:
-        summary["catalog_registration"] = catalog_registration
     if originating_job_id is not None:
         summary["originating_job_id"] = originating_job_id
     return summary
-
-
-def plan_catalog_registration_preview(
-    artifacts: PlanArtifacts,
-    *,
-    region: str,
-) -> JsonObject:
-    source_kind = {
-        "website": "website",
-        "github_repo": "github_repo",
-        "local_file": "document",
-        "pdf": "document",
-        "duckdb_relation": "database",
-        "bigquery_relation": "database",
-        "snowflake_relation": "database",
-    }[str(artifacts.plan.source["kind"])]
-    ranking = ranking_defaults_for_namespace(
-        artifacts.plan.namespace, source_kind=source_kind
-    )
-    return {
-        "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
-        "namespace": artifacts.plan.namespace,
-        "action": "unknown_until_approved",
-        "remote_catalog_state": "unknown_until_approved",
-        "manual_semantics_preservation": "unknown_until_approved",
-        "source_kind": source_kind,
-        "region": region,
-        "vector_dimensions": 384,
-        **ranking,
-    }
 
 
 def verify_written_plan(plan_path: Path, state_root: Path, expected_plan_id: str) -> None:

@@ -1,4 +1,4 @@
-"""Apply helpers for generic site RAG plans.
+"""Apply helpers for focused source-index plans.
 
 Preflight verification is local-only: it reads plan artifacts and local state,
 but does not read credentials, load embedding models, or call turbopuffer.
@@ -35,37 +35,12 @@ from buoy_search.applied_state import (
     save_applied_state,
 )
 from buoy_search.config import DEFAULT_REGION, RuntimeConfig
-from buoy_search.chunker import SentenceTransformerEmbedder, TurbopufferWriter, batched
-from buoy_search.catalog import (
-    CardFields,
-    CatalogError,
-    NamespaceCard,
-    generated_semantics,
-    parse_card,
-    prepare_prospective_card,
+from buoy_search.chunker import (
+    VECTOR_DIMENSIONS,
+    SentenceTransformerEmbedder,
+    TurbopufferWriter,
+    batched,
 )
-from buoy_search.catalog_pending import (
-    CatalogCommitPartialSuccess,
-    applied_state_hash,
-    build_pending_payload,
-    confirm_pending,
-    create_pending,
-    inspect_apply_collision,
-    load_pending_snapshot,
-    pending_path_for_plan,
-    reconcile_command,
-    remove_expected_pending,
-)
-from buoy_search.remote_catalog import (
-    REMOTE_CATALOG_NAMESPACE,
-    CompatibilityContract,
-    RemoteCatalogError,
-    create_client,
-    create_remote_cards,
-    read_remote_catalog,
-    update_remote_card,
-)
-from buoy_search.retriever import ranking_defaults_for_namespace
 from buoy_search.plan_artifacts import (
     GENERIC_SITE_TURBOPUFFER_SCHEMA,
     MAX_PLAN_JSON_BYTES,
@@ -83,10 +58,10 @@ from buoy_search.plan_diff import (
     IncrementalPlanDiff,
     StateRowDiffRecord,
 )
+from buoy_search.retriever import ranking_defaults_for_namespace
 
 JsonObject = dict[str, Any]
 DEFAULT_APPLY_PLAN_SEARCH_ROOT = Path("artifacts/site-crawls")
-REMOTE_CATALOG_CLIENT_FACTORY = create_client
 
 
 class ApplyPlanError(ValueError):
@@ -536,121 +511,10 @@ def apply_preflight_summary(
             rows_deleted=0,
             state_updated=False,
             api_calls_occurred=False,
-            catalog_registration=catalog_registration_preview(
-                verified,
-                namespace=namespace,
-                region=region,
-            ),
         ),
         "cancelled": False,
         "confirmation": "not_requested",
-        "catalog_updated": False,
     }
-
-
-def verified_source_metadata(verified: VerifiedApplyPlan) -> list[dict[str, str]]:
-    """Project catalog metadata solely from the verified plan-level source."""
-
-    source = verified.plan["source"]
-    kind = str(source["kind"])
-    attrs = source["attributes"]
-    if kind == "website":
-        return []
-    if kind == "github_repo":
-        return [{"source_kind": kind, **{
-            key: str(attrs[key])
-            for key in ("repo_full_name", "repo_owner", "repo_name", "repo_ref", "commit_sha")
-        }}]
-    if kind == "local_file":
-        return [{
-            "source_kind": kind,
-            "file_filename": str(attrs["filename"]),
-            "file_extension": str(attrs["extension"]),
-            "file_sha256": str(attrs["sha256"]),
-            "file_source_id": str(attrs["source_id"]),
-        }]
-    if kind == "pdf":
-        return [{
-            "source_kind": kind,
-            "pdf_filename": str(attrs["filename"]),
-            "pdf_sha256": str(attrs["sha256"]),
-            "pdf_source_id": str(attrs["source_id"]),
-        }]
-    return [{
-        "source_kind": kind,
-        "database_backend": str(attrs["database_backend"]),
-        "database_source_id": str(attrs["database_source_id"]),
-        "database_relation": str(attrs["database_relation"]),
-    }]
-
-
-def catalog_registration_preview(
-    verified: VerifiedApplyPlan,
-    *,
-    namespace: str,
-    region: str,
-) -> JsonObject:
-    """Build a credential/API/model-free remote registration preview."""
-    semantics = generated_semantics(
-        base_url=str(verified.plan["source"]["uri"]),
-        site_id=str(verified.plan["site_id"]),
-        plan_schema_version=int(verified.plan["schema_version"]),
-        source_metadata=verified_source_metadata(verified),
-    )
-    ranking = ranking_defaults_for_namespace(namespace, source_kind=semantics.source_kind)
-    return {
-        "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
-        "namespace": namespace,
-        "action": "unknown_until_approved",
-        "remote_catalog_state": "unknown_until_approved",
-        "manual_semantics_preservation": "unknown_until_approved",
-        "source_kind": semantics.source_kind,
-        "region": region,
-        "vector_dimensions": 384,
-        **ranking,
-    }
-
-
-def prospective_card_for_apply(
-    verified: VerifiedApplyPlan,
-    *,
-    namespace: str,
-    region: str,
-    existing: NamespaceCard | None,
-) -> NamespaceCard:
-    """Validate and embed the complete pre-remote catalog card."""
-
-    semantics = generated_semantics(
-        base_url=str(verified.plan["source"]["uri"]),
-        site_id=str(verified.plan["site_id"]),
-        plan_schema_version=int(verified.plan["schema_version"]),
-        source_metadata=verified_source_metadata(verified),
-    )
-    manual = existing is not None and existing.semantic_origin == "manual"
-    ranking = ranking_defaults_for_namespace(namespace, source_kind=semantics.source_kind)
-    fields = CardFields(
-        namespace=namespace,
-        enabled=existing.enabled if existing is not None else True,
-        source_kind=semantics.source_kind,
-        source_uri=semantics.source_uri,
-        site_id=str(verified.plan["site_id"]),
-        title=existing.title if manual else semantics.title,
-        summary=existing.summary if manual else semantics.summary,
-        aliases=list(existing.aliases if manual else semantics.aliases),
-        tags=list(existing.tags if manual else semantics.tags),
-        semantic_origin="manual" if manual else "generated",
-        region=region,
-        embedding_model=str(verified.plan["embedding_model"]),
-        embedding_precision=str(verified.plan.get("embedding_precision", "float32")),
-        plan_schema_version=int(verified.plan["schema_version"]),
-        ranking_mode=str(ranking["ranking_mode"]),
-        ranking_profile=str(ranking["ranking_profile"]),
-        ranking_pool=int(ranking["ranking_pool"]),
-        ranking_aggregation=str(ranking["ranking_aggregation"]),
-        last_plan_id=str(verified.plan["plan_id"]),
-        last_apply_id=None,
-    )
-    return prepare_prospective_card(fields, existing=existing)
 
 
 def run_approved_apply(
@@ -665,7 +529,7 @@ def run_approved_apply(
     monotonic: Callable[[], float] = time.monotonic,
     cleanup_binding_callback: Callable[[ApplyCleanupBinding], None] | None = None,
 ) -> JsonObject:
-    """Reverify under lock, then run one delta-only apply and catalog commit."""
+    """Reverify under lock, then apply one exact delta to one namespace."""
 
     def emit_progress(message: str) -> None:
         if progress_callback is None:
@@ -711,74 +575,13 @@ def run_approved_apply(
         if delete_stale and not stale_row_ids:
             raise ApplyPlanError("Cannot run --delete-stale because the recomputed diff has no stale rows.")
         plan_id = str(verified.plan["plan_id"])
-        pending_path = pending_path_for_plan(verified.state_root, plan_id)
-        resolved_state_root = verified.state_root.expanduser().resolve(strict=False)
-        state_path = applied_state_paths(
-            site_id=str(verified.plan["site_id"]),
-            namespace=namespace,
-            state_root=verified.state_root,
-        ).database_path.resolve(strict=False)
-        inspect_apply_collision(
-            pending_path,
-            expected={
-                "state_root": str(resolved_state_root),
-                "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
-                "applied_state_path": str(state_path),
-                "site_id": str(verified.plan["site_id"]),
-                "namespace": namespace,
-                "plan_id": plan_id,
-                "base_url": str(verified.plan["source"]["uri"]),
-            },
-        )
-
-        # Validate and project the generated candidate before credentials or API work.
-        prospective_card_for_apply(
-            verified, namespace=namespace, region=config.region, existing=None
-        )
         api_key = os.environ.get("TURBOPUFFER_API_KEY")
         if not api_key:
             raise RuntimeError("TURBOPUFFER_API_KEY must be set in the environment for approved apply.")
-        remote_client = REMOTE_CATALOG_CLIENT_FACTORY(api_key=api_key, region=config.region)
-        compatibility = CompatibilityContract(
-            region=config.region,
-            embedding_model=config.embedding_model,
-            embedding_precision=config.embedding_precision,
-        )
-        remote_snapshot = read_remote_catalog(
-            remote_client, region=config.region, compatibility=compatibility
-        )
-        existing_card = next(
-            (card for card in remote_snapshot.cards if card.namespace == namespace), None
-        )
-        prospective = prospective_card_for_apply(
-            verified, namespace=namespace, region=config.region, existing=existing_card
-        )
         applied_at = datetime.now(timezone.utc).isoformat()
-        apply_id = make_apply_id(plan_id, applied_at)
         next_state = build_state_after_apply(
             verified, applied_at=applied_at, delete_stale=delete_stale
         )
-        if next_state.last_apply_id != apply_id:
-            raise ApplyPlanError("precomputed apply identity changed before pending creation")
-        ranking = ranking_defaults_for_namespace(
-            namespace, source_kind=prospective.source_kind
-        )
-        pending = build_pending_payload(
-            state_root=resolved_state_root,
-            applied_state_path=state_path,
-            site_id=str(verified.plan["site_id"]),
-            namespace=namespace,
-            plan_id=plan_id,
-            base_url=str(verified.plan["source"]["uri"]),
-            prospective_card=prospective,
-            existing_card=existing_card,
-            prior_applied_plan_id=(None if verified.state.first_apply else verified.state.last_plan_id),
-            prior_applied_apply_id=(None if verified.state.first_apply else verified.state.last_apply_id),
-            intended_state_hash=applied_state_hash(next_state),
-            region=config.region,
-            ranking_contract=ranking,
-        )
-        create_pending(pending_path, pending)
 
         rows_to_upsert = [verified.chunks_by_row_id[record.row_id] for record in verified.diff.rows_to_upsert_records]
         rows_written = 0
@@ -873,8 +676,6 @@ def run_approved_apply(
             )
 
         emit_progress("apply: committing local state")
-        if applied_state_hash(next_state) != pending["intended_state_hash"]:
-            raise ApplyPlanError("precomputed applied-state identity changed before state commit")
         save_applied_state(
             next_state,
             state_root=verified.state_root,
@@ -888,7 +689,7 @@ def run_approved_apply(
             ),
         )
 
-        base_summary = build_apply_summary(
+        summary = build_apply_summary(
             verified=verified,
             namespace=namespace,
             region=config.region,
@@ -898,7 +699,7 @@ def run_approved_apply(
             embeddings_generated=embeddings_generated,
             rows_deleted=rows_deleted,
             state_updated=True,
-            api_calls_occurred=True,
+            api_calls_occurred=bool(rows_written or rows_deleted),
             timing={
                 "elapsed_seconds": elapsed_since(apply_started_at),
                 "embedding_seconds": embedding_seconds,
@@ -909,81 +710,6 @@ def run_approved_apply(
                 "pipeline_mode": "depth_one",
             },
         )
-        try:
-            confirmed = confirm_pending(pending_path, pending, apply_id=apply_id)
-            confirmed_snapshot = load_pending_snapshot(pending_path)
-            if confirmed_snapshot.payload != confirmed:
-                raise ValueError("confirmed pending catalog registration changed unexpectedly")
-            card = parse_card(confirmed["prospective_card"])
-            resource = remote_client.namespace(REMOTE_CATALOG_NAMESPACE)
-            mutation = (
-                create_remote_cards(resource, [card], region=config.region)
-                if existing_card is None
-                else update_remote_card(
-                    resource, card,
-                    expected_revision=existing_card.card_revision,
-                    region=config.region,
-                )
-            )
-            committed = mutation.card
-            if committed is None or committed.card_revision != card.card_revision:
-                raise RemoteCatalogError("verified remote card mutation returned an unexpected card")
-        except (RemoteCatalogError, CatalogError, OSError, ValueError) as exc:
-            partial = {
-                **base_summary,
-                "content_applied": True,
-                "remote_apply_succeeded": True,
-                "catalog_updated": False,
-                "catalog_snapshot_complete": False,
-                "pending_cleanup": False,
-                "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
-                "pending_path": str(pending_path),
-                "catalog_repair_command": reconcile_command(pending_path),
-            }
-            raise CatalogCommitPartialSuccess(str(exc), partial) from exc
-
-        committed_summary = {
-            **base_summary,
-            "content_applied": True,
-            "remote_apply_succeeded": True,
-            "catalog_updated": True,
-            "pending_cleanup": False,
-            "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
-            "snapshot_revision": None,
-            "card_revision": committed.card_revision,
-            "target_namespace": committed.namespace,
-            "affected_ids": list(mutation.affected_ids),
-            "pending_path": str(pending_path),
-            "catalog_repair_command": reconcile_command(pending_path),
-        }
-        try:
-            final_snapshot = read_remote_catalog(
-                remote_client, region=config.region, compatibility=compatibility
-            )
-            final_card = next(
-                (item for item in final_snapshot.cards if item.namespace == namespace), None
-            )
-            if final_card is None or final_card.card_revision != committed.card_revision:
-                raise RemoteCatalogError("final remote catalog snapshot does not contain committed card")
-        except (RemoteCatalogError, CatalogError, OSError, ValueError) as exc:
-            raise CatalogCommitPartialSuccess(
-                str(exc), {**committed_summary, "catalog_snapshot_complete": False}
-            ) from exc
-
-        committed_summary.update({
-            "catalog_snapshot_complete": True,
-            "snapshot_revision": final_snapshot.snapshot_revision,
-        })
-        try:
-            remove_expected_pending(
-                pending_path,
-                confirmed,
-                expected_device=confirmed_snapshot.device,
-                expected_inode=confirmed_snapshot.inode,
-            )
-        except (OSError, ValueError) as exc:
-            raise CatalogCommitPartialSuccess(str(exc), committed_summary) from exc
-
         if cleanup_binding_callback is not None:
             cleanup_binding_callback(
                 ApplyCleanupBinding(
@@ -996,8 +722,11 @@ def run_approved_apply(
                 )
             )
         return {
-            **committed_summary,
-            "pending_cleanup": True,
+            **summary,
+            "receipt_schema_version": 1,
+            "apply_id": next_state.last_apply_id,
+            "source": verified.plan["source"],
+            "content_applied": True,
         }
 
 
@@ -1066,16 +795,26 @@ def build_apply_summary(
     state_updated: bool,
     api_calls_occurred: bool,
     timing: JsonObject | None = None,
-    catalog_registration: JsonObject | None = None,
 ) -> JsonObject:
     diff_summary = verified.diff.summary_dict()
     row_ids_to_delete = stale_row_ids_for_delete(verified) if delete_stale else []
     stale_rows_retained = 0 if delete_stale else verified.diff.stale_rows + verified.diff.retained_stale_rows
+    source_kind = {
+        "website": "website",
+        "github_repo": "github_repo",
+        "local_file": "document",
+        "pdf": "document",
+        "duckdb_relation": "database",
+        "bigquery_relation": "database",
+        "snowflake_relation": "database",
+    }[str(verified.plan["source"]["kind"])]
+    ranking = ranking_defaults_for_namespace(namespace, source_kind=source_kind)
     retrieval_commands = build_retrieval_commands(
         namespace=namespace,
         region=region,
         embedding_model=str(verified.plan["embedding_model"]),
         embedding_precision=str(verified.plan.get("embedding_precision", "float32")),
+        ranking=ranking,
     )
     summary: JsonObject = {
         "command": "apply",
@@ -1089,6 +828,8 @@ def build_apply_summary(
         "namespace": namespace,
         "region": region,
         "base_url": str(verified.plan["source"]["uri"]),
+        "source": verified.plan["source"],
+        "source_kind": source_kind,
         "site_id": str(verified.plan["site_id"]),
         "plan_id": verified.plan["plan_id"],
         "plan_path": str(verified.plan_path),
@@ -1100,6 +841,7 @@ def build_apply_summary(
         "artifact_verified": True,
         "embedding_model": verified.plan["embedding_model"],
         "embedding_precision": verified.plan.get("embedding_precision", "float32"),
+        "vector_dimensions": VECTOR_DIMENSIONS,
         "rows_to_upsert": verified.diff.rows_to_upsert,
         "rows_upserted": rows_upserted,
         "embeddings_to_generate": verified.diff.chunks_to_embed,
@@ -1111,13 +853,12 @@ def build_apply_summary(
         "rows_deleted": rows_deleted,
         "stale_rows_retained": stale_rows_retained,
         "delete_would_run": bool(delete_stale and row_ids_to_delete),
+        "ranking": ranking,
         "retrieval_commands": retrieval_commands,
         "diff": diff_summary,
     }
     if timing is not None:
         summary["timing"] = timing
-    if catalog_registration is not None:
-        summary["catalog_registration"] = catalog_registration
     return summary
 
 
@@ -1127,6 +868,7 @@ def build_retrieval_commands(
     region: str,
     embedding_model: str,
     embedding_precision: str,
+    ranking: JsonObject,
 ) -> JsonObject:
     """Return shell-safe preview/live commands for the applied retrieval contract."""
 
@@ -1142,6 +884,14 @@ def build_retrieval_commands(
         embedding_model,
         "--embedding-precision",
         embedding_precision,
+        "--ranking-mode",
+        str(ranking["ranking_mode"]),
+        "--ranking-profile",
+        str(ranking["ranking_profile"]).replace("_", "-"),
+        "--ranking-pool",
+        str(ranking["ranking_pool"]),
+        "--ranking-aggregation",
+        str(ranking["ranking_aggregation"]).replace("_", "-"),
     ]
     return {
         "preview": shlex.join([*live_args, "--dry-run"]),

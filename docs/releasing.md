@@ -1,71 +1,74 @@
 # Releasing Buoy
 
-Buoy releases are GitHub-only in the canonical `Doctacon/buoy` repository. Buoy is not published to PyPI, and release automation never contacts Turbopuffer.
+## Publication is paused
 
-## Simple release flow
+GitHub tag and Release publication is intentionally paused after v0.4.0 while
+the release workflow is reconciled with Hatch-VCS tag-derived versioning.
 
-1. On a task branch from `develop`, choose the next stable `MAJOR.MINOR.PATCH` version.
-2. Set that exact version in `pyproject.toml`, `src/buoy_search/__init__.py`, and `uv.lock`.
-3. Keep `Unreleased` empty and add exactly one `## [X.Y.Z] - pending` changelog section. Every older release section must have its ISO release date.
-4. Open the ordinary task pull request to `develop` and pass the strict CI checks.
-5. Open a pull request from exact `Doctacon/buoy:develop` to `main`. GitHub validates its prospective merge result with exactly four required checks:
-   - `Release readiness / Policy`
-   - `Release readiness / Python 3.11`
-   - `Release readiness / Python 3.13`
-   - `Release readiness / Distribution`
-6. Merge the passing pull request. The push to `main` automatically validates both Python versions, builds once deterministically, creates the annotated tag, attests the exact wheel and sdist, and creates the GitHub Release.
-7. Verify the hosted tag, Release, two asset digests, and provenance. Then date the changelog section and update its links in a separately reviewed task pull request to `develop`.
+No current workflow has write permission. A push to `main` runs a read-only
+source validation and cannot create or change a tag, Release, artifact
+attestation, package publication, or provider resource.
 
-There is no release-specific ancestry sync, tag push, workflow dispatch, or environment approval. Do not create a tag manually. A main commit with an unchanged released version is rejected by readiness. The release workflow accepts an already-published version only when its annotated tag, exact commit, Release identity, two asset digests, and provenance are all complete and exact.
+Do not create a tag manually. Resuming publication requires a separate reviewed
+decision that defines version selection, duplicate/partial hosted-state
+handling, provenance, rollback, and the exact write-authorized workflow.
 
-## Fail-closed publication
+## Current version authority
 
-Publication is serialized repository-wide and runs with cancellation disabled. Validation, testing, building, artifact inspection, and state planning are read-only. Only the final job receives write permissions; it downloads the immutable build and plan, installs nothing, and executes no checked-out repository code.
+Source metadata remains dynamic:
 
-An absent tag and absent Release produce the only create plan. An exact complete state produces a no-op. Lightweight tags, partial state, conflicting commits, missing or changed assets, and provenance mismatches fail permanently for that version. Automation never moves, overwrites, deletes, or repairs release objects. Recovery requires a separately authorized operator decision or a new version.
+- `project.dynamic = ["version"]`;
+- Hatch VCS derives versions from Git;
+- Hatch generates `src/buoy_search/_version.py` during build/install;
+- the generated file is ignored;
+- the editable `uv.lock` root is versionless.
 
-The already-published v0.4.0 is the sole transition exception: its exact recorded tag, commit, two asset digests, historical provenance repository `Doctacon/buoy-search`, workflow, subjects, and Release identity accept the historical provenance source ref `refs/tags/v0.4.0`. Any mismatch—including canonical `Doctacon/buoy` substituted into that legacy provenance—fails. Every future version requires canonical repository `Doctacon/buoy` and `refs/heads/main`; the old repository identity fails for every other version.
+Development builds therefore report a tag-derived development version. No
+static version should be added just to make the old publisher run.
 
-## Portable local checks
+## Read-only validation
 
-The release-critical logic is standard Python in `scripts/release_automation.py`. On a release-preparation commit, run:
+Run:
 
 ```bash
-python3 scripts/release_automation.py validate
 uv sync --locked --python 3.11
+PYTHONDONTWRITEBYTECODE=1 uv run python scripts/release_automation.py validate-source
+uv lock --check
 PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate_ranking_contract.py
 PYTHONDONTWRITEBYTECODE=1 uv run python scripts/c6_syntax_forecast.py validate
 PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*.py' -q
+
 uv sync --locked --python 3.13
 PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate_ranking_contract.py
 PYTHONDONTWRITEBYTECODE=1 uv run python scripts/c6_syntax_forecast.py validate
 PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*.py' -q
+
+uv build --out-dir dist
+uv run python scripts/release_automation.py validate-distribution dist
 ```
 
-Build with the commit timestamp and deterministic environment used by both workflows:
+`validate-source` verifies dynamic metadata, the generated-version import and
+ignore rule, the versionless editable lock root, changelog history through
+v0.4.0, and parsed workflow permissions. `validate-distribution` checks the
+focused archive boundary, entry point, bundled tokenizer, metadata agreement,
+and absence of Command Center, catalog, routing, evidence, frontend, and
+internal records.
 
-```bash
-export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
-export PYTHONHASHSEED=0 TZ=UTC LC_ALL=C
-rm -rf /tmp/buoy-release-dist
-uv build --out-dir /tmp/buoy-release-dist
-python3 scripts/release_automation.py artifacts \
-  --dist /tmp/buoy-release-dist --output /tmp/buoy-release-manifest.json
-```
+The legacy `validate`, `artifacts`, `state`, `github-snapshot`, and `policy`
+commands fail cleanly with the paused-publication message. They perform no Git,
+GitHub, network, or filesystem mutation.
 
-`state` accepts a normalized hosted snapshot and emits a hash-addressed create/no-op plan without mutation. Tests exercise every collision and permanent-failure branch without touching hosted state.
+## Protected checks
 
-## Self-hosted migration
+The `develop`-to-`main` pull request retains the existing four check names so
+branch protection is not stranded:
 
-The workflows are adapters, not release authority. On a self-hosted Git forge and runner:
+- `Release readiness / Policy`
+- `Release readiness / Python 3.11`
+- `Release readiness / Python 3.13`
+- `Release readiness / Distribution`
 
-| GitHub check or operation | Self-hosted equivalent |
-| --- | --- |
-| Policy | Construct the prospective `develop`-to-`main` merge commit, then run `release_automation.py policy` with exact base/head identities and a normalized forge snapshot. |
-| Python 3.11 / Python 3.13 | Run the locked validator and complete-test commands above in independent workers and require both statuses. |
-| Distribution | Build once with the deterministic environment, run `artifacts`, perform a normal fresh-wheel install, and load/smoke-count the bundled tokenizer. |
-| Annotated tag | Create one standard annotated Git tag with the planned tagger/message and atomically create its ref. |
-| Provenance | Sign an in-toto/SLSA statement over the exact manifest names and SHA-256 digests, repository, workflow, source ref, and source commit. |
-| GitHub Release | Use the forge's generic release API to create a non-draft/non-prerelease release with generated notes and the exact wheel/sdist. |
-
-Configure the forge to require the same four prospective-merge statuses and to serialize the main-push publisher. Preserve the state-plan schema and standard wheel, sdist, Git tag, SHA-256, and in-toto/SLSA objects. No proprietary package registry or GitHub-only artifact format is required.
+These checks are ordinary read-only validation, testing, and ephemeral
+diagnostic builds. They clean-install the wheel and exercise both help paths
+and the offline tokenizer, but do not upload or retain the archives. Passing
+them does not authorize or trigger publication.

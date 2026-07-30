@@ -1,6 +1,6 @@
-Status: blocked
+Status: superseded
 Created: 2026-07-19
-Updated: 2026-07-19
+Updated: 2026-07-30
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
 Depends-On: .10x/tickets/2026-07-19-reproduce-and-generalize-routed-profile-selection.md
 

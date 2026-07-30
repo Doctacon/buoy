@@ -1,6 +1,30 @@
 # Changelog
 
-Notable changes through v0.4.0 follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/). Future release notes are published with canonical [GitHub Releases](https://github.com/Doctacon/buoy/releases).
+Notable changes through v0.4.0 follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/). GitHub publication is currently paused while release automation is reconciled with tag-derived versions.
+
+## Unreleased
+
+### Changed
+
+- Refocused Buoy on one source to one reviewed Turbopuffer namespace while
+  retaining website, repository, document, DuckDB, BigQuery, and Snowflake
+  relation ingestion.
+- `retrieve` and `evals` now require one explicit singular `--namespace`;
+  ambient `TURBOPUFFER_NAMESPACE` is no longer target authority.
+- Successful approved apply emits `receipt_schema_version=1` as the supported
+  Kite integration event and no longer reads or writes a routing catalog.
+- Moved account-wide namespace discovery, routing, multi-namespace fusion,
+  evidence snapshots, experimental baselines, and the Command Center out of
+  the Buoy package and into the Kite product boundary.
+- Removed Command Center frontend/package dependencies and assets.
+- Paused GitHub release publication while retaining tag-derived Hatch-VCS
+  development versions and read-only release readiness checks.
+
+### Migration
+
+- Existing content namespaces, compact schema-v2 plans, local DuckDB applied
+  state, routing/evidence namespaces, and incomplete evidence resources are
+  left untouched. See `docs/kite-split.md`.
 
 ## [0.4.0] - 2026-07-21
 

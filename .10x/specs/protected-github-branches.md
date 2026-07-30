@@ -20,7 +20,11 @@ Both `main` and `develop` MUST require pull requests, zero fixed approving revie
 
 `develop` MUST require strict app-bound `Python 3.11`, `Python 3.13`, and `Build distributions`; disallow force pushes; and disable last-push approval.
 
-`main` MUST require the four app-bound checks governed by `.10x/specs/develop-to-main-release-readiness.md`; use `strict=false`; allow force pushes under the user's retained hosted setting; and disable last-push approval. The force-push capability is not authorized for any agent/workflow/release path.
+`main` MUST retain the four app-bound check names preserved by
+`.10x/decisions/release-publication-is-paused.md`; use `strict=false`; allow
+force pushes under the user's retained hosted setting; and disable last-push
+approval. The force-push capability is not authorized for any
+agent/workflow/release path.
 
 Protection MUST NOT require code-owner review, signed commits, linear history, deployment success, conversation resolution, or additional checks unless separately ratified.
 
@@ -31,7 +35,11 @@ Protection MUST NOT require code-owner review, signed commits, linear history, d
 - every pull request; and
 - pushes to `main` and `develop`.
 
-It MUST retain read-only permissions, locked dependencies, Python 3.11/3.13 tests, one build, pinned actions, concurrency, no secrets, and repository-native commands. Release PR and publication behavior are governed by `.10x/specs/develop-to-main-release-readiness.md` and `.10x/specs/main-push-automatic-github-release.md`.
+It MUST retain read-only permissions, locked dependencies, Python 3.11/3.13
+tests, one build, pinned actions, concurrency, no secrets, and
+repository-native commands. Release publication is paused and main-push
+behavior is governed by
+`.10x/decisions/release-publication-is-paused.md`.
 
 Static tests MUST assert the exact push branch set so the checked-in workflow cannot silently stop validating either long-lived branch.
 
@@ -45,7 +53,10 @@ The sole exception is the exact one-time v0.4 squash-topology bridge in `.10x/de
 
 ### Release integration
 
-Given a same-repository labeled `develop -> main` pull request, GitHub MUST block merge until all four readiness checks validate the exact prospective merge result. Main strict freshness is not required. Release integration MUST use a merge commit, never squash or rebase, so develop remains in main ancestry. The exact no-checkout final controller in `.10x/specs/develop-to-main-release-readiness.md` performs method `MERGE` only after all required jobs pass; mutable queued auto-merge remains disabled. The automatic main-push workflow revalidates the resulting two-parent exact main commit, exact associated PR identity, and immutable merge-plan trailers before mutation; mutable post-merge PR labels are diagnostic only.
+Given a same-repository `develop -> main` pull request, GitHub MUST block merge
+until all four readiness checks pass. Main strict freshness is not required.
+Passing those checks does not authorize an automated merge, tag, or Release;
+publication remains separately paused.
 
 ### Direct push
 
@@ -53,15 +64,18 @@ Given any ordinary or administrator credential, direct pushes to `develop` MUST 
 
 ## Release compatibility
 
-- `main` is the source of automatic stable-SemVer release tags.
-- `.github/workflows/release.yml` triggers only on main pushes and MAY create only the new annotated version tag governed by the active automatic-release specification.
-- GitHub-only, provenance, no-PyPI, and immutable-tag constraints remain; the release-environment approval is removed.
+- `.github/workflows/release.yml` triggers only on main pushes and performs
+  read-only paused-publication validation.
+- No workflow may create a tag, Release, package, attestation, or retained
+  distribution artifact until a later reviewed decision resumes publication.
 
 ## Acceptance criteria
 
 - Remote `origin/develop` exists at the ratified bootstrap commit before ordinary integration.
 - GitHub reports the ratified common protection plus exact branch-specific checks/freshness/force-push/last-push settings.
-- Task integration uses squash merge except for the completed exact one-time v0.4 tree-identical bridge; release integration uses the final merge controller plus prospective-merge readiness and exact-main revalidation, not recurring ancestry ceremony.
+- Task integration uses squash merge except for the completed exact one-time
+  v0.4 tree-identical bridge; this record does not authorize automatic release
+  integration while publication is paused.
 - Develop strict checks and main non-strict four-check policy, pull requests, zero fixed approvals, administrator enforcement, deletion denial, develop force-push denial, retained main force-push allowance, and last-push approval disabled are observable.
 - CI source and static tests include both push branches.
 - A pull request from the implementation branch to `develop` runs all three required checks and cannot merge until they pass.
@@ -69,4 +83,7 @@ Given any ordinary or administrator credential, direct pushes to `develop` MUST 
 
 ## External side effects
 
-The historical bootstrap authority is consumed. The separately bounded simple-release implementation ticket may replace main's required checks, set `strict=false`, disable last-push approval, and delete the unused release environment only after repository workflow proof. Otherwise current authority permits bounded work-branch/PR operations only and does not authorize direct/force pushes, bypass, unrelated protection mutation, tags/releases outside the automatic workflow, package registries, transfer/rename, secrets, or Turbopuffer.
+The historical bootstrap authority is consumed. Current authority permits
+bounded work-branch and draft-PR operations only and does not authorize
+direct/force pushes, bypass, unrelated protection mutation, tags, Releases,
+package registries, transfer/rename, secrets, or Turbopuffer mutation.
