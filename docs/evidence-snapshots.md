@@ -10,7 +10,7 @@ applied source namespace B ──branch──> immutable-by-Buoy evidence branch
                                       + one small local snapshot.json
 ```
 
-No concept, mention, assertion, edge, taxonomy, ontology, graph database, or graph UI is created in this phase.
+Phase 3A itself creates no concept, mention, assertion, edge, taxonomy, ontology, graph database, or graph UI. A completed snapshot is the immutable input to implemented Phase 3B [autonomous local semantics](semantics.md); only active ledger rows are eligible there.
 
 ## Estimate first
 
@@ -96,8 +96,9 @@ All commands report credential/API/source-write/internal-write/local-corpus/loca
 ## Roadmap
 
 - **Phase 3A — remote evidence snapshots: implemented**
-- **Phase 3B — concepts and mentions: future**
-- **Phase 3C — assertions and graph snapshots: future**
+- **Phase 3B — autonomous local concepts, mentions, and taxonomy: implemented**
+- **Phase 3C — evidence-backed typed assertions: future**
 - **Phase 4 — graph review and visualization: future**
+- **Phase 5 — incremental semantic maintenance: future**
 
-No taxonomy or ontology currently exists.
+Phase 3B is a lightweight evidence-linked taxonomy, not a complete ontology. No arbitrary assertions or graph visualization currently exists.

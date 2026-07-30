@@ -36,6 +36,8 @@ dependencies = [
 bigquery = ["google-cloud-bigquery>=3.25,<4"]
 snowflake = ["snowflake-connector-python>=3.12,<5"]
 ui = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1"]
+# External local runtimes are contacted with the standard library; no model/runtime package is installed.
+semantics = []
 
 [project.urls]
 Repository = "https://github.com/Doctacon/buoy"

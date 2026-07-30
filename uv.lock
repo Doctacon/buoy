@@ -307,7 +307,7 @@ requires-dist = [
     { name = "turbopuffer" },
     { name = "uvicorn", marker = "extra == 'ui'", specifier = ">=0.30,<1" },
 ]
-provides-extras = ["bigquery", "snowflake", "ui"]
+provides-extras = ["bigquery", "semantics", "snowflake", "ui"]
 
 [[package]]
 name = "certifi"

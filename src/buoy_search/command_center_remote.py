@@ -252,7 +252,7 @@ class RemoteSnapshotService:
         ids = [
             item.namespace
             for item in first.items
-            if not item.namespace.startswith("buoy-evidence-")
+            if not item.namespace.startswith(("buoy-evidence-", "buoy-semantics-"))
         ]
         offset = len(first.items)
         while offset < first.total:
@@ -262,7 +262,7 @@ class RemoteSnapshotService:
             ids.extend(
                 item.namespace
                 for item in page.items
-                if not item.namespace.startswith("buoy-evidence-")
+                if not item.namespace.startswith(("buoy-evidence-", "buoy-semantics-"))
             )
             offset += len(page.items)
         return tuple(sorted(set(ids)))
@@ -541,35 +541,35 @@ def _compatibility(config: RuntimeConfig) -> CompatibilityContract:
 def _combined_namespace_statuses(
     local_ids: Sequence[str], snapshot: RemoteCatalogSnapshot
 ) -> tuple[RemoteNamespaceStatus, ...]:
-    local = {value for value in local_ids if not value.startswith("buoy-evidence-")}
+    local = {value for value in local_ids if not value.startswith(("buoy-evidence-", "buoy-semantics-"))}
     live = {
         value for value in snapshot.live_namespace_ids
-        if not value.startswith("buoy-evidence-")
+        if not value.startswith(("buoy-evidence-", "buoy-semantics-"))
     }
     cards = {
         card.namespace: card
         for card in snapshot.cards
-        if not card.namespace.startswith("buoy-evidence-")
+        if not card.namespace.startswith(("buoy-evidence-", "buoy-semantics-"))
     }
     missing = {
         value for value in snapshot.missing_card_ids
-        if not value.startswith("buoy-evidence-")
+        if not value.startswith(("buoy-evidence-", "buoy-semantics-"))
     }
     stale = {
         value for value in snapshot.stale_target_ids
-        if not value.startswith("buoy-evidence-")
+        if not value.startswith(("buoy-evidence-", "buoy-semantics-"))
     }
     disabled = {
         value for value in snapshot.disabled_ids
-        if not value.startswith("buoy-evidence-")
+        if not value.startswith(("buoy-evidence-", "buoy-semantics-"))
     }
     incompatible = {
         value for value in snapshot.incompatible_ids
-        if not value.startswith("buoy-evidence-")
+        if not value.startswith(("buoy-evidence-", "buoy-semantics-"))
     }
     eligible = {
         card.namespace for card in snapshot.eligible_cards
-        if not card.namespace.startswith("buoy-evidence-")
+        if not card.namespace.startswith(("buoy-evidence-", "buoy-semantics-"))
     }
     rows: list[RemoteNamespaceStatus] = []
     for namespace in sorted(local | live | set(cards)):
@@ -638,10 +638,10 @@ def _validate_search_request(request: SearchRequest) -> ServiceError | None:
         return ServiceError("invalid_search_request", "Explicit namespaces must not repeat.", "validation")
     if any(_NAMESPACE_ID.fullmatch(value) is None for value in request.namespaces):
         return ServiceError("invalid_search_request", "An explicit namespace ID is invalid.", "validation")
-    if any(value.startswith("buoy-evidence-") for value in request.namespaces):
+    if any(value.startswith(("buoy-evidence-", "buoy-semantics-")) for value in request.namespaces):
         return ServiceError(
             "invalid_search_request",
-            "Evidence infrastructure namespaces are not ordinary search sources.",
+            "Evidence and semantic infrastructure namespaces are not ordinary search sources.",
             "validation",
         )
     integer_bounds = (

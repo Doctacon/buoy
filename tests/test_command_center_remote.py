@@ -222,25 +222,25 @@ print(json.dumps({name: name in sys.modules for name in watched}, sort_keys=True
         self.assertEqual(result.namespace_total, 2)
         self.assertFalse(result.namespaces_truncated)
 
-    def test_internal_evidence_namespaces_are_hidden_from_local_and_remote_rows(self) -> None:
-        internal = "buoy-evidence-ledger-hidden"
+    def test_internal_evidence_and_semantic_namespaces_are_hidden_from_local_and_remote_rows(self) -> None:
+        internals = ["buoy-evidence-ledger-hidden", "buoy-semantics-concepts-hidden"]
         service = RemoteSnapshotService(
-            local_inventory=FakeLocalInventory(["local-visible", internal]),
+            local_inventory=FakeLocalInventory(["local-visible", *internals]),
             environment={},
         )
         local = service.not_checked()
         self.assertEqual([item.namespace for item in local.namespaces], ["local-visible"])
 
         client = FakeRemoteClient(
-            live=[REMOTE_CATALOG_NAMESPACE, "remote-visible", internal], cards=[]
+            live=[REMOTE_CATALOG_NAMESPACE, "remote-visible", *internals], cards=[]
         )
         refreshed = RemoteSnapshotService(
-            local_inventory=FakeLocalInventory(["local-visible", internal]),
+            local_inventory=FakeLocalInventory(["local-visible", *internals]),
             environment={"TURBOPUFFER_API_KEY": KEY},
             client_factory=lambda **kwargs: client,
             catalog_reader=classified_reader,
         ).refresh()
-        self.assertNotIn(internal, [item.namespace for item in refreshed.namespaces])
+        self.assertTrue(set(internals).isdisjoint(item.namespace for item in refreshed.namespaces))
 
     def test_local_status_result_is_bounded_and_reports_truncation(self) -> None:
         namespaces = [

@@ -24,6 +24,7 @@ class FakePaginator:
         self.pages_consumed.append(2)
         yield SimpleNamespace(id="site-other-v1")
         yield SimpleNamespace(id="buoy-evidence-ledger-internal")
+        yield SimpleNamespace(id="buoy-semantics-concepts-internal")
         yield SimpleNamespace(id="site-Dagster-v1")
 
 

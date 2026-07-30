@@ -19,7 +19,7 @@ def list_namespace_ids(*, region: str, api_key: str, search: str | None = None) 
         namespace_ids = {
             value
             for summary in summaries
-            if not (value := _namespace_id(summary)).startswith("buoy-evidence-")
+            if not (value := _namespace_id(summary)).startswith(("buoy-evidence-", "buoy-semantics-"))
         }
     except Exception as exc:
         message = str(exc) or exc.__class__.__name__

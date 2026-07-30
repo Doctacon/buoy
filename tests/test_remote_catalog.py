@@ -779,6 +779,7 @@ class RemoteReadTests(unittest.TestCase):
                 eligible.namespace,
                 "buoy-evidence-branch-deadbeef-source",
                 "buoy-evidence-ledger-deadbeef",
+                "buoy-semantics-concepts-deadbeef",
             ],
             cards=[eligible],
             compatibility=self.compatibility(),
@@ -786,7 +787,7 @@ class RemoteReadTests(unittest.TestCase):
         self.assertEqual(snapshot.live_namespace_ids, (eligible.namespace,))
         self.assertEqual(snapshot.missing_card_ids, ())
         self.assertEqual(snapshot.counts.content_live_count, 1)
-        self.assertEqual(snapshot.counts.listed_total, 4)
+        self.assertEqual(snapshot.counts.listed_total, 5)
 
 
 class MutationAndMigrationTests(unittest.TestCase):

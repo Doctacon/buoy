@@ -70,8 +70,10 @@ Remote `plan` and `crawl` authenticate only to the selected source warehouse and
 4. **Retrieve** — hybrid ANN + BM25 search returns ranked, citable source chunks.
 
 Schema-v2 plans live under `artifacts/` as exactly `plan.json` plus `delta.duckdb`; unchanged content is omitted. New applied state lives under `.buoy/`. Both are generated, local, and gitignored. Existing schema-v1 artifacts remain inert and are not migrated or automatically deleted. Existing users should read [Migrating from turbo-search](docs/migrating-to-buoy.md).
-## Remote evidence snapshots
-Graph Phase 3A can freeze explicitly selected applied namespaces without downloading their corpus. Run `uv run buoy evidence estimate --namespace <id>` first: turbopuffer branch storage may be billed from the source's full logical size. `evidence snapshot` creates one point-in-time branch per source, a compact remote active/retained/deleted membership ledger, one completed remote catalog row, and only a bounded local `snapshot.json`. Full content and vectors stay in turbopuffer. Identical snapshots are verified and reused; snapshots are never scheduled automatically, and this phase has no graph extraction, automatic retention, or deletion. See [Remote evidence snapshots](docs/evidence-snapshots.md).
+## Remote evidence and local semantics
+Graph Phase 3A can freeze explicitly selected applied namespaces without downloading their corpus. Run `uv run buoy evidence estimate --namespace <id>` first: turbopuffer branch storage may be billed from the source's full logical size. `evidence snapshot` creates point-in-time branches, a compact remote membership ledger, one completed catalog row, and only bounded local `snapshot.json`.
+
+Phase 3B can autonomously derive concepts, exact evidence mentions, and a lightweight `broader`/`related`/`close_match` taxonomy from one completed snapshot. Inference is restricted to an explicitly configured loopback local OpenAI-compatible runtime; hosted inference and fallback are prohibited. Semantic data remains in internal turbopuffer namespaces; locally Buoy retains bounded `build.json` plus only normal zero/small lock state for same-host execution safety. Start with `uv run buoy semantics doctor`, then `semantics estimate`, `build`, `verify`, and bounded `inspect`. See [Remote evidence snapshots](docs/evidence-snapshots.md) and [Autonomous local semantics](docs/semantics.md).
 ## Optional Command Center
 
 Run `uv sync --extra ui && uv run buoy serve` for a loopback-only local console. Inventory reads bounded schema-v2 summaries without opening deltas; selecting a plan fully verifies and paginates its changed/new chunks and stale identities. Reviews remain read-only; **Start plan** may fetch one credential-free HTTP(S) website or public GitHub repository root at a time and writes ordinary two-file local plan artifacts. Managed website planning validates HTTP(S) syntax and accepts no source credentials, but it is not a public-routability or SSRF firewall. The Command Center must remain loopback-only and under the control of the local operator.
@@ -82,7 +84,7 @@ On platforms without the filesystem primitives required for safe durable jobs, t
 
 - [Index sources safely](docs/indexing.md) — source support, crawl controls, plan artifacts, incremental state, approved apply, and stale deletion.
 - [Retrieve and rank results](docs/retrieval.md) — dry runs, live search, citations, and namespace-aware ranking.
-- [Manage the remote namespace catalog](docs/catalog.md) or [freeze remote evidence](docs/evidence-snapshots.md) — authenticated routing cards plus estimate-first branch snapshots and compact membership ledgers.
+- [Manage the remote namespace catalog](docs/catalog.md), [freeze remote evidence](docs/evidence-snapshots.md), or [derive local semantics](docs/semantics.md) — routing cards, immutable branch snapshots, and autonomous remote concepts/mentions/taxonomy.
 - [Evaluate search quality](docs/evaluation.md) — smoke datasets, repository metrics, and one-shot autoresearch.
 - [Migrate to Buoy 0.2](docs/migrating-to-buoy.md) — command, import, environment, state, and plan compatibility.
 - [Contribute](CONTRIBUTING.md) or [prepare a GitHub release](docs/releasing.md).
@@ -90,11 +92,9 @@ On platforms without the filesystem primitives required for safe durable jobs, t
 The CLI is the exhaustive option reference: `uv run buoy --help` and `uv run buoy plan --help`.
 
 ## Optional global command
-
 Run `uv tool install --editable . --force`, then `buoy --help`. Generated artifacts and state are created in the command's working directory.
 
 ## Development
-
 Run `uv run python -m unittest discover -s tests -p 'test_*.py'`.
 
 Licensed under [Apache-2.0](LICENSE).

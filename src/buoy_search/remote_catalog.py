@@ -462,7 +462,7 @@ def classify_remote_catalog(
         _validate_target_namespace(card.namespace, allow_reserved=False)
     _validate_card_id_collisions(ordered_cards)
     internal_evidence = {
-        namespace for namespace in listed if namespace.startswith("buoy-evidence-")
+        namespace for namespace in listed if namespace.startswith(("buoy-evidence-", "buoy-semantics-"))
     }
     content_live = set(listed) - {REMOTE_CATALOG_NAMESPACE} - internal_evidence
     card_by_namespace = {card.namespace: card for card in ordered_cards}
@@ -1030,8 +1030,8 @@ def _validate_target_namespace(namespace: object, *, allow_reserved: bool) -> st
         raise RemoteCatalogError("target namespace must match [A-Za-z0-9-_.]{1,128}")
     if not allow_reserved and namespace == REMOTE_CATALOG_NAMESPACE:
         raise RemoteCatalogError("reserved routing catalog namespace cannot be a target card")
-    if not allow_reserved and namespace.startswith("buoy-evidence-"):
-        raise RemoteCatalogError("reserved evidence namespace cannot be a target card")
+    if not allow_reserved and namespace.startswith(("buoy-evidence-", "buoy-semantics-")):
+        raise RemoteCatalogError("reserved evidence or semantic namespace cannot be a target card")
     return namespace
 
 

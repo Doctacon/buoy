@@ -1078,7 +1078,7 @@ def _namespace_summaries(snapshot: _Snapshot) -> list[NamespaceSummary]:
     for namespace in sorted(
         value
         for value in set(plan_groups) | set(state_groups) | set(snapshot.error_namespaces)
-        if not value.startswith("buoy-evidence-")
+        if not value.startswith(("buoy-evidence-", "buoy-semantics-"))
     ):
         plans = plan_groups.get(namespace, [])
         states = state_groups.get(namespace, [])

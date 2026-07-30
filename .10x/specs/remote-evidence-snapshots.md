@@ -106,9 +106,10 @@ Automatic routing and ordinary namespace discovery/Command Center tables MUST ex
 Roadmap status:
 
 - Phase 3A — remote evidence snapshots: implemented by this specification
-- Phase 3B — concepts and mentions: future
-- Phase 3C — assertions and graph snapshots: future
+- Phase 3B — autonomous local concepts, mentions, and lightweight taxonomy: implemented
+- Phase 3C — evidence-backed typed assertions: future
 - Phase 4 — graph review and visualization: future
+- Phase 5 — incremental semantic maintenance: future
 
 ## Acceptance criteria
 
