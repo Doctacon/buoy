@@ -7,7 +7,7 @@ Relates-To: .10x/tickets/done/2026-07-29-autonomous-local-semantics-foundation-p
 
 ## What was observed
 
-Semantic Phase 3B was implemented on `work/autonomous-local-semantics-foundation` from fetched `origin/main` commit `27cdcc7a5cecf527ce558f898d6ad39fa204a5bd`. The bounded final commit is pending the parent session's independent review and commit step; this record must be updated with that hash when created.
+Semantic Phase 3B was implemented on `work/autonomous-local-semantics-foundation` from fetched `origin/main` commit `27cdcc7a5cecf527ce558f898d6ad39fa204a5bd`. The independently reviewed, fully validated implementation commit is `e3011df7b78c828b95061b138cc93f5686d10a1f`. A follow-up record-only closure commit updates this evidence pointer and does not change implementation behavior.
 
 The implementation adds provider-inert `semantics_models.py`, a hardened standard-library `semantics_local_model.py`, deterministic `semantics_pipeline.py`, remote-first `semantics_remote.py`, lazy `semantics_cli.py`, provider-free tests, internal namespace filtering, package metadata, and documentation. No runtime/model/provider client is constructed by ordinary imports or help.
 
@@ -97,4 +97,4 @@ No live smoke ran. Ambient model/provider credentials were not used. No hosted m
 
 ## Parent closure observation
 
-On 2026-07-30 the parent independently repeated the requested validation boundary: 186 focused tests passed; 935 full tests passed with 39 skips; locked semantic sync and lock checks, ranking/C6 validators, wheel/sdist build and 77/179-entry inventory, provider-inert imports/help, installed-wheel fake build, environment restoration, and final diff checks all passed. The independent review at `.10x/reviews/2026-07-30-autonomous-local-semantics-foundation-review.md` has verdict `pass`. The implementation commit hash is recorded in the follow-up record-only closure update; that closure-only commit does not change implementation behavior.
+On 2026-07-30 the parent independently repeated the requested validation boundary: 186 focused tests passed; 935 full tests passed with 39 skips; locked semantic sync and lock checks, ranking/C6 validators, wheel/sdist build and 77/179-entry inventory, provider-inert imports/help, installed-wheel fake build, environment restoration, and final diff checks all passed. The independent review at `.10x/reviews/2026-07-30-autonomous-local-semantics-foundation-review.md` has verdict `pass`. The validated implementation commit is `e3011df7b78c828b95061b138cc93f5686d10a1f`; the follow-up closure commit changes records only.
