@@ -1,8 +1,16 @@
 Status: active
 Created: 2026-07-24
 Updated: 2026-07-24
+Amended-By: .10x/specs/focused-buoy-boundary.md
 
 # Compact Delta Plan Storage
+
+## Focused-boundary amendment
+
+This record remains active for compact, reviewable, baseline-bound
+`plan.json`/`delta.duckdb` storage and apply verification. Command Center,
+catalog, routing-card, managed-job, and cross-plan inventory consequences are
+superseded and belong to Kite or historical provenance.
 
 ## Context
 

@@ -25,7 +25,11 @@ Define current code/distribution/CLI identity and tag-derived package version be
 - Hatch version source MUST be `vcs`; its build hook MUST generate untracked `src/buoy_search/_version.py`; `buoy_search.__version__` imports that generated value.
 - Clean locked install/build occurs before source imports that need `_version.py`; the generated file MUST be gitignored and MUST be present in built artifacts.
 - Ordinary source/editable installs may expose a valid PEP 440 VCS development version derived from the latest tag and commit.
-- Release validation/build MUST set exact `SETUPTOOLS_SCM_PRETEND_VERSION` derived from the release label/tag contract. Wheel/sdist metadata, filename, generated module, installed metadata, and `buoy --version` MUST all equal that stable target.
+- Publication is paused under
+  `.10x/decisions/release-publication-is-paused.md`. Diagnostic builds retain
+  the ordinary tag-derived development version and MUST prove wheel/sdist
+  metadata agreement, the generated module, installed metadata, and
+  `buoy --version` coherence without selecting a stable target.
 - `uv.lock` MUST represent the root project as dynamic editable source without a committed root release version and remain `uv lock --check` stable across commits.
 
 ## Artifact and CLI behavior
@@ -37,7 +41,8 @@ Define current code/distribution/CLI identity and tag-derived package version be
 ## Acceptance scenarios
 
 - Clean editable sync after v0.4.0 exposes a PEP 440 development version and passes tests.
-- Exact pretend version 0.4.1 builds/installs wheel/sdist reporting only 0.4.1.
+- A diagnostic tag-derived development build installs and reports one coherent
+  PEP 440 version without publishing it.
 - Lock check remains stable after a commit without dependency change.
 - Missing generated version during unsupported raw-source import does not justify tracking a stale generated file; supported workflows install/build first.
 

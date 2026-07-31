@@ -87,7 +87,7 @@ class RuntimeConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeConfigError, "float32, float16"):
                 load_config(warning_callback=lambda _message: None)
 
-    def test_turbopuffer_environment_names_remain_unchanged(self) -> None:
+    def test_region_environment_remains_supported_but_namespace_is_explicit(self) -> None:
         with patch.dict(
             os.environ,
             {"TURBOPUFFER_REGION": "local-region", "TURBOPUFFER_NAMESPACE": "site-preserved-v1"},
@@ -96,7 +96,7 @@ class RuntimeConfigTests(unittest.TestCase):
             config = load_config(warning_callback=lambda _message: None)
 
         self.assertEqual(config.region, "local-region")
-        self.assertEqual(config.namespace, "site-preserved-v1")
+        self.assertEqual(config.namespace, "")
 
 
 if __name__ == "__main__":

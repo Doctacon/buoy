@@ -37,39 +37,20 @@ COMMAND_CASES = (
     ("apply interactive decline", "buoy_search.cli._run_apply", ["apply", "--json"]),
     ("apply dry-run", "buoy_search.cli._run_apply", ["apply", "--dry-run", "--json"]),
     ("apply approved", "buoy_search.cli._run_apply", ["apply", "--approve", "--json"]),
-    ("namespaces", "buoy_search.cli._run_namespaces", ["namespaces", "--json"]),
-    ("retrieve", "buoy_search.cli._run_retrieve", ["retrieve", "question", "--json"]),
-    ("evals", "buoy_search.cli._run_evals", ["evals", "--json"]),
-    ("catalog list", "buoy_search.catalog_cli._run_list", ["catalog", "list", "--json"]),
-    ("catalog show", "buoy_search.catalog_cli._run_show", ["catalog", "show", "site-example-v1", "--json"]),
     (
-        "catalog upsert",
-        "buoy_search.catalog_cli._run_upsert",
-        [
-            "catalog", "upsert", "site-example-v1",
-            "--source-kind", "website", "--source-uri", "https://example.com",
-            "--site-id", "example", "--title", "Example", "--summary", "Example summary",
-            "--embedding-model", "current/model", "--embedding-precision", "float32",
-            "--plan-schema-version", "1", "--ranking-mode", "page", "--ranking-profile", "none",
-            "--ranking-pool", "20", "--ranking-aggregation", "max", "--json",
-        ],
+        "retrieve",
+        "buoy_search.cli._run_retrieve",
+        ["retrieve", "question", "--namespace", "site-example-v1", "--json"],
     ),
-    ("catalog enable", "buoy_search.catalog_cli._run_toggle", ["catalog", "enable", "site-example-v1", "--json"]),
-    ("catalog disable", "buoy_search.catalog_cli._run_toggle", ["catalog", "disable", "site-example-v1", "--json"]),
-    ("catalog remove preview", "buoy_search.catalog_cli._run_remove", ["catalog", "remove", "site-example-v1", "--json"]),
-    ("catalog remove approved", "buoy_search.catalog_cli._run_remove", ["catalog", "remove", "site-example-v1", "--approve", "--json"]),
-    ("catalog migrate preview", "buoy_search.catalog_cli._run_migrate_local", ["catalog", "migrate-local", "--source", "missing.json", "--json"]),
-    ("catalog migrate approved", "buoy_search.catalog_cli._run_migrate_local", ["catalog", "migrate-local", "--source", "missing.json", "--approve", "--json"]),
-    ("catalog reconcile", "buoy_search.catalog_cli._run_reconcile", ["catalog", "reconcile", "--pending", "missing.json", "--json"]),
-    ("catalog abandon preview", "buoy_search.catalog_cli._run_abandon_pending", ["catalog", "abandon-pending", "--pending", "missing.json", "--json"]),
-    ("catalog abandon approved", "buoy_search.catalog_cli._run_abandon_pending", ["catalog", "abandon-pending", "--pending", "missing.json", "--approve", "--json"]),
+    (
+        "evals",
+        "buoy_search.cli._run_evals",
+        ["evals", "--namespace", "site-example-v1", "--json"],
+    ),
 )
 
 
-TOP_LEVEL_COMMANDS = ("crawl", "plan", "apply", "namespaces", "catalog", "retrieve", "evals")
-CATALOG_COMMANDS = (
-    "list", "show", "upsert", "enable", "disable", "remove", "migrate-local", "reconcile", "abandon-pending"
-)
+TOP_LEVEL_COMMANDS = ("crawl", "plan", "apply", "retrieve", "evals")
 
 
 class EnvironmentAliasRemovalTests(unittest.TestCase):
@@ -170,7 +151,6 @@ class EnvironmentAliasRemovalTests(unittest.TestCase):
 
     def test_help_version_and_parsed_no_handler_paths_remain_available(self) -> None:
         help_paths = [["--help"], *[[command, "--help"] for command in TOP_LEVEL_COMMANDS]]
-        help_paths.extend([["catalog", command, "--help"] for command in CATALOG_COMMANDS])
         environment = {
             "TURBO_SEARCH_EMBEDDING_MODEL": "model-secret",
             "TURBO_SEARCH_EMBEDDING_PRECISION": "precision-secret",
@@ -196,7 +176,7 @@ class EnvironmentAliasRemovalTests(unittest.TestCase):
         self.assertEqual(str(Version(rendered_version)), rendered_version)
         self.assertEqual(stderr.getvalue(), "")
 
-        for argv in ([], ["catalog"]):
+        for argv in ([],):
             with self.subTest(argv=argv):
                 stdout = StringIO()
                 stderr = StringIO()

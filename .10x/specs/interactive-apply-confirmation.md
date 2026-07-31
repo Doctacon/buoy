@@ -1,8 +1,16 @@
 Status: active
 Created: 2026-07-18
 Updated: 2026-07-18
+Amended-By: .10x/specs/focused-buoy-boundary.md
 
 # Interactive Apply Confirmation
+
+## Focused-boundary amendment
+
+This specification remains active for local preflight, interactive consent,
+automation approval, and content/local-state mutation gates. Catalog fields,
+pending catalog recovery, and catalog commands are superseded and must not be
+read, displayed, or written by focused Buoy.
 
 ## Purpose and scope
 

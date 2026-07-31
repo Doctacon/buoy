@@ -1,6 +1,6 @@
-Status: blocked
+Status: superseded
 Created: 2026-07-20
-Updated: 2026-07-20
+Updated: 2026-07-30
 Parent: .10x/tickets/2026-06-28-repo-search-heavy-ranking-experiments.md
 Depends-On: .10x/tickets/done/2026-07-20-bootstrap-crow-plus-immutable-cache.md
 

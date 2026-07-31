@@ -1,8 +1,16 @@
 Status: active
 Created: 2026-07-22
 Updated: 2026-07-24
+Amended-By: .10x/specs/focused-buoy-boundary.md
 
 # Database Document Relation Indexing
+
+## Focused-boundary amendment
+
+This specification remains active for one document-shaped database relation,
+its source identity, bounded planning, content indexing, and document/page
+retrieval defaults. Routing-card and catalog semantics are superseded; the
+versioned Buoy apply receipt is the only cross-product handoff to Kite.
 
 ## Purpose and scope
 

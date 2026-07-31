@@ -136,7 +136,6 @@ class SearchHit:
     score_info: dict[str, object] = field(default_factory=dict)
     doc_kind: str = ""
     chunk_index: int | None = None
-    namespace: str = ""
 
     def to_dict(self, *, include_content: bool = True) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -155,8 +154,6 @@ class SearchHit:
             payload["doc_kind"] = self.doc_kind
         if self.chunk_index is not None:
             payload["chunk_index"] = self.chunk_index
-        if self.namespace:
-            payload["namespace"] = self.namespace
         return payload
 
 
@@ -202,53 +199,6 @@ class RetrievalResult:
             "ranking_pool": self.ranking_pool,
             "ranking_aggregation": self.ranking_aggregation,
             "fusion": self.fusion,
-            "hits": [hit.to_dict() for hit in self.hits],
-        }
-
-
-@dataclass(frozen=True)
-class MultiNamespaceRetrievalResult:
-    """Structured result for an explicitly selected namespace set."""
-
-    query: str
-    hits: list[SearchHit]
-    region: str
-    namespaces: list[str]
-    embedding_model: str
-    embedding_precision: str
-    top_k: int
-    candidates: int
-    namespace_results: list[RetrievalResult]
-    fusion: str = "cross_namespace_rrf"
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "command": "retrieve",
-            "dry_run": False,
-            "credentials_required": True,
-            "turbopuffer_api_calls": True,
-            "api_calls_occurred": True,
-            "content_retrieval_occurred": True,
-            "query": self.query,
-            "region": self.region,
-            "namespaces": self.namespaces,
-            "embedding_model": self.embedding_model,
-            "embedding_precision": self.embedding_precision,
-            "top_k": self.top_k,
-            "candidates": self.candidates,
-            "fusion": self.fusion,
-            "namespace_results": [
-                {
-                    "namespace": result.namespace,
-                    "fusion": result.fusion,
-                    "ranking_mode": result.ranking_mode,
-                    "ranking_profile": result.ranking_profile,
-                    "ranking_pool": result.ranking_pool,
-                    "ranking_aggregation": result.ranking_aggregation,
-                    "hit_count": len(result.hits),
-                }
-                for result in self.namespace_results
-            ],
             "hits": [hit.to_dict() for hit in self.hits],
         }
 
@@ -305,46 +255,6 @@ class RetrievalPlan:
                 "rerank_by": ["RRF"],
                 "fallback": "client-side reciprocal-rank fusion if server RRF is unsupported or separate lists are returned",
             },
-        }
-
-
-@dataclass(frozen=True)
-class MultiNamespaceRetrievalPlan:
-    """Safe no-credential plan for multiple explicit namespace targets."""
-
-    query: str
-    plans: list[RetrievalPlan]
-
-    def to_dict(self) -> dict[str, object]:
-        first = self.plans[0]
-        return {
-            "command": "retrieve",
-            "dry_run": True,
-            "plan": True,
-            "credentials_required": False,
-            "turbopuffer_api_calls": False,
-            "api_calls_occurred": False,
-            "query": self.query,
-            "region": first.config.region,
-            "content_retrieval_occurred": False,
-            "namespaces": [plan.config.namespace for plan in self.plans],
-            "embedding_model": first.config.embedding_model,
-            "embedding_precision": first.config.embedding_precision,
-            "top_k": first.options.top_k,
-            "candidates": first.options.candidates,
-            "fusion": "cross_namespace_rrf",
-            "namespace_plans": [
-                {
-                    "namespace": plan.config.namespace,
-                    "ranking_mode": plan.options.ranking_mode,
-                    "ranking_profile": plan.options.ranking_profile,
-                    "ranking_pool": plan.options.ranking_pool,
-                    "ranking_aggregation": plan.options.ranking_aggregation,
-                    "retrieval": plan.to_dict()["retrieval"],
-                }
-                for plan in self.plans
-            ],
-            "live_execution": "omit --dry-run/--plan to embed once and query each selected namespace",
         }
 
 
@@ -455,123 +365,8 @@ class HybridRetriever:
         )
 
 
-class MultiNamespaceRetriever:
-    """Embed once, query explicit namespaces sequentially, and merge by RRF."""
-
-    def __init__(self, *, retrievers: list[HybridRetriever], embedder: Embedder) -> None:
-        self._retrievers = retrievers
-        self._embedder = embedder
-
-    @classmethod
-    def from_configs(cls, configs: Sequence[RuntimeConfig]) -> "MultiNamespaceRetriever":
-        if not configs:
-            raise ValueError("at least one namespace config is required")
-        first = configs[0]
-        contract = (first.region, first.embedding_model, first.embedding_precision)
-        if any(
-            (config.region, config.embedding_model, config.embedding_precision) != contract
-            for config in configs[1:]
-        ):
-            raise ValueError("all selected namespaces must use one region, embedding model, and precision")
-        api_key = os.environ.get("TURBOPUFFER_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "TURBOPUFFER_API_KEY must be set in the environment for live retrieval. "
-                "Use `retrieve --dry-run` or `retrieve --plan` to inspect the plan without credentials."
-            )
-        embedder = SentenceTransformerEmbedder(
-            first.embedding_model, precision=first.embedding_precision
-        )
-        retrievers: list[HybridRetriever] = []
-        for config in configs:
-            try:
-                namespace = build_namespace(config=config, api_key=api_key)
-            except RuntimeError as exc:
-                raise RuntimeError(f"Could not prepare namespace {config.namespace!r}: {exc}") from exc
-            retrievers.append(HybridRetriever(namespace=namespace, embedder=embedder, config=config))
-        return cls(retrievers=retrievers, embedder=embedder)
-
-    def retrieve(
-        self,
-        query: str,
-        options: Sequence[RetrievalOptions],
-    ) -> MultiNamespaceRetrievalResult:
-        if len(options) != len(self._retrievers):
-            raise ValueError("one retrieval option set is required per namespace")
-        cleaned_query = query.strip()
-        if not cleaned_query:
-            raise RuntimeError("A non-empty query is required for retrieval.")
-        vectors = self._embedder.encode([cleaned_query])
-        if not vectors or not vectors[0]:
-            raise RuntimeError("The embedding model returned no vector for the query.")
-
-        results: list[RetrievalResult] = []
-        for retriever, namespace_options in zip(self._retrievers, options, strict=True):
-            namespace = retriever._config.namespace
-            try:
-                result = retriever.retrieve_embedded(cleaned_query, vectors[0], namespace_options)
-            except ProviderCallError as exc:
-                raise ProviderCallError(f"Retrieval failed for namespace {namespace!r}: {exc}") from exc
-            except RuntimeError as exc:
-                raise RuntimeError(f"Retrieval failed for namespace {namespace!r}: {exc}") from exc
-            for hit in result.hits:
-                hit.namespace = namespace
-            results.append(result)
-
-        first = results[0]
-        return MultiNamespaceRetrievalResult(
-            query=cleaned_query,
-            hits=cross_namespace_rrf(results, top_k=first.top_k),
-            region=first.region,
-            namespaces=[result.namespace for result in results],
-            embedding_model=first.embedding_model,
-            embedding_precision=first.embedding_precision,
-            top_k=first.top_k,
-            candidates=first.candidates,
-            namespace_results=results,
-        )
-
-
-def cross_namespace_rrf(
-    results: Sequence[RetrievalResult],
-    *,
-    top_k: int,
-    rrf_k: int = RRF_K,
-) -> list[SearchHit]:
-    """Fuse namespace-local ranked hits without comparing their raw scores."""
-
-    ranked: list[tuple[float, int, int, str, SearchHit]] = []
-    for namespace_index, result in enumerate(results):
-        for source_rank, hit in enumerate(result.hits, start=1):
-            score = 1.0 / (rrf_k + source_rank)
-            hit.score_info = {
-                **hit.score_info,
-                "cross_namespace_fusion": "rrf",
-                "cross_namespace_rrf_score": score,
-                "namespace_rank": source_rank,
-            }
-            ranked.append((-score, namespace_index, source_rank, hit.id, hit))
-    ranked.sort(key=lambda item: item[:4])
-    return [item[4] for item in ranked[:top_k]]
-
-
 def retrieval_plan(query: str, *, config: RuntimeConfig, options: RetrievalOptions) -> RetrievalPlan:
     return RetrievalPlan(query=query, config=config, options=options)
-
-
-def multi_namespace_retrieval_plan(
-    query: str,
-    *,
-    configs: Sequence[RuntimeConfig],
-    options: Sequence[RetrievalOptions],
-) -> MultiNamespaceRetrievalPlan:
-    return MultiNamespaceRetrievalPlan(
-        query=query,
-        plans=[
-            retrieval_plan(query, config=config, options=namespace_options)
-            for config, namespace_options in zip(configs, options, strict=True)
-        ],
-    )
 
 
 def build_multi_query_subqueries(
@@ -666,7 +461,7 @@ def user_friendly_query_error(exc: BaseException) -> str:
     message = str(exc) or exc.__class__.__name__
     return (
         "Live retrieval failed. Likely fixes: confirm TURBOPUFFER_API_KEY is set, "
-        "the namespace has been indexed, and TURBOPUFFER_REGION/TURBOPUFFER_NAMESPACE match the indexed corpus. "
+        "the explicit --namespace has been indexed, and TURBOPUFFER_REGION matches the indexed corpus. "
         f"Underlying error: {message}"
     )
 

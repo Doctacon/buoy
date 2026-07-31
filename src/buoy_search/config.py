@@ -11,7 +11,6 @@ from dataclasses import dataclass
 import os
 
 DEFAULT_REGION = "gcp-us-central1"
-DEFAULT_NAMESPACE = "site-scrapling-readthedocs-io-v1"
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_EMBEDDING_PRECISION = "float32"
 EMBEDDING_PRECISIONS = ("float32", "float16")
@@ -47,7 +46,7 @@ class RuntimeConfig:
     """Non-secret runtime defaults for local and live commands."""
 
     region: str = DEFAULT_REGION
-    namespace: str = DEFAULT_NAMESPACE
+    namespace: str = ""
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     embedding_precision: str = DEFAULT_EMBEDDING_PRECISION
 
@@ -55,7 +54,6 @@ class RuntimeConfig:
 def load_config(
     *,
     warning_callback: Callable[[str], None] | None = None,
-    ignore_environment_namespace: bool = False,
 ) -> RuntimeConfig:
     """Load non-secret runtime configuration from environment defaults.
 
@@ -76,11 +74,6 @@ def load_config(
 
     return RuntimeConfig(
         region=os.environ.get("TURBOPUFFER_REGION", DEFAULT_REGION),
-        namespace=(
-            DEFAULT_NAMESPACE
-            if ignore_environment_namespace
-            else os.environ.get("TURBOPUFFER_NAMESPACE", DEFAULT_NAMESPACE)
-        ),
         embedding_model=embedding_model,
         embedding_precision=embedding_precision,
     )

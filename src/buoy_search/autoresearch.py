@@ -194,7 +194,7 @@ def resolve_path(value: str, *, base_dir: Path) -> Path:
 def runtime_config_from_payload(payload: Mapping[str, object]) -> RuntimeConfig:
     base = load_config()
     region = string_or_default(payload, "region", base.region)
-    namespace = string_or_default(payload, "namespace", base.namespace)
+    namespace = required_string(payload, "namespace")
     embedding_model = string_or_default(payload, "embedding_model", base.embedding_model)
     embedding_precision = string_or_default(payload, "embedding_precision", base.embedding_precision)
     if embedding_precision not in EMBEDDING_PRECISIONS:
