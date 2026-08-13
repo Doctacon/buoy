@@ -6,7 +6,8 @@ Updated: 2026-08-13
 
 ## Decision
 
-GitHub tag and Release publication is paused after v0.4.0. Buoy retains
+GitHub tag and Release publication is paused after the existing v0.5.0 hosted
+release. Buoy retains
 Hatch-VCS tag-derived development versions and read-only source/build
 validation.
 
