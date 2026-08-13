@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-13
 Updated: 2026-08-13
 Parent: .10x/tickets/2026-08-13-ship-buoy-v0-5-1.md
@@ -58,8 +58,16 @@ and unrelated refactoring or hardening.
   `work/github-repo-symlink-containment`. Focused validation (35 tests), full
   locked Python 3.11/3.13 validation (472 tests each), frozen validators,
   reproducible v0.5.1 builds, distribution/clean-install smoke, and independent
-  focused review pass locally. Hosted CI remains before integration.
+  focused review pass locally.
+- 2026-08-13: PR #101 passed hosted CI and was independently reviewed, then
+  squash-merged to `develop` as
+  `f68dcf5f0a4352df59e14ca1d78bef1ea1b7f6ee`. PR #102 promoted that exact tree
+  to `main` by merge commit
+  `284b309a02546b13a63e709d9afe7f72c557b474`, where exact-main CI passed.
+- 2026-08-13: The published v0.5.1 wheel passed clean-install and bounded
+  `plan` / dry-run `apply` / explicit-namespace dry-run `retrieve` smoke.
+  GHSA-q6rp-r8g8-5xgh was then published with 0.5.1 recorded as patched.
 
 ## Blockers
 
-Hosted public CI and separate integration review.
+None.

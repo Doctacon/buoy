@@ -6,9 +6,9 @@ Updated: 2026-08-13
 
 ## Decision
 
-GitHub tag and Release publication is paused after the existing v0.5.0 hosted
-release. Buoy retains
-Hatch-VCS tag-derived development versions and read-only source/build
+Automatic GitHub tag and Release publication remains paused. The completed
+one-time manual v0.5.1 security release does not resume the publisher. Buoy
+retains Hatch-VCS tag-derived development versions and read-only source/build
 validation.
 
 All release-related workflows declare only `contents: read`. The existing four
@@ -35,5 +35,6 @@ publication, or protected-branch merge is authorized.
 ## One-time exception
 
 `.10x/decisions/v0-5-1-one-time-manual-security-release.md` authorizes only the
-reviewed v0.5.1 containment release. Automatic publication remains paused
-before and after that release.
+reviewed v0.5.1 containment release. That exception was consumed on 2026-08-13;
+it grants no authority for another tag, asset, or Release. Automatic
+publication remains paused.

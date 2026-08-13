@@ -1,8 +1,15 @@
-Status: active
+Status: superseded
 Created: 2026-08-13
 Updated: 2026-08-13
 
 # v0.5.1 One-Time Manual Security Release
+
+## 2026-08-13 disposition
+
+This one-time publication authority was consumed and no longer grants release
+or ref-write authority. Automatic publication remains paused under
+`.10x/decisions/release-publication-is-paused.md`; the decision below is
+retained as the historical release contract.
 
 ## Decision
 
@@ -45,3 +52,17 @@ after v0.5.1.
 The one annotated `v0.5.1` tag-ref push described in `docs/releasing.md` is the
 only direct ref creation authorized here. “No direct push” continues to apply
 to `main` and `develop`; task branches still use ordinary reviewed PRs.
+
+## Execution record
+
+The one-time authority was consumed on 2026-08-13. PR #101 integrated the
+reviewed change to `develop` as
+`f68dcf5f0a4352df59e14ca1d78bef1ea1b7f6ee`; PR #102 merge-committed that tree
+to `main` as `284b309a02546b13a63e709d9afe7f72c557b474`. Annotated tag v0.5.1
+(tag object `081b128c9f02761342e473e4faf7d034c7097627`) and GitHub Release
+369682440 were published and verified before GHSA-q6rp-r8g8-5xgh was
+published. Exact asset evidence is in
+`.10x/evidence/2026-08-13-buoy-v0-5-1-github-release.md`.
+
+This completed exception grants no future publication authority. Automatic
+publication remains paused, and the exclusions above remain in force.

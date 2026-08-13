@@ -22,8 +22,8 @@ class ReleaseAutomationTests(unittest.TestCase):
 
         self.assertTrue(result["dynamic_version"])
         self.assertTrue(result["publication_paused"])
-        self.assertEqual(result["published_history_through"], "0.5.0")
-        self.assertEqual(result["staged_release"], "0.5.1")
+        self.assertEqual(result["published_history_through"], "0.5.1")
+        self.assertIsNone(result["staged_release"])
         self.assertEqual(
             result["workflows_read_only"],
             list(release_automation.READ_ONLY_WORKFLOWS),
@@ -120,7 +120,7 @@ class ReleaseAutomationTests(unittest.TestCase):
             with self.assertRaisesRegex(release_automation.ReleaseError, "read-only"):
                 release_automation.validate_source(clone)
 
-    def test_source_validator_accepts_truthful_post_release_changelog(self) -> None:
+    def test_source_validator_accepts_truthful_pre_release_changelog(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             clone = Path(tmp) / "source"
             shutil.copytree(
@@ -131,15 +131,15 @@ class ReleaseAutomationTests(unittest.TestCase):
             changelog = clone / "CHANGELOG.md"
             changelog.write_text(
                 changelog.read_text(encoding="utf-8").replace(
-                    "## [0.5.1] - pending", "## [0.5.1] - 2026-08-13"
+                    "## [0.5.1] - 2026-08-13", "## [0.5.1] - pending"
                 ),
                 encoding="utf-8",
             )
 
             result = release_automation.validate_source(clone)
 
-            self.assertEqual(result["published_history_through"], "0.5.1")
-            self.assertIsNone(result["staged_release"])
+            self.assertEqual(result["published_history_through"], "0.5.0")
+            self.assertEqual(result["staged_release"], "0.5.1")
 
     def test_source_validator_rejects_job_permission_escalation_and_malformed_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -204,10 +204,10 @@ class ReleaseAutomationTests(unittest.TestCase):
         self.assertIn("No current workflow has write permission", docs)
         self.assertIn("validate-source", docs)
         self.assertIn("## Unreleased", changelog)
-        self.assertIn("## [0.5.1] - pending", changelog)
+        self.assertIn("## [0.5.1] - 2026-08-13", changelog)
         self.assertIn("## [0.5.0] - 2026-08-01", changelog)
         self.assertIn("## [0.4.0] - 2026-07-21", changelog)
-        self.assertEqual(changelog.count(" - pending"), 1)
+        self.assertEqual(changelog.count(" - pending"), 0)
 
     def test_focused_package_surface_excludes_operator_assets(self) -> None:
         with (ROOT / "pyproject.toml").open("rb") as handle:
