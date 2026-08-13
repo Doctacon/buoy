@@ -14,7 +14,7 @@ from buoy_search.applied_state import AppliedStateRow, applied_state_paths, buil
 from buoy_search.cli import OneLineProgress, build_parser, main, print_eval_text, print_retrieval_text
 from buoy_search.crawler import CrawlExecution, CrawlOptions, parse_github_repo_url
 from buoy_search.chunker import process_corpus
-from buoy_search.github_repo import GitHubRepoAcquisition, GitHubRepoMetadata
+from buoy_search.github_repo import GitHubRepoAcquisition, GitHubRepoMetadata, GitTreeEntry
 from buoy_search.plan_artifacts import build_plan_artifacts, verify_plan_artifacts, write_plan_artifacts
 
 
@@ -1016,7 +1016,16 @@ class CliTests(unittest.TestCase):
 
         stdout = StringIO()
         with patch("buoy_search.github_repo.acquire_github_repo", return_value=acquisition), patch(
-            "buoy_search.github_repo.list_tracked_files", return_value=["src/app.py"]
+            "buoy_search.github_repo.list_tracked_files",
+            return_value=[
+                GitTreeEntry(
+                    mode="100644",
+                    object_type="blob",
+                    object_id="0" * 40,
+                    object_size=64,
+                    repo_path="src/app.py",
+                )
+            ],
         ), redirect_stdout(stdout):
             result = main(
                 [

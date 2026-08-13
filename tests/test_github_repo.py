@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -27,10 +29,13 @@ from buoy_search.github_repo import (
     build_github_repo_corpus,
     crawl_github_repo_with_plan,
     fetch_github_repo_metadata,
+    parse_git_tree_entries,
     process_syntax_repo_corpus,
+    read_repo_regular_file,
     resolve_github_repo_metadata,
     run_git_stdout,
     validate_repo_chunking_options,
+    validate_repo_relative_path,
 )
 
 
@@ -154,6 +159,34 @@ class GitHubRepoAcquisitionTests(unittest.TestCase):
                 with self.assertRaisesRegex(GitHubRepoError, "subdirectory"):
                     acquire_github_repo(source, out_dir)
 
+    def test_acquire_github_repo_rejects_link_as_tree_subdirectory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            remote = create_local_git_repo(
+                root / "remote", files={"docs/README.md": "# Docs\n"}
+            )
+            (remote / "linked-docs").symlink_to("docs", target_is_directory=True)
+            commit_all(remote, "add linked directory")
+            source = parse_github_repo_url(
+                "https://github.com/owner/repo/tree/main/linked-docs"
+            )
+            assert source is not None
+            metadata = GitHubRepoMetadata(
+                owner="owner",
+                repo="repo",
+                repo_full_name="owner/repo",
+                repo_root_url="https://github.com/owner/repo",
+                clone_url=str(remote),
+                default_branch="main",
+            )
+
+            with patch(
+                "buoy_search.github_repo.resolve_github_repo_metadata",
+                return_value=metadata,
+            ):
+                with self.assertRaisesRegex(GitHubRepoError, "subdirectory"):
+                    acquire_github_repo(source, root / "out")
+
     def test_blob_url_acquisition_fails_clearly_until_single_file_ingestion_exists(self) -> None:
         source = parse_github_repo_url("https://github.com/owner/repo/blob/main/src/app.py")
         assert source is not None
@@ -218,6 +251,352 @@ class GitHubRepoAcquisitionTests(unittest.TestCase):
             plan = process_corpus(pages_dir)
             self.assertEqual(plan.stats.files_error, 0)
             self.assertGreaterEqual(plan.stats.chunks_generated, 2)
+
+    def test_tree_inventory_never_reads_link_entries_even_when_included(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            external_secret = root / "outside-secret.txt"
+            secret = "EXTERNAL-LINK-SECRET-DO-NOT-INDEX"
+            external_secret.write_text(secret * 100, encoding="utf-8")
+            external_dir = root / "outside-directory"
+            external_dir.mkdir()
+            (external_dir / "payload.py").write_text(secret, encoding="utf-8")
+            remote = create_local_git_repo(
+                root / "remote",
+                files={
+                    "README.md": "# Safe\n",
+                    "target.txt": "ordinary tracked target\n",
+                },
+            )
+            links = {
+                "absolute.txt": str(external_secret),
+                "relative.txt": "../../outside-secret.txt",
+                "internal.txt": "target.txt",
+                "dangling.txt": "missing.txt",
+                "directory-link": str(external_dir),
+                "materialized.txt": str(external_secret),
+            }
+            for name, target in links.items():
+                (remote / name).symlink_to(target)
+            commit_all(remote, "add tracked links")
+            acquisition = acquire_from_local_remote(root, remote)
+
+            # Simulate core.symlinks=false: Git mode remains 120000 even when
+            # the checkout entry is a regular link-payload file.
+            materialized = acquisition.checkout_dir / "materialized.txt"
+            materialized.unlink()
+            materialized.write_text(str(external_secret), encoding="utf-8")
+            corpus = build_github_repo_corpus(
+                acquisition,
+                root / "pages",
+                include_paths=("**",),
+                max_file_bytes=40,
+                include_oversize_file_cards=True,
+            )
+
+            self.assertEqual(corpus.stats.files_discovered, 8)
+            self.assertEqual(corpus.stats.files_selected, 2)
+            self.assertEqual(corpus.stats.files_skipped_filtered, 6)
+            self.assertEqual(corpus.stats.files_skipped_oversize, 0)
+            self.assertEqual(
+                {item.repo_path for item in corpus.selected_files},
+                {"README.md", "target.txt"},
+            )
+            rendered = "\n".join(
+                path.read_text(encoding="utf-8")
+                for path in (root / "pages").glob("*.md")
+            )
+            self.assertNotIn(secret, rendered)
+            self.assertNotIn(str(external_secret), rendered)
+            self.assertNotIn(str(external_dir), rendered)
+
+    def test_replaced_regular_checkout_entries_fail_closed_without_path_leak(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            remote = create_local_git_repo(
+                root / "remote",
+                files={
+                    "README.md": "# Safe\n",
+                    "victim.txt": "committed text\n",
+                    "src/app.py": "print('committed')\n",
+                },
+            )
+            acquisition = acquire_from_local_remote(root, remote)
+            secret = "REPLACEMENT-SECRET-DO-NOT-INDEX"
+            external_file = root / "private-file.txt"
+            external_file.write_text(secret, encoding="utf-8")
+            external_dir = root / "private-directory"
+            external_dir.mkdir()
+            (external_dir / "app.py").write_text(secret, encoding="utf-8")
+            victim = acquisition.checkout_dir / "victim.txt"
+            victim.unlink()
+            victim.symlink_to(external_file)
+            shutil.rmtree(acquisition.checkout_dir / "src")
+            (acquisition.checkout_dir / "src").symlink_to(
+                external_dir, target_is_directory=True
+            )
+
+            corpus = build_github_repo_corpus(acquisition, root / "pages")
+
+            self.assertEqual(
+                [item.repo_path for item in corpus.selected_files], ["README.md"]
+            )
+            self.assertEqual(corpus.stats.files_error, 2)
+            error_text = json.dumps(corpus.stats.errors)
+            self.assertNotIn(secret, error_text)
+            self.assertNotIn(str(external_file), error_text)
+            self.assertNotIn(str(external_dir), error_text)
+            rendered = "\n".join(
+                path.read_text(encoding="utf-8")
+                for path in (root / "pages").glob("*.md")
+            )
+            self.assertNotIn(secret, rendered)
+
+    def test_gitlink_is_discovered_but_filtered_before_checkout_access(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            remote = create_local_git_repo(root / "remote")
+            commit_sha = subprocess.run(
+                ["git", "-C", str(remote), "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(remote),
+                    "update-index",
+                    "--add",
+                    "--cacheinfo",
+                    "160000",
+                    commit_sha,
+                    "vendor/submodule",
+                ],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(remote), "commit", "-m", "add gitlink"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            acquisition = acquire_from_local_remote(root, remote)
+
+            corpus = build_github_repo_corpus(acquisition, root / "pages")
+
+            self.assertEqual(corpus.stats.files_discovered, 2)
+            self.assertEqual(corpus.stats.files_selected, 1)
+            self.assertEqual(corpus.stats.files_skipped_filtered, 1)
+
+    def test_executable_regular_blob_remains_eligible(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            remote = create_local_git_repo(
+                root / "remote", files={"scripts/run.sh": "#!/bin/sh\necho safe\n"}
+            )
+            (remote / "scripts/run.sh").chmod(0o755)
+            commit_all(remote, "mark script executable")
+            acquisition = acquire_from_local_remote(root, remote)
+
+            corpus = build_github_repo_corpus(acquisition, root / "pages")
+
+            self.assertEqual(corpus.stats.files_discovered, 1)
+            self.assertEqual(corpus.stats.files_selected, 1)
+            self.assertEqual(corpus.selected_files[0].repo_path, "scripts/run.sh")
+            self.assertIn("echo safe", corpus.selected_files[0].text)
+
+    def test_tree_parser_is_nul_safe_and_fails_closed_on_malformed_records(self) -> None:
+        oid = b"0" * 40
+        entries = parse_git_tree_entries(
+            b"100755 blob " + oid + b" 12\todd\tname\n.py\0"
+            b"160000 commit " + oid + b" -\tvendor/submodule\0"
+        )
+
+        self.assertEqual(entries[0].repo_path, "odd\tname\n.py")
+        self.assertTrue(entries[0].is_regular_blob)
+        self.assertFalse(entries[1].is_regular_blob)
+        self.assertEqual(parse_git_tree_entries(b""), [])
+        for malformed in (
+            b"100644 blob " + oid + b" 1\tmissing-terminal-nul",
+            b"100644 blob nope 1\tfile.txt\0",
+            b"100644 blob " + oid + b" 1\t../escape.txt\0",
+            b"100644 blob " + oid + b" 1\tduplicate.txt\0"
+            b"100644 blob " + oid + b" 1\tduplicate.txt\0",
+        ):
+            with self.subTest(malformed=malformed), self.assertRaises(GitHubRepoError):
+                parse_git_tree_entries(malformed)
+        posix_names = parse_git_tree_entries(
+            b"100644 blob " + oid + b" 1\tC:ordinary.txt\0"
+            b"100644 blob " + oid + b" 1\ta\\b.txt\0"
+        )
+        self.assertEqual(
+            [entry.repo_path for entry in posix_names], ["C:ordinary.txt", "a\\b.txt"]
+        )
+
+    def test_portable_reader_retains_regular_file_and_rejects_link(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            checkout = Path(tmp) / "checkout"
+            checkout.mkdir()
+            regular = checkout / "regular.txt"
+            regular.write_bytes(b"line one\rline two\r\n")
+            outside = Path(tmp) / "outside.txt"
+            outside.write_text("secret", encoding="utf-8")
+            (checkout / "linked.txt").symlink_to(outside)
+
+            with patch("buoy_search.github_repo.os.supports_dir_fd", set()):
+                snapshot = read_repo_regular_file(
+                    checkout, "regular.txt", max_file_bytes=100
+                )
+                with self.assertRaisesRegex(OSError, "linked.txt"):
+                    read_repo_regular_file(checkout, "linked.txt", max_file_bytes=100)
+
+            self.assertEqual(snapshot.data, b"line one\rline two\r\n")
+            self.assertEqual(snapshot.size_bytes, len(snapshot.data))
+            for unsafe in ("../escape",):
+                with self.subTest(path=unsafe), self.assertRaises(ValueError):
+                    validate_repo_relative_path(unsafe)
+            for unsafe in (
+                "a\\..\\escape",
+                "C:escape",
+                "C:/escape",
+                "file:stream",
+                "NUL.txt",
+                "trailing.",
+            ):
+                with (
+                    self.subTest(path=unsafe),
+                    patch("buoy_search.github_repo.os.supports_dir_fd", set()),
+                    self.assertRaisesRegex(OSError, "Repository file"),
+                ):
+                    read_repo_regular_file(checkout, unsafe, max_file_bytes=100)
+
+    def test_portable_reader_rejects_reparse_and_identity_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            checkout = Path(tmp) / "checkout"
+            checkout.mkdir()
+            (checkout / "nested").mkdir()
+            candidate = checkout / "nested/regular.txt"
+            candidate.write_text("safe text", encoding="utf-8")
+            real_lstat = os.lstat
+
+            class ReparseObservation:
+                def __init__(self, original):  # noqa: ANN001 - stat_result proxy.
+                    self._original = original
+                    self.st_file_attributes = 0x400
+                    self.st_reparse_tag = 1
+
+                def __getattr__(self, name):  # noqa: ANN001 - stat_result proxy.
+                    return getattr(self._original, name)
+
+            for marked_path in (checkout, checkout / "nested", candidate):
+                def reparse_lstat(path):  # noqa: ANN001 - mirrors os.lstat.
+                    observed = real_lstat(path)
+                    return (
+                        ReparseObservation(observed)
+                        if Path(path) == marked_path
+                        else observed
+                    )
+
+                with (
+                    self.subTest(marked_path=marked_path),
+                    patch("buoy_search.github_repo.os.supports_dir_fd", set()),
+                    patch("buoy_search.github_repo.os.lstat", side_effect=reparse_lstat),
+                    patch("buoy_search.github_repo.os.read") as read_mock,
+                    self.assertRaisesRegex(OSError, "nested/regular.txt"),
+                ):
+                    read_repo_regular_file(
+                        checkout, "nested/regular.txt", max_file_bytes=100
+                    )
+                read_mock.assert_not_called()
+
+            real_observe = __import__(
+                "buoy_search.github_repo", fromlist=["_portable_path_observations"]
+            )._portable_path_observations
+            observations = 0
+
+            def drifting_observe(checkout_dir, parts, repo_path):  # noqa: ANN001.
+                nonlocal observations
+                observations += 1
+                path, result = real_observe(checkout_dir, parts, repo_path)
+                if observations == 2:
+                    candidate.unlink()
+                    candidate.write_text("replacement", encoding="utf-8")
+                    path, result = real_observe(checkout_dir, parts, repo_path)
+                return path, result
+
+            with (
+                patch("buoy_search.github_repo.os.supports_dir_fd", set()),
+                patch(
+                    "buoy_search.github_repo._portable_path_observations",
+                    side_effect=drifting_observe,
+                ),
+                patch("buoy_search.github_repo.os.read") as read_mock,
+                self.assertRaisesRegex(OSError, "nested/regular.txt"),
+            ):
+                read_repo_regular_file(
+                    checkout, "nested/regular.txt", max_file_bytes=100
+                )
+            read_mock.assert_not_called()
+
+    def test_portable_reader_discards_bytes_if_path_changes_after_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            checkout = Path(tmp) / "checkout"
+            checkout.mkdir()
+            candidate = checkout / "regular.txt"
+            candidate.write_text("safe text", encoding="utf-8")
+            module = __import__(
+                "buoy_search.github_repo", fromlist=["_portable_path_observations"]
+            )
+            real_observe = module._portable_path_observations
+            observations = 0
+
+            def drifting_after_read(checkout_dir, parts, repo_path):  # noqa: ANN001.
+                nonlocal observations
+                observations += 1
+                if observations == 3:
+                    candidate.unlink()
+                    candidate.write_text("replacement", encoding="utf-8")
+                return real_observe(checkout_dir, parts, repo_path)
+
+            with (
+                patch("buoy_search.github_repo.os.supports_dir_fd", set()),
+                patch(
+                    "buoy_search.github_repo._portable_path_observations",
+                    side_effect=drifting_after_read,
+                ),
+                self.assertRaisesRegex(OSError, "regular.txt"),
+            ):
+                read_repo_regular_file(checkout, "regular.txt", max_file_bytes=100)
+
+    def test_oversize_reader_reads_only_the_requested_sample(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            checkout = Path(tmp) / "checkout"
+            checkout.mkdir()
+            payload = b"0123456789" * 1000
+            (checkout / "large.txt").write_bytes(payload)
+
+            real_read = os.read
+            requested: list[int] = []
+
+            def recording_read(descriptor, length):  # noqa: ANN001 - mirrors os.read.
+                requested.append(length)
+                return real_read(descriptor, length)
+
+            with patch("buoy_search.github_repo.os.read", side_effect=recording_read):
+                snapshot = read_repo_regular_file(
+                    checkout,
+                    "large.txt",
+                    max_file_bytes=100,
+                    oversize_sample_bytes=37,
+                )
+
+            self.assertTrue(snapshot.oversize)
+            self.assertEqual(snapshot.size_bytes, len(payload))
+            self.assertEqual(snapshot.data, payload[:37])
+            self.assertTrue(requested)
+            self.assertLessEqual(max(requested), 37)
 
     def test_acquired_crlf_python_is_lf_normalized_without_losing_source_semantics(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -865,6 +1244,16 @@ def create_local_git_repo(path: Path, files: dict[str, str | bytes] | None = Non
     subprocess.run(["git", "-C", str(path), "add", "-f", "."], check=True)
     subprocess.run(["git", "-C", str(path), "commit", "-m", "initial"], check=True, capture_output=True, text=True)
     return path
+
+
+def commit_all(path: Path, message: str) -> None:
+    subprocess.run(["git", "-C", str(path), "add", "-f", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(path), "commit", "-m", message],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def acquire_from_local_remote(root: Path, remote: Path):

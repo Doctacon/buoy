@@ -16,27 +16,34 @@ Buoy is deliberately not an account-wide catalog, semantic router, ontology
 engine, or operator console. Those cross-source capabilities now belong to
 [Kite](https://github.com/Doctacon/kite).
 
-## Workflow
+## Install
+
+Buoy requires Python 3.11 or newer. Install the released wheel directly from
+GitHub:
 
 ```bash
-# 1. Inspect one source without writing to Turbopuffer.
-buoy crawl --base-url https://example.com/docs --json
+uv tool install "https://github.com/Doctacon/buoy/releases/download/v0.5.1/buoy_search-0.5.1-py3-none-any.whl"
+buoy --version
+```
 
-# 2. Create reviewable plan.json + delta.duckdb artifacts.
-buoy plan https://example.com/docs \
-  --namespace site-example-docs-v1 \
-  --out-dir artifacts/example-plan
+## First GitHub repository index
 
-# 3. Review locally.
-buoy apply --plan artifacts/example-plan/plan.json --dry-run
+```bash
+# 1. Create reviewable plan.json + delta.duckdb artifacts.
+buoy plan https://github.com/Doctacon/buoy \
+  --namespace github-doctacon-buoy-v1 \
+  --out-dir artifacts/buoy-repo
 
-# 4. Apply only after review.
+# 2. Verify the exact plan and preview its changes locally.
+buoy apply --plan artifacts/buoy-repo/plan.json --dry-run
+
+# 3. Apply only after review.
 export TURBOPUFFER_API_KEY=...
-buoy apply --plan artifacts/example-plan/plan.json --approve --json
+buoy apply --plan artifacts/buoy-repo/plan.json --approve --json
 
-# 5. Search the one explicit index.
-buoy retrieve "How does authentication work?" \
-  --namespace site-example-docs-v1
+# 4. Search the one explicit namespace.
+buoy retrieve "How does repository indexing work?" \
+  --namespace github-doctacon-buoy-v1
 ```
 
 Plain interactive `apply` shows the same local preflight and accepts only exact
@@ -71,11 +78,13 @@ orchestration stay outside Buoy.
 - Buoy performs no namespace listing, routing-catalog read/write, evidence
   snapshot, or cross-namespace fusion.
 
-## Install and develop
+## Contributor setup
 
-Buoy requires Python 3.11 or newer.
+Clone the repository only when developing Buoy itself:
 
 ```bash
+git clone https://github.com/Doctacon/buoy.git
+cd buoy
 uv sync --locked --python 3.13
 uv run buoy --help
 PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*.py' -q

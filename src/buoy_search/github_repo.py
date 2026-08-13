@@ -12,9 +12,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from fnmatch import fnmatchcase
 import json
+import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 from typing import Any, Callable, Sequence
 from urllib.error import HTTPError, URLError
@@ -149,7 +151,7 @@ DEFAULT_EXCLUDED_FILENAMES = {
     "yarn.lock",
 }
 
-Runner = Callable[..., subprocess.CompletedProcess[str]]
+Runner = Callable[..., subprocess.CompletedProcess[Any]]
 UrlOpen = Callable[..., Any]
 
 
@@ -198,6 +200,30 @@ class GitHubRepoFile:
     text: str
     source_hash: str
     blob_url: str
+
+
+@dataclass(frozen=True)
+class GitTreeEntry:
+    """One strictly parsed leaf entry from the acquired commit tree."""
+
+    mode: str
+    object_type: str
+    object_id: str
+    object_size: int | None
+    repo_path: str
+
+    @property
+    def is_regular_blob(self) -> bool:
+        return self.object_type == "blob" and self.mode in {"100644", "100755"}
+
+
+@dataclass(frozen=True)
+class RepoFileSnapshot:
+    """One inode-bound, bounded read from a checkout regular file."""
+
+    size_bytes: int
+    data: bytes
+    oversize: bool
 
 
 @dataclass
@@ -424,8 +450,19 @@ def acquire_github_repo(
 
     repo_subdir = source.repo_subdir
     if repo_subdir:
-        subdir = checkout_dir / repo_subdir
-        if not subdir.exists() or not subdir.is_dir():
+        try:
+            validate_repo_relative_path(repo_subdir)
+            object_type = run_git_stdout(
+                ["git", "-C", str(checkout_dir), "cat-file", "-t", f"{commit_sha}:{repo_subdir}"],
+                runner=runner,
+                timeout=git_timeout,
+                purpose=f"validate GitHub repository subdirectory {repo_subdir!r}",
+            ).strip()
+        except (GitHubRepoError, ValueError) as exc:
+            raise GitHubRepoError(
+                f"Requested GitHub repository subdirectory {repo_subdir!r} was not found in {source.repo_full_name}"
+            ) from exc
+        if object_type != "tree":
             raise GitHubRepoError(
                 f"Requested GitHub repository subdirectory {repo_subdir!r} was not found in {source.repo_full_name}"
             )
@@ -640,43 +677,71 @@ def build_github_repo_corpus(
 ) -> GitHubRepoCorpus:
     """Select repository files and write generated Markdown pages."""
 
-    tracked_paths = list_tracked_files(acquisition.checkout_dir, runner=runner, timeout=git_timeout)
-    stats = GitHubRepoCorpusStats(files_discovered=len(tracked_paths))
+    tracked_entries = list_tracked_files(
+        acquisition.checkout_dir,
+        acquisition.commit_sha,
+        runner=runner,
+        timeout=git_timeout,
+    )
+    stats = GitHubRepoCorpusStats(files_discovered=len(tracked_entries))
     selected: list[GitHubRepoFile] = []
     oversize_file_cards: list[GitHubRepoFile] = []
     pages_dir.mkdir(parents=True, exist_ok=True)
     for stale_page in pages_dir.glob("*.md"):
         stale_page.unlink()
 
-    for repo_path in tracked_paths:
+    for entry in tracked_entries:
+        repo_path = entry.repo_path
         try:
-            decision = repo_file_skip_reason(
+            decision = repo_path_skip_reason(
                 acquisition,
                 repo_path,
                 include_paths=include_paths,
                 exclude_paths=exclude_paths,
-                max_file_bytes=max_file_bytes,
             )
+            if decision is None and not entry.is_regular_blob:
+                decision = "filtered"
             if decision is not None:
                 increment_skip(stats, decision)
-                if decision == "oversize" and include_oversize_file_cards:
-                    oversize_card = github_repo_file_for_oversize_card(acquisition, repo_path)
+                continue
+            snapshot = read_repo_regular_file(
+                acquisition.checkout_dir,
+                repo_path,
+                max_file_bytes=max_file_bytes,
+                oversize_sample_bytes=(
+                    OVERSIZE_FILE_CARD_SAMPLE_BYTES if include_oversize_file_cards else 0
+                ),
+            )
+            if snapshot.size_bytes == 0:
+                increment_skip(stats, "empty")
+                continue
+            if snapshot.oversize:
+                increment_skip(stats, "oversize")
+                if include_oversize_file_cards:
+                    oversize_card = github_repo_file_for_oversize_card(
+                        acquisition,
+                        repo_path,
+                        snapshot=snapshot,
+                    )
                     if oversize_card is not None:
                         oversize_file_cards.append(oversize_card)
+                continue
+            if is_binary_data(snapshot.data):
+                increment_skip(stats, "binary")
                 continue
             if max_files is not None and len(selected) >= max_files:
                 stats.files_skipped_limit += 1
                 stats.limit_reached = True
                 continue
             absolute_path = acquisition.checkout_dir / repo_path
-            text = absolute_path.read_text(encoding="utf-8")
+            text = decode_repo_text(snapshot.data)
             language = language_for_path(repo_path)
             blob_url = github_blob_url(acquisition, repo_path)
             selected.append(
                 GitHubRepoFile(
                     repo_path=repo_path,
                     absolute_path=absolute_path,
-                    size_bytes=absolute_path.stat().st_size,
+                    size_bytes=snapshot.size_bytes,
                     language=language,
                     text=text,
                     source_hash=sha256_text(text),
@@ -1026,37 +1091,94 @@ def write_repo_markdown_page(
 
 def list_tracked_files(
     checkout_dir: Path,
+    commit_sha: str,
     *,
     runner: Runner = subprocess.run,
     timeout: int = DEFAULT_GIT_TIMEOUT,
-) -> list[str]:
-    output = run_git_stdout(
-        ["git", "-C", str(checkout_dir), "ls-files", "-z"],
+) -> list[GitTreeEntry]:
+    """Return a strict immutable inventory of leaf entries in ``commit_sha``."""
+
+    output = run_git_bytes(
+        [
+            "git",
+            "-C",
+            str(checkout_dir),
+            "ls-tree",
+            "-rz",
+            "-l",
+            "--full-tree",
+            commit_sha,
+        ],
         runner=runner,
         timeout=timeout,
         purpose="list tracked repository files",
     )
-    return [path for path in output.split("\0") if path]
+    return parse_git_tree_entries(output)
+
+
+def parse_git_tree_entries(output: bytes) -> list[GitTreeEntry]:
+    """Parse NUL-framed ``git ls-tree -rz -l`` output without path quoting."""
+
+    if not output:
+        return []
+    if not output.endswith(b"\0"):
+        raise GitHubRepoError("Could not parse tracked repository files: missing terminal NUL")
+    entries: list[GitTreeEntry] = []
+    seen: set[str] = set()
+    for record in output[:-1].split(b"\0"):
+        if not record or b"\t" not in record:
+            raise GitHubRepoError("Could not parse tracked repository files: malformed tree entry")
+        header, encoded_path = record.split(b"\t", 1)
+        fields = header.split()
+        if len(fields) != 4:
+            raise GitHubRepoError("Could not parse tracked repository files: malformed tree header")
+        encoded_mode, encoded_type, encoded_oid, encoded_size = fields
+        if re.fullmatch(rb"[0-7]{6}", encoded_mode) is None:
+            raise GitHubRepoError("Could not parse tracked repository files: malformed tree mode")
+        if re.fullmatch(rb"[a-z]+", encoded_type) is None:
+            raise GitHubRepoError("Could not parse tracked repository files: malformed object type")
+        if re.fullmatch(rb"[0-9a-f]{40}|[0-9a-f]{64}", encoded_oid) is None:
+            raise GitHubRepoError("Could not parse tracked repository files: malformed object ID")
+        if encoded_size != b"-" and re.fullmatch(rb"[0-9]+", encoded_size) is None:
+            raise GitHubRepoError("Could not parse tracked repository files: malformed object size")
+        try:
+            repo_path = encoded_path.decode("utf-8")
+            validate_repo_relative_path(repo_path)
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise GitHubRepoError("Could not parse tracked repository files: unsafe repository path") from exc
+        if repo_path in seen:
+            raise GitHubRepoError("Could not parse tracked repository files: duplicate repository path")
+        seen.add(repo_path)
+        entries.append(
+            GitTreeEntry(
+                mode=encoded_mode.decode("ascii"),
+                object_type=encoded_type.decode("ascii"),
+                object_id=encoded_oid.decode("ascii"),
+                object_size=None if encoded_size == b"-" else int(encoded_size),
+                repo_path=repo_path,
+            )
+        )
+    return entries
 
 
 def github_repo_file_for_oversize_card(
     acquisition: GitHubRepoAcquisition,
     repo_path: str,
     *,
-    sample_bytes: int = OVERSIZE_FILE_CARD_SAMPLE_BYTES,
+    snapshot: RepoFileSnapshot,
 ) -> GitHubRepoFile | None:
     absolute_path = acquisition.checkout_dir / repo_path
     try:
-        sample = absolute_path.read_bytes()[:sample_bytes]
+        sample = snapshot.data
         if b"\0" in sample:
             return None
         text = sample.decode("utf-8")
-    except (OSError, UnicodeDecodeError):
+    except UnicodeDecodeError:
         return None
     return GitHubRepoFile(
         repo_path=repo_path,
         absolute_path=absolute_path,
-        size_bytes=absolute_path.stat().st_size,
+        size_bytes=snapshot.size_bytes,
         language=language_for_path(repo_path),
         text=text,
         source_hash=sha256_text(text),
@@ -1064,13 +1186,12 @@ def github_repo_file_for_oversize_card(
     )
 
 
-def repo_file_skip_reason(
+def repo_path_skip_reason(
     acquisition: GitHubRepoAcquisition,
     repo_path: str,
     *,
     include_paths: Sequence[str],
     exclude_paths: Sequence[str],
-    max_file_bytes: int,
 ) -> str | None:
     normalized_path = repo_path.strip("/")
     if acquisition.repo_subdir and not path_is_under(normalized_path, acquisition.repo_subdir):
@@ -1082,18 +1203,302 @@ def repo_file_skip_reason(
         return "filtered"
     if not user_included and default_repo_path_excluded(normalized_path):
         return "filtered"
-
-    absolute_path = acquisition.checkout_dir / normalized_path
-    if not absolute_path.is_file():
-        return "filtered"
-    size = absolute_path.stat().st_size
-    if size == 0:
-        return "empty"
-    if size > max_file_bytes:
-        return "oversize"
-    if is_binary_file(absolute_path):
-        return "binary"
     return None
+
+
+def validate_repo_relative_path(repo_path: str) -> tuple[str, ...]:
+    """Return safe Git path components or reject lexical traversal/ambiguity."""
+
+    if not repo_path or repo_path.startswith("/") or "\0" in repo_path:
+        raise ValueError("repository path is not relative")
+    parts = tuple(repo_path.split("/"))
+    if any(part in {"", ".", ".."} for part in parts):
+        raise ValueError("repository path contains an unsafe component")
+    return parts
+
+
+def validate_portable_path_parts(parts: tuple[str, ...]) -> None:
+    """Reject names that Windows could reinterpret as paths, devices, or ADS."""
+
+    windows_devices = {
+        "con",
+        "prn",
+        "aux",
+        "nul",
+        *(f"com{number}" for number in range(1, 10)),
+        *(f"lpt{number}" for number in range(1, 10)),
+    }
+    if any(
+        "\\" in part
+        or ":" in part
+        or part.endswith((" ", "."))
+        or part.split(".", 1)[0].casefold() in windows_devices
+        for part in parts
+    ):
+        raise ValueError("repository path is ambiguous on this platform")
+
+
+def _unsafe_repo_file(repo_path: str) -> OSError:
+    return OSError(f"Repository file {repo_path!r} is not a stable regular file")
+
+
+def _file_observation(descriptor: int) -> tuple[int, int, int, int, int, int]:
+    observed = os.fstat(descriptor)
+    return (
+        observed.st_dev,
+        observed.st_ino,
+        observed.st_mode,
+        observed.st_size,
+        observed.st_mtime_ns,
+        observed.st_ctime_ns,
+    )
+
+
+def _read_descriptor_snapshot(
+    descriptor: int,
+    repo_path: str,
+    *,
+    max_file_bytes: int,
+    oversize_sample_bytes: int,
+) -> RepoFileSnapshot:
+    before = _file_observation(descriptor)
+    if not stat.S_ISREG(before[2]):
+        raise _unsafe_repo_file(repo_path)
+    size_bytes = before[3]
+    oversize = size_bytes > max_file_bytes
+    read_limit = min(size_bytes, oversize_sample_bytes) if oversize else size_bytes
+    chunks: list[bytes] = []
+    remaining = read_limit
+    while remaining:
+        chunk = os.read(descriptor, min(remaining, 64 * 1024))
+        if not chunk:
+            raise _unsafe_repo_file(repo_path)
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    if _file_observation(descriptor) != before:
+        raise _unsafe_repo_file(repo_path)
+    return RepoFileSnapshot(
+        size_bytes=size_bytes,
+        data=b"".join(chunks),
+        oversize=oversize,
+    )
+
+
+def _is_reparse_point(observation: os.stat_result) -> bool:
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return bool(
+        getattr(observation, "st_file_attributes", 0) & reparse_flag
+        or getattr(observation, "st_reparse_tag", 0)
+    )
+
+
+def _portable_path_observations(
+    checkout_dir: Path,
+    parts: tuple[str, ...],
+    repo_path: str,
+) -> tuple[Path, tuple[os.stat_result, ...]]:
+    current = Path(checkout_dir)
+    observations: list[os.stat_result] = []
+    try:
+        root_observation = os.lstat(current)
+        if (
+            stat.S_ISLNK(root_observation.st_mode)
+            or _is_reparse_point(root_observation)
+            or not stat.S_ISDIR(root_observation.st_mode)
+        ):
+            raise _unsafe_repo_file(repo_path)
+        observations.append(root_observation)
+        for index, component in enumerate(parts):
+            current = current / component
+            observation = os.lstat(current)
+            if stat.S_ISLNK(observation.st_mode) or _is_reparse_point(observation):
+                raise _unsafe_repo_file(repo_path)
+            is_final = index == len(parts) - 1
+            if is_final:
+                if not stat.S_ISREG(observation.st_mode):
+                    raise _unsafe_repo_file(repo_path)
+            elif not stat.S_ISDIR(observation.st_mode):
+                raise _unsafe_repo_file(repo_path)
+            observations.append(observation)
+    except OSError as exc:
+        if str(exc).startswith("Repository file "):
+            raise
+        raise _unsafe_repo_file(repo_path) from exc
+    return current, tuple(observations)
+
+
+def _same_path_observations(
+    left: tuple[os.stat_result, ...],
+    right: tuple[os.stat_result, ...],
+) -> bool:
+    return len(left) == len(right) and all(
+        os.path.samestat(before, after)
+        and (
+            before.st_dev,
+            before.st_ino,
+            before.st_mode,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        )
+        == (
+            after.st_dev,
+            after.st_ino,
+            after.st_mode,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        )
+        for before, after in zip(left, right)
+    )
+
+
+def _read_repo_regular_file_portable(
+    checkout_dir: Path,
+    parts: tuple[str, ...],
+    repo_path: str,
+    *,
+    max_file_bytes: int,
+    oversize_sample_bytes: int,
+) -> RepoFileSnapshot:
+    """Use repeated lstat/identity checks where descriptor-relative opens are absent."""
+
+    candidate, initial_path = _portable_path_observations(checkout_dir, parts, repo_path)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NOINHERIT", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(candidate, flags)
+        opened = os.fstat(descriptor)
+        before_candidate, before_path = _portable_path_observations(
+            checkout_dir, parts, repo_path
+        )
+        if (
+            before_candidate != candidate
+            or not _same_path_observations(initial_path, before_path)
+            or not os.path.samestat(opened, before_path[-1])
+        ):
+            raise _unsafe_repo_file(repo_path)
+        snapshot = _read_descriptor_snapshot(
+            descriptor,
+            repo_path,
+            max_file_bytes=max_file_bytes,
+            oversize_sample_bytes=oversize_sample_bytes,
+        )
+        after_candidate, after_path = _portable_path_observations(
+            checkout_dir, parts, repo_path
+        )
+        if (
+            after_candidate != candidate
+            or not _same_path_observations(before_path, after_path)
+            or not os.path.samestat(os.fstat(descriptor), after_path[-1])
+        ):
+            raise _unsafe_repo_file(repo_path)
+        return snapshot
+    except OSError as exc:
+        if str(exc).startswith("Repository file "):
+            raise
+        raise _unsafe_repo_file(repo_path) from exc
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+
+def _read_repo_regular_file_posix(
+    checkout_dir: Path,
+    parts: tuple[str, ...],
+    repo_path: str,
+    *,
+    max_file_bytes: int,
+    oversize_sample_bytes: int,
+) -> RepoFileSnapshot:
+    """Open each checkout component relative to a held no-follow directory."""
+
+    close_on_exit: list[int] = []
+    directory_flags = (
+        os.O_RDONLY
+        | os.O_DIRECTORY
+        | os.O_NOFOLLOW
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+    file_flags = (
+        os.O_RDONLY
+        | os.O_NOFOLLOW
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    try:
+        root_fd = os.open(checkout_dir, directory_flags)
+        close_on_exit.append(root_fd)
+        parent_fd = root_fd
+        for component in parts[:-1]:
+            parent_fd = os.open(component, directory_flags, dir_fd=parent_fd)
+            close_on_exit.append(parent_fd)
+        file_fd = os.open(parts[-1], file_flags, dir_fd=parent_fd)
+        close_on_exit.append(file_fd)
+        return _read_descriptor_snapshot(
+            file_fd,
+            repo_path,
+            max_file_bytes=max_file_bytes,
+            oversize_sample_bytes=oversize_sample_bytes,
+        )
+    except OSError as exc:
+        if str(exc).startswith("Repository file "):
+            raise
+        raise _unsafe_repo_file(repo_path) from exc
+    finally:
+        for descriptor in reversed(close_on_exit):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+
+def read_repo_regular_file(
+    checkout_dir: Path,
+    repo_path: str,
+    *,
+    max_file_bytes: int,
+    oversize_sample_bytes: int = 0,
+) -> RepoFileSnapshot:
+    """Read one regular checkout file through a bounded no-follow descriptor walk."""
+
+    try:
+        parts = validate_repo_relative_path(repo_path)
+    except ValueError as exc:
+        raise _unsafe_repo_file(repo_path) from exc
+    supports_descriptor_walk = (
+        os.open in os.supports_dir_fd
+        and hasattr(os, "O_NOFOLLOW")
+        and hasattr(os, "O_DIRECTORY")
+    )
+    if supports_descriptor_walk:
+        return _read_repo_regular_file_posix(
+            checkout_dir,
+            parts,
+            repo_path,
+            max_file_bytes=max_file_bytes,
+            oversize_sample_bytes=oversize_sample_bytes,
+        )
+    try:
+        validate_portable_path_parts(parts)
+    except ValueError as exc:
+        raise _unsafe_repo_file(repo_path) from exc
+    return _read_repo_regular_file_portable(
+        checkout_dir,
+        parts,
+        repo_path,
+        max_file_bytes=max_file_bytes,
+        oversize_sample_bytes=oversize_sample_bytes,
+    )
 
 
 def increment_skip(stats: GitHubRepoCorpusStats, reason: str) -> None:
@@ -1147,8 +1552,8 @@ def default_repo_path_excluded(repo_path: str) -> bool:
     return name.endswith(".min.js") or name.endswith(".min.css") or name.endswith(".map")
 
 
-def is_binary_file(path: Path) -> bool:
-    sample = path.read_bytes()[:8192]
+def is_binary_data(data: bytes) -> bool:
+    sample = data[:8192]
     if b"\0" in sample:
         return True
     try:
@@ -1156,6 +1561,45 @@ def is_binary_file(path: Path) -> bool:
     except UnicodeDecodeError:
         return True
     return False
+
+
+def decode_repo_text(data: bytes) -> str:
+    """Match text-mode universal-newline behavior after the bounded byte read."""
+
+    return data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def run_git_bytes(
+    command: list[str],
+    *,
+    runner: Runner = subprocess.run,
+    timeout: int = DEFAULT_GIT_TIMEOUT,
+    purpose: str,
+) -> bytes:
+    """Run a git command and return exact stdout bytes."""
+
+    try:
+        result = runner(
+            command,
+            check=False,
+            capture_output=True,
+            text=False,
+            timeout=timeout,
+        )
+    except FileNotFoundError as exc:
+        raise GitHubRepoError("git executable was not found; install git to ingest GitHub repository URLs") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise GitHubRepoError(f"Timed out while trying to {purpose}") from exc
+    if result.returncode != 0:
+        stderr = result.stderr or b""
+        if isinstance(stderr, str):
+            stderr = stderr.encode("utf-8", errors="replace")
+        detail_text = stderr.decode("utf-8", errors="replace").strip()
+        detail = f": {detail_text}" if detail_text else ""
+        raise GitHubRepoError(f"Could not {purpose}{detail}")
+    if not isinstance(result.stdout, bytes):
+        raise GitHubRepoError(f"Could not {purpose}: git returned non-byte output")
+    return result.stdout
 
 
 def language_for_path(repo_path: str) -> str:

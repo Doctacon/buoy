@@ -17,8 +17,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 PAUSED_MESSAGE = (
-    "Buoy release publication is paused while tag-derived versioning and "
-    "publication policy are reconciled; no tag or GitHub Release was planned."
+    "Automated Buoy release publication remains paused; the reviewed v0.5.1 "
+    "security release uses the documented one-time manual procedure."
 )
 READ_ONLY_WORKFLOWS = (
     ".github/workflows/ci.yml",
@@ -292,12 +292,17 @@ def validate_source(root: Path = ROOT) -> dict[str, object]:
 
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     headings = [line for line in changelog.splitlines() if line.startswith("## ")]
-    if len(headings) < 2 or headings[0] != "## Unreleased":
+    if len(headings) < 4 or headings[0] != "## Unreleased":
         raise ReleaseError("CHANGELOG must begin with an Unreleased section")
-    if headings[1] != "## [0.4.0] - 2026-07-21":
-        raise ReleaseError("published changelog history must remain frozen through v0.4.0")
-    if any(" - pending" in heading for heading in headings):
-        raise ReleaseError("paused publication must not stage a pending release heading")
+    if headings[1] != "## [0.5.1] - pending":
+        raise ReleaseError("CHANGELOG must stage exactly v0.5.1 after Unreleased")
+    if headings[2:4] != [
+        "## [0.5.0] - 2026-08-01",
+        "## [0.4.0] - 2026-07-21",
+    ]:
+        raise ReleaseError("published changelog history must remain frozen through v0.5.0")
+    if [heading for heading in headings if " - pending" in heading] != [headings[1]]:
+        raise ReleaseError("CHANGELOG must contain exactly one pending release heading")
 
     for relative in READ_ONLY_WORKFLOWS:
         path = root / relative
@@ -313,7 +318,8 @@ def validate_source(root: Path = ROOT) -> dict[str, object]:
     return {
         "dynamic_version": True,
         "generated_version_file": "src/buoy_search/_version.py",
-        "published_history_through": "0.4.0",
+        "published_history_through": "0.5.0",
+        "staged_release": "0.5.1",
         "publication_paused": True,
         "workflows_read_only": list(READ_ONLY_WORKFLOWS),
     }

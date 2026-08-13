@@ -1,17 +1,21 @@
 # Releasing Buoy
 
-## Publication is paused
+## Automatic publication remains paused
 
-GitHub tag and Release publication is intentionally paused after v0.4.0 while
-the release workflow is reconciled with Hatch-VCS tag-derived versioning.
+The write-capable GitHub release workflow remains disabled. The existing
+v0.5.0 lightweight tag and asset-less GitHub Release are preserved as
+historical state and are not repaired or replaced.
 
 No current workflow has write permission. A push to `main` runs a read-only
 source validation and cannot create or change a tag, Release, artifact
 attestation, package publication, or provider resource.
 
-Do not create a tag manually. Resuming publication requires a separate reviewed
-decision that defines version selection, duplicate/partial hosted-state
-handling, provenance, rollback, and the exact write-authorized workflow.
+The reviewed v0.5.1 security fix is a one-time manual GitHub-only release after
+the exact promoted `main` commit passes the complete validation below. It must
+produce an annotated `v0.5.1` tag plus one wheel and one source archive. It must
+not publish to PyPI or contact Turbopuffer. Any pre-existing or partial v0.5.1
+tag, Release, or asset state is a stop condition rather than permission to
+overwrite or delete it.
 
 ## Current version authority
 
@@ -48,8 +52,9 @@ uv run python scripts/release_automation.py validate-distribution dist
 ```
 
 `validate-source` verifies dynamic metadata, the generated-version import and
-ignore rule, the versionless editable lock root, changelog history through
-v0.4.0, and parsed workflow permissions. `validate-distribution` checks the
+ignore rule, the versionless editable lock root, published changelog history
+through v0.5.0, the pending v0.5.1 notes, and parsed workflow permissions.
+`validate-distribution` checks the
 focused archive boundary, entry point, bundled tokenizer, metadata agreement,
 and absence of Command Center, catalog, routing, evidence, frontend, and
 internal records.

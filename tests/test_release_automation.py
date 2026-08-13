@@ -22,7 +22,8 @@ class ReleaseAutomationTests(unittest.TestCase):
 
         self.assertTrue(result["dynamic_version"])
         self.assertTrue(result["publication_paused"])
-        self.assertEqual(result["published_history_through"], "0.4.0")
+        self.assertEqual(result["published_history_through"], "0.5.0")
+        self.assertEqual(result["staged_release"], "0.5.1")
         self.assertEqual(
             result["workflows_read_only"],
             list(release_automation.READ_ONLY_WORKFLOWS),
@@ -178,12 +179,14 @@ class ReleaseAutomationTests(unittest.TestCase):
     def test_release_docs_and_changelog_state_the_pause_and_recovery_boundary(self) -> None:
         docs = (ROOT / "docs/releasing.md").read_text(encoding="utf-8")
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        self.assertIn("Publication is paused", docs)
+        self.assertIn("Automatic publication remains paused", docs)
         self.assertIn("No current workflow has write permission", docs)
         self.assertIn("validate-source", docs)
         self.assertIn("## Unreleased", changelog)
+        self.assertIn("## [0.5.1] - pending", changelog)
+        self.assertIn("## [0.5.0] - 2026-08-01", changelog)
         self.assertIn("## [0.4.0] - 2026-07-21", changelog)
-        self.assertNotIn(" - pending", changelog)
+        self.assertEqual(changelog.count(" - pending"), 1)
 
     def test_focused_package_surface_excludes_operator_assets(self) -> None:
         with (ROOT / "pyproject.toml").open("rb") as handle:
