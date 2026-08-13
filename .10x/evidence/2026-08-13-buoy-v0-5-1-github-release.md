@@ -48,5 +48,5 @@ was published at `2026-08-13T05:25:48Z` with 0.5.1 as the patched version, no
 CVE request, and the temporary private fork removed.
 
 No PyPI publication, Turbopuffer operation, namespace or stale-row mutation,
-branch-protection change, direct branch push, or force push occurred.
-Automatic publication remains paused.
+or branch-protection change occurred. No direct push to `main` or `develop`, or
+force push, occurred. Automatic publication remains paused.
