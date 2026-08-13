@@ -1,8 +1,28 @@
 # Changelog
 
-Notable changes through v0.4.0 follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/). GitHub publication is currently paused while release automation is reconciled with tag-derived versions.
+Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+and [Semantic Versioning](https://semver.org/). Release packages are published
+as GitHub Release assets rather than to PyPI.
 
 ## Unreleased
+
+## [0.5.1] - pending
+
+### Added
+
+- Added a versioned GitHub-wheel installation path and a compact first GitHub
+  repository `plan -> dry-run apply -> approved apply -> retrieve` walkthrough.
+
+### Security
+
+- Confined GitHub repository content acquisition to tracked regular files.
+  Link, submodule, and special entries are skipped even when explicitly
+  included, and regular/oversize-card reads are bounded before indexing.
+
+## [0.5.0] - 2026-08-01
+
+The existing v0.5.0 history uses a lightweight tag and a GitHub Release with no
+downloadable package assets.
 
 ### Changed
 
@@ -17,8 +37,8 @@ Notable changes through v0.4.0 follow [Keep a Changelog](https://keepachangelog.
   evidence snapshots, experimental baselines, and the Command Center out of
   the Buoy package and into the Kite product boundary.
 - Removed Command Center frontend/package dependencies and assets.
-- Paused GitHub release publication while retaining tag-derived Hatch-VCS
-  development versions and read-only release readiness checks.
+- Paused further GitHub publication after v0.5.0 while retaining tag-derived
+  Hatch-VCS development versions and read-only release readiness checks.
 
 ### Migration
 
@@ -107,6 +127,8 @@ Notable changes through v0.4.0 follow [Keep a Changelog](https://keepachangelog.
 
 - The annotated `v0.2.0` tag was preserved without a GitHub Release after its hosted validation failed before artifact construction or publication.
 
+[0.5.1]: https://github.com/Doctacon/buoy/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/Doctacon/buoy/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Doctacon/buoy/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Doctacon/buoy/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Doctacon/buoy/releases/tag/v0.2.1

@@ -30,6 +30,15 @@ uv run buoy plan https://github.com/owner/repository
 
 Repository URLs are cloned and indexed from git-tracked files rather than rendered GitHub pages. Generated/vendor directories and local agent/run artifacts are excluded by default. The namespace is repository-specific, such as `github-owner-repository-v1`.
 
+Repository acquisition opens only git-tracked regular files from the cloned
+checkout. Symbolic and other link entries, submodules, and special filesystem
+entries are skipped even when they match an explicit `--include-path`. Path
+filters choose among eligible regular files; they never override this boundary.
+
+Reads are size-bounded. Files above `--repo-max-file-bytes` do not enter normal
+content chunking, and optional oversize file cards read only a bounded prefix
+for metadata. Buoy does not follow an in-repository entry to read another path.
+
 Useful repository controls:
 
 ```bash
@@ -41,6 +50,11 @@ uv run buoy plan https://github.com/owner/repository \
 ```
 
 `--repo-file-cards` adds separate searchable file metadata cards; `--repo-oversize-file-cards` adds cards for oversize files skipped during code chunking.
+
+After upgrading, a new plan may report stale rows that an earlier version
+derived through a link entry. Stale rows remain retained by default. Review the
+dry-run preflight and use `--delete-stale` only when an approved apply should
+explicitly delete those exact stale IDs.
 
 ### Local documents
 
