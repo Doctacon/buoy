@@ -1,8 +1,8 @@
-Status: provisional
+Status: recorded
 Created: 2026-08-13
 Updated: 2026-08-13
 Target: work/github-repo-symlink-containment diff from 7c5cc96d4c8995f06c7991ea5c2b8948dbb748a5
-Verdict: provisional pass
+Verdict: pass
 
 # GitHub Repository File Containment Review
 
@@ -48,6 +48,13 @@ statistics remain compatible.
 - `UV_CACHE_DIR=/private/tmp/buoy-uv-cache uv run --locked python -m unittest tests.test_github_repo -q`: 35 tests passed.
 - `git diff --check -- src/buoy_search/github_repo.py tests/test_github_repo.py`: passed.
 - Python 3.11 and 3.13 compilation of both changed Python files: passed.
+- The complete locked suites passed with 472 tests on each of Python 3.11 and
+  3.13. Public PR #101 passed hosted CI before a separate integration role
+  squash-merged it to `develop` as
+  `f68dcf5f0a4352df59e14ca1d78bef1ea1b7f6ee`.
+- Release-readiness passed before PR #102 merge-committed the reviewed tree to
+  `main` as `284b309a02546b13a63e709d9afe7f72c557b474`; exact-main CI passed
+  afterward.
 
 The focused suite covers absolute and relative external links, internal,
 dangling, directory, and materialized links, explicit inclusion and oversize
@@ -58,14 +65,15 @@ and CR/LF compatibility. No Turbopuffer or other provider operation occurred.
 
 ## Verdict
 
-**Provisional pass.** No blocker remains in the reviewed source and focused
-test diff. Hosted CI and the ticket's complete locked Python 3.11/3.13
-validation remain external gates; this review does not by itself authorize
-integration, release, or disclosure.
+**Pass.** No blocker remains in the reviewed source and test diff. The complete
+locked suites, public PR checks, separate integration review, release-readiness
+checks, exact-main CI, published-wheel smoke, and advisory sequencing all
+completed successfully.
 
 ## Residual validation limits
 
 - The portable path was forced and exercised with synthetic Windows reparse
   observations, but this review did not execute on a native Windows host.
-- Complete locked suites, distribution validation, and hosted branch checks
-  were not independently rerun as part of this focused review.
+- The candidate and final exact-main distributions have different hashes
+  because their source commits and source timestamps differ; both sets are
+  preserved in their respective evidence records.
