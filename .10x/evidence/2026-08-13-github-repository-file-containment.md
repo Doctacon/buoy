@@ -1,4 +1,4 @@
-Status: candidate
+Status: recorded
 Created: 2026-08-13
 Updated: 2026-08-13
 Ticket: .10x/tickets/2026-08-13-harden-github-repository-file-containment.md
@@ -54,15 +54,30 @@ file descriptor; unsafe entries produce repository-relative errors only.
   tokenizer, and focused package boundary.
 - Clean Python 3.13 wheel installation reported package/module/CLI version
   0.5.1; both help paths and the exact nine-token offline smoke passed.
-- Independent focused review:
+- Initial independent focused review:
   `.10x/reviews/2026-08-13-github-repository-file-containment-review.md`,
-  provisional pass with no source blocker.
+  provisional pass with no source blocker; its final disposition is pass after
+  hosted gates completed.
 
-Hosted public CI remains an integration gate. This candidate evidence does not
-authorize release or advisory publication before the reviewed PR and exact-main
-checks pass.
+These hashes belong to the pre-integration candidate built from its own source
+timestamp. They are intentionally not the final exact-main release hashes,
+which are recorded separately in
+`.10x/evidence/2026-08-13-buoy-v0-5-1-github-release.md`.
+
+## Final integration
+
+- Public PR #101 passed hosted CI and was independently reviewed before its
+  squash merge to `develop` as
+  `f68dcf5f0a4352df59e14ca1d78bef1ea1b7f6ee`.
+- Release PR #102 promoted the exact reviewed tree to `main` by merge commit
+  `284b309a02546b13a63e709d9afe7f72c557b474` after all four readiness jobs
+  passed; exact-main CI also passed.
+- The final published-wheel and advisory verification is recorded in the
+  dedicated release evidence above.
 
 ## External effects
 
-No Turbopuffer, namespace, stale-row, PyPI, tag, Release, advisory publication,
-branch-protection, or user-data operation occurred during focused validation.
+No Turbopuffer, namespace, stale-row, PyPI, branch-protection, or user-data
+operation occurred during focused validation or release verification. The
+only hosted publication effects were the reviewed v0.5.1 tag, GitHub Release,
+and security advisory recorded in the dedicated release evidence.

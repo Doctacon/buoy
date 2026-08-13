@@ -6,7 +6,7 @@ as GitHub Release assets rather than to PyPI.
 
 ## Unreleased
 
-## [0.5.1] - pending
+## [0.5.1] - 2026-08-13
 
 ### Added
 
