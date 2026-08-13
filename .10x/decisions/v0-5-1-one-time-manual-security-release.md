@@ -17,10 +17,16 @@ annotated `v0.5.1` tag and a non-draft GitHub Release containing exactly the
 downloaded assets must match the locally recorded SHA-256 digests, and the
 published wheel must pass a clean install and offline CLI/tokenizer smoke test
 before the draft security advisory is published. GitHub artifact attestations
-for both assets are required when the authenticated GitHub tooling can create
-and verify them without changing the assets; otherwise the exact signed tag,
-source commit, and downloaded SHA-256 evidence remain the one-time manual
-release authority and the evidence must record that limitation explicitly.
+for both assets are verified if the available authenticated tooling can produce
+them without changing the assets. The local manual path has no Actions OIDC
+issuer, so an exact annotated tag, source commit, and downloaded SHA-256
+evidence are the required one-time authority and the limitation is recorded.
+Before tag creation, the artifacts are built with exact
+`SETUPTOOLS_SCM_PRETEND_VERSION=0.5.1` and the deterministic environment in
+`docs/releasing.md`; the release evidence binds that command and both digests
+to the exact promoted commit. A separate reviewed post-release documentation
+PR dates v0.5.1 and moves the read-only validator's published-history baseline
+through v0.5.1.
 
 ## Fail-closed boundary
 
@@ -35,3 +41,7 @@ No PyPI publication, Turbopuffer operation, namespace or stale-row mutation,
 branch-protection change, direct or force push, reusable release automation,
 or unrelated product work is authorized. Automatic publication remains paused
 after v0.5.1.
+
+The one annotated `v0.5.1` tag-ref push described in `docs/releasing.md` is the
+only direct ref creation authorized here. “No direct push” continues to apply
+to `main` and `develop`; task branches still use ordinary reviewed PRs.

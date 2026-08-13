@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import sys
 import tarfile
 import tomllib
@@ -294,15 +295,20 @@ def validate_source(root: Path = ROOT) -> dict[str, object]:
     headings = [line for line in changelog.splitlines() if line.startswith("## ")]
     if len(headings) < 4 or headings[0] != "## Unreleased":
         raise ReleaseError("CHANGELOG must begin with an Unreleased section")
-    if headings[1] != "## [0.5.1] - pending":
-        raise ReleaseError("CHANGELOG must stage exactly v0.5.1 after Unreleased")
+    pending_release = headings[1] == "## [0.5.1] - pending"
+    published_release = re.fullmatch(
+        r"## \[0\.5\.1\] - 20\d{2}-\d{2}-\d{2}", headings[1]
+    ) is not None
+    if not pending_release and not published_release:
+        raise ReleaseError("CHANGELOG must stage or date exactly v0.5.1 after Unreleased")
     if headings[2:4] != [
         "## [0.5.0] - 2026-08-01",
         "## [0.4.0] - 2026-07-21",
     ]:
         raise ReleaseError("published changelog history must remain frozen through v0.5.0")
-    if [heading for heading in headings if " - pending" in heading] != [headings[1]]:
-        raise ReleaseError("CHANGELOG must contain exactly one pending release heading")
+    pending_headings = [heading for heading in headings if " - pending" in heading]
+    if pending_headings != ([headings[1]] if pending_release else []):
+        raise ReleaseError("CHANGELOG contains an invalid pending release heading")
 
     for relative in READ_ONLY_WORKFLOWS:
         path = root / relative
@@ -318,8 +324,8 @@ def validate_source(root: Path = ROOT) -> dict[str, object]:
     return {
         "dynamic_version": True,
         "generated_version_file": "src/buoy_search/_version.py",
-        "published_history_through": "0.5.0",
-        "staged_release": "0.5.1",
+        "published_history_through": "0.5.0" if pending_release else "0.5.1",
+        "staged_release": "0.5.1" if pending_release else None,
         "publication_paused": True,
         "workflows_read_only": list(READ_ONLY_WORKFLOWS),
     }

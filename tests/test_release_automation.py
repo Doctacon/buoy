@@ -120,6 +120,27 @@ class ReleaseAutomationTests(unittest.TestCase):
             with self.assertRaisesRegex(release_automation.ReleaseError, "read-only"):
                 release_automation.validate_source(clone)
 
+    def test_source_validator_accepts_truthful_post_release_changelog(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clone = Path(tmp) / "source"
+            shutil.copytree(
+                ROOT,
+                clone,
+                ignore=shutil.ignore_patterns(".git", ".venv", "__pycache__", "dist"),
+            )
+            changelog = clone / "CHANGELOG.md"
+            changelog.write_text(
+                changelog.read_text(encoding="utf-8").replace(
+                    "## [0.5.1] - pending", "## [0.5.1] - 2026-08-13"
+                ),
+                encoding="utf-8",
+            )
+
+            result = release_automation.validate_source(clone)
+
+            self.assertEqual(result["published_history_through"], "0.5.1")
+            self.assertIsNone(result["staged_release"])
+
     def test_source_validator_rejects_job_permission_escalation_and_malformed_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             clone = Path(tmp) / "source"

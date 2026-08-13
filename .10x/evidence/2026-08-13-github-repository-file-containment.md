@@ -46,6 +46,9 @@ file descriptor; unsafe entries produce repository-relative errors only.
   `fb474eb3220709b33b9cbd71578a90323317d07803e423cd15c3a9e09a8d843b`.
   Source archive SHA-256:
   `64be001a8d32adc195b07227d4fdf77a8cdfafc015561976f837fb8e14632127`.
+  Candidate command used source commit timestamp `1785447001`:
+  `SETUPTOOLS_SCM_PRETEND_VERSION=0.5.1 SOURCE_DATE_EPOCH=1785447001
+  PYTHONHASHSEED=0 TZ=UTC LC_ALL=C uv build --python 3.13 --out-dir dist`.
 - Distribution inspection found exactly the v0.5.1 wheel/sdist, matching 0.5.1
   metadata and generated version modules, the sole `buoy` entry point, bundled
   tokenizer, and focused package boundary.

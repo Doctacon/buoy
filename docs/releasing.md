@@ -30,6 +30,14 @@ Source metadata remains dynamic:
 Development builds therefore report a tag-derived development version. No
 static version should be added just to make the old publisher run.
 
+For this one-time release only, build the exact promoted `main` commit before
+tag creation with all of the following fixed: Python 3.13,
+`SETUPTOOLS_SCM_PRETEND_VERSION=0.5.1`, `SOURCE_DATE_EPOCH` equal to that
+commit's timestamp, `PYTHONHASHSEED=0`, `TZ=UTC`, and `LC_ALL=C`. Record the
+command, commit SHA, filenames, and SHA-256 digests in release evidence. The
+override is build metadata only; it does not authorize another version or
+change Hatch-VCS as source version authority.
+
 ## Read-only validation
 
 Run:
@@ -47,7 +55,9 @@ PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate_ranking_contract.py
 PYTHONDONTWRITEBYTECODE=1 uv run python scripts/c6_syntax_forecast.py validate
 PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*.py' -q
 
-uv build --out-dir dist
+SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" \
+SETUPTOOLS_SCM_PRETEND_VERSION=0.5.1 PYTHONHASHSEED=0 TZ=UTC LC_ALL=C \
+uv build --python 3.13 --out-dir dist
 uv run python scripts/release_automation.py validate-distribution dist
 ```
 
@@ -77,3 +87,34 @@ These checks are ordinary read-only validation, testing, and ephemeral
 diagnostic builds. They clean-install the wheel and exercise both help paths
 and the offline tokenizer, but do not upload or retain the archives. Passing
 them does not authorize or trigger publication.
+
+## Post-release closure
+
+After the hosted assets and installed wheel are verified, a separate reviewed
+documentation PR replaces `## [0.5.1] - pending` with the authoritative UTC
+release date. `validate-source` accepts exactly those two states: pending with
+history through v0.5.0 before publication, or dated v0.5.1 history afterward.
+Automatic publication remains paused in either state.
+
+## One-time v0.5.1 operator sequence
+
+1. Confirm the promoted `main` commit is exact and its CI passed. Confirm both
+   the authoritative `refs/tags/v0.5.1` lookup and GitHub Release lookup are
+   absent. Any existing or partial state stops the release.
+2. Build once from that commit with the exact command above. Validate the two
+   versioned files, record their SHA-256 digests, and pass the clean-wheel
+   version/help/tokenizer smoke.
+3. Create and push the annotated `v0.5.1` tag at that exact commit. This
+   one-time tag-ref push is authorized; direct or force pushes to branches are
+   not. If any later step fails, preserve the partial state and stop.
+4. Create a draft GitHub Release named `Buoy v0.5.1` with generated notes,
+   upload exactly the wheel and source archive without replacement, download
+   them through authenticated GitHub asset endpoints, and require both hashes
+   to match before publishing the draft. Do not upload to PyPI.
+5. Download both published assets again, verify hashes and the tag's peeled
+   commit, clean-install the published wheel, and repeat the offline smoke.
+   Record that local GitHub tooling cannot issue an Actions OIDC artifact
+   attestation; if verifiable attestations are available, verify them too.
+6. Only then publish the draft security advisory and open the separate
+   changelog-date closure PR. No step contacts Turbopuffer or changes a
+   namespace.
