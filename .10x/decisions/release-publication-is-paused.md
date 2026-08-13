@@ -1,12 +1,13 @@
 Status: active
 Created: 2026-07-30
-Updated: 2026-07-30
+Updated: 2026-08-13
 
 # Release Publication Is Paused
 
 ## Decision
 
-GitHub tag and Release publication is paused after v0.4.0. Buoy retains
+GitHub tag and Release publication is paused after the existing v0.5.0 hosted
+release. Buoy retains
 Hatch-VCS tag-derived development versions and read-only source/build
 validation.
 
@@ -30,3 +31,9 @@ reviewed release design explicitly resumes writes.
 
 No static-version rollback, target version selection, tag, Release, artifact
 publication, or protected-branch merge is authorized.
+
+## One-time exception
+
+`.10x/decisions/v0-5-1-one-time-manual-security-release.md` authorizes only the
+reviewed v0.5.1 containment release. Automatic publication remains paused
+before and after that release.
