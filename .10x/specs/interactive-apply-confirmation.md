@@ -1,16 +1,20 @@
 Status: active
 Created: 2026-07-18
-Updated: 2026-07-18
-Amended-By: .10x/specs/focused-buoy-boundary.md
+Updated: 2026-08-13
+Amended-By: .10x/specs/automatic-multi-corpus-retrieval.md
 
 # Interactive Apply Confirmation
 
-## Focused-boundary amendment
+## Bounded-retrieval amendment
 
 This specification remains active for local preflight, interactive consent,
-automation approval, and content/local-state mutation gates. Catalog fields,
-pending catalog recovery, and catalog commands are superseded and must not be
-read, displayed, or written by focused Buoy.
+automation approval, and content/local-state mutation gates. The focused
+boundary's removal of all catalog behavior is superseded only as authorized by
+`.10x/specs/automatic-multi-corpus-retrieval.md`: a successfully confirmed
+apply may register its routing card after content and local-state success, and
+the separate catalog commands retain their own preview/`--approve` boundary.
+Apply preflight, cancellation, and declined confirmation still perform no
+catalog write.
 
 ## Purpose and scope
 

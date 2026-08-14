@@ -18,8 +18,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 PAUSED_MESSAGE = (
-    "Automated Buoy release publication remains paused; the reviewed v0.5.1 "
-    "security release uses the documented one-time manual procedure."
+    "Automated Buoy release publication remains paused; v0.5.1 is published "
+    "and its one-time manual release authority is consumed."
 )
 READ_ONLY_WORKFLOWS = (
     ".github/workflows/ci.yml",
@@ -40,8 +40,6 @@ FORBIDDEN_WORKFLOW_MARKERS = (
     "/git/refs",
 )
 REMOVED_PACKAGE_MEMBERS = (
-    "buoy_search/catalog.py",
-    "buoy_search/catalog_cli.py",
     "buoy_search/catalog_pending.py",
     "buoy_search/command_center_api.py",
     "buoy_search/command_center_jobs.py",
@@ -52,19 +50,12 @@ REMOVED_PACKAGE_MEMBERS = (
     "buoy_search/evidence_remote.py",
     "buoy_search/evidence_snapshot.py",
     "buoy_search/experimental_baseline.py",
-    "buoy_search/namespaces.py",
-    "buoy_search/remote_catalog.py",
-    "buoy_search/routing.py",
 )
 REMOVED_ARCHIVE_MEMBERS = (
-    "docs/catalog.md",
     "docs/command-center.md",
     "docs/evidence-snapshots.md",
     "scripts/benchmark_command_center_bounded_review.py",
     "scripts/benchmark_command_center_inventory.py",
-    "tests/test_automatic_routing.py",
-    "tests/test_catalog.py",
-    "tests/test_catalog_cli.py",
     "tests/test_catalog_pending.py",
     "tests/test_command_center_api.py",
     "tests/test_command_center_bounded_review_benchmark.py",
@@ -78,9 +69,6 @@ REMOVED_ARCHIVE_MEMBERS = (
     "tests/test_evidence_remote.py",
     "tests/test_evidence_snapshot.py",
     "tests/test_experimental_baseline.py",
-    "tests/test_multi_namespace_retrieval.py",
-    "tests/test_namespaces.py",
-    "tests/test_remote_catalog.py",
     "tests/test_semantic_routing_representative.py",
 )
 REMOVED_ARCHIVE_PREFIXES = (
@@ -92,9 +80,19 @@ REQUIRED_PACKAGE_MEMBERS = (
     "buoy_search/_version.py",
     "buoy_search/applied_state.py",
     "buoy_search/apply.py",
+    "buoy_search/catalog.py",
+    "buoy_search/catalog_cli.py",
     "buoy_search/cli.py",
+    "buoy_search/cross_encoder.py",
+    "buoy_search/data/automatic_multi_corpus_retrieval_evals.json",
+    "buoy_search/multi_corpus_evals.py",
     "buoy_search/planning_service.py",
+    "buoy_search/remote_catalog.py",
     "buoy_search/retriever.py",
+    "buoy_search/routing.py",
+)
+REQUIRED_SDIST_MEMBERS = (
+    "scripts/evaluate_multi_corpus_retrieval.py",
 )
 TOKENIZER_MEMBER_SUFFIXES = (
     "data/bge-small-en-v1.5/5c38ec7c405ec4b44b94cc5a9bb96e735b38267a/special_tokens_map.json",
@@ -219,6 +217,15 @@ def validate_distribution(dist: Path) -> dict[str, object]:
     with tarfile.open(sdist, "r:gz") as archive:
         sdist_names = archive.getnames()
         _validate_archive_members(sdist_names, archive="sdist")
+        missing_sdist_members = [
+            member
+            for member in REQUIRED_SDIST_MEMBERS
+            if not any(_member_matches(name, member) for name in sdist_names)
+        ]
+        if missing_sdist_members:
+            raise ReleaseError(
+                f"sdist is missing governed validation members: {missing_sdist_members}"
+            )
         metadata = [
             member for member in archive.getmembers() if member.name.endswith("/PKG-INFO")
         ]
@@ -295,20 +302,17 @@ def validate_source(root: Path = ROOT) -> dict[str, object]:
     headings = [line for line in changelog.splitlines() if line.startswith("## ")]
     if len(headings) < 4 or headings[0] != "## Unreleased":
         raise ReleaseError("CHANGELOG must begin with an Unreleased section")
-    pending_release = headings[1] == "## [0.5.1] - pending"
-    published_release = re.fullmatch(
-        r"## \[0\.5\.1\] - 20\d{2}-\d{2}-\d{2}", headings[1]
-    ) is not None
-    if not pending_release and not published_release:
-        raise ReleaseError("CHANGELOG must stage or date exactly v0.5.1 after Unreleased")
+    if headings[1] != "## [0.5.1] - 2026-08-13":
+        raise ReleaseError(
+            "CHANGELOG must retain published v0.5.1 history dated 2026-08-13"
+        )
     if headings[2:4] != [
         "## [0.5.0] - 2026-08-01",
         "## [0.4.0] - 2026-07-21",
     ]:
         raise ReleaseError("published changelog history must remain frozen through v0.5.0")
-    pending_headings = [heading for heading in headings if " - pending" in heading]
-    if pending_headings != ([headings[1]] if pending_release else []):
-        raise ReleaseError("CHANGELOG contains an invalid pending release heading")
+    if any(" - pending" in heading for heading in headings):
+        raise ReleaseError("CHANGELOG must not contain a pending release heading")
 
     for relative in READ_ONLY_WORKFLOWS:
         path = root / relative
@@ -324,8 +328,8 @@ def validate_source(root: Path = ROOT) -> dict[str, object]:
     return {
         "dynamic_version": True,
         "generated_version_file": "src/buoy_search/_version.py",
-        "published_history_through": "0.5.0" if pending_release else "0.5.1",
-        "staged_release": "0.5.1" if pending_release else None,
+        "published_history_through": "0.5.1",
+        "staged_release": None,
         "publication_paused": True,
         "workflows_read_only": list(READ_ONLY_WORKFLOWS),
     }

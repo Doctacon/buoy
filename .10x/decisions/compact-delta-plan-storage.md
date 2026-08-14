@@ -1,16 +1,18 @@
 Status: active
 Created: 2026-07-24
-Updated: 2026-07-24
-Amended-By: .10x/specs/focused-buoy-boundary.md
+Updated: 2026-08-13
+Amended-By: .10x/decisions/buoy-owns-bounded-multi-corpus-retrieval.md
 
 # Compact Delta Plan Storage
 
-## Focused-boundary amendment
+## Bounded-retrieval amendment
 
 This record remains active for compact, reviewable, baseline-bound
 `plan.json`/`delta.duckdb` storage and apply verification. Command Center,
-catalog, routing-card, managed-job, and cross-plan inventory consequences are
-superseded and belong to Kite or historical provenance.
+managed-job, and cross-plan inventory consequences remain outside Buoy. The
+later bounded-retrieval decision restores only the existing routing catalog
+and its post-commit card lineage; broader catalog/control-plane consequences
+remain with Kite or historical provenance.
 
 ## Context
 

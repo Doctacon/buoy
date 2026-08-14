@@ -1,6 +1,8 @@
 # Migrating to focused Buoy
 
-Buoy's current contract is one source to one reviewed Turbopuffer namespace.
+Buoy's indexing contract remains one source to one reviewed Turbopuffer
+namespace. Retrieval may search one explicit namespace or an automatically
+selected set of at most three compatible namespaces.
 The change is forward-only: repository history, release tags, existing content
 namespaces, schema-v2 plans, and local DuckDB applied state are preserved.
 
@@ -14,26 +16,33 @@ plan
 apply
 retrieve
 evals
+catalog
 ```
 
-`serve`, `namespaces`, `catalog`, `evidence`, automatic routing,
-multi-namespace retrieval, `--auto-route`, `--route-top-k`, and retrieval's
-no-op `--live` option have moved out of Buoy.
+`serve`, `namespaces`, `evidence`, `--auto-route`, `--route-top-k`, and
+retrieval's no-op `--live` option remain outside Buoy. The bounded `catalog`
+surface and automatic multi-corpus retrieval have returned; the Command Center,
+evidence lifecycle, and general account orchestration remain in Kite.
 
-Update retrieval scripts to provide one singular target:
+Omit `--namespace` to route automatically, or repeat it up to three times for a
+deterministic override:
 
 ```bash
+buoy retrieve "question"
 buoy retrieve "question" --namespace site-example-docs-v1
-buoy retrieve "question" --namespace site-example-docs-v1 --dry-run
+buoy retrieve "comparison" \
+  --namespace site-example-docs-v1 \
+  --namespace site-another-corpus-v1
 buoy evals --namespace site-example-docs-v1 --dry-run
 ```
 
 `TURBOPUFFER_NAMESPACE` no longer supplies a default. Region, embedding model,
 and embedding precision environment settings remain supported.
 
-Approved apply no longer registers or repairs a routing card. It emits
-`receipt_schema_version=1`; pass that successful JSON summary to Kite when the
-index should enter a cross-source catalog.
+After content and local state commit, approved apply conditionally registers or
+refreshes the namespace's routing card and reports the outcome in its
+`receipt_schema_version=1` summary. A catalog failure is explicit partial
+success and includes a reviewed repair command; it never rolls content back.
 
 ## Existing state
 
@@ -49,19 +58,21 @@ in-place fallback. Obsolete JSON state is ignored and left unchanged.
 The split leaves these legacy artifacts untouched:
 
 - local catalog and catalog-pending files;
-- `buoy-routing-catalog-v1`;
+- old local catalog files and pending-recovery artifacts;
 - `buoy-evidence-*` namespaces;
 - Command Center job/event history;
 - historical plans and `.10x` records.
 
-They are no longer active Buoy authority. See [Buoy and
-Kite](kite-split.md) before proposing any migration or cleanup.
+`buoy-routing-catalog-v1` is again active, bounded Buoy routing authority. The
+other artifacts remain historical or Kite-owned and are not automatically
+repaired or deleted. See [Buoy and Kite](kite-split.md) before proposing any
+cleanup.
 
 ## Package changes
 
-The Buoy distribution no longer includes FastAPI/Uvicorn UI dependencies,
-Command Center static assets, frontend source, account-wide catalog/routing
-modules, evidence modules, or their CLI commands.
+The Buoy distribution includes the small routing-card, catalog, and bounded
+retrieval modules. It still excludes FastAPI/Uvicorn UI dependencies, Command
+Center assets/source, evidence modules, and their CLI commands.
 
 Website, repository, local-document, DuckDB, BigQuery, and Snowflake relation
 support remains. BigQuery and Snowflake continue as optional dependencies.

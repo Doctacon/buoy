@@ -1,17 +1,18 @@
 Status: active
 Created: 2026-07-18
-Updated: 2026-07-18
-Amended-By: .10x/specs/focused-buoy-boundary.md
+Updated: 2026-08-13
+Amended-By: .10x/decisions/buoy-owns-bounded-multi-corpus-retrieval.md
 
 # DuckDB-Only Applied-State Hard Cutover
 
-## Focused-boundary amendment
+## Bounded-retrieval amendment
 
 This record remains active only for Buoy's local DuckDB applied-state
-authority, migration safety, locking, and content-apply ordering. Any clause
-requiring pending catalog state, catalog recovery, or a post-commit remote
-catalog write is superseded. Focused Buoy writes one content namespace and its
-local applied state only.
+authority, migration safety, locking, and content-apply ordering. Pending
+catalog state and recovery remain superseded. The later bounded-retrieval
+decision restores only an idempotent routing-card registration after content
+and local-state success, with truthful partial-success reporting and no pending
+transaction layer.
 
 ## Context
 
@@ -25,7 +26,7 @@ DuckDB is the only active applied-state format. Buoy MUST NOT discover, read, pa
 
 If obsolete JSON applied-state files remain on disk, Buoy MUST ignore them. Their presence MUST NOT change planning, preflight, confirmation, apply, locking, output, or cleanup behavior. Buoy uses normal first-apply semantics only when `state.duckdb` is absent or is a valid initialized empty ledger. An unreadable, corrupt, schema-incompatible, or identity-invalid DuckDB ledger retains the existing fail-closed behavior.
 
-Each `(site_id, namespace)` continues to own one embedded `state.duckdb`, one current row ledger, indefinitely retained lightweight apply summaries, and a non-blocking same-namespace apply lock. Different namespaces may apply concurrently. Only successful confirmed content-namespace upsert/delete work commits current rows and an apply summary atomically to DuckDB. Remote catalog registration occurs afterward and retains the partial-success and pending-recovery contract in `.10x/specs/approved-apply-remote-catalog-registration.md`.
+Each `(site_id, namespace)` continues to own one embedded `state.duckdb`, one current row ledger, indefinitely retained lightweight apply summaries, and a non-blocking same-namespace apply lock. Different namespaces may apply concurrently. Only successful confirmed content-namespace upsert/delete work commits current rows and an apply summary atomically to DuckDB. Bounded routing-card registration occurs afterward under `.10x/specs/automatic-multi-corpus-retrieval.md`; failure preserves the committed content/state and reports explicit partial success without creating pending catalog state.
 
 ## Alternatives considered
 
@@ -40,7 +41,7 @@ Each `(site_id, namespace)` continues to own one embedded `state.duckdb`, one cu
 - Existing obsolete files remain user-owned inert files; Buoy neither cleans them up nor warns about them.
 - A namespace with no `state.duckdb`, or with a valid initialized empty ledger, is a first apply even when obsolete JSON is present; invalid DuckDB state still fails closed.
 - This decision does not remove `.turbo-search` state-root fallback or any non-applied-state compatibility behavior.
-- The existing embedded DuckDB storage, compact retention, locking, and post-remote-success commit contracts remain unchanged.
+- The existing embedded DuckDB storage, compact retention, locking, and content-before-local-state ordering remain unchanged. The bounded routing-card write happens only after that local commit.
 
 ## Supersedes
 
