@@ -92,7 +92,8 @@ Ticket: .10x/tickets/2026-08-14-implement-automatic-retrieval-evidence-abstentio
   monitoring remains required even after the active implementation passes its
   code and compatibility checks.
 - Public documentation changes are limited to `README.md`,
-  `docs/retrieval.md`, `docs/releasing.md`, and `CHANGELOG.md`.
+  `docs/retrieval.md`, `docs/migrating-to-buoy.md`, `docs/releasing.md`, and
+  `CHANGELOG.md`.
 
 ## Active-delta final validation
 

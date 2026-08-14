@@ -124,8 +124,10 @@ about 88 MB. With the routing model already resident, a measured 24-candidate
 run on the development Mac took about 0.58 seconds and added about 151 MiB of
 peak working memory using the fixed batch size of eight. It is already present
 in the development environment. If that exact snapshot is not
-in the Hugging Face cache, the request fails before querying the widened
-namespaces and explains which revision must be cached.
+in the Hugging Face cache, an ambiguous multi-corpus request fails before its
+content queries. A high-confidence single-corpus route queries that corpus
+first; if evidence assessment then needs the missing model, the request fails
+with a generic assessment error before widening or presenting results.
 
 Overrides remain explicit:
 

@@ -52,7 +52,8 @@ diagnostic sample; monitoring and broader calibration remain follow-up work.
 - `scripts/evaluate_multi_corpus_retrieval.py` and bounded calibration tooling
 - `scripts/release_automation.py` package-boundary validation
 - focused retrieval, CLI, calibration, evaluator, and compatibility tests
-- `README.md`, `docs/retrieval.md`, `docs/releasing.md`, `CHANGELOG.md`
+- `README.md`, `docs/retrieval.md`, `docs/migrating-to-buoy.md`,
+  `docs/releasing.md`, `CHANGELOG.md`
 - this ticket's decision, specification, evidence, and review records
 
 ## External effects
