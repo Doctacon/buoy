@@ -41,10 +41,11 @@ governance PASS. The post-review locked suites pass 626 tests on Python 3.11
 and 626 on Python 3.13; focused adversarial tests, dependency lock, release,
 ranking, tokenizer, distribution, clean-wheel, and diff-hygiene checks pass.
 
-Release-quality evidence is intentionally not closed by this review. The
-repository owner explicitly approved the fixed 50-question answer key on
-2026-08-13 without changing its questions or judgments. The approved immutable
-tree must now be committed and evaluated by a new clean in-process collector
-run. The historical dirty-tree reports remain diagnostics only. This review
-authorizes no self-merge, release, content mutation, namespace deletion, or
-credential change.
+Release-quality evidence is closed for task handoff. The repository owner
+explicitly approved the fixed 50-question answer key on 2026-08-13 without
+changing its questions or judgments. Clean commit `11b2b05f5fd8d3f86c8c7228ba805e7dc164a568`
+then passed the new in-process live collector with all 50 cases complete, every
+quality and provenance gate passing, and no failed checks. Historical
+dirty-tree reports remain diagnostics only. This review authorizes no
+self-merge, release, content mutation, namespace deletion, or credential
+change.

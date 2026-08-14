@@ -1,4 +1,4 @@
-Status: provisional
+Status: recorded
 Created: 2026-08-13
 Updated: 2026-08-13
 Ticket: .10x/tickets/2026-08-13-implement-automatic-multi-corpus-retrieval.md
@@ -141,11 +141,40 @@ Ticket: .10x/tickets/2026-08-13-implement-automatic-multi-corpus-retrieval.md
   (`+0.0622558`); and multi-corpus Recall@5 `0.9 -> 1.0`.
 - The report is still correctly non-passing. Its source provenance records a
   dirty candidate tree, so `provider_backed_live_run` fails, and the candidate
-  answer key remains human-unapproved. It predates the stricter evaluator-v3
+  answer key was then human-unapproved. It predates the stricter evaluator-v3
   collector-only trust gate and records the superseded best-fused coverage
   policy, so the current evaluator rejects it as invalid historical input. It
-  remains diagnostic only. A clean-commit rerun and explicit human owner
-  approval are required before release evidence can pass.
+  remains diagnostic only; the missing gates were subsequently satisfied by
+  the approved clean run below.
+
+## Clean approved result
+
+- After the repository owner approved the fixed answer key, the complete
+  implementation and approval state were committed as
+  `11b2b05f5fd8d3f86c8c7228ba805e7dc164a568` with tree
+  `79b70d64c602da48b3541c3995854bf27a3320be`. The worktree was clean before
+  collection.
+- The in-process live collector wrote
+  `/private/tmp/buoy-multi-corpus-eval-20260813-06.json` (419,404 bytes),
+  SHA-256
+  `a29eaee6f66590888c82f0e2dbbb66e37cca6a12514ff9ac9a1893e3b1a44444`.
+  It bound dataset SHA-256
+  `29064e773a71e2f31a4e6af45db793cdb30436dbf9fc61e818a03dd127ce1e2b`,
+  evaluator-v3 SHA-256
+  `7ea3e3d10ed5c081cb63a5d06d301470169dd4167a2894f7a85318c0852eb8d7`,
+  and catalog snapshot
+  `ce12e12b1349bfd09ceff84480942dab17b60131e5f71390456e7677000cd93f`.
+- All 50 cases completed with zero automatic or exhaustive failures. Logical
+  accounting recorded 50 routing embeddings, 50 content embeddings, 99
+  automatic namespace queries, 200 exhaustive namespace queries, and 28 local
+  reranker calls. The query-only provider adapter exposed no mutation method.
+- Every release-quality gate passed with no failed checks: human approval and
+  provider-backed provenance passed; route recall@3 was
+  `57/58 = 0.9827586`; all 10 multi-corpus routes were complete; incorrect
+  initial high-confidence routes were zero; average/max fanout was `1.98/3`;
+  automatic Recall@5 was `33/34 = 0.9705882`; nDCG@5 improved
+  `0.4817529 -> 0.5440087` (`+0.0622558`); and multi-corpus Recall@5 improved
+  `0.9 -> 1.0`. The collector verdict was `release_ready=true`, `status=pass`.
 
 ## External effects
 

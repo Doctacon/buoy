@@ -117,9 +117,13 @@ source-adapter work, provider deletion, PyPI, and unrelated refactoring.
   document and explicitly approved it. The checked-in dataset now records
   `human_approved_ground_truth=true` and `review_status=approved`; no question,
   judgment, answer group, or threshold changed during approval.
+- 2026-08-13: Committed the approved implementation as clean commit
+  `11b2b05f5fd8d3f86c8c7228ba805e7dc164a568` and ran the bound in-process live
+  collector. All 50 cases completed without failure, every numerical,
+  provenance, read-only, and human-approval gate passed, and the verdict was
+  `release_ready=true` with no failed checks.
 
 ## Blockers
 
-- After the reviewed candidate is committed, the exact clean commit must rerun
-  the read-only collector and all validation so live provenance can pass. The
-  questions and approved judgments must remain unchanged for that run.
+None for task handoff. Integration and promotion remain separate reviewed
+roles; this task branch must not merge itself.
