@@ -270,6 +270,20 @@ def build_one_page_plan_with_stale_state(root: Path, state_root: Path):
 class ApplyCliTests(unittest.TestCase):
     def setUp(self) -> None:
         reset_fakes()
+        self.catalog_registration_patcher = patch(
+            "buoy_search.apply.register_apply_catalog_card",
+            return_value={
+                "catalog_registered": True,
+                "catalog_namespace": "buoy-routing-catalog-v1",
+                "catalog_mutation_status": "updated",
+                "catalog_card_revision": "test-card-revision",
+                "catalog_manual_semantics_preserved": False,
+                "catalog_enabled_state": True,
+                "catalog_repair_command": None,
+            },
+        )
+        self.catalog_registration = self.catalog_registration_patcher.start()
+        self.addCleanup(self.catalog_registration_patcher.stop)
 
     def test_apply_batch_size_defaults_and_embedding_batch_validation(self) -> None:
         parser = build_parser()
@@ -1026,6 +1040,47 @@ class ApplyCliTests(unittest.TestCase):
         self.assertTrue(json.loads(stdout)["approved"])
         self.assertIn("Warning: could not remove plan artifact directory", stderr)
         self.assertTrue(plan_retained)
+
+    def test_catalog_partial_success_consumes_applied_plan_and_reports_truthfully(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            artifacts, plan_path = build_saved_plan(root, state_root=state_root)
+            self.catalog_registration.side_effect = apply_module._CatalogRegistrationAttemptError(
+                "catalog unavailable",
+                api_calls_occurred=True,
+                repair_command=(
+                    f"buoy catalog show {artifacts.manifest.namespace} --json"
+                ),
+            )
+
+            with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
+                "buoy_search.apply.TurbopufferWriter", FakeWriter
+            ):
+                result, stdout, stderr = self.run_main(
+                    [
+                        "apply",
+                        "--plan",
+                        str(plan_path),
+                        "--namespace",
+                        artifacts.manifest.namespace,
+                        "--state-root",
+                        str(state_root),
+                        "--approve",
+                        "--json",
+                    ],
+                    env={"TURBOPUFFER_API_KEY": "test-key"},
+                )
+            payload = json.loads(stdout)
+            plan_removed = not plan_path.parent.exists()
+
+        self.assertEqual(result, 2, stderr)
+        self.assertTrue(payload["content_applied"])
+        self.assertTrue(payload["state_updated"])
+        self.assertTrue(payload["partial_success"])
+        self.assertFalse(payload["catalog_registered"])
+        self.assertIn("buoy catalog show", payload["catalog_repair_command"])
+        self.assertTrue(plan_removed)
 
     def test_failed_apply_preserves_existing_state_and_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

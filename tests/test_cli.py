@@ -351,7 +351,10 @@ class CliTests(unittest.TestCase):
         parser = build_parser()
         help_text = parser.format_help()
         choices = parser._subparsers._group_actions[0].choices
-        self.assertEqual(set(choices), {"crawl", "plan", "apply", "retrieve", "evals"})
+        self.assertEqual(
+            set(choices),
+            {"crawl", "plan", "apply", "retrieve", "evals", "catalog"},
+        )
         retrieve_help = choices["retrieve"].format_help()
         apply_help = parser._subparsers._group_actions[0].choices["apply"].format_help()
 
@@ -361,9 +364,11 @@ class CliTests(unittest.TestCase):
         self.assertIn("apply", help_text)
         self.assertIn("retrieve", help_text)
         self.assertIn("evals", help_text)
+        self.assertIn("catalog", help_text)
         self.assertIn("website, repository, document, DuckDB, BigQuery, and Snowflake", " ".join(help_text.split()))
         normalized_retrieve_help = " ".join(retrieve_help.split())
-        self.assertIn("exactly one explicitly selected namespace", normalized_retrieve_help)
+        self.assertIn("Automatically route through the authenticated remote catalog", normalized_retrieve_help)
+        self.assertIn("repeat up to three times", normalized_retrieve_help)
         self.assertIn("--namespace NAMESPACE", normalized_retrieve_help)
         self.assertNotIn("--live", normalized_retrieve_help)
         self.assertNotIn("--catalog", retrieve_help)
@@ -1317,11 +1322,20 @@ class CliTests(unittest.TestCase):
         self.assertIn("repo_path", include_attributes)
         self.assertNotIn("vector", include_attributes)
 
-    def test_retrieve_rejects_repeated_empty_and_reserved_namespaces(self) -> None:
+    def test_retrieve_rejects_duplicate_excess_empty_and_reserved_namespaces(self) -> None:
         cases = (
             (
-                ["--namespace", "site-first-v1", "--namespace", "site-second-v1"],
-                "exactly once",
+                ["--namespace", "site-first-v1", "--namespace", "site-first-v1"],
+                "must not repeat",
+            ),
+            (
+                [
+                    "--namespace", "site-one-v1",
+                    "--namespace", "site-two-v1",
+                    "--namespace", "site-three-v1",
+                    "--namespace", "site-four-v1",
+                ],
+                "at most 3 times",
             ),
             (["--namespace", ""], "non-empty namespace ID"),
             (["--namespace", "buoy-evidence-ledger-legacy"], "reserved Buoy control namespaces"),

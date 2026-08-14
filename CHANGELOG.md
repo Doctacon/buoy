@@ -6,6 +6,23 @@ as GitHub Release assets rather than to PyPI.
 
 ## Unreleased
 
+### Added
+
+- Restored the fixed `buoy-routing-catalog-v1` card lifecycle and bounded
+  `catalog list/show/upsert/enable/disable` commands. Mutations preview by
+  default and require explicit approval.
+- Added namespace-free retrieval that selects one confident corpus or searches
+  at most three ambiguous corpora concurrently, then deduplicates and locally
+  reranks multi-corpus results with an exact pinned MiniLM model.
+
+### Changed
+
+- `--namespace` is now a repeatable deterministic retrieval override; one
+  explicit namespace retains the v0.5.1 result contract.
+- Successful approved applies register their routing card after content and
+  local state commit, with truthful partial-success reporting if catalog
+  registration fails.
+
 ## [0.5.1] - 2026-08-13
 
 ### Added

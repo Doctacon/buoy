@@ -1,0 +1,1015 @@
+{
+  "schema_version": 1,
+  "dataset_id": "automatic-multi-corpus-retrieval-v1",
+  "created": "2026-08-13",
+  "human_approved_ground_truth": true,
+  "review_status": "approved",
+  "notes": "Source-backed basket reviewed independently across all 50 cases by two blinded reviewers and adjudicated against official source pages. Equivalent answer pages are grouped so any one may satisfy the same information need. The repository owner reviewed and explicitly approved the fixed answer key on 2026-08-13; no questions, judgments, or thresholds changed during approval.",
+  "metric_contract": {
+    "route_recall_at_3": "Micro required-namespace recall over the 45 answer-bearing cases after truncating each automatic route to its first three namespaces.",
+    "complete_multi_corpus_coverage": "All expected namespaces must appear in the first three automatic routes for every one of the 10 multi-corpus cases.",
+    "incorrect_high_confidence_single_routes": "Count initially high-confidence singleton routes whose initial singleton is not exactly the case's required namespace set, even when final retrieval widens; the required count is zero.",
+    "automatic_recall_at_5": "Micro recall over required answer/facet groups made available by exhaustive retrieval across all four enabled eligible corpora. Any judged equivalent URL recalls its group, and each group receives credit at most once per query.",
+    "reranking_ndcg_at_5": "Macro-average nDCG@5 before and after MiniLM reranking over the 10 multi-corpus cases. Exhaustive-available answer/facet groups form the ideal set, and each group receives gain at most once.",
+    "reranking_recall_at_5": "Micro Recall@5 before and after reranking over exhaustive-available answer/facet groups in the 10 multi-corpus cases; reranking must not regress it.",
+    "average_automatic_fanout": "Mean final automatic route count over all 50 cases, including no-answer cases."
+  },
+  "physical_namespaces": [
+    {
+      "namespace": "site-dagster-io-v1",
+      "logical_corpus": "dagster",
+      "status": "enabled_eligible"
+    },
+    {
+      "namespace": "site-dagster-io-benchmark-v1",
+      "logical_corpus": "dagster",
+      "status": "disabled_duplicate",
+      "duplicate_of": "site-dagster-io-v1"
+    },
+    {
+      "namespace": "site-oscilar-com-v1",
+      "logical_corpus": "oscilar",
+      "status": "enabled_eligible"
+    },
+    {
+      "namespace": "site-turbopuffer-com-v1",
+      "logical_corpus": "turbopuffer",
+      "status": "enabled_eligible"
+    },
+    {
+      "namespace": "site-www-thistle-co-v1",
+      "logical_corpus": "thistle",
+      "status": "enabled_eligible"
+    }
+  ],
+  "logical_corpora": [
+    {
+      "id": "dagster",
+      "namespace": "site-dagster-io-v1",
+      "title": "Dagster",
+      "aliases": ["Dagster orchestration"],
+      "source": "https://dagster.io/"
+    },
+    {
+      "id": "oscilar",
+      "namespace": "site-oscilar-com-v1",
+      "title": "Oscilar",
+      "aliases": ["Oscilar risk platform"],
+      "source": "https://oscilar.com/"
+    },
+    {
+      "id": "turbopuffer",
+      "namespace": "site-turbopuffer-com-v1",
+      "title": "Turbopuffer",
+      "aliases": ["Turbopuffer vector database"],
+      "source": "https://turbopuffer.com/"
+    },
+    {
+      "id": "thistle",
+      "namespace": "site-www-thistle-co-v1",
+      "title": "Thistle",
+      "aliases": ["Thistle meal delivery"],
+      "source": "https://www.thistle.co/"
+    }
+  ],
+  "category_counts": {
+    "unambiguous": 20,
+    "descriptor_free_confusable": 15,
+    "multi_corpus": 10,
+    "no_answer": 5
+  },
+  "cases": [
+    {
+      "id": "u01-dagster-purpose",
+      "category": "unambiguous",
+      "question": "What is Dagster, and what problem does it solve for data teams?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-dagster-io-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/what-is-dagster",
+          "grade": 3,
+          "reason": "The product explainer describes Dagster and the orchestration problems it addresses."
+        }
+      ]
+    },
+    {
+      "id": "u02-dagster-assets",
+      "category": "unambiguous",
+      "question": "How does Dagster explain thinking about data pipelines in terms of assets?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-dagster-io-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/thinking-in-assets",
+          "grade": 3,
+          "reason": "This article is Dagster's focused explanation of asset-oriented orchestration."
+        }
+      ]
+    },
+    {
+      "id": "u03-dagster-external-assets",
+      "category": "unambiguous",
+      "question": "Where does Dagster explain representing data that is produced outside its own runs?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-dagster-io-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/dagster-external-assets",
+          "grade": 3,
+          "reason": "The external-assets article covers assets materialized beyond Dagster's execution boundary.",
+          "group": "u03-externally-materialized-assets"
+        },
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/snowflake-runs-your-data-dagster-runs-everything-else",
+          "grade": 3,
+          "reason": "The Snowflake article directly explains virtual assets whose data is materialized outside Dagster.",
+          "group": "u03-externally-materialized-assets"
+        }
+      ]
+    },
+    {
+      "id": "u04-dagster-asset-checks",
+      "category": "unambiguous",
+      "question": "How can Dagster attach data-quality checks to software-defined assets?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-dagster-io-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/dagster-asset-checks",
+          "grade": 3,
+          "reason": "The asset-checks article explains Dagster's asset-linked quality checks."
+        }
+      ]
+    },
+    {
+      "id": "u05-dagster-ml",
+      "category": "unambiguous",
+      "question": "What guidance does Dagster provide for orchestrating machine-learning pipelines?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-dagster-io-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/dagster-ml-pipelines",
+          "grade": 3,
+          "reason": "The ML pipelines article discusses applying Dagster to machine-learning workflows."
+        }
+      ]
+    },
+    {
+      "id": "u06-oscilar-platform",
+      "category": "unambiguous",
+      "question": "What capabilities are included in the Oscilar risk platform?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-oscilar-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/platform",
+          "grade": 3,
+          "reason": "The platform page describes Oscilar's unified data, decisioning, rules, and machine-learning capabilities."
+        }
+      ]
+    },
+    {
+      "id": "u07-oscilar-case-management",
+      "category": "unambiguous",
+      "question": "How does Oscilar organize investigations and case-management queues?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-oscilar-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/solutions/case-management",
+          "grade": 3,
+          "reason": "The case-management solution page covers review queues, investigations, and operational workflows."
+        }
+      ]
+    },
+    {
+      "id": "u08-oscilar-collections",
+      "category": "unambiguous",
+      "question": "How does Oscilar describe automating collections decisions and outreach?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-oscilar-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/solutions/collections",
+          "grade": 3,
+          "reason": "The collections page describes decisioning and workflow support for collections operations."
+        }
+      ]
+    },
+    {
+      "id": "u09-oscilar-aml",
+      "category": "unambiguous",
+      "question": "What anti-money-laundering capabilities does Oscilar offer?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-oscilar-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/lp/aml-software",
+          "grade": 3,
+          "reason": "The AML page describes monitoring, screening, investigation, and compliance capabilities."
+        }
+      ]
+    },
+    {
+      "id": "u10-oscilar-rules",
+      "category": "unambiguous",
+      "question": "How does Oscilar explain its business rules engine?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-oscilar-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/blog/business-rules-engine-software",
+          "grade": 3,
+          "reason": "The rules-engine article explains business rules, decisioning, testing, and deployment."
+        }
+      ]
+    },
+    {
+      "id": "u11-turbopuffer-full-text",
+      "category": "unambiguous",
+      "question": "Where does Turbopuffer document BM25 full-text search over string fields?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-turbopuffer-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-turbopuffer-com-v1",
+          "url": "https://turbopuffer.com/docs/fts",
+          "grade": 3,
+          "reason": "The full-text search guide documents BM25 queries over supported string attributes."
+        }
+      ]
+    },
+    {
+      "id": "u12-turbopuffer-hybrid",
+      "category": "unambiguous",
+      "question": "Which Turbopuffer guide combines vector and text queries with rank fusion?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-turbopuffer-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-turbopuffer-com-v1",
+          "url": "https://turbopuffer.com/docs/hybrid",
+          "grade": 3,
+          "reason": "The hybrid-search guide explains vector/text retrieval and rank fusion."
+        }
+      ]
+    },
+    {
+      "id": "u13-turbopuffer-query",
+      "category": "unambiguous",
+      "question": "Where are Turbopuffer query rank_by options and multi-queries documented?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-turbopuffer-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-turbopuffer-com-v1",
+          "url": "https://turbopuffer.com/docs/query",
+          "grade": 3,
+          "reason": "The query reference enumerates rank_by options and multi-query behavior."
+        }
+      ]
+    },
+    {
+      "id": "u14-turbopuffer-recall",
+      "category": "unambiguous",
+      "question": "How does Turbopuffer evaluate approximate-nearest-neighbor recall against exhaustive search?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-turbopuffer-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-turbopuffer-com-v1",
+          "url": "https://turbopuffer.com/docs/recall",
+          "grade": 3,
+          "reason": "The recall page documents the debug recall endpoint and its exhaustive comparison."
+        }
+      ]
+    },
+    {
+      "id": "u15-turbopuffer-warm-cache",
+      "category": "unambiguous",
+      "question": "Where does Turbopuffer document warming a namespace cache?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-turbopuffer-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-turbopuffer-com-v1",
+          "url": "https://turbopuffer.com/docs/warm-cache",
+          "grade": 3,
+          "reason": "The warm-cache reference describes cache warming for a namespace or workload."
+        }
+      ]
+    },
+    {
+      "id": "u16-thistle-how-it-works",
+      "category": "unambiguous",
+      "question": "How does Thistle meal delivery work from choosing meals through delivery?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-www-thistle-co-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-www-thistle-co-v1",
+          "url": "https://www.thistle.co/how/",
+          "grade": 3,
+          "reason": "The how-it-works page explains meal selection, delivery, eating, and plan flexibility."
+        }
+      ]
+    },
+    {
+      "id": "u17-thistle-nutrition",
+      "category": "unambiguous",
+      "question": "What nutrition standards does Thistle use for its meals?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-www-thistle-co-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-www-thistle-co-v1",
+          "url": "https://www.thistle.co/nutrition/",
+          "grade": 3,
+          "reason": "The nutrition page states meal composition and nutrition standards."
+        }
+      ]
+    },
+    {
+      "id": "u18-thistle-mission",
+      "category": "unambiguous",
+      "question": "What mission and food-system goals does Thistle describe?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-www-thistle-co-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-www-thistle-co-v1",
+          "url": "https://www.thistle.co/about/",
+          "grade": 3,
+          "reason": "The about page explains Thistle's mission and sustainability goals."
+        }
+      ]
+    },
+    {
+      "id": "u19-thistle-menu",
+      "category": "unambiguous",
+      "question": "Where can I see Thistle's current prepared-meal menu?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-www-thistle-co-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-www-thistle-co-v1",
+          "url": "https://www.thistle.co/menu/",
+          "grade": 3,
+          "reason": "The menu page is the source for current meal offerings."
+        }
+      ]
+    },
+    {
+      "id": "u20-thistle-allergies",
+      "category": "unambiguous",
+      "question": "What does Thistle say about allergens and dietary preferences?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-www-thistle-co-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-www-thistle-co-v1",
+          "url": "https://www.thistle.co/allergy-note/",
+          "grade": 3,
+          "reason": "The allergy note describes dietary preference support and cross-contact caveats."
+        }
+      ]
+    },
+    {
+      "id": "d01-asset-oriented-pipelines",
+      "category": "descriptor_free_confusable",
+      "question": "Why model a data platform around persistent assets instead of a sequence of tasks?",
+      "source_name_exposed": false,
+      "expected_namespaces": ["site-dagster-io-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/thinking-in-assets",
+          "grade": 3,
+          "reason": "The asset-oriented orchestration article directly addresses this distinction."
+        }
+      ]
+    },
+    {
+      "id": "d02-data-quality-checks",
+      "category": "descriptor_free_confusable",
+      "question": "How can a data orchestrator make quality checks first-class and attach them to materialized data?",
+      "source_name_exposed": false,
+      "expected_namespaces": ["site-dagster-io-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/dagster-asset-checks",
+          "grade": 3,
+          "reason": "The asset-checks article is the corpus's direct answer."
+        }
+      ]
+    },
+    {
+      "id": "d03-externally-produced-data",
+      "category": "descriptor_free_confusable",
+      "question": "Can an orchestrator track data products that another system materializes?",
+      "source_name_exposed": false,
+      "expected_namespaces": ["site-dagster-io-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/dagster-external-assets",
+          "grade": 3,
+          "reason": "The external-assets article covers tracking externally materialized data."
+        }
+      ]
+    },
+    {
+      "id": "d04-ml-orchestration",
+      "category": "descriptor_free_confusable",
+      "question": "What should I consider when orchestrating feature, training, and machine-learning pipeline steps?",
+      "source_name_exposed": false,
+      "expected_namespaces": ["site-dagster-io-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/dagster-ml-pipelines",
+          "grade": 3,
+          "reason": "The machine-learning pipelines article is the matching corpus guidance."
+        }
+      ]
+    },
+    {
+      "id": "d05-risk-case-queues",
+      "category": "descriptor_free_confusable",
+      "question": "How can risk analysts prioritize review queues and investigate related cases?",
+      "source_name_exposed": false,
+      "expected_namespaces": ["site-oscilar-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/solutions/case-management",
+          "grade": 3,
+          "reason": "The case-management solution covers analyst queues and investigations."
+        }
+      ]
+    },
+    {
+      "id": "d06-collections-decisioning",
+      "category": "descriptor_free_confusable",
+      "question": "How can a lender automate collections treatment decisions while adapting outreach?",
+      "source_name_exposed": false,
+      "expected_namespaces": ["site-oscilar-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/solutions/collections",
+          "grade": 3,
+          "reason": "The collections solution addresses treatment decisioning and outreach workflows.",
+          "group": "d06-collections-treatment-and-outreach"
+        },
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/blog/agentic-ai-oscilar",
+          "grade": 3,
+          "reason": "The collections-agent section directly covers repayment-risk forecasting, proactive outreach, tailored plans, and communication frequency.",
+          "group": "d06-collections-treatment-and-outreach"
+        }
+      ]
+    },
+    {
+      "id": "d07-aml-monitoring",
+      "category": "descriptor_free_confusable",
+      "question": "What product supports transaction monitoring, screening, and compliance investigations in one risk stack?",
+      "source_name_exposed": false,
+      "expected_namespaces": ["site-oscilar-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/lp/aml-software",
+          "grade": 3,
+          "reason": "The AML page is the matching product explanation."
+        }
+      ]
+    },
+    {
+      "id": "d08-no-code-risk-rules",
+      "category": "descriptor_free_confusable",
+      "question": "How can operations teams create, test, and deploy decision rules without waiting on engineering releases?",
+      "source_name_exposed": false,
+      "expected_namespaces": ["site-oscilar-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/blog/business-rules-engine-software",
+          "grade": 3,
+          "reason": "The business-rules article covers authoring, testing, and deploying decision logic.",
+          "group": "d08-operations-owned-decision-rules"
+        },
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/blog/business-rules-engine",
+          "grade": 3,
+          "reason": "The current business-rules explainer directly covers non-engineering rule authoring, testing, and controlled change.",
+          "group": "d08-operations-owned-decision-rules"
+        },
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/blog/decisioning-engine",
+          "grade": 3,
+          "reason": "The decisioning-engine explainer directly covers operations-owned decision logic and controlled deployment without engineering release cycles.",
+          "group": "d08-operations-owned-decision-rules"
+        }
+      ]
+    },
+    {
+      "id": "d09-bm25-string-arrays",
+      "category": "descriptor_free_confusable",
+      "question": "How do I rank string and string-array attributes with BM25 in a serverless vector database?",
+      "source_name_exposed": false,
+      "expected_namespaces": ["site-turbopuffer-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-turbopuffer-com-v1",
+          "url": "https://turbopuffer.com/docs/fts",
+          "grade": 3,
+          "reason": "The full-text guide documents BM25 over these attribute types."
+        }
+      ]
+    },
+    {
+      "id": "d10-cache-warming",
+      "category": "descriptor_free_confusable",
+      "question": "Is there an API to warm a namespace cache before latency-sensitive traffic arrives?",
+      "source_name_exposed": false,
+      "expected_namespaces": ["site-turbopuffer-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-turbopuffer-com-v1",
+          "url": "https://turbopuffer.com/docs/warm-cache",
+          "grade": 3,
+          "reason": "The warm-cache API reference directly answers the question."
+        }
+      ]
+    },
+    {
+      "id": "d11-vector-recall-debug",
+      "category": "descriptor_free_confusable",
+      "question": "How can I compare approximate vector results with exact nearest-neighbor results for recall testing?",
+      "source_name_exposed": false,
+      "expected_namespaces": ["site-turbopuffer-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-turbopuffer-com-v1",
+          "url": "https://turbopuffer.com/docs/recall",
+          "grade": 3,
+          "reason": "The recall endpoint compares ANN with exhaustive exact search."
+        }
+      ]
+    },
+    {
+      "id": "d12-namespace-schema-inspection",
+      "category": "descriptor_free_confusable",
+      "question": "Which API returns a vector namespace's schema and metadata?",
+      "source_name_exposed": false,
+      "expected_namespaces": ["site-turbopuffer-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-turbopuffer-com-v1",
+          "url": "https://turbopuffer.com/docs/metadata",
+          "grade": 3,
+          "reason": "The namespace metadata reference documents schema and metadata inspection."
+        }
+      ]
+    },
+    {
+      "id": "d13-flexible-meal-plan",
+      "category": "descriptor_free_confusable",
+      "question": "Can I choose prepared meals, receive them ready to eat, and pause or cancel future deliveries?",
+      "source_name_exposed": false,
+      "expected_namespaces": ["site-www-thistle-co-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-www-thistle-co-v1",
+          "url": "https://www.thistle.co/how/",
+          "grade": 3,
+          "reason": "The how-it-works page covers selection, ready-to-eat delivery, pause, and cancellation."
+        }
+      ]
+    },
+    {
+      "id": "d14-meal-allergen-caveat",
+      "category": "descriptor_free_confusable",
+      "question": "Does this prepared-meal service support dietary preferences, and what cross-contact caveat does it give?",
+      "source_name_exposed": false,
+      "expected_namespaces": ["site-www-thistle-co-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-www-thistle-co-v1",
+          "url": "https://www.thistle.co/allergy-note/",
+          "grade": 3,
+          "reason": "The allergy note states preference and facility caveats."
+        }
+      ]
+    },
+    {
+      "id": "d15-plant-forward-nutrition",
+      "category": "descriptor_free_confusable",
+      "question": "What nutrition principles guide these plant-forward prepared meals?",
+      "source_name_exposed": false,
+      "expected_namespaces": ["site-www-thistle-co-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-www-thistle-co-v1",
+          "url": "https://www.thistle.co/nutrition/",
+          "grade": 3,
+          "reason": "The nutrition page explains the service's plant-forward standards."
+        }
+      ]
+    },
+    {
+      "id": "m01-dagster-turbopuffer-quality",
+      "category": "multi_corpus",
+      "question": "Find Dagster's asset-check guidance and Turbopuffer's recall-evaluation guidance.",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-dagster-io-v1", "site-turbopuffer-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/dagster-asset-checks",
+          "grade": 3,
+          "reason": "This is the requested Dagster quality-check source."
+        },
+        {
+          "namespace": "site-turbopuffer-com-v1",
+          "url": "https://turbopuffer.com/docs/recall",
+          "grade": 3,
+          "reason": "This is the requested Turbopuffer recall source."
+        }
+      ]
+    },
+    {
+      "id": "m02-oscilar-turbopuffer-rules-search",
+      "category": "multi_corpus",
+      "question": "Compare Oscilar's business rules material with Turbopuffer's hybrid-search material.",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-oscilar-com-v1", "site-turbopuffer-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/blog/business-rules-engine-software",
+          "grade": 3,
+          "reason": "This is Oscilar's relevant rules-engine source."
+        },
+        {
+          "namespace": "site-turbopuffer-com-v1",
+          "url": "https://turbopuffer.com/docs/hybrid",
+          "grade": 3,
+          "reason": "This is Turbopuffer's relevant hybrid-search source."
+        }
+      ]
+    },
+    {
+      "id": "m03-thistle-oscilar-operations",
+      "category": "multi_corpus",
+      "question": "Show how Thistle handles flexible meal plans and how Oscilar handles analyst case queues.",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-www-thistle-co-v1", "site-oscilar-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-www-thistle-co-v1",
+          "url": "https://www.thistle.co/how/",
+          "grade": 3,
+          "reason": "This is Thistle's plan and delivery flow."
+        },
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/solutions/case-management",
+          "grade": 3,
+          "reason": "This is Oscilar's case-queue source.",
+          "group": "m03-oscilar-case-queues"
+        },
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/customers/coast",
+          "grade": 3,
+          "reason": "The Coast case study directly documents case queues, criteria-based auto-assignment, prioritization, and case-management workflows.",
+          "group": "m03-oscilar-case-queues"
+        }
+      ]
+    },
+    {
+      "id": "m04-dagster-oscilar-ml",
+      "category": "multi_corpus",
+      "question": "What do Dagster and Oscilar each say about using machine learning in operational workflows?",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-dagster-io-v1", "site-oscilar-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/dagster-ml-pipelines",
+          "grade": 3,
+          "reason": "The article is Dagster's machine-learning workflow source."
+        },
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/platform",
+          "grade": 2,
+          "reason": "The platform page describes Oscilar's combined rules and machine-learning decisioning."
+        }
+      ]
+    },
+    {
+      "id": "m05-turbopuffer-thistle-readiness",
+      "category": "multi_corpus",
+      "question": "Find Turbopuffer's cache-warming instructions and Thistle's ready-to-eat delivery instructions.",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-turbopuffer-com-v1", "site-www-thistle-co-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-turbopuffer-com-v1",
+          "url": "https://turbopuffer.com/docs/warm-cache",
+          "grade": 3,
+          "reason": "This is the requested cache-readiness source."
+        },
+        {
+          "namespace": "site-www-thistle-co-v1",
+          "url": "https://www.thistle.co/how/",
+          "grade": 3,
+          "reason": "This is the requested meal-delivery source."
+        }
+      ]
+    },
+    {
+      "id": "m06-dagster-thistle-mission",
+      "category": "multi_corpus",
+      "question": "Summarize what Dagster says it is and what Thistle says its mission is.",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-dagster-io-v1", "site-www-thistle-co-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/what-is-dagster",
+          "grade": 3,
+          "reason": "This is Dagster's product explainer."
+        },
+        {
+          "namespace": "site-www-thistle-co-v1",
+          "url": "https://www.thistle.co/about/",
+          "grade": 3,
+          "reason": "This is Thistle's mission source."
+        }
+      ]
+    },
+    {
+      "id": "m07-dagster-oscilar-turbopuffer-apis",
+      "category": "multi_corpus",
+      "question": "Pull together Dagster's external-assets explanation, Oscilar's platform overview, and Turbopuffer's query API reference.",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-dagster-io-v1", "site-oscilar-com-v1", "site-turbopuffer-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/dagster-external-assets",
+          "grade": 3,
+          "reason": "This is the requested external-assets source."
+        },
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/platform",
+          "grade": 3,
+          "reason": "This is the requested risk-platform source."
+        },
+        {
+          "namespace": "site-turbopuffer-com-v1",
+          "url": "https://turbopuffer.com/docs/query",
+          "grade": 3,
+          "reason": "This is the requested query API source."
+        }
+      ]
+    },
+    {
+      "id": "m08-oscilar-turbopuffer-thistle-products",
+      "category": "multi_corpus",
+      "question": "Give me the core product overview for Oscilar, Turbopuffer, and Thistle.",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-oscilar-com-v1", "site-turbopuffer-com-v1", "site-www-thistle-co-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/platform",
+          "grade": 3,
+          "reason": "The platform page is Oscilar's core product overview."
+        },
+        {
+          "namespace": "site-turbopuffer-com-v1",
+          "url": "https://turbopuffer.com/docs/concepts",
+          "grade": 3,
+          "reason": "The concepts page is a core Turbopuffer product/architecture entry point."
+        },
+        {
+          "namespace": "site-www-thistle-co-v1",
+          "url": "https://www.thistle.co/",
+          "grade": 3,
+          "reason": "The homepage summarizes Thistle's prepared-meal product."
+        }
+      ]
+    },
+    {
+      "id": "m09-dagster-turbopuffer-metadata",
+      "category": "multi_corpus",
+      "question": "Find Dagster's guidance for externally produced assets and Turbopuffer's namespace metadata API.",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-dagster-io-v1", "site-turbopuffer-com-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/dagster-external-assets",
+          "grade": 3,
+          "reason": "This is Dagster's external-assets source."
+        },
+        {
+          "namespace": "site-turbopuffer-com-v1",
+          "url": "https://turbopuffer.com/docs/metadata",
+          "grade": 3,
+          "reason": "This is Turbopuffer's namespace metadata source."
+        }
+      ]
+    },
+    {
+      "id": "m10-dagster-oscilar-thistle-overviews",
+      "category": "multi_corpus",
+      "question": "Find the main overview material for Dagster, Oscilar, and Thistle.",
+      "source_name_exposed": true,
+      "expected_namespaces": ["site-dagster-io-v1", "site-oscilar-com-v1", "site-www-thistle-co-v1"],
+      "route_requirement": "all",
+      "answer_expected": true,
+      "judgments": [
+        {
+          "namespace": "site-dagster-io-v1",
+          "url": "https://dagster.io/blog/what-is-dagster",
+          "grade": 3,
+          "reason": "This is Dagster's overview source."
+        },
+        {
+          "namespace": "site-oscilar-com-v1",
+          "url": "https://oscilar.com/platform",
+          "grade": 3,
+          "reason": "This is Oscilar's overview source."
+        },
+        {
+          "namespace": "site-www-thistle-co-v1",
+          "url": "https://www.thistle.co/",
+          "grade": 3,
+          "reason": "This is Thistle's overview source."
+        }
+      ]
+    },
+    {
+      "id": "n01-transit-schedule",
+      "category": "no_answer",
+      "question": "What is tomorrow's commuter rail schedule from Phoenix to Flagstaff?",
+      "source_name_exposed": false,
+      "expected_namespaces": [],
+      "route_requirement": "none",
+      "answer_expected": false,
+      "judgments": []
+    },
+    {
+      "id": "n02-tax-filing",
+      "category": "no_answer",
+      "question": "Which tax form should a freelance illustrator file for last year's equipment depreciation?",
+      "source_name_exposed": false,
+      "expected_namespaces": [],
+      "route_requirement": "none",
+      "answer_expected": false,
+      "judgments": []
+    },
+    {
+      "id": "n03-marine-weather",
+      "category": "no_answer",
+      "question": "What will the wave height be near Catalina Island this Saturday afternoon?",
+      "source_name_exposed": false,
+      "expected_namespaces": [],
+      "route_requirement": "none",
+      "answer_expected": false,
+      "judgments": []
+    },
+    {
+      "id": "n04-building-code",
+      "category": "no_answer",
+      "question": "What fire-resistance rating does the current municipal code require for this apartment stairwell?",
+      "source_name_exposed": false,
+      "expected_namespaces": [],
+      "route_requirement": "none",
+      "answer_expected": false,
+      "judgments": []
+    },
+    {
+      "id": "n05-live-sports",
+      "category": "no_answer",
+      "question": "Who won tonight's professional baseball game in Seattle?",
+      "source_name_exposed": false,
+      "expected_namespaces": [],
+      "route_requirement": "none",
+      "answer_expected": false,
+      "judgments": []
+    }
+  ]
+}

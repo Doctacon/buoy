@@ -1,16 +1,18 @@
 Status: active
 Created: 2026-07-19
-Updated: 2026-07-19
-Amended-By: .10x/specs/focused-buoy-boundary.md
+Updated: 2026-08-13
+Amended-By: .10x/specs/automatic-multi-corpus-retrieval.md
 
 # Buoy 0.4 Console Alias Removal
 
-## Focused-boundary amendment
+## Bounded-retrieval amendment
 
 The sole `buoy` console identity and removal of the old executable remain
-active. Historical compatibility clauses for `--live`, automatic routing,
-catalog options, namespace discovery, and other removed commands/options are
-superseded and must not be restored.
+active. Historical compatibility clauses for `--live` and other removed
+commands/options remain superseded. The later bounded-retrieval specification
+restores only the current `catalog` surface plus automatic/repeatable-explicit
+namespace retrieval; it does not restore the old executable, removed aliases,
+or historical catalog migration/control-plane commands.
 
 ## Purpose and scope
 
