@@ -95,11 +95,34 @@ buoy catalog disable site-example-one-v1       # preview
 buoy catalog disable site-example-one-v1 --approve
 ```
 
-Single-corpus results keep the established ranking and do not load the
-cross-corpus MiniLM reranker. Multi-corpus results are deduplicated and locally
-reranked. Successful corpora are still returned if another selected namespace
-fails, with the result marked `incomplete`; failure of every attempted
-namespace fails the request.
+Multi-corpus results are deduplicated and locally reranked. Automatic retrieval
+also checks the relevance of its best final result with the same pinned MiniLM
+model. This check runs for both normal text and JSON output. A single explicit
+`--namespace` keeps the established raw-search path and bypasses this automatic
+evidence check.
+Successful corpora are still returned if another selected namespace fails,
+with the result marked `incomplete`; failure of every attempted namespace fails
+the request.
+
+The provisional cutoff is `-8.0`. This is a raw model score, not a percentage
+or probability. In the first 50-question diagnostic, it separated the five
+questions labeled `no_answer` (`-11.2867` to `-9.6270`) from the 45 labeled
+`answer_expected` (`-5.8328` and above). Those labels describe the questions,
+not whether the returned passages were actually relevant. One known
+counterexample scored `-5.8328` and was accepted despite returning unrelated
+Dagster, Oscilar, and Thistle passages for a Turbopuffer vector-recall question.
+The project owner explicitly approved packaged revision
+`owner-approved-provisional-minus-8-v1` on 2026-08-14 despite this limitation.
+There is no command-line, environment, or runtime threshold override. The
+cutoff must be monitored and may change only through a new reviewed packaged
+revision as broader passage-level judgments are collected.
+
+If a confident one-corpus result is below the cutoff, Buoy widens once to the
+next two likely corpora. If the final result is still weak and every search
+succeeded, Buoy returns no hits and says that it found no sufficiently relevant
+evidence in the indexed corpora. If any selected corpus failed, it reports the
+result as inconclusive instead of making that claim. Buoy never claims that no
+answer exists.
 
 Multi-corpus ordering uses the exact cached
 `cross-encoder/ms-marco-MiniLM-L-6-v2` revision documented in

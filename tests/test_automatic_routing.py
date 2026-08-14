@@ -17,6 +17,8 @@ from buoy_search.catalog import (
     prepare_card,
 )
 from buoy_search.cli import main
+from buoy_search.evidence import EvidenceCalibrationError
+from buoy_search.retriever import CalibratedEvidenceAssessor, EvidenceRouteContext
 from buoy_search.remote_catalog import (
     CompatibilityContract,
     REMOTE_CATALOG_NAMESPACE,
@@ -287,7 +289,105 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         self.assertEqual(payload["routing"]["initial_fanout"], 1)
         self.assertEqual(payload["initial_fanout"], 1)
         self.assertEqual(payload["namespaces"][0], "dagster")
+        self.assertEqual(payload["evidence"]["mode"], "active")
+        self.assertEqual(
+            payload["evidence"]["status"], "requires_content_retrieval"
+        )
+        self.assertEqual(payload["evidence"]["threshold"], -8.0)
+        self.assertEqual(
+            payload["evidence"]["enforcement_scope"],
+            "automatic_live_retrieval",
+        )
         self.assertNotIn("vector", json.dumps(payload["routing"]["selected_cards"]))
+
+    def test_automatic_live_wires_governed_evidence_assessment(self) -> None:
+        cards = [
+            make_card("dagster", title="Dagster", vector=cosine_vector(0.5)),
+            make_card("tpuf", title="Turbopuffer", vector=cosine_vector(0.9)),
+            make_card("thistle", title="Thistle", vector=cosine_vector(0.2)),
+        ]
+        catalog_snapshot = snapshot(cards)
+        captured: dict[str, object] = {}
+
+        class FakeResult:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "command": "retrieve",
+                    "dry_run": False,
+                    "content_retrieval_occurred": True,
+                    "namespaces": ["dagster"],
+                    "hits": [],
+                    "evidence": {"mode": "active", "status": "supported"},
+                }
+
+        class FakeRetriever:
+            def retrieve(self, _query, _options, **kwargs):  # noqa: ANN001
+                captured.update(kwargs)
+                return FakeResult()
+
+        with patch(
+            "buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY", return_value=object()
+        ), patch(
+            "buoy_search.cli.read_remote_catalog", return_value=catalog_snapshot
+        ), patch(
+            "buoy_search.cli.ROUTING_EMBEDDER_FACTORY", return_value=FixedEmbedder()
+        ), patch(
+            "buoy_search.cli.MultiNamespaceRetriever.from_configs",
+            return_value=FakeRetriever(),
+        ):
+            result, stdout, stderr = run_cli(
+                ["retrieve", "Dagster assets", "--json"],
+                env={"TURBOPUFFER_API_KEY": self.API_KEY},
+            )
+
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertEqual(json.loads(stdout)["evidence"]["status"], "supported")
+        self.assertIsInstance(
+            captured["evidence_assessor"], CalibratedEvidenceAssessor
+        )
+        route_context = captured["evidence_route_context"]
+        self.assertIsInstance(route_context, EvidenceRouteContext)
+        self.assertEqual(route_context.selection_reason, "unique_title_or_alias")
+
+    def test_plain_automatic_retrieval_wires_active_evidence_assessment(self) -> None:
+        cards = [
+            make_card("dagster", title="Dagster", vector=cosine_vector(0.5)),
+            make_card("tpuf", title="Turbopuffer", vector=cosine_vector(0.9)),
+            make_card("thistle", title="Thistle", vector=cosine_vector(0.2)),
+        ]
+        catalog_snapshot = snapshot(cards)
+        captured: dict[str, object] = {}
+        assessor = object()
+
+        class FakeRetriever:
+            def retrieve(self, _query, _options, **kwargs):  # noqa: ANN001
+                captured.update(kwargs)
+                return object()
+
+        with patch(
+            "buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY", return_value=object()
+        ), patch(
+            "buoy_search.cli.read_remote_catalog", return_value=catalog_snapshot
+        ), patch(
+            "buoy_search.cli.ROUTING_EMBEDDER_FACTORY", return_value=FixedEmbedder()
+        ), patch(
+            "buoy_search.cli.MultiNamespaceRetriever.from_configs",
+            return_value=FakeRetriever(),
+        ), patch(
+            "buoy_search.cli.CalibratedEvidenceAssessor",
+            return_value=assessor,
+        ), patch("buoy_search.cli.print_retrieval_text"):
+            result, stdout, stderr = run_cli(
+                ["retrieve", "Dagster assets"],
+                env={"TURBOPUFFER_API_KEY": self.API_KEY},
+            )
+
+        self.assertEqual((result, stdout, stderr), (0, "", ""))
+        self.assertIs(captured["evidence_assessor"], assessor)
+        self.assertIsInstance(
+            captured["evidence_route_context"], EvidenceRouteContext
+        )
+        self.assertEqual(captured["initial_fanout"], 1)
 
     def test_catalog_resource_failure_cannot_leak_credentials(self) -> None:
         secret = "tpuf_AUTO_RESOURCE_SECRET"
@@ -344,6 +444,23 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         self.assertEqual((result, stdout), (2, ""))
         self.assertIn("missing cards", stderr)
         self.assertIn("incompatible cards", stderr)
+
+    def test_invalid_evidence_artifact_fails_before_provider_work(self) -> None:
+        with patch(
+            "buoy_search.cli.load_evidence_calibration",
+            side_effect=EvidenceCalibrationError("artifact is incompatible"),
+        ), patch(
+            "buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY",
+            side_effect=AssertionError("catalog client constructed"),
+        ):
+            result, stdout, stderr = run_cli(
+                ["retrieve", "query", "--plan", "--json"],
+                env={"TURBOPUFFER_API_KEY": self.API_KEY},
+            )
+
+        self.assertEqual((result, stdout), (2, ""))
+        self.assertIn("Automatic evidence assessment failed", stderr)
+        self.assertIn("artifact is incompatible", stderr)
 
     def test_disabled_and_stale_cards_are_covered_but_excluded(self) -> None:
         eligible = make_card("eligible", vector=unit_vector())
@@ -422,6 +539,9 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         ), patch(
             "buoy_search.cli.ROUTING_EMBEDDER_FACTORY",
             side_effect=AssertionError("route model loaded"),
+        ), patch(
+            "buoy_search.cli.load_evidence_calibration",
+            side_effect=AssertionError("evidence calibration loaded"),
         ):
             result, stdout, stderr = run_cli(
                 [
@@ -441,6 +561,50 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         self.assertFalse(payload["routing"]["active"])
         self.assertFalse(payload["credentials_required"])
         self.assertFalse(payload["turbopuffer_api_calls"])
+        self.assertNotIn("evidence", payload)
+
+    def test_explicit_live_single_and_multi_bypass_active_evidence_gate(self) -> None:
+        class FakeResult:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "command": "retrieve",
+                    "dry_run": False,
+                    "hits": [],
+                }
+
+        class FakeRetriever:
+            def retrieve(self, _query, _options, **kwargs):  # noqa: ANN001
+                self.assert_no_automatic_kwargs(kwargs)
+                return FakeResult()
+
+            @staticmethod
+            def assert_no_automatic_kwargs(kwargs: dict[str, object]) -> None:
+                if kwargs:
+                    raise AssertionError(
+                        "explicit retrieval received automatic evidence arguments"
+                    )
+
+        with patch(
+            "buoy_search.cli.load_evidence_calibration",
+            side_effect=AssertionError("evidence calibration loaded"),
+        ), patch(
+            "buoy_search.cli.HybridRetriever.from_config",
+            return_value=FakeRetriever(),
+        ), patch(
+            "buoy_search.cli.MultiNamespaceRetriever.from_configs",
+            return_value=FakeRetriever(),
+        ):
+            for namespaces in (
+                ["site-one-v1"],
+                ["site-one-v1", "site-two-v1"],
+            ):
+                with self.subTest(namespaces=namespaces):
+                    args = ["retrieve", "query", "--json"]
+                    for namespace in namespaces:
+                        args.extend(["--namespace", namespace])
+                    result, stdout, stderr = run_cli(args)
+                    self.assertEqual((result, stderr), (0, ""))
+                    self.assertEqual(json.loads(stdout)["hits"], [])
 
 
 if __name__ == "__main__":

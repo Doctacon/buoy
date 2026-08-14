@@ -61,8 +61,9 @@ ignore rule, the versionless editable lock root, published changelog history
 through v0.5.1 with no staged release, and parsed workflow permissions.
 `validate-distribution` checks the
 focused archive boundary, entry point, bundled tokenizer, metadata agreement,
-presence of the bounded catalog/routing/evaluation modules, and absence of the
-Command Center, evidence system, frontend, and internal records.
+presence of the bounded catalog/routing/evaluation and automatic-evidence
+calibration modules, and absence of the retired remote evidence-snapshot
+control plane, Command Center, frontend, and internal records.
 
 The legacy `validate`, `artifacts`, `state`, `github-snapshot`, and `policy`
 commands fail cleanly with the paused-publication message. They perform no Git,

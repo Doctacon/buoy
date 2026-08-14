@@ -94,10 +94,12 @@ Source-aware defaults remain:
 - repositories: file mode, `repo-code` profile, pool 100,
   `adaptive-sum-3` aggregation.
 
-A confident one-corpus route queries only that corpus and does not load the
-cross-corpus reranker. If it is empty or fails, Buoy widens once to the next two
-route candidates. A route that starts with two or three corpora queries them
-concurrently, with at most three workers.
+A confident one-corpus route initially queries only that corpus. If it is
+empty, fails, or returns a best evidence score below the provisional cutoff,
+Buoy widens once to the next two route candidates. An explicit
+single-namespace request does not cross this automatic evidence boundary and
+retains its established raw-search behavior. A route that starts with two or
+three corpora queries them concurrently, with at most three workers.
 
 For a true multi-corpus result, each successful namespace contributes at most
 eight hits. Buoy collapses exact citation/section/content duplicates, retains
@@ -122,8 +124,10 @@ about 88 MB. With the routing model already resident, a measured 24-candidate
 run on the development Mac took about 0.58 seconds and added about 151 MiB of
 peak working memory using the fixed batch size of eight. It is already present
 in the development environment. If that exact snapshot is not
-in the Hugging Face cache, the request fails before querying the widened
-namespaces and explains which revision must be cached.
+in the Hugging Face cache, an ambiguous multi-corpus request fails before its
+content queries. A high-confidence single-corpus route queries that corpus
+first; if evidence assessment then needs the missing model, the request fails
+with a generic assessment error before widening or presenting results.
 
 Overrides remain explicit:
 
@@ -139,12 +143,71 @@ buoy retrieve "customer cancellation reason" \
 `--doc-kind` applies one exact metadata filter. Tags remain output and routing
 card metadata, not retrieval-filter authority.
 
+## Automatic evidence assessment
+
+Automatic routing answers which indexed corpus is the closest fit; it cannot
+by itself show that the returned rows are useful evidence. For live automatic
+text and JSON retrieval, Buoy therefore scores the first up to five hits from
+the exact final ranking, never beyond the requested `top_k`, with the same
+immutable MiniLM revision used for cross-corpus reranking. Multi-corpus
+retrieval reuses its existing scores. Automatic single-corpus retrieval may
+load the model for this bounded check but keeps its original result order.
+Explicit `--namespace` retrieval is unchanged and bypasses this check.
+
+The current rule is deliberately simple: if the best final score is below
+`-8.0`, the result is weak. The number is a raw cross-encoder score, not a
+percentage, probability, or universal measure that can be compared with other
+models. It applies only to the pinned model and retrieval contract documented
+here.
+
+The project owner explicitly approved `-8.0` on 2026-08-14 as a provisional
+packaged starting point. The calibration revision is
+`owner-approved-provisional-minus-8-v1`. There is no CLI, environment-variable,
+or runtime threshold override. In the observed 50-question run, the
+five questions categorized as `no_answer` scored from `-11.2867` through
+`-9.6270`, while all 45 questions categorized as `answer_expected` scored
+`-5.8328` or higher. This separates question categories, not relevant from
+irrelevant returned evidence.
+
+There is already a known false support above the cutoff:
+`d11-vector-recall-debug` asked about exact versus ANN recall in Turbopuffer but
+automatic retrieval returned unrelated Dagster, Oscilar, and Thistle passages
+with a top score of `-5.8328`. The `m10` case also scored `-3.178` without
+returning any of its three judged overview pages, although unjudged alternates
+could still be useful. Against the incomplete judged-URL/group signal, `-8.0`
+produced TP30, FP15, FN0, and TN5: 15 of 45 accepted cases, or 33%, missed that
+signal. That is not a complete relevance judgment, but it makes the residual
+false-support risk explicit. Evaluation must monitor accepted-passage quality,
+and the cutoff may change only through a new reviewed packaged revision as
+broader passage-level judgments are collected.
+
+A weak high-confidence one-corpus result widens once to the next two routed
+candidates with reason `weak_top1`. After that final attempt:
+
+- a score at or above `-8.0` returns the normal ranked hits as `supported`;
+- a score below `-8.0` with every namespace search complete returns no hits as
+  `no_relevant_evidence`; and
+- a score below `-8.0` with any namespace failure returns no hits as
+  `inconclusive`, preserves the attributed failures, and marks the response
+  incomplete.
+
+If every namespace fails, retrieval still fails normally. The complete weak
+text result says “No sufficiently relevant evidence was found in the indexed
+corpora.” An inconclusive result says that namespace failures prevented a
+complete assessment. Neither outcome claims that an answer does not exist.
+Automatic preview does not query content, so it reports the planned threshold
+but cannot make an evidence decision.
+
 ## Results and failures
 
 Every result retains its source URL/path, title, section, content preview,
 stable row identity, score diagnostics, and ordered tags. Automatic and
 explicit multi-corpus JSON also report selected `namespaces`, routing and
 reranking details, per-hit `namespace`, per-namespace summaries, and failures.
+Automatic live JSON additionally reports the governed `evidence` mode, status,
+model and calibration identities, the `-8.0` threshold, bounded score features,
+and whether weak evidence triggered widening. It does not include extra raw
+content in evidence diagnostics.
 
 One selected namespace failing does not discard successful results. Buoy
 redacts and attributes the failed namespace and marks the combined response

@@ -25,6 +25,15 @@ from buoy_search.cross_encoder import (
     CrossEncoderRerankerError,
     load_cross_encoder_reranker,
 )
+from buoy_search.evidence import (
+    EvidenceCalibration,
+    EvidenceCalibrationError,
+    EvidenceDecision as CalibratedEvidenceDecision,
+    NON_COLLECT_ACTIVATION_PAUSED_MESSAGE,
+    OWNER_AUTHORIZED_ACTIVE_CALIBRATION,
+    decide_evidence,
+    observe_evidence_scores,
+)
 
 DEFAULT_TOP_K = 5
 DEFAULT_CANDIDATES = 200
@@ -42,6 +51,29 @@ RANKING_AGGREGATIONS = {"max", "adaptive_sum_3", "capped_sum_3"}
 RRF_K = 60
 MAX_NAMESPACE_FANOUT = 3
 MAX_RERANK_CANDIDATES_PER_NAMESPACE = 8
+EVIDENCE_ASSESSMENT_TOP_K = 5
+EVIDENCE_PUBLIC_DIAGNOSTIC_FIELDS = frozenset(
+    {
+        "mode",
+        "status",
+        "reason",
+        "model",
+        "model_revision",
+        "calibration_id",
+        "calibration_revision",
+        "feature_contract",
+        "threshold",
+        "widening_triggered_by_weak_evidence",
+        "top_score",
+        "second_score",
+        "score_gap",
+        "candidates_scored",
+        "route_selection_reason",
+        "route_semantic_score",
+        "route_semantic_margin",
+        "namespace_failure_count",
+    }
+)
 CROSS_NAMESPACE_RRF_K = 60
 CROSS_NAMESPACE_FUSION_METHOD = "equal_weight_ordinal_rrf"
 CROSS_NAMESPACE_FUSION = "cross_namespace_equal_weight_ordinal_rrf"
@@ -119,6 +151,110 @@ def ranking_defaults_for_namespace(
 class Embedder(Protocol):
     def encode(self, texts: Sequence[str]) -> list[list[float]]:
         """Return one embedding vector per input text."""
+
+
+@dataclass(frozen=True)
+class EvidenceRouteContext:
+    """Routing facts bound to one automatic evidence assessment."""
+
+    selection_reason: str
+    semantic_score: float | None
+    semantic_margin: float | None
+
+
+class EvidenceDecisionLike(Protocol):
+    """Structural decision contract supplied by the calibration boundary."""
+
+    @property
+    def is_weak(self) -> bool | None:
+        """Return whether the observation is weak, or unknown in collect mode."""
+
+    @property
+    def status(self) -> str:
+        """Return the governed public evidence status."""
+
+    def to_dict(self) -> dict[str, object]:
+        """Return content-free public evidence diagnostics."""
+
+
+class EvidenceAssessor(Protocol):
+    """Injected automatic-only evidence scoring and calibration boundary."""
+
+    @property
+    def mode(self) -> str:
+        """Return collect, shadow, or active."""
+
+    def assess(
+        self,
+        *,
+        query: str,
+        hits: Sequence[SearchHit],
+        existing_scores: Sequence[float] | None,
+        route_context: EvidenceRouteContext,
+        namespace_failure_count: int,
+        widening_triggered_by_weak_evidence: bool,
+    ) -> EvidenceDecisionLike:
+        """Assess the exact ordered candidate set without changing its ranking."""
+
+
+class CalibratedEvidenceAssessor:
+    """Score exact automatic hits and apply one validated calibration artifact."""
+
+    def __init__(
+        self,
+        calibration: EvidenceCalibration,
+        *,
+        reranker_loader: Callable[[], CrossEncoderReranker] | None = None,
+    ) -> None:
+        if calibration.mode not in {"collect", "active"} or (
+            calibration.mode == "active"
+            and calibration != OWNER_AUTHORIZED_ACTIVE_CALIBRATION
+        ):
+            raise EvidenceCalibrationError(NON_COLLECT_ACTIVATION_PAUSED_MESSAGE)
+        self._calibration = calibration
+        self._reranker_loader = reranker_loader
+
+    @property
+    def mode(self) -> str:
+        return self._calibration.mode
+
+    def assess(
+        self,
+        *,
+        query: str,
+        hits: Sequence[SearchHit],
+        existing_scores: Sequence[float] | None,
+        route_context: EvidenceRouteContext,
+        namespace_failure_count: int,
+        widening_triggered_by_weak_evidence: bool,
+    ) -> CalibratedEvidenceDecision:
+        if existing_scores is None:
+            loader = self._reranker_loader or load_cross_encoder_reranker
+            reranker = loader()
+            scores = reranker.score(
+                query,
+                [cross_encoder_passage(hit) for hit in hits],
+            )
+        else:
+            scores = list(existing_scores)
+        if len(scores) != len(hits):
+            raise CrossEncoderRerankerError(
+                "pinned evidence scorer returned the wrong number of scores"
+            )
+        observation = observe_evidence_scores(
+            scores,
+            route_selection_reason=route_context.selection_reason,
+            route_semantic_score=route_context.semantic_score,
+            route_semantic_margin=route_context.semantic_margin,
+            namespace_failure_count=namespace_failure_count,
+        )
+        return decide_evidence(
+            self._calibration,
+            observation,
+            widening_triggered_by_weak_evidence=(
+                widening_triggered_by_weak_evidence
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -260,7 +396,7 @@ class RetrievalFallback:
     """One bounded widening decision made after an initial one-namespace route."""
 
     widened: bool = False
-    reason: Literal["empty_top1", "failed_top1"] | None = None
+    reason: Literal["empty_top1", "failed_top1", "weak_top1"] | None = None
     initial_namespaces: tuple[str, ...] = ()
     added_namespaces: tuple[str, ...] = ()
 
@@ -330,9 +466,10 @@ class MultiNamespaceRetrievalResult:
     reranking: CrossNamespaceReranking
     incomplete: bool
     fusion: str
+    evidence: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "command": "retrieve",
             "dry_run": False,
             "credentials_required": True,
@@ -374,6 +511,9 @@ class MultiNamespaceRetrievalResult:
             "namespace_failures": [failure.to_dict() for failure in self.failures],
             "hits": [hit.to_dict() for hit in self.hits],
         }
+        if self.evidence is not None:
+            payload["evidence"] = dict(self.evidence)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -731,7 +871,18 @@ class MultiNamespaceRetriever:
         options: Sequence[RetrievalOptions],
         *,
         initial_fanout: int | None = None,
+        evidence_assessor: EvidenceAssessor | None = None,
+        evidence_route_context: EvidenceRouteContext | None = None,
     ) -> MultiNamespaceRetrievalResult:
+        if (evidence_assessor is None) != (evidence_route_context is None):
+            raise ValueError(
+                "evidence_assessor and evidence_route_context must be supplied together"
+            )
+        evidence_mode = (
+            _validated_evidence_mode(evidence_assessor.mode)
+            if evidence_assessor is not None
+            else None
+        )
         if len(options) != len(self._retrievers):
             raise ValueError("one retrieval option set is required per namespace")
         first_options = options[0]
@@ -781,26 +932,52 @@ class MultiNamespaceRetriever:
             query=cleaned_query,
             query_vector=vectors[0],
             multi_namespace=requested_fanout > 1,
+            single_namespace_top_k=first_options.top_k,
         )
         fallback = RetrievalFallback(
             initial_namespaces=tuple(target.namespace for target in initial_targets)
         )
+        evidence_payload: dict[str, object] | None = None
+        weak_evidence_widening_triggered = False
 
         if requested_fanout == 1 and len(targets) > 1:
             first_outcome = outcomes[0]
             should_widen = first_outcome.failure is not None or not (
                 first_outcome.result and first_outcome.result.hits
             )
+            fallback_reason: Literal[
+                "empty_top1", "failed_top1", "weak_top1"
+            ] = (
+                "failed_top1"
+                if first_outcome.failure is not None
+                else "empty_top1"
+            )
+            if not should_widen and evidence_assessor is not None:
+                initial_hits, _initial_reranking = cross_namespace_rerank(
+                    cleaned_query,
+                    [first_outcome],
+                    top_k=min(EVIDENCE_ASSESSMENT_TOP_K, first_options.top_k),
+                    reranker=None,
+                )
+                initial_decision, evidence_payload = _assess_retrieval_evidence(
+                    evidence_assessor,
+                    query=cleaned_query,
+                    hits=initial_hits[:EVIDENCE_ASSESSMENT_TOP_K],
+                    route_context=evidence_route_context,
+                    namespace_failure_count=0,
+                    weak_evidence_widening_triggered=False,
+                )
+                if initial_decision is not None and initial_decision.is_weak is True:
+                    should_widen = True
+                    fallback_reason = "weak_top1"
+                    weak_evidence_widening_triggered = True
+                    evidence_payload = None
             if should_widen:
                 reranker = self._load_reranker()
                 added_targets = targets[1:MAX_NAMESPACE_FANOUT]
                 fallback = RetrievalFallback(
                     widened=True,
-                    reason=(
-                        "failed_top1"
-                        if first_outcome.failure is not None
-                        else "empty_top1"
-                    ),
+                    reason=fallback_reason,
                     initial_namespaces=(first_outcome.target.namespace,),
                     added_namespaces=tuple(target.namespace for target in added_targets),
                 )
@@ -810,6 +987,7 @@ class MultiNamespaceRetriever:
                         query=cleaned_query,
                         query_vector=vectors[0],
                         multi_namespace=True,
+                        single_namespace_top_k=first_options.top_k,
                     )
                 )
 
@@ -830,6 +1008,25 @@ class MultiNamespaceRetriever:
             top_k=first_options.top_k,
             reranker=reranker,
         )
+        if evidence_assessor is not None:
+            assessment_hits = hits[:EVIDENCE_ASSESSMENT_TOP_K]
+            if evidence_payload is None:
+                decision, evidence_payload = _assess_retrieval_evidence(
+                    evidence_assessor,
+                    query=cleaned_query,
+                    hits=assessment_hits,
+                    route_context=evidence_route_context,
+                    namespace_failure_count=len(failures),
+                    weak_evidence_widening_triggered=(
+                        weak_evidence_widening_triggered
+                    ),
+                )
+                if (
+                    decision is not None
+                    and evidence_mode == "active"
+                    and decision.status in {"no_relevant_evidence", "inconclusive"}
+                ):
+                    hits = []
         first_config = self._retrievers[0]._config
         namespace_results = [
             outcome.result for outcome in successful if outcome.result is not None
@@ -857,6 +1054,7 @@ class MultiNamespaceRetriever:
                 if reranking.applied
                 else "single_namespace"
             ),
+            evidence=evidence_payload,
         )
 
     def _load_reranker(self) -> CrossEncoderReranker:
@@ -870,6 +1068,7 @@ class MultiNamespaceRetriever:
         query: str,
         query_vector: Sequence[float],
         multi_namespace: bool,
+        single_namespace_top_k: int | None = None,
     ) -> list[_NamespaceRetrievalOutcome]:
         if not targets:
             return []
@@ -884,7 +1083,7 @@ class MultiNamespaceRetriever:
                     top_k=(
                         MAX_RERANK_CANDIDATES_PER_NAMESPACE
                         if multi_namespace
-                        else target.options.top_k
+                        else single_namespace_top_k or target.options.top_k
                     ),
                 )
                 future = executor.submit(
@@ -915,6 +1114,108 @@ class MultiNamespaceRetriever:
                     )
         outcomes.sort(key=lambda outcome: outcome.target.route_rank)
         return outcomes
+
+
+def _validated_evidence_mode(value: object) -> Literal["collect", "shadow", "active"]:
+    if not isinstance(value, str) or value not in {"collect", "shadow", "active"}:
+        raise ValueError("evidence assessor mode must be collect, shadow, or active")
+    return value  # type: ignore[return-value]
+
+
+def _existing_cross_encoder_scores(
+    hits: Sequence[SearchHit],
+) -> tuple[float, ...] | None:
+    """Reuse scores only when every exact assessed hit carries a finite CE score."""
+
+    scores: list[float] = []
+    for hit in hits:
+        cross_namespace = hit.score_info.get("cross_namespace")
+        if not isinstance(cross_namespace, Mapping):
+            return None
+        value = cross_namespace.get("cross_encoder_score")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        score = float(value)
+        if not math.isfinite(score):
+            return None
+        scores.append(score)
+    return tuple(scores)
+
+
+def _assess_retrieval_evidence(
+    assessor: EvidenceAssessor,
+    *,
+    query: str,
+    hits: Sequence[SearchHit],
+    route_context: EvidenceRouteContext | None,
+    namespace_failure_count: int,
+    weak_evidence_widening_triggered: bool,
+) -> tuple[EvidenceDecisionLike | None, dict[str, object]]:
+    """Run one automatic assessment with mode-specific fail-closed behavior."""
+
+    if route_context is None:  # Guard the public pair invariant for type checkers.
+        raise ValueError("evidence_route_context is required")
+    mode = _validated_evidence_mode(assessor.mode)
+    assessed_hits = list(hits[:EVIDENCE_ASSESSMENT_TOP_K])
+    try:
+        decision = assessor.assess(
+            query=query,
+            hits=assessed_hits,
+            existing_scores=_existing_cross_encoder_scores(assessed_hits),
+            route_context=route_context,
+            namespace_failure_count=namespace_failure_count,
+            widening_triggered_by_weak_evidence=(
+                weak_evidence_widening_triggered
+            ),
+        )
+        status = decision.status
+        weak = decision.is_weak
+        allowed_statuses = {
+            "collect": {"unassessed": None},
+            "shadow": {
+                "would_support": False,
+                "would_abstain": True,
+                "would_be_inconclusive": True,
+            },
+            "active": {
+                "supported": False,
+                "no_relevant_evidence": True,
+                "inconclusive": True,
+            },
+        }
+        if status not in allowed_statuses[mode] or weak is not allowed_statuses[mode][status]:
+            raise ValueError("evidence decision is incompatible with assessor mode")
+        raw_payload = decision.to_dict()
+        if not isinstance(raw_payload, dict):
+            raise ValueError("evidence decision diagnostics must be an object")
+    except Exception:
+        if mode == "active":
+            raise RuntimeError("Automatic evidence assessment failed.") from None
+        return None, {
+            "mode": mode,
+            "status": "assessment_failed",
+            "reason": "evidence_assessment_failed",
+            "widening_triggered_by_weak_evidence": (
+                weak_evidence_widening_triggered
+            ),
+        }
+
+    if isinstance(decision, CalibratedEvidenceDecision):
+        payload = {
+            key: value
+            for key, value in raw_payload.items()
+            if key in EVIDENCE_PUBLIC_DIAGNOSTIC_FIELDS
+        }
+    else:
+        # Injected assessors control routing decisions for library callers, but
+        # their free-form values never cross Buoy's public diagnostic boundary.
+        payload = {"reason": "custom_evidence_assessor"}
+    payload["mode"] = mode
+    payload["status"] = status
+    payload["widening_triggered_by_weak_evidence"] = (
+        weak_evidence_widening_triggered
+    )
+    return decision, payload
 
 
 def cross_namespace_rerank(

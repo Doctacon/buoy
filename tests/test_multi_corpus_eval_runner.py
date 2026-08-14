@@ -22,6 +22,11 @@ from buoy_search.multi_corpus_evals import (
     load_multi_corpus_eval_dataset,
 )
 from buoy_search.config import RuntimeConfig
+from buoy_search.cross_encoder import CROSS_ENCODER_MODEL, CROSS_ENCODER_REVISION
+from buoy_search.evidence import (
+    EVIDENCE_FEATURE_CONTRACT,
+    OWNER_AUTHORIZED_ACTIVE_CALIBRATION,
+)
 from buoy_search.retriever import SearchHit
 from scripts import evaluate_multi_corpus_retrieval as runner
 
@@ -33,6 +38,30 @@ TEST_COLLECTOR_INVOCATION = (
     "--output",
     "/tmp/buoy-test-multi-corpus-report.json",
 )
+
+
+def active_evidence(*, widening: bool) -> dict[str, object]:
+    calibration = OWNER_AUTHORIZED_ACTIVE_CALIBRATION
+    return {
+        "mode": "active",
+        "status": "supported",
+        "reason": "top_score_at_or_above_threshold",
+        "model": calibration.model,
+        "model_revision": calibration.model_revision,
+        "calibration_id": calibration.calibration_id,
+        "calibration_revision": calibration.calibration_revision,
+        "feature_contract": calibration.feature_contract,
+        "threshold": calibration.threshold,
+        "widening_triggered_by_weak_evidence": widening,
+        "top_score": -7.0,
+        "second_score": -9.0,
+        "score_gap": 2.0,
+        "candidates_scored": 2,
+        "route_selection_reason": "high_confidence_semantic",
+        "route_semantic_score": 0.8,
+        "route_semantic_margin": 0.1,
+        "namespace_failure_count": 0,
+    }
 
 
 class MultiCorpusEvalRunGateTests(unittest.TestCase):
@@ -67,6 +96,118 @@ class MultiCorpusEvalRunGateTests(unittest.TestCase):
             live_candidate["verdict"]["failed_checks"],
             ["provider_backed_live_run"],
         )
+
+    def test_optional_evidence_observation_is_content_free_and_strict(self) -> None:
+        run = perfect_fixture_run(self.dataset)
+        evidence = {
+            "mode": "collect",
+            "status": "unassessed",
+            "reason": "threshold_not_calibrated",
+            "model": CROSS_ENCODER_MODEL,
+            "model_revision": CROSS_ENCODER_REVISION,
+            "calibration_id": "automatic-retrieval-evidence-v1",
+            "calibration_revision": "collect-unassessed-v1",
+            "feature_contract": EVIDENCE_FEATURE_CONTRACT,
+            "threshold": None,
+            "widening_triggered_by_weak_evidence": False,
+            "top_score": -1.25,
+            "second_score": -2.0,
+            "score_gap": 0.75,
+            "candidates_scored": 2,
+            "route_selection_reason": "ambiguous_semantic",
+            "route_semantic_score": 0.5,
+            "route_semantic_margin": 0.01,
+            "namespace_failure_count": 0,
+        }
+        run["cases"][0]["evidence"] = evidence
+
+        report = evaluate_multi_corpus_run(self.dataset, run)
+        self.assertEqual(report["cases"][0]["evidence"], evidence)
+
+        impossible_failures = perfect_fixture_run(self.dataset)
+        attempted = set(
+            impossible_failures["cases"][0]["route"]["namespaces"]
+        )
+        outside_route = next(
+            namespace
+            for namespace in self.dataset.eligible_namespaces
+            if namespace not in attempted
+        )
+        impossible_failures["cases"][0]["failures"][
+            "automatic_namespaces"
+        ] = [outside_route]
+        with self.assertRaisesRegex(ValueError, "strict subset"):
+            evaluate_multi_corpus_run(self.dataset, impossible_failures)
+
+        clean_evidence = dict(evidence)
+        run["cases"][0]["evidence"]["query"] = "must never be retained"
+        with self.assertRaisesRegex(ValueError, "unknown=.*query"):
+            evaluate_multi_corpus_run(self.dataset, run)
+
+        contradictions = [
+            {"reason": "top_score_below_threshold"},
+            {"top_score": -3.0, "second_score": -2.0, "score_gap": -1.0},
+            {"namespace_failure_count": 1},
+        ]
+        for mutation in contradictions:
+            with self.subTest(mutation=mutation):
+                invalid = perfect_fixture_run(self.dataset)
+                invalid_evidence = dict(clean_evidence)
+                invalid_evidence.update(mutation)
+                invalid["cases"][0]["evidence"] = invalid_evidence
+                with self.assertRaises(ValueError):
+                    evaluate_multi_corpus_run(self.dataset, invalid)
+
+    def test_two_reranker_calls_require_active_weak_evidence_widening(self) -> None:
+        run = as_claimed_live_run(perfect_fixture_run(self.dataset), self.dataset)
+        case = run["cases"][0]
+        widened_namespaces = list(self.dataset.eligible_namespaces[:3])
+        case["route"] = {
+            "namespaces": widened_namespaces,
+            "initial_high_confidence_namespace": widened_namespaces[0],
+        }
+        case["calls"]["automatic_namespace_logical_calls"] = 3
+        case["calls"]["automatic_multi_query_logical_calls"] = 3
+        case["calls"]["reranker_logical_calls"] = 2
+        case["evidence"] = active_evidence(widening=True)
+
+        report = evaluate_multi_corpus_run(self.dataset, run)
+        self.assertEqual(report["cases"][0]["calls"]["reranker_logical_calls"], 2)
+
+        for mutation in (
+            "no_evidence",
+            "not_widened",
+            "zero_calls",
+            "one_call",
+            "three_calls",
+            "one_namespace",
+            "no_initial_singleton",
+        ):
+            with self.subTest(mutation=mutation):
+                invalid = json.loads(json.dumps(run))
+                invalid_case = invalid["cases"][0]
+                if mutation == "no_evidence":
+                    invalid_case.pop("evidence")
+                elif mutation == "not_widened":
+                    invalid_case["evidence"][
+                        "widening_triggered_by_weak_evidence"
+                    ] = False
+                elif mutation == "zero_calls":
+                    invalid_case["calls"]["reranker_logical_calls"] = 0
+                elif mutation == "one_call":
+                    invalid_case["calls"]["reranker_logical_calls"] = 1
+                elif mutation == "three_calls":
+                    invalid_case["calls"]["reranker_logical_calls"] = 3
+                elif mutation == "one_namespace":
+                    invalid_case["route"]["namespaces"] = [widened_namespaces[0]]
+                    invalid_case["calls"]["automatic_namespace_logical_calls"] = 1
+                    invalid_case["calls"]["automatic_multi_query_logical_calls"] = 1
+                else:
+                    invalid_case["route"][
+                        "initial_high_confidence_namespace"
+                    ] = None
+                with self.assertRaisesRegex(ValueError, "weak-evidence widening"):
+                    evaluate_multi_corpus_run(self.dataset, invalid)
 
     def test_only_private_collector_evaluation_can_pass_live_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -435,16 +576,13 @@ class MultiCorpusEvalRunGateTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     evaluate_multi_corpus_run(self.dataset, run)
 
-    def test_partial_collection_is_a_nonpassing_quality_run(self) -> None:
+    def test_all_failed_automatic_route_is_not_a_collected_case(self) -> None:
         run = perfect_fixture_run(self.dataset)
         namespace = run["cases"][0]["route"]["namespaces"][0]
         run["cases"][0]["failures"]["automatic_namespaces"] = [namespace]
 
-        report = evaluate_multi_corpus_run(self.dataset, run)
-
-        self.assertFalse(report["verdict"]["release_ready"])
-        self.assertEqual(report["verdict"]["status"], "fail")
-        self.assertIn("complete_read_only_collection", report["verdict"]["failed_checks"])
+        with self.assertRaisesRegex(ValueError, "strict subset"):
+            evaluate_multi_corpus_run(self.dataset, run)
 
     def test_content_or_vector_fields_cannot_enter_a_saved_run(self) -> None:
         for forbidden in ("content", "vector", "question"):
@@ -753,7 +891,10 @@ class MultiCorpusEvalRunnerCliTests(unittest.TestCase):
         )
         route_embedder = FakeRoutingEmbedder()
         content_embedder = FakeContentEmbedder()
-        reranker = FakeReranker()
+        weak_case = next(
+            case for case in self.dataset.cases if case.id == "u01-dagster-purpose"
+        )
+        reranker = FakeReranker(weak_once_query=weak_case.question)
 
         with (
             patch.dict(os.environ, {"TURBOPUFFER_API_KEY": "test-key"}, clear=True),
@@ -806,6 +947,7 @@ class MultiCorpusEvalRunnerCliTests(unittest.TestCase):
             sum(provider.query_calls for provider in providers.values()),
         )
         self.assertEqual(collection_calls["reranker_logical_calls"], reranker.calls)
+        self.assertEqual(reranker.calls, 51)
         self.assertEqual(
             report["read_only_boundary"],
             {
@@ -816,6 +958,15 @@ class MultiCorpusEvalRunnerCliTests(unittest.TestCase):
         self.assertTrue(all(provider.write_calls == 0 for provider in providers.values()))
 
         cases = {case["id"]: case for case in report["cases"]}
+        self.assertTrue(
+            all(
+                case["evidence"]["mode"] == "active"
+                and case["evidence"]["status"]
+                in {"supported", "no_relevant_evidence", "inconclusive"}
+                and case["evidence"]["threshold"] == -8.0
+                for case in cases.values()
+            )
+        )
         widened = cases[empty_case.id]
         self.assertEqual(len(widened["route"]["namespaces"]), 3)
         self.assertEqual(
@@ -823,6 +974,14 @@ class MultiCorpusEvalRunnerCliTests(unittest.TestCase):
             widened["route"]["namespaces"][0],
         )
         self.assertEqual(widened["failures"]["automatic_namespaces"], [])
+        weak_widened = cases[weak_case.id]
+        self.assertEqual(len(weak_widened["route"]["namespaces"]), 3)
+        self.assertTrue(
+            weak_widened["evidence"][
+                "widening_triggered_by_weak_evidence"
+            ]
+        )
+        self.assertEqual(weak_widened["calls"]["reranker_logical_calls"], 2)
         multi_case = next(
             case for case in self.dataset.cases if case.category == "multi_corpus"
         )
@@ -1103,11 +1262,16 @@ class FakeContentEmbedder:
 
 
 class FakeReranker:
-    def __init__(self) -> None:
+    def __init__(self, *, weak_once_query: str | None = None) -> None:
         self.calls = 0
+        self.weak_once_query = weak_once_query
+        self.weak_emitted = False
 
     def score(self, query, passages):
         self.calls += 1
+        if query == self.weak_once_query and not self.weak_emitted:
+            self.weak_emitted = True
+            return [-9.0 for _passage in passages]
         return [float(index) for index, _passage in enumerate(passages)]
 
 

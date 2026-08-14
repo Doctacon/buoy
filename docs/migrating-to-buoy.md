@@ -70,9 +70,10 @@ cleanup.
 
 ## Package changes
 
-The Buoy distribution includes the small routing-card, catalog, and bounded
-retrieval modules. It still excludes FastAPI/Uvicorn UI dependencies, Command
-Center assets/source, evidence modules, and their CLI commands.
+The Buoy distribution includes the small routing-card, catalog, bounded
+retrieval, and automatic relevance-assessment modules. It still excludes
+FastAPI/Uvicorn UI dependencies, Command Center assets/source, the broader
+evidence lifecycle/control plane, and evidence-management CLI commands.
 
 Website, repository, local-document, DuckDB, BigQuery, and Snowflake relation
 support remains. BigQuery and Snowflake continue as optional dependencies.

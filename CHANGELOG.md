@@ -14,6 +14,11 @@ as GitHub Release assets rather than to PyPI.
 - Added namespace-free retrieval that selects one confident corpus or searches
   at most three ambiguous corpora concurrently, then deduplicates and locally
   reranks multi-corpus results with an exact pinned MiniLM model.
+- Added an automatic-only post-retrieval relevance gate. Automatic text and
+  JSON retrieval use the best final pinned-MiniLM score and a provisional
+  packaged cutoff of `-8.0`; weak results widen once, then return either no
+  relevant evidence or an inconclusive result when a namespace failed. There
+  is no command-line, environment, or runtime threshold override.
 
 ### Changed
 
@@ -22,6 +27,11 @@ as GitHub Release assets rather than to PyPI.
 - Successful approved applies register their routing card after content and
   local state commit, with truthful partial-success reporting if catalog
   registration fails.
+- Automatic text, JSON, and governed evaluation now apply the relevance gate.
+  Explicit `--namespace` retrieval remains an unchanged deterministic bypass.
+  The `-8.0` cutoff is a raw model score rather than a probability; it was
+  approved as a provisional starting point from the observed 50-question run
+  and remains subject to monitoring against a broader reviewed sample.
 
 ## [0.5.1] - 2026-08-13
 
