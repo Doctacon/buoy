@@ -14,6 +14,10 @@ as GitHub Release assets rather than to PyPI.
 - Added namespace-free retrieval that selects one confident corpus or searches
   at most three ambiguous corpora concurrently, then deduplicates and locally
   reranks multi-corpus results with an exact pinned MiniLM model.
+- Added an automatic-only post-retrieval evidence-assessment boundary with
+  governed `collect`, `shadow`, and owner-approved `active` calibration modes.
+  The packaged artifact currently has no threshold, records `unassessed`, and
+  preserves all existing hits.
 
 ### Changed
 
@@ -22,6 +26,11 @@ as GitHub Release assets rather than to PyPI.
 - Successful approved applies register their routing card after content and
   local state commit, with truthful partial-success reporting if catalog
   registration fails.
+- Automatic single-corpus JSON retrieval and the governed evaluator may load
+  the pinned MiniLM model to collect evidence scores; ordinary text retrieval
+  avoids that collect-only cost. Explicit `--namespace` retrieval remains
+  unchanged. Shadow/active artifacts are mechanically rejected pending a later
+  reviewed runtime-binding and certification change.
 
 ## [0.5.1] - 2026-08-13
 

@@ -192,6 +192,56 @@ def fake_plan_crawl_summary(options: CrawlOptions) -> dict[str, object]:
 
 
 class CliTests(unittest.TestCase):
+    def test_retrieval_text_explains_no_relevant_evidence_without_claiming_no_answer(self) -> None:
+        class Output:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "dry_run": False,
+                    "namespaces": ["site-one-v1", "site-two-v1"],
+                    "hits": [],
+                    "incomplete": False,
+                    "embedding_precision": "float32",
+                    "evidence": {
+                        "mode": "active",
+                        "status": "no_relevant_evidence",
+                    },
+                }
+
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            print_retrieval_text(Output())  # type: ignore[arg-type]
+
+        rendered = stdout.getvalue()
+        self.assertIn(
+            "No sufficiently relevant evidence was found in the indexed corpora.",
+            rendered,
+        )
+        self.assertNotIn("no answer", rendered.lower())
+
+    def test_retrieval_text_keeps_partial_weak_result_inconclusive(self) -> None:
+        class Output:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "dry_run": False,
+                    "namespaces": ["site-one-v1", "site-two-v1"],
+                    "hits": [],
+                    "incomplete": True,
+                    "namespace_failures": [{"namespace": "site-two-v1"}],
+                    "embedding_precision": "float32",
+                    "evidence": {
+                        "mode": "active",
+                        "status": "inconclusive",
+                    },
+                }
+
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            print_retrieval_text(Output())  # type: ignore[arg-type]
+
+        rendered = stdout.getvalue()
+        self.assertIn("result is inconclusive", rendered)
+        self.assertIn("site-two-v1", rendered)
+
     def test_live_retrieval_and_eval_text_expose_embedding_precision(self) -> None:
         class Output:
             def __init__(self, payload: dict[str, object]) -> None:

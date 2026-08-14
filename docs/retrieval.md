@@ -94,10 +94,14 @@ Source-aware defaults remain:
 - repositories: file mode, `repo-code` profile, pool 100,
   `adaptive-sum-3` aggregation.
 
-A confident one-corpus route queries only that corpus and does not load the
-cross-corpus reranker. If it is empty or fails, Buoy widens once to the next two
-route candidates. A route that starts with two or three corpora queries them
-concurrently, with at most three workers.
+A confident one-corpus route initially queries only that corpus. If it is empty
+or fails, Buoy widens once to the next two route candidates. Automatic
+retrieval may also load the pinned cross-encoder after that initial retrieval
+to collect or assess evidence without changing the namespace-local order. An
+explicit single-namespace request does not cross this automatic evidence
+boundary and retains its established lightweight behavior. A route that starts
+with two or three corpora queries them concurrently, with at most three
+workers.
 
 For a true multi-corpus result, each successful namespace contributes at most
 eight hits. Buoy collapses exact citation/section/content duplicates, retains
@@ -139,12 +143,60 @@ buoy retrieve "customer cancellation reason" \
 `--doc-kind` applies one exact metadata filter. Tags remain output and routing
 card metadata, not retrieval-filter authority.
 
+## Automatic evidence assessment
+
+Automatic routing answers which indexed corpus is the closest fit; it cannot
+by itself prove that the returned rows are useful evidence. During live
+automatic JSON or governed evaluation collection, Buoy therefore scores the
+first up to five hits from the exact final automatic ranking, never beyond the
+requested `top_k`, with the same immutable
+MiniLM revision used for cross-corpus reranking. Multi-corpus retrieval reuses
+its existing scores. Automatic single-corpus JSON/evaluation collection may
+load the model for this bounded assessment but keeps its original result order.
+Explicit `--namespace` retrieval is unchanged and never loads the model for
+this purpose.
+
+The versioned calibration artifact has three rollout modes:
+
+- `collect` records content-free score features for live automatic JSON and the
+  governed evaluator, reports `unassessed`, and preserves the existing hits;
+- `shadow` applies a candidate threshold, may widen a weak one-corpus route
+  once with reason `weak_top1`, and reports what would happen without hiding
+  hits; and
+- `active` may return supported hits or suppress a weak final set only when the
+  exact artifact is owner-approved and its locked certification gates pass.
+
+The packaged artifact currently uses `collect` mode, calibration revision
+`collect-unassessed-v1`, and a null threshold. Ordinary text retrieval skips the
+otherwise-discarded collection inference; use `--json` or the governed evaluator
+to retain the observation. Current behavior neither suppresses hits nor invents
+weak-evidence widening. The loader rejects every shadow and active artifact.
+Moving to shadow therefore requires a later reviewed implementation that binds
+the threshold to exact runtime, dataset, evaluator, source-mix, and locked
+certification evidence. Active additionally requires explicit owner approval
+and passing false-evidence, retained-recall, no-answer-abstention, source-kind,
+fanout, and existing multi-corpus gates.
+
+Once a calibrated threshold exists, a weak automatic one-corpus result can
+widen to the remaining routed candidates before the final decision. An active
+complete weak result would return no hits with the wording “No sufficiently
+relevant evidence was found in the indexed corpora.” An incomplete weak result
+would instead be `inconclusive` and retain attributed namespace failures. These
+outcomes describe only what Buoy found in the successfully searched indexed
+corpora; they never claim that an answer does not exist. Automatic preview does
+not query content, so it reports that no evidence assessment can occur until a
+live retrieval.
+
 ## Results and failures
 
 Every result retains its source URL/path, title, section, content preview,
 stable row identity, score diagnostics, and ordered tags. Automatic and
 explicit multi-corpus JSON also report selected `namespaces`, routing and
 reranking details, per-hit `namespace`, per-namespace summaries, and failures.
+Automatic live JSON additionally reports the governed `evidence` mode, status,
+model and calibration identities, threshold when one exists, bounded score
+features, and whether weak evidence triggered widening. It does not include
+extra raw content in evidence diagnostics.
 
 One selected namespace failing does not discard successful results. Buoy
 redacts and attributes the failed namespace and marks the combined response

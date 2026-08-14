@@ -95,11 +95,26 @@ buoy catalog disable site-example-one-v1       # preview
 buoy catalog disable site-example-one-v1 --approve
 ```
 
-Single-corpus results keep the established ranking and do not load the
-cross-corpus MiniLM reranker. Multi-corpus results are deduplicated and locally
-reranked. Successful corpora are still returned if another selected namespace
-fails, with the result marked `incomplete`; failure of every attempted
-namespace fails the request.
+Multi-corpus results are deduplicated and locally reranked. Automatic retrieval
+also has a post-retrieval evidence-assessment boundary, so an automatic JSON or
+governed evaluation of one selected corpus may load the same pinned MiniLM model
+without changing the namespace-local order. A single explicit `--namespace`
+keeps the established lightweight path and does not load MiniLM for evidence
+assessment.
+Successful corpora are still returned if another selected namespace fails,
+with the result marked `incomplete`; failure of every attempted namespace fails
+the request.
+
+Evidence assessment rolls out in three governed modes. The packaged artifact is
+currently collect-only with a null threshold: live automatic JSON and the
+governed evaluator report `unassessed` score observations while preserving every
+hit. Ordinary text retrieval skips this collect-only scoring cost. Shadow and
+active artifacts are mechanically rejected until a later reviewed change binds
+them to exact runtime and certification evidence. Once that gate exists,
+`shadow` can preview a decision without hiding hits and owner-approved `active`
+can suppress weak evidence. Even then, Buoy says only that it did not find
+sufficiently relevant evidence in the indexed corpora; it never claims that no
+answer exists.
 
 Multi-corpus ordering uses the exact cached
 `cross-encoder/ms-marco-MiniLM-L-6-v2` revision documented in

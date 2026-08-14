@@ -123,16 +123,20 @@ class RoutingSelection:
 class RoutedRetrievalPlan:
     plan: MultiNamespaceRetrievalPlan
     routing: RoutingSelection
+    evidence: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         routing = self.routing.to_dict()
-        return {
+        payload = {
             **self.plan.to_dict(),
             "credentials_required": routing["credentials_required"],
             "turbopuffer_api_calls": routing["read_only_api_calls_occurred"],
             "api_calls_occurred": routing["read_only_api_calls_occurred"],
             "routing": routing,
         }
+        if self.evidence is not None:
+            payload["evidence"] = dict(self.evidence)
+        return payload
 
 
 @dataclass(frozen=True)

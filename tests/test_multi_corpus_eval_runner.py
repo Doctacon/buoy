@@ -22,6 +22,8 @@ from buoy_search.multi_corpus_evals import (
     load_multi_corpus_eval_dataset,
 )
 from buoy_search.config import RuntimeConfig
+from buoy_search.cross_encoder import CROSS_ENCODER_MODEL, CROSS_ENCODER_REVISION
+from buoy_search.evidence import EVIDENCE_FEATURE_CONTRACT
 from buoy_search.retriever import SearchHit
 from scripts import evaluate_multi_corpus_retrieval as runner
 
@@ -67,6 +69,67 @@ class MultiCorpusEvalRunGateTests(unittest.TestCase):
             live_candidate["verdict"]["failed_checks"],
             ["provider_backed_live_run"],
         )
+
+    def test_optional_evidence_observation_is_content_free_and_strict(self) -> None:
+        run = perfect_fixture_run(self.dataset)
+        evidence = {
+            "mode": "collect",
+            "status": "unassessed",
+            "reason": "threshold_not_calibrated",
+            "model": CROSS_ENCODER_MODEL,
+            "model_revision": CROSS_ENCODER_REVISION,
+            "calibration_id": "automatic-retrieval-evidence-v1",
+            "calibration_revision": "collect-unassessed-v1",
+            "feature_contract": EVIDENCE_FEATURE_CONTRACT,
+            "threshold": None,
+            "widening_triggered_by_weak_evidence": False,
+            "top_score": -1.25,
+            "second_score": -2.0,
+            "score_gap": 0.75,
+            "candidates_scored": 2,
+            "route_selection_reason": "ambiguous_semantic",
+            "route_semantic_score": 0.5,
+            "route_semantic_margin": 0.01,
+            "namespace_failure_count": 0,
+        }
+        run["cases"][0]["evidence"] = evidence
+
+        report = evaluate_multi_corpus_run(self.dataset, run)
+        self.assertEqual(report["cases"][0]["evidence"], evidence)
+
+        impossible_failures = perfect_fixture_run(self.dataset)
+        attempted = set(
+            impossible_failures["cases"][0]["route"]["namespaces"]
+        )
+        outside_route = next(
+            namespace
+            for namespace in self.dataset.eligible_namespaces
+            if namespace not in attempted
+        )
+        impossible_failures["cases"][0]["failures"][
+            "automatic_namespaces"
+        ] = [outside_route]
+        with self.assertRaisesRegex(ValueError, "strict subset"):
+            evaluate_multi_corpus_run(self.dataset, impossible_failures)
+
+        clean_evidence = dict(evidence)
+        run["cases"][0]["evidence"]["query"] = "must never be retained"
+        with self.assertRaisesRegex(ValueError, "unknown=.*query"):
+            evaluate_multi_corpus_run(self.dataset, run)
+
+        contradictions = [
+            {"reason": "top_score_below_threshold"},
+            {"top_score": -3.0, "second_score": -2.0, "score_gap": -1.0},
+            {"namespace_failure_count": 1},
+        ]
+        for mutation in contradictions:
+            with self.subTest(mutation=mutation):
+                invalid = perfect_fixture_run(self.dataset)
+                invalid_evidence = dict(clean_evidence)
+                invalid_evidence.update(mutation)
+                invalid["cases"][0]["evidence"] = invalid_evidence
+                with self.assertRaises(ValueError):
+                    evaluate_multi_corpus_run(self.dataset, invalid)
 
     def test_only_private_collector_evaluation_can_pass_live_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -435,16 +498,13 @@ class MultiCorpusEvalRunGateTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     evaluate_multi_corpus_run(self.dataset, run)
 
-    def test_partial_collection_is_a_nonpassing_quality_run(self) -> None:
+    def test_all_failed_automatic_route_is_not_a_collected_case(self) -> None:
         run = perfect_fixture_run(self.dataset)
         namespace = run["cases"][0]["route"]["namespaces"][0]
         run["cases"][0]["failures"]["automatic_namespaces"] = [namespace]
 
-        report = evaluate_multi_corpus_run(self.dataset, run)
-
-        self.assertFalse(report["verdict"]["release_ready"])
-        self.assertEqual(report["verdict"]["status"], "fail")
-        self.assertIn("complete_read_only_collection", report["verdict"]["failed_checks"])
+        with self.assertRaisesRegex(ValueError, "strict subset"):
+            evaluate_multi_corpus_run(self.dataset, run)
 
     def test_content_or_vector_fields_cannot_enter_a_saved_run(self) -> None:
         for forbidden in ("content", "vector", "question"):
@@ -806,6 +866,7 @@ class MultiCorpusEvalRunnerCliTests(unittest.TestCase):
             sum(provider.query_calls for provider in providers.values()),
         )
         self.assertEqual(collection_calls["reranker_logical_calls"], reranker.calls)
+        self.assertEqual(reranker.calls, 50)
         self.assertEqual(
             report["read_only_boundary"],
             {
@@ -816,6 +877,13 @@ class MultiCorpusEvalRunnerCliTests(unittest.TestCase):
         self.assertTrue(all(provider.write_calls == 0 for provider in providers.values()))
 
         cases = {case["id"]: case for case in report["cases"]}
+        self.assertTrue(
+            all(
+                case["evidence"]["mode"] == "collect"
+                and case["evidence"]["status"] == "unassessed"
+                for case in cases.values()
+            )
+        )
         widened = cases[empty_case.id]
         self.assertEqual(len(widened["route"]["namespaces"]), 3)
         self.assertEqual(

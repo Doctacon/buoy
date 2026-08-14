@@ -40,6 +40,7 @@ from buoy_search.cross_encoder import (
     CrossEncoderReranker,
     load_cross_encoder_reranker,
 )
+from buoy_search.evidence import load_evidence_calibration
 from buoy_search.multi_corpus_evals import (
     DEFAULT_MULTI_CORPUS_EVAL_DATASET,
     EVAL_RUN_SCHEMA_VERSION,
@@ -60,9 +61,11 @@ from buoy_search.remote_catalog import (
     read_remote_catalog,
 )
 from buoy_search.retriever import (
+    CalibratedEvidenceAssessor,
     CROSS_NAMESPACE_FUSION_COMPONENTS,
     CROSS_NAMESPACE_FUSION_METHOD,
     CROSS_NAMESPACE_RRF_K,
+    EvidenceRouteContext,
     MAX_RERANK_CANDIDATES_PER_NAMESPACE,
     HybridRetriever,
     MultiNamespaceRetrievalResult,
@@ -207,6 +210,10 @@ def collect_live_run(
         )
     )
     reranker = _CachedCountingReranker()
+    evidence_assessor = CalibratedEvidenceAssessor(
+        load_evidence_calibration(),
+        reranker_loader=reranker.load,
+    )
     cards = {card.namespace: card for card in snapshot.eligible_cards}
     retrievers: dict[str, HybridRetriever] = {}
     read_only_namespaces: dict[str, _ReadOnlyContentNamespace] = {}
@@ -285,6 +292,12 @@ def collect_live_run(
             case.question,
             [options[namespace] for namespace in selected_namespaces],
             initial_fanout=routing.initial_fanout,
+            evidence_assessor=evidence_assessor,
+            evidence_route_context=EvidenceRouteContext(
+                selection_reason=routing.selection_reason,
+                semantic_score=routing.entries[0].semantic_score,
+                semantic_margin=routing.semantic_margin,
+            ),
         )
         automatic_ms = _elapsed_ms(automatic_started)
         provider_queries_after_automatic = sum(
@@ -329,6 +342,7 @@ def collect_live_run(
                 "automatic_hits": _identity_hits(automatic_result.hits),
                 "pre_rerank_hits": pre_rerank,
                 "reranked_hits": _identity_hits(automatic_result.hits),
+                "evidence": automatic_result.evidence,
                 "timing_ms": {
                     "routing": routing_ms,
                     "automatic": automatic_ms,

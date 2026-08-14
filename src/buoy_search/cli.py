@@ -64,6 +64,11 @@ from buoy_search.evals import (
     load_eval_cases,
     run_live_evals,
 )
+from buoy_search.evidence import (
+    EvidenceCalibration,
+    EvidenceCalibrationError,
+    load_evidence_calibration,
+)
 from buoy_search.chunker import (
     DEFAULT_OVERLAP_SENTENCES,
     DEFAULT_TARGET_TOKENS,
@@ -83,8 +88,11 @@ from buoy_search.remote_catalog import (
     require_eligible,
 )
 from buoy_search.retriever import (
+    CalibratedEvidenceAssessor,
     DEFAULT_CANDIDATES,
     DEFAULT_TOP_K,
+    EVIDENCE_ASSESSMENT_TOP_K,
+    EvidenceRouteContext,
     HybridRetriever,
     MultiNamespaceRetrievalPlan,
     MultiNamespaceRetrievalResult,
@@ -108,6 +116,25 @@ from buoy_search.routing import (
 
 REMOTE_CATALOG_CLIENT_FACTORY = create_remote_catalog_client
 ROUTING_EMBEDDER_FACTORY = load_routing_embedder
+
+
+def automatic_evidence_plan(calibration: EvidenceCalibration) -> dict[str, object]:
+    """Describe the local evidence gate without claiming a live decision."""
+
+    return {
+        "automatic_only": True,
+        "mode": calibration.mode,
+        "status": "requires_content_retrieval",
+        "reason": "evidence_scores_are_not_available_in_a_plan",
+        "model": calibration.model,
+        "model_revision": calibration.model_revision,
+        "calibration_id": calibration.calibration_id,
+        "calibration_revision": calibration.calibration_revision,
+        "feature_contract": calibration.feature_contract,
+        "threshold": calibration.threshold,
+        "max_candidates_scored": EVIDENCE_ASSESSMENT_TOP_K,
+        "collection_scope": "json_and_governed_evaluator",
+    }
 
 
 class OneLineProgress:
@@ -1507,6 +1534,11 @@ def _run_retrieve(args: argparse.Namespace) -> int:
     if not api_key:
         print("TURBOPUFFER_API_KEY must be set for automatic routing.", file=sys.stderr)
         return 2
+    try:
+        evidence_calibration = load_evidence_calibration()
+    except EvidenceCalibrationError as exc:
+        print(f"Automatic evidence assessment failed: {exc}", file=sys.stderr)
+        return 2
     base_config = config_from_args(args)
     compatibility = CompatibilityContract(
         region=base_config.region,
@@ -1591,6 +1623,7 @@ def _run_retrieve(args: argparse.Namespace) -> int:
                 initial_fanout=routing.initial_fanout,
             ),
             routing=routing,
+            evidence=automatic_evidence_plan(evidence_calibration),
         )
         if args.json:
             _print_json(plan.to_dict())
@@ -1598,11 +1631,28 @@ def _run_retrieve(args: argparse.Namespace) -> int:
             print_retrieval_text(plan)
         return 0
     try:
+        top_route_entry = routing.entries[0]
+        retrieval_kwargs: dict[str, object] = {
+            "initial_fanout": routing.initial_fanout,
+        }
+        if args.json:
+            retrieval_kwargs.update(
+                {
+                    "evidence_assessor": CalibratedEvidenceAssessor(
+                        evidence_calibration
+                    ),
+                    "evidence_route_context": EvidenceRouteContext(
+                        selection_reason=routing.selection_reason,
+                        semantic_score=top_route_entry.semantic_score,
+                        semantic_margin=routing.semantic_margin,
+                    ),
+                }
+            )
         result = RoutedRetrievalResult(
             result=MultiNamespaceRetriever.from_configs(configs).retrieve(
                 query,
                 options,
-                initial_fanout=routing.initial_fanout,
+                **retrieval_kwargs,
             ),
             routing=routing,
         )
@@ -1976,6 +2026,13 @@ def print_retrieval_text(
                     f"margin={routing.get('semantic_margin')}"
                 )
                 print("  provider work: routing catalog was read; content was not queried")
+                evidence = payload.get("evidence")
+                if isinstance(evidence, dict):
+                    print(
+                        "  evidence: "
+                        f"mode={evidence.get('mode')}; "
+                        "collection runs only for live JSON or the governed evaluator"
+                    )
         print(f"  embedding_model: {payload['embedding_model']}")
         print(f"  embedding_precision: {payload['embedding_precision']}")
         print(f"  top_k: {payload['top_k']}; candidates per subquery: {payload['candidates']}")
@@ -2004,6 +2061,22 @@ def print_retrieval_text(
         return
 
     hits = payload.get("hits", [])
+    evidence = payload.get("evidence")
+    evidence_status = (
+        str(evidence.get("status")) if isinstance(evidence, dict) else ""
+    )
+    if evidence_status == "no_relevant_evidence":
+        print("No sufficiently relevant evidence was found in the indexed corpora.")
+        print(f"  searched namespaces: {payload.get('namespaces', [])}")
+        return
+    if evidence_status == "inconclusive":
+        print(
+            "The retrieved evidence was insufficient, but one or more corpus "
+            "searches failed, so the result is inconclusive."
+        )
+        print(f"  searched namespaces: {payload.get('namespaces', [])}")
+        print(f"  namespace failures: {payload.get('namespace_failures', [])}")
+        return
     if "namespace" in payload:
         print(
             f"Retrieved {len(hits)} chunks from {payload['namespace']} using {payload.get('fusion')} "
@@ -2024,6 +2097,24 @@ def print_retrieval_text(
             )
         if payload.get("incomplete"):
             print(f"  warning: partial namespace failures: {payload.get('namespace_failures', [])}")
+        if isinstance(evidence, dict):
+            if evidence_status == "unassessed":
+                print(
+                    "  evidence: scores collected; no calibrated relevance "
+                    "decision is active"
+                )
+            elif evidence_status == "assessment_failed":
+                print(
+                    "  evidence warning: assessment failed; results were "
+                    "preserved because abstention is not active"
+                )
+            elif evidence_status.startswith("would_"):
+                print(
+                    "  evidence shadow: "
+                    f"{evidence_status}; current hits were preserved"
+                )
+            elif evidence_status == "supported":
+                print("  evidence: supported by the calibrated relevance gate")
     print(f"  embedding_precision: {payload['embedding_precision']}")
     for index, hit in enumerate(hits, start=1):
         if not isinstance(hit, dict):

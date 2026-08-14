@@ -12,6 +12,9 @@ import subprocess
 from typing import Mapping, Sequence
 from urllib.parse import unquote, urlparse
 
+from buoy_search.cross_encoder import CROSS_ENCODER_MODEL, CROSS_ENCODER_REVISION
+from buoy_search.evidence import EVIDENCE_FEATURE_CONTRACT
+
 
 DEFAULT_MULTI_CORPUS_EVAL_DATASET = (
     Path(__file__).with_name("data") / "automatic_multi_corpus_retrieval_evals.json"
@@ -120,6 +123,40 @@ _CASE_RUN_FIELDS = {
     "calls",
     "failures",
 }
+_OPTIONAL_CASE_RUN_FIELDS = {"evidence"}
+_EVIDENCE_RUN_FIELDS = {
+    "mode",
+    "status",
+    "reason",
+    "model",
+    "model_revision",
+    "calibration_id",
+    "calibration_revision",
+    "feature_contract",
+    "threshold",
+    "widening_triggered_by_weak_evidence",
+    "top_score",
+    "second_score",
+    "score_gap",
+    "candidates_scored",
+    "route_selection_reason",
+    "route_semantic_score",
+    "route_semantic_margin",
+    "namespace_failure_count",
+}
+_EVIDENCE_FAILURE_FIELDS = {
+    "mode",
+    "status",
+    "reason",
+    "widening_triggered_by_weak_evidence",
+}
+_EVIDENCE_ROUTE_REASONS = {
+    "unique_title_or_alias",
+    "multiple_named_corpora",
+    "high_confidence_semantic",
+    "ambiguous_semantic",
+}
+_SAFE_EVIDENCE_ID_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}\Z")
 _ROUTE_RUN_FIELDS = {"namespaces", "initial_high_confidence_namespace"}
 _HIT_RUN_FIELDS = {"namespace", "url"}
 _TIMING_RUN_FIELDS = {"routing", "automatic", "exhaustive", "total"}
@@ -1072,9 +1109,15 @@ def _normalize_run_case(
     *,
     mode: str,
 ) -> dict[str, object]:
-    _require_exact_fields(
-        payload, _CASE_RUN_FIELDS, where=f"evaluation case {case.id!r}"
-    )
+    case_fields = set(payload)
+    missing_case_fields = _CASE_RUN_FIELDS - case_fields
+    unknown_case_fields = case_fields - _CASE_RUN_FIELDS - _OPTIONAL_CASE_RUN_FIELDS
+    if missing_case_fields or unknown_case_fields:
+        raise ValueError(
+            f"evaluation case {case.id!r} fields are invalid "
+            f"(missing={sorted(missing_case_fields)}, "
+            f"unknown={sorted(unknown_case_fields)})."
+        )
     route = _required_mapping(
         payload.get("route"), where=f"evaluation case {case.id!r} route"
     )
@@ -1222,8 +1265,24 @@ def _normalize_run_case(
             raise ValueError(
                 f"Evaluation case {case.id!r} {field} contains a disabled or unknown namespace."
             )
+    automatic_failures = set(normalized_failures["automatic_namespaces"])
+    attempted_namespaces = set(namespaces)
+    if not automatic_failures < attempted_namespaces:
+        raise ValueError(
+            f"Evaluation case {case.id!r} automatic failures must be a strict "
+            "subset of the attempted route."
+        )
+    successful_namespaces = attempted_namespaces - automatic_failures
+    if any(
+        hit["namespace"] not in successful_namespaces
+        for hit in hits["automatic_hits"]
+    ):
+        raise ValueError(
+            f"Evaluation case {case.id!r} automatic hits must come from a "
+            "successfully queried route namespace."
+        )
 
-    return {
+    normalized_case: dict[str, object] = {
         "id": case.id,
         "route": {
             "namespaces": list(namespaces),
@@ -1234,6 +1293,161 @@ def _normalize_run_case(
         "calls": normalized_calls,
         "failures": normalized_failures,
     }
+    if "evidence" in payload:
+        normalized_case["evidence"] = normalize_collected_evidence(
+            payload.get("evidence"),
+            where=f"evaluation case {case.id!r} evidence",
+            automatic_failure_count=len(
+                normalized_failures["automatic_namespaces"]
+            ),
+        )
+    return normalized_case
+
+
+def normalize_collected_evidence(
+    payload: object,
+    *,
+    where: str,
+    automatic_failure_count: int,
+) -> dict[str, object]:
+    """Retain only the governed content-free automatic evidence observation."""
+
+    item = _required_mapping(payload, where=where)
+    status = _required_string(item, "status", where=where)
+    if status == "assessment_failed":
+        _require_exact_fields(item, _EVIDENCE_FAILURE_FIELDS, where=where)
+        mode = _required_string(item, "mode", where=where)
+        reason = _required_string(item, "reason", where=where)
+        if mode not in {"collect", "shadow"} or reason != "evidence_assessment_failed":
+            raise ValueError(f"{where} has an invalid assessment failure.")
+        widening = item.get("widening_triggered_by_weak_evidence")
+        if not isinstance(widening, bool):
+            raise ValueError(f"{where} widening flag must be a boolean.")
+        return {
+            "mode": mode,
+            "status": status,
+            "reason": reason,
+            "widening_triggered_by_weak_evidence": widening,
+        }
+
+    _require_exact_fields(item, _EVIDENCE_RUN_FIELDS, where=where)
+    mode = _required_string(item, "mode", where=where)
+    allowed_statuses = {
+        "collect": {"unassessed"},
+        "shadow": {"would_support", "would_abstain", "would_be_inconclusive"},
+        "active": {"supported", "no_relevant_evidence", "inconclusive"},
+    }
+    if mode not in allowed_statuses or status not in allowed_statuses[mode]:
+        raise ValueError(f"{where} mode and status are incompatible.")
+    reason = _required_string(item, "reason", where=where)
+    if reason not in {
+        "threshold_not_calibrated",
+        "no_candidates",
+        "top_score_below_threshold",
+        "top_score_at_or_above_threshold",
+    }:
+        raise ValueError(f"{where} reason is not governed.")
+    normalized: dict[str, object] = {
+        "mode": mode,
+        "status": status,
+        "reason": reason,
+    }
+    for field in (
+        "model",
+        "model_revision",
+        "calibration_id",
+        "calibration_revision",
+        "feature_contract",
+        "route_selection_reason",
+    ):
+        normalized[field] = _required_string(item, field, where=where)
+    if normalized["model"] != CROSS_ENCODER_MODEL:
+        raise ValueError(f"{where} model is incompatible.")
+    if normalized["model_revision"] != CROSS_ENCODER_REVISION:
+        raise ValueError(f"{where} model revision is incompatible.")
+    if normalized["feature_contract"] != EVIDENCE_FEATURE_CONTRACT:
+        raise ValueError(f"{where} feature contract is incompatible.")
+    for field in ("calibration_id", "calibration_revision"):
+        if not _SAFE_EVIDENCE_ID_RE.fullmatch(str(normalized[field])):
+            raise ValueError(f"{where} {field} is not a safe identifier.")
+    if normalized["route_selection_reason"] not in _EVIDENCE_ROUTE_REASONS:
+        raise ValueError(f"{where} route selection reason is not governed.")
+    for field in (
+        "threshold",
+        "top_score",
+        "second_score",
+        "score_gap",
+        "route_semantic_score",
+        "route_semantic_margin",
+    ):
+        value = item.get(field)
+        if value is None:
+            normalized[field] = None
+        else:
+            normalized[field] = _finite_number(value, where=f"{where} {field}")
+    for field in ("candidates_scored", "namespace_failure_count"):
+        normalized[field] = _nonnegative_int(item.get(field), where=f"{where} {field}")
+    candidate_count = int(normalized["candidates_scored"])
+    if candidate_count > 5:
+        raise ValueError(f"{where} candidates_scored exceeds the governed bound.")
+    top_score = normalized["top_score"]
+    second_score = normalized["second_score"]
+    score_gap = normalized["score_gap"]
+    if candidate_count == 0:
+        if any(value is not None for value in (top_score, second_score, score_gap)):
+            raise ValueError(f"{where} empty observation cannot contain scores.")
+    elif top_score is None:
+        raise ValueError(f"{where} non-empty observation requires a top score.")
+    elif candidate_count == 1:
+        if second_score is not None or score_gap is not None:
+            raise ValueError(f"{where} one-candidate observation has extra scores.")
+    elif second_score is None or score_gap is None:
+        raise ValueError(f"{where} multi-candidate observation is incomplete.")
+    else:
+        if float(top_score) < float(second_score) or float(score_gap) < 0:
+            raise ValueError(f"{where} scores are not in descending order.")
+        if abs(float(top_score) - float(second_score) - float(score_gap)) > 1e-9:
+            raise ValueError(f"{where} score gap does not match its scores.")
+    if mode == "collect" and normalized["threshold"] is not None:
+        raise ValueError(f"{where} collect mode cannot contain a threshold.")
+    if mode != "collect" and normalized["threshold"] is None:
+        raise ValueError(f"{where} threshold-bearing mode requires a threshold.")
+    if int(normalized["namespace_failure_count"]) > MAX_AUTOMATIC_FANOUT:
+        raise ValueError(f"{where} namespace failure count exceeds fanout.")
+    if int(normalized["namespace_failure_count"]) != automatic_failure_count:
+        raise ValueError(f"{where} failure count does not match retrieval failures.")
+    threshold = normalized["threshold"]
+    if mode == "collect":
+        if status != "unassessed" or reason != "threshold_not_calibrated":
+            raise ValueError(f"{where} collect decision is contradictory.")
+    else:
+        weak = top_score is None or float(top_score) < float(threshold)
+        expected_reason = (
+            "no_candidates"
+            if top_score is None
+            else (
+                "top_score_below_threshold"
+                if weak
+                else "top_score_at_or_above_threshold"
+            )
+        )
+        if reason != expected_reason:
+            raise ValueError(f"{where} reason contradicts the score threshold.")
+        supported_statuses = {"would_support", "supported"}
+        inconclusive_statuses = {"would_be_inconclusive", "inconclusive"}
+        if (status in supported_statuses) != (not weak):
+            raise ValueError(f"{where} status contradicts the score threshold.")
+        if status in inconclusive_statuses and automatic_failure_count == 0:
+            raise ValueError(f"{where} inconclusive status requires a failure.")
+        if weak and automatic_failure_count and status not in inconclusive_statuses:
+            raise ValueError(f"{where} weak partial result must be inconclusive.")
+        if weak and not automatic_failure_count and status in inconclusive_statuses:
+            raise ValueError(f"{where} complete weak result cannot be inconclusive.")
+    widening = item.get("widening_triggered_by_weak_evidence")
+    if not isinstance(widening, bool):
+        raise ValueError(f"{where} widening flag must be a boolean.")
+    normalized["widening_triggered_by_weak_evidence"] = widening
+    return normalized
 
 
 def _normalize_identity_hits(
@@ -1548,6 +1762,15 @@ def _nonnegative_number(value: object, *, where: str) -> float:
     number = float(value)
     if not isfinite(number) or number < 0:
         raise ValueError(f"{where} must be a finite non-negative number.")
+    return number
+
+
+def _finite_number(value: object, *, where: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{where} must be a finite number.")
+    number = float(value)
+    if not isfinite(number):
+        raise ValueError(f"{where} must be a finite number.")
     return number
 
 

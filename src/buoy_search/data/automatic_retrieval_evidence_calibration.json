@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "calibration_id": "automatic-retrieval-evidence-v1",
+  "calibration_revision": "collect-unassessed-v1",
+  "mode": "collect",
+  "model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+  "model_revision": "c5ee24cb16019beea0893ab7796b1df96625c6b8",
+  "feature_contract": "cross_encoder_top_score_threshold_v1",
+  "threshold": null,
+  "owner_approved": false,
+  "bindings": {
+    "retrieval_revision": null,
+    "dataset_revision": null,
+    "evaluator_revision": null,
+    "source_mix_revision": null
+  },
+  "certification": {
+    "false_evidence_accepted_queries": null,
+    "accepted_queries": null,
+    "retained_answer_bearing_queries": null,
+    "pre_gate_answer_bearing_queries": null,
+    "abstained_no_answer_queries": null,
+    "no_answer_queries": null,
+    "max_source_false_evidence_risk_delta": null,
+    "max_source_retained_recall_regression": null,
+    "observed_max_fanout": null,
+    "question_level_split_verified": false,
+    "locked_certification_verified": false,
+    "sample_sufficiency_passed": false,
+    "source_kind_gates_passed": false,
+    "multi_corpus_gates_passed": false
+  }
+}
