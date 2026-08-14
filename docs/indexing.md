@@ -8,7 +8,7 @@ Indexing has three gates:
 
 1. `plan` crawls, converts, or reads the source, chunks it, compares it with local state, and writes review artifacts. BigQuery and Snowflake planning authenticate only to the source warehouse; no planning mode reads turbopuffer credentials, loads embeddings, or contacts turbopuffer.
 2. `apply --dry-run` verifies the saved artifacts and recomputes the diff without prompting, credentials, models, or API calls.
-3. Plain interactive `apply` displays that complete preflight and prompts `Apply this plan? [y/N]`; only exact `y`/`yes` loads the local embedding model and writes reviewed rows. `apply --approve` bypasses the prompt for automation.
+3. Plain interactive `apply` displays that complete preflight and prompts `Apply this plan? [y/N]`; only exact `y`/`yes` loads the local embedding model, writes reviewed rows, commits local state, and then registers the namespace's routing card. `apply --approve` bypasses the prompt for automation.
 
 Stale rows are retained unless `--delete-stale` is also explicit. Namespace deletion is not part of this workflow.
 
@@ -290,8 +290,24 @@ Approved apply acquires a fail-fast lock for the target namespace before
 credential lookup or remote work, reverifies the plan and exact baseline under
 that lock, overlaps one local content-embedding batch with one ordered remote
 upsert, performs only explicitly requested exact-ID stale deletion, and commits
-local applied state only after remote work succeeds. It writes no catalog or
-other namespace.
+local applied state only after content work succeeds. It then creates or
+refreshes exactly that namespace's card in `buoy-routing-catalog-v1`. It does
+not alter any other content namespace.
+
+The card records source, embedding, ranking, lineage, and a pinned routing
+projection. When a manual card already exists, approved apply preserves its
+title, summary, aliases, tags, semantic vector, and enabled/disabled state
+while refreshing system lineage and compatibility fields. Preflight describes
+the intended post-commit registration without listing namespaces, reading the
+remote catalog, loading the route model, or making a provider request.
+
+Catalog registration occurs after content and local state are durable. If it
+fails, the command exits with explicit `partial_success`: indexed content and
+local applied state remain committed and are not rolled back, while the summary
+includes a reviewed catalog repair command. Do not assume automatic retrieval
+can see the new corpus. Inspect the failure, then use the emitted catalog
+operation or create a fresh plan and repeat the reviewed apply. Buoy has no
+automatic background retry or pending reconciliation daemon.
 
 It never runs concurrent embeddings or concurrent writes. Interactive runs show confirmed batches/rows on one stderr line; the final summary separates elapsed, embedding, and write time, whose stage totals may exceed wall time because they overlap. Tune the two independent batch controls only after measuring the workload:
 
@@ -323,21 +339,53 @@ It stores current row identity/status plus compact apply summaries, not full sna
 
 A same-namespace approved apply fails fast if another apply holds its lock. Different namespaces have independent ledgers and may apply concurrently. State is local to this machine; it is not a shared service.
 
-Preflighted and failed plans remain available. A successful approved apply
-removes its exact plan directory after remote work and local state commit. A
-newly written verified plan removes older sibling plans for the same namespace.
-Copy a plan elsewhere before approval if it must be retained for audit.
+Preflighted and content-failed plans remain available. Once content and local
+state commit, apply removes the consumed plan directory even when the later
+routing-card registration reports partial success: the old plan is no longer
+valid against the committed baseline. The partial-success receipt retains the
+repair command and exact identities needed for diagnosis. A newly written
+verified plan removes older sibling plans for the same namespace. Copy a plan
+elsewhere before approval if it must be retained for audit.
 
 Remote upserts and exact-ID deletes are deterministic. If remote content work
 succeeds but the local state commit fails, retain the unchanged baseline-bound
 plan and investigate before repeating it. Buoy has no catalog-pending or
-catalog-reconcile phase.
+automatic catalog-reconcile phase.
 
 Successful JSON output includes `receipt_schema_version=1`, source identity,
 namespace/region, plan/apply IDs, artifact hash, embedding and ranking
-contracts, counts, and retrieval commands. That is the supported Kite handoff.
+contracts, counts, retrieval commands, and verified catalog-registration
+status. That is the supported Kite handoff.
 
 DuckDB is the only applied-state authority. Obsolete JSON applied-state files are ignored and left unchanged; when no `state.duckdb` exists, apply uses normal first-apply behavior.
+
+## Routing catalog operations
+
+The remote routing catalog is `buoy-routing-catalog-v1`. Its cards let
+`buoy retrieve QUERY` select among live content namespaces. Catalog commands
+require `TURBOPUFFER_API_KEY`; Buoy never loads it from `.env` automatically.
+
+```bash
+# Read-only inventory and one-card inspection.
+buoy catalog list
+buoy catalog list --all
+buoy catalog show site-example-com-v1
+
+# Mutations preview by default.
+buoy catalog disable site-example-com-v1
+buoy catalog enable site-example-com-v1
+
+# Commit only after reviewing the preview.
+buoy catalog disable site-example-com-v1 --approve
+buoy catalog enable site-example-com-v1 --approve
+```
+
+`catalog upsert` requires a complete manual source, embedding, and ranking
+contract; see `buoy catalog upsert --help`. It also previews unless
+`--approve` is supplied. These commands change routing cards only. They never
+write, delete, enable, disable, or otherwise mutate the target content
+namespace. Disabled cards remain catalog coverage but are not eligible for
+automatic routes; stale cards are reported and never deleted automatically.
 
 ## Stale rows
 

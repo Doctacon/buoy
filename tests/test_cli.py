@@ -192,6 +192,80 @@ def fake_plan_crawl_summary(options: CrawlOptions) -> dict[str, object]:
 
 
 class CliTests(unittest.TestCase):
+    def test_retrieval_text_explains_no_relevant_evidence_without_claiming_no_answer(self) -> None:
+        class Output:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "dry_run": False,
+                    "namespaces": ["site-one-v1", "site-two-v1"],
+                    "hits": [],
+                    "incomplete": False,
+                    "embedding_precision": "float32",
+                    "evidence": {
+                        "mode": "active",
+                        "status": "no_relevant_evidence",
+                    },
+                }
+
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            print_retrieval_text(Output())  # type: ignore[arg-type]
+
+        rendered = stdout.getvalue()
+        self.assertIn(
+            "No sufficiently relevant evidence was found in the indexed corpora.",
+            rendered,
+        )
+        self.assertNotIn("no answer", rendered.lower())
+
+    def test_retrieval_text_keeps_partial_weak_result_inconclusive(self) -> None:
+        class Output:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "dry_run": False,
+                    "namespaces": ["site-one-v1", "site-two-v1"],
+                    "hits": [],
+                    "incomplete": True,
+                    "namespace_failures": [{"namespace": "site-two-v1"}],
+                    "embedding_precision": "float32",
+                    "evidence": {
+                        "mode": "active",
+                        "status": "inconclusive",
+                    },
+                }
+
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            print_retrieval_text(Output())  # type: ignore[arg-type]
+
+        rendered = stdout.getvalue()
+        self.assertIn("result is inconclusive", rendered)
+        self.assertIn("site-two-v1", rendered)
+
+    def test_retrieval_text_calls_supported_gate_provisional(self) -> None:
+        class Output:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "dry_run": False,
+                    "namespaces": ["site-one-v1"],
+                    "hits": [],
+                    "incomplete": False,
+                    "embedding_precision": "float32",
+                    "fusion": "single_namespace",
+                    "evidence": {
+                        "mode": "active",
+                        "status": "supported",
+                    },
+                }
+
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            print_retrieval_text(Output())  # type: ignore[arg-type]
+
+        rendered = stdout.getvalue()
+        self.assertIn("supported by the provisional relevance gate", rendered)
+        self.assertNotIn("calibrated relevance gate", rendered)
+
     def test_live_retrieval_and_eval_text_expose_embedding_precision(self) -> None:
         class Output:
             def __init__(self, payload: dict[str, object]) -> None:
@@ -351,7 +425,10 @@ class CliTests(unittest.TestCase):
         parser = build_parser()
         help_text = parser.format_help()
         choices = parser._subparsers._group_actions[0].choices
-        self.assertEqual(set(choices), {"crawl", "plan", "apply", "retrieve", "evals"})
+        self.assertEqual(
+            set(choices),
+            {"crawl", "plan", "apply", "retrieve", "evals", "catalog"},
+        )
         retrieve_help = choices["retrieve"].format_help()
         apply_help = parser._subparsers._group_actions[0].choices["apply"].format_help()
 
@@ -361,9 +438,11 @@ class CliTests(unittest.TestCase):
         self.assertIn("apply", help_text)
         self.assertIn("retrieve", help_text)
         self.assertIn("evals", help_text)
+        self.assertIn("catalog", help_text)
         self.assertIn("website, repository, document, DuckDB, BigQuery, and Snowflake", " ".join(help_text.split()))
         normalized_retrieve_help = " ".join(retrieve_help.split())
-        self.assertIn("exactly one explicitly selected namespace", normalized_retrieve_help)
+        self.assertIn("Automatically route through the authenticated remote catalog", normalized_retrieve_help)
+        self.assertIn("repeat up to three times", normalized_retrieve_help)
         self.assertIn("--namespace NAMESPACE", normalized_retrieve_help)
         self.assertNotIn("--live", normalized_retrieve_help)
         self.assertNotIn("--catalog", retrieve_help)
@@ -1317,11 +1396,20 @@ class CliTests(unittest.TestCase):
         self.assertIn("repo_path", include_attributes)
         self.assertNotIn("vector", include_attributes)
 
-    def test_retrieve_rejects_repeated_empty_and_reserved_namespaces(self) -> None:
+    def test_retrieve_rejects_duplicate_excess_empty_and_reserved_namespaces(self) -> None:
         cases = (
             (
-                ["--namespace", "site-first-v1", "--namespace", "site-second-v1"],
-                "exactly once",
+                ["--namespace", "site-first-v1", "--namespace", "site-first-v1"],
+                "must not repeat",
+            ),
+            (
+                [
+                    "--namespace", "site-one-v1",
+                    "--namespace", "site-two-v1",
+                    "--namespace", "site-three-v1",
+                    "--namespace", "site-four-v1",
+                ],
+                "at most 3 times",
             ),
             (["--namespace", ""], "non-empty namespace ID"),
             (["--namespace", "buoy-evidence-ledger-legacy"], "reserved Buoy control namespaces"),

@@ -1,16 +1,23 @@
 Status: active
 Created: 2026-07-19
-Updated: 2026-07-19
-Amended-By: .10x/specs/focused-buoy-boundary.md
+Updated: 2026-08-13
+Amended-By: .10x/specs/automatic-multi-corpus-retrieval.md
 
 # Buoy 0.4 Environment Alias Removal
 
-## Focused-boundary amendment
+## Bounded-retrieval amendment
 
 The removed branded embedding aliases remain rejected exactly as specified.
-Clauses for removed catalog, routing, discovery, evidence, or Command Center
-commands no longer create compatibility authority. `TURBOPUFFER_NAMESPACE` is
-ignored; retrieval and evals require one explicit CLI namespace.
+Historical clauses for removed evidence or Command Center commands no longer
+create compatibility authority. `TURBOPUFFER_NAMESPACE` remains ignored. The
+later bounded-retrieval specification restores `catalog` plus automatic and
+repeatable-explicit namespace retrieval without restoring any removed
+environment alias or ambient namespace selection. Under that later bounded
+surface, the exact primary command coverage is `catalog`, `crawl`, `plan`,
+`apply`, `retrieve`, and `evals`; the historical `namespaces` command and
+`catalog remove`, `migrate-local`, `reconcile`, and `abandon-pending`
+subcommands remain removed and no longer belong to the executable command
+matrix below.
 
 ## Purpose and scope
 
@@ -48,10 +55,12 @@ When both are present, the model mapping MUST precede the precision mapping rega
 
 ## Exact command coverage
 
-The gate MUST cover every actual primary CLI command:
+The gate MUST cover every actual primary CLI command. As amended by the later
+bounded-retrieval specification, that current matrix is:
 
-- `crawl`, `plan`, `apply`, `namespaces`, `retrieve`, and `evals`;
-- `catalog list`, `catalog show`, `catalog upsert`, `catalog enable`, `catalog disable`, `catalog remove`, `catalog migrate-local`, `catalog reconcile`, and `catalog abandon-pending`;
+- `crawl`, `plan`, `apply`, `retrieve`, and `evals`;
+- `catalog list`, `catalog show`, `catalog upsert`, `catalog enable`, and
+  `catalog disable`;
 - one successfully parsed `python -m buoy_search.autoresearch` experiment invocation.
 
 Tests MUST cover each command handler with valid minimum arguments while replacing the handler with a sentinel that proves dispatch did not occur. They MUST also cover `buoy --help`, `buoy --version`, every top-level `buoy <command> --help`, every `buoy catalog <command> --help`, bare `buoy`, bare `buoy catalog`, `python -m buoy_search --help`, and `python -m buoy_search.autoresearch --help` with removed variables present. Help/version tests prove availability only and MUST NOT execute command behavior.

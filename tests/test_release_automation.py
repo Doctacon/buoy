@@ -120,7 +120,7 @@ class ReleaseAutomationTests(unittest.TestCase):
             with self.assertRaisesRegex(release_automation.ReleaseError, "read-only"):
                 release_automation.validate_source(clone)
 
-    def test_source_validator_accepts_truthful_pre_release_changelog(self) -> None:
+    def test_source_validator_rejects_consumed_v0_5_1_pending_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             clone = Path(tmp) / "source"
             shutil.copytree(
@@ -136,10 +136,11 @@ class ReleaseAutomationTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = release_automation.validate_source(clone)
-
-            self.assertEqual(result["published_history_through"], "0.5.0")
-            self.assertEqual(result["staged_release"], "0.5.1")
+            with self.assertRaisesRegex(
+                release_automation.ReleaseError,
+                "published v0.5.1 history dated 2026-08-13",
+            ):
+                release_automation.validate_source(clone)
 
     def test_source_validator_rejects_job_permission_escalation_and_malformed_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -209,7 +210,7 @@ class ReleaseAutomationTests(unittest.TestCase):
         self.assertIn("## [0.4.0] - 2026-07-21", changelog)
         self.assertEqual(changelog.count(" - pending"), 0)
 
-    def test_focused_package_surface_excludes_operator_assets(self) -> None:
+    def test_focused_package_surface_includes_routing_but_excludes_operator_assets(self) -> None:
         with (ROOT / "pyproject.toml").open("rb") as handle:
             project = tomllib.load(handle)
         self.assertNotIn("ui", project["project"].get("optional-dependencies", {}))
@@ -219,6 +220,21 @@ class ReleaseAutomationTests(unittest.TestCase):
             for member in release_automation.REMOVED_PACKAGE_MEMBERS
         ):
             self.assertFalse((ROOT / "src/buoy_search" / module).exists())
+        for module in (
+            "catalog.py",
+            "catalog_cli.py",
+            "cross_encoder.py",
+            "remote_catalog.py",
+            "routing.py",
+        ):
+            self.assertTrue((ROOT / "src/buoy_search" / module).is_file())
+        self.assertEqual(
+            release_automation.REQUIRED_SDIST_MEMBERS,
+            ("scripts/evaluate_multi_corpus_retrieval.py",),
+        )
+        self.assertTrue(
+            (ROOT / release_automation.REQUIRED_SDIST_MEMBERS[0]).is_file()
+        )
         self.assertFalse((ROOT / "src/buoy_search/command_center_static").exists())
         readiness = (ROOT / ".github/workflows/release-readiness.yml").read_text(
             encoding="utf-8"

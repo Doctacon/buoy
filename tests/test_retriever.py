@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import unittest
 from unittest.mock import patch
+import traceback
 
 from buoy_search.config import RuntimeConfig
 from buoy_search.evals import hit_summary
@@ -196,6 +197,23 @@ class RetrieverTests(unittest.TestCase):
             [(config.embedding_model, "float16")],
         )
         self.assertEqual(retriever._embedder.texts, [["precision query"]])
+
+    def test_from_config_redacts_namespace_constructor_failures(self) -> None:
+        secret = "secret-token-value"
+        config = RuntimeConfig(namespace="site-example-v1")
+        with patch.dict(
+            os.environ, {"TURBOPUFFER_API_KEY": secret}, clear=False
+        ), patch(
+            "buoy_search.retriever.SentenceTransformerEmbedder",
+            PrecisionCapturingEmbedder,
+        ), patch(
+            "buoy_search.retriever.build_namespace",
+            side_effect=ValueError(f"provider echoed {secret}"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Could not prepare namespace") as raised:
+                HybridRetriever.from_config(config)
+        self.assertNotIn(secret, str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
 
     def test_builds_ann_and_boosted_bm25_subqueries_without_vectors_in_attributes(self) -> None:
         queries = build_multi_query_subqueries(
@@ -1019,10 +1037,13 @@ class RetrieverTests(unittest.TestCase):
                     config=RuntimeConfig(),
                 )
 
-                with self.assertRaisesRegex(RuntimeError, attribute):
+                with self.assertRaisesRegex(
+                    ProviderCallError, "Provider error: RuntimeError"
+                ) as raised:
                     retriever.retrieve(
                         "website docs", RetrievalOptions(top_k=1, candidates=10)
                     )
+                self.assertNotIn(attribute, str(raised.exception))
 
                 self.assertEqual(len(namespace.calls), 1)
 
@@ -1034,10 +1055,39 @@ class RetrieverTests(unittest.TestCase):
             config=RuntimeConfig(),
         )
 
-        with self.assertRaisesRegex(ProviderCallError, "tags must be a list of strings"):
+        with self.assertRaisesRegex(
+            ProviderCallError, "Provider error: RuntimeError"
+        ) as raised:
             retriever.retrieve("website docs", RetrievalOptions(top_k=1, candidates=10))
+        self.assertNotIn("tags must be a list of strings", str(raised.exception))
 
         self.assertEqual(len(namespace.calls), 1)
+
+    def test_provider_traceback_never_chains_raw_error_payload(self) -> None:
+        secret = "secret-token-value"
+
+        class LeakyNamespace:
+            def multi_query(self, **_kwargs: object) -> object:
+                raise ValueError(f"provider echoed {secret}")
+
+        retriever = HybridRetriever(
+            namespace=LeakyNamespace(),
+            embedder=FakeEmbedder(),
+            config=RuntimeConfig(),
+        )
+        try:
+            retriever.retrieve(
+                "website docs", RetrievalOptions(top_k=1, candidates=10)
+            )
+        except ProviderCallError as exc:
+            rendered = "".join(
+                traceback.format_exception(type(exc), exc, exc.__traceback__)
+            )
+        else:  # pragma: no cover - the fake always fails.
+            self.fail("provider failure unexpectedly succeeded")
+        self.assertNotIn(secret, rendered)
+        self.assertNotIn("provider echoed", rendered)
+        self.assertNotIn("The above exception", rendered)
 
 
 if __name__ == "__main__":

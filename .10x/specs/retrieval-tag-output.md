@@ -1,16 +1,16 @@
 Status: active
 Created: 2026-07-19
-Updated: 2026-07-19
-Amended-By: .10x/specs/focused-buoy-boundary.md
+Updated: 2026-08-13
+Amended-By: .10x/specs/automatic-multi-corpus-retrieval.md
 
 # Retrieval Tag Output
 
-## Focused-boundary amendment
+## Bounded-retrieval amendment
 
-This specification remains active only for preserving and rendering tags on
-results returned from one explicitly selected namespace. Multi-namespace
-fusion, automatic routing, catalog-selected output, and route metadata are
-superseded.
+This specification remains active for preserving and rendering tags on every
+retrieval result. The later bounded-retrieval specification restores
+multi-namespace, automatic, and catalog-selected output, and those hits retain
+the exact same tag contract plus their required namespace/route provenance.
 
 ## Purpose and scope
 

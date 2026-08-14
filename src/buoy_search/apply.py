@@ -41,6 +41,24 @@ from buoy_search.chunker import (
     TurbopufferWriter,
     batched,
 )
+from buoy_search.catalog import (
+    CardFields,
+    CatalogError,
+    GeneratedSemantics,
+    NamespaceCard,
+    generated_semantics,
+    prepare_card,
+)
+from buoy_search.remote_catalog import (
+    REMOTE_CATALOG_NAMESPACE,
+    CompatibilityContract,
+    RemoteCatalogError,
+    create_client,
+    create_remote_cards,
+    read_remote_catalog,
+    remote_catalog_resource,
+    update_remote_card,
+)
 from buoy_search.plan_artifacts import (
     GENERIC_SITE_TURBOPUFFER_SCHEMA,
     MAX_PLAN_JSON_BYTES,
@@ -62,10 +80,34 @@ from buoy_search.retriever import ranking_defaults_for_namespace
 
 JsonObject = dict[str, Any]
 DEFAULT_APPLY_PLAN_SEARCH_ROOT = Path("artifacts/site-crawls")
+REMOTE_CATALOG_CLIENT_FACTORY = create_client
 
 
 class ApplyPlanError(ValueError):
     """Raised when a saved plan cannot be safely applied."""
+
+
+class CatalogRegistrationPartialSuccess(RuntimeError):
+    """Content/local state committed, but the routing card did not."""
+
+    def __init__(self, message: str, summary: JsonObject) -> None:
+        super().__init__(message)
+        self.summary = summary
+
+
+class _CatalogRegistrationAttemptError(RuntimeError):
+    """Internal registration failure plus whether a provider call was attempted."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        api_calls_occurred: bool,
+        repair_command: str,
+    ) -> None:
+        super().__init__(message)
+        self.api_calls_occurred = api_calls_occurred
+        self.repair_command = repair_command
 
 
 @dataclass(frozen=True)
@@ -489,6 +531,323 @@ def _diff_from_delta(
     )
 
 
+def verified_source_metadata(verified: VerifiedApplyPlan) -> list[dict[str, str]]:
+    """Project catalog metadata solely from the verified plan-level source."""
+
+    source = verified.plan["source"]
+    kind = str(source["kind"])
+    attrs = source["attributes"]
+    if kind == "website":
+        return []
+    if kind == "github_repo":
+        return [
+            {
+                "source_kind": kind,
+                **{
+                    key: str(attrs[key])
+                    for key in (
+                        "repo_full_name",
+                        "repo_owner",
+                        "repo_name",
+                        "repo_ref",
+                        "commit_sha",
+                    )
+                },
+            }
+        ]
+    if kind == "local_file":
+        return [
+            {
+                "source_kind": kind,
+                "file_filename": str(attrs["filename"]),
+                "file_extension": str(attrs["extension"]),
+                "file_sha256": str(attrs["sha256"]),
+                "file_source_id": str(attrs["source_id"]),
+            }
+        ]
+    if kind == "pdf":
+        return [
+            {
+                "source_kind": kind,
+                "pdf_filename": str(attrs["filename"]),
+                "pdf_sha256": str(attrs["sha256"]),
+                "pdf_source_id": str(attrs["source_id"]),
+            }
+        ]
+    return [
+        {
+            "source_kind": kind,
+            "database_backend": str(attrs["database_backend"]),
+            "database_source_id": str(attrs["database_source_id"]),
+            "database_relation": str(attrs["database_relation"]),
+        }
+    ]
+
+
+def _generated_card_inputs(
+    verified: VerifiedApplyPlan,
+    *,
+    namespace: str,
+    region: str,
+) -> tuple[GeneratedSemantics, dict[str, object]]:
+    semantics = generated_semantics(
+        base_url=str(verified.plan["source"]["uri"]),
+        site_id=str(verified.plan["site_id"]),
+        plan_schema_version=int(verified.plan["schema_version"]),
+        source_metadata=verified_source_metadata(verified),
+    )
+    ranking = ranking_defaults_for_namespace(namespace, source_kind=semantics.source_kind)
+    return semantics, ranking
+
+
+def catalog_registration_preview(
+    verified: VerifiedApplyPlan,
+    *,
+    namespace: str,
+    region: str,
+) -> JsonObject:
+    """Build a credential-, API-, and model-free registration preview."""
+
+    semantics, ranking = _generated_card_inputs(
+        verified,
+        namespace=namespace,
+        region=region,
+    )
+    return {
+        "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
+        "namespace": namespace,
+        "action": "create_or_update_after_content_and_state_commit",
+        "remote_catalog_state": "unknown_until_approved",
+        "manual_semantics_preserved": True,
+        "enabled_state_preserved": True,
+        "source_kind": semantics.source_kind,
+        "region": region,
+        "vector_dimensions": VECTOR_DIMENSIONS,
+        **ranking,
+    }
+
+
+def generated_card_for_apply(
+    verified: VerifiedApplyPlan,
+    *,
+    namespace: str,
+    region: str,
+    apply_id: str,
+    existing: NamespaceCard | None,
+) -> NamespaceCard:
+    """Build the persisted post-apply card while preserving operator fields."""
+
+    semantics, ranking = _generated_card_inputs(
+        verified,
+        namespace=namespace,
+        region=region,
+    )
+    manual = existing is not None and existing.semantic_origin == "manual"
+    fields = CardFields(
+        namespace=namespace,
+        enabled=existing.enabled if existing is not None else True,
+        source_kind=semantics.source_kind,
+        source_uri=semantics.source_uri,
+        site_id=str(verified.plan["site_id"]),
+        title=existing.title if manual else semantics.title,
+        summary=existing.summary if manual else semantics.summary,
+        aliases=list(existing.aliases if manual else semantics.aliases),
+        tags=list(existing.tags if manual else semantics.tags),
+        semantic_origin="manual" if manual else "generated",
+        region=region,
+        embedding_model=str(verified.plan["embedding_model"]),
+        embedding_precision=str(verified.plan.get("embedding_precision", "float32")),
+        plan_schema_version=int(verified.plan["schema_version"]),
+        ranking_mode=str(ranking["ranking_mode"]),
+        ranking_profile=str(ranking["ranking_profile"]),
+        ranking_pool=int(ranking["ranking_pool"]),
+        ranking_aggregation=str(ranking["ranking_aggregation"]),
+        last_plan_id=str(verified.plan["plan_id"]),
+        last_apply_id=apply_id,
+    )
+    return prepare_card(
+        fields,
+        existing=existing,
+        now=None,
+    )
+
+
+def _catalog_repair_command(
+    verified: VerifiedApplyPlan,
+    *,
+    namespace: str,
+    region: str,
+    card: NamespaceCard | None = None,
+) -> str:
+    """Return an executable reviewed catalog-only repair for a generated card."""
+
+    semantics, ranking = _generated_card_inputs(
+        verified,
+        namespace=namespace,
+        region=region,
+    )
+    source_kind = card.source_kind if card is not None else semantics.source_kind
+    source_uri = card.source_uri if card is not None else semantics.source_uri
+    site_id = card.site_id if card is not None else str(verified.plan["site_id"])
+    title = card.title if card is not None else semantics.title
+    summary = card.summary if card is not None else semantics.summary
+    aliases = card.aliases if card is not None else semantics.aliases
+    tags = card.tags if card is not None else semantics.tags
+    command = [
+        "buoy",
+        "catalog",
+        "upsert",
+        namespace,
+        "--source-kind",
+        source_kind,
+        "--source-uri",
+        source_uri,
+        "--site-id",
+        site_id,
+        "--title",
+        title,
+        "--summary",
+        summary,
+    ]
+    for alias in aliases:
+        command.extend(("--alias", alias))
+    for tag in tags:
+        command.extend(("--tag", tag))
+    command.extend(
+        (
+            "--embedding-model",
+            str(verified.plan["embedding_model"]),
+            "--embedding-precision",
+            str(verified.plan.get("embedding_precision", "float32")),
+            "--plan-schema-version",
+            str(verified.plan["schema_version"]),
+            "--ranking-mode",
+            str(ranking["ranking_mode"]),
+            "--ranking-profile",
+            str(ranking["ranking_profile"]).replace("_", "-"),
+            "--ranking-pool",
+            str(ranking["ranking_pool"]),
+            "--ranking-aggregation",
+            str(ranking["ranking_aggregation"]).replace("_", "-"),
+            "--region",
+            region,
+            "--approve",
+        )
+    )
+    if card is not None and not card.enabled:
+        command.append("--disabled")
+    return shlex.join(command)
+
+
+def _catalog_repair_fallback(*, namespace: str, region: str) -> str:
+    return shlex.join(
+        (
+            "buoy",
+            "catalog",
+            "show",
+            namespace,
+            "--region",
+            region,
+            "--json",
+        )
+    )
+
+
+def _safe_catalog_registration_error(exc: Exception) -> str:
+    if isinstance(exc, CatalogError):
+        return str(exc)
+    return f"catalog registration failed ({exc.__class__.__name__})"
+
+
+def register_apply_catalog_card(
+    verified: VerifiedApplyPlan,
+    *,
+    config: RuntimeConfig,
+    namespace: str,
+    apply_id: str,
+    api_key: str,
+) -> JsonObject:
+    """Conditionally create/update and exactly verify one post-apply card."""
+
+    api_calls_occurred = False
+    # Until the current card has been read, only suggest inspection. A
+    # generated upsert at this point could overwrite operator-authored title,
+    # aliases, tags, description, routing vector, or enabled state.
+    repair_command = _catalog_repair_fallback(
+        namespace=namespace,
+        region=config.region,
+    )
+    try:
+        # Projection can load the pinned local route model, but happens only
+        # after content and local state are durably committed by the caller.
+        client = REMOTE_CATALOG_CLIENT_FACTORY(api_key=api_key, region=config.region)
+        api_calls_occurred = True
+        snapshot = read_remote_catalog(
+            client,
+            region=config.region,
+            compatibility=CompatibilityContract(
+                region=config.region,
+                embedding_model=config.embedding_model,
+                embedding_precision=config.embedding_precision,
+            ),
+        )
+        if namespace not in snapshot.live_namespace_ids:
+            raise RemoteCatalogError(
+                f"applied content namespace {namespace!r} is not live in region {config.region!r}"
+            )
+        existing = next(
+            (card for card in snapshot.cards if card.namespace == namespace),
+            None,
+        )
+        card = generated_card_for_apply(
+            verified,
+            namespace=namespace,
+            region=config.region,
+            apply_id=apply_id,
+            existing=existing,
+        )
+        repair_command = _catalog_repair_command(
+            verified,
+            namespace=namespace,
+            region=config.region,
+            card=card,
+        )
+        resource = remote_catalog_resource(client)
+        mutation = (
+            create_remote_cards(resource, [card], region=config.region)
+            if existing is None
+            else update_remote_card(
+                resource,
+                card,
+                expected_revision=existing.card_revision,
+                region=config.region,
+            )
+        )
+    except Exception as exc:
+        raise _CatalogRegistrationAttemptError(
+            _safe_catalog_registration_error(exc),
+            api_calls_occurred=api_calls_occurred,
+            repair_command=repair_command,
+        ) from None
+
+    if existing is None:
+        status = "created" if mutation.changed else "unchanged"
+    else:
+        status = "updated" if mutation.changed else "unchanged"
+    verified_card = mutation.card or card
+    return {
+        "catalog_registered": True,
+        "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
+        "catalog_mutation_status": status,
+        "catalog_card_revision": verified_card.card_revision,
+        "catalog_manual_semantics_preserved": bool(
+            existing is not None and existing.semantic_origin == "manual"
+        ),
+        "catalog_enabled_state": verified_card.enabled,
+        "catalog_repair_command": None,
+    }
+
+
 def apply_preflight_summary(
     verified: VerifiedApplyPlan,
     *,
@@ -514,6 +873,12 @@ def apply_preflight_summary(
         ),
         "cancelled": False,
         "confirmation": "not_requested",
+        "catalog_registered": False,
+        "catalog_registration": catalog_registration_preview(
+            verified,
+            namespace=namespace,
+            region=region,
+        ),
     }
 
 
@@ -689,27 +1054,6 @@ def run_approved_apply(
             ),
         )
 
-        summary = build_apply_summary(
-            verified=verified,
-            namespace=namespace,
-            region=config.region,
-            approved=True,
-            delete_stale=delete_stale,
-            rows_upserted=rows_written,
-            embeddings_generated=embeddings_generated,
-            rows_deleted=rows_deleted,
-            state_updated=True,
-            api_calls_occurred=bool(rows_written or rows_deleted),
-            timing={
-                "elapsed_seconds": elapsed_since(apply_started_at),
-                "embedding_seconds": embedding_seconds,
-                "write_seconds": write_seconds,
-                "embedding_batch_size": embedding_batch_size,
-                "write_batch_size": batch_size,
-                "embedding_precision": config.embedding_precision,
-                "pipeline_mode": "depth_one",
-            },
-        )
         if cleanup_binding_callback is not None:
             cleanup_binding_callback(
                 ApplyCleanupBinding(
@@ -721,12 +1065,71 @@ def run_approved_apply(
                     directory_inode=verified.plan_directory_inode,
                 )
             )
-        return {
+
+        content_api_calls_occurred = bool(rows_written or rows_deleted)
+        summary = build_apply_summary(
+            verified=verified,
+            namespace=namespace,
+            region=config.region,
+            approved=True,
+            delete_stale=delete_stale,
+            rows_upserted=rows_written,
+            embeddings_generated=embeddings_generated,
+            rows_deleted=rows_deleted,
+            state_updated=True,
+            api_calls_occurred=content_api_calls_occurred,
+            timing={
+                "elapsed_seconds": elapsed_since(apply_started_at),
+                "embedding_seconds": embedding_seconds,
+                "write_seconds": write_seconds,
+                "embedding_batch_size": embedding_batch_size,
+                "write_batch_size": batch_size,
+                "embedding_precision": config.embedding_precision,
+                "pipeline_mode": "depth_one",
+            },
+        )
+        receipt = {
             **summary,
             "receipt_schema_version": 1,
             "apply_id": next_state.last_apply_id,
             "source": verified.plan["source"],
             "content_applied": True,
+        }
+        emit_progress("apply: registering routing card")
+        try:
+            registration = register_apply_catalog_card(
+                verified,
+                config=config,
+                namespace=namespace,
+                apply_id=next_state.last_apply_id,
+                api_key=api_key,
+            )
+        except _CatalogRegistrationAttemptError as exc:
+            api_calls_occurred = (
+                content_api_calls_occurred or exc.api_calls_occurred
+            )
+            partial = {
+                **receipt,
+                "turbopuffer_api_calls": api_calls_occurred,
+                "api_calls_occurred": api_calls_occurred,
+                "partial_success": True,
+                "catalog_registered": False,
+                "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
+                "catalog_mutation_status": "failed",
+                "catalog_error": str(exc),
+                "catalog_repair_command": exc.repair_command,
+            }
+            raise CatalogRegistrationPartialSuccess(
+                "Content and local applied state were committed, but routing catalog "
+                f"registration failed: {exc}. Repair with: {exc.repair_command}",
+                partial,
+            ) from None
+        return {
+            **receipt,
+            "turbopuffer_api_calls": True,
+            "api_calls_occurred": True,
+            "partial_success": False,
+            **registration,
         }
 
 

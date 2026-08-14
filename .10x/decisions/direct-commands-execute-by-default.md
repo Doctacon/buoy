@@ -1,6 +1,7 @@
 Status: active
 Created: 2026-07-18
-Updated: 2026-07-18
+Updated: 2026-08-13
+Amended-By: .10x/decisions/buoy-owns-bounded-multi-corpus-retrieval.md
 
 # Direct Commands Execute by Default
 
@@ -11,13 +12,16 @@ made `apply` a local preflight unless `--approve` was supplied. The user wanted
 normal interactive commands to perform their named action while retaining
 explicit previews and preventing accidental or non-interactive writes.
 
-Retrieval performs read-only content queries against one explicit namespace.
+Retrieval performs read-only content queries against one explicit namespace or
+the bounded automatic/multi-namespace selection restored by the later
+multi-corpus decision.
 Apply performs durable content and local-ledger writes, so silently making
 plain apply mutate would weaken a safety boundary.
 
 ## Decision
 
-- `buoy retrieve QUERY --namespace ID` executes live retrieval by default.
+- `buoy retrieve QUERY` executes live automatic routing and retrieval by
+  default; one or more explicit `--namespace ID` values bypass routing.
 - `retrieve --dry-run` and compatibility alias `--plan` request preview. The
   obsolete `--live` flag is removed because live execution is already the
   explicit-namespace default.
@@ -40,8 +44,8 @@ plain apply mutate would weaken a safety boundary.
 
 ## Consequences
 
-Normal interactive usage becomes `buoy retrieve QUERY --namespace ID` and
-`buoy apply`. Preview intent becomes explicit. Interactive cancellation reports
+Normal interactive usage becomes `buoy retrieve QUERY` (or an explicit
+`--namespace ID` override) and `buoy apply`. Preview intent becomes explicit. Interactive cancellation reports
 `dry_run=false, cancelled=true`; explicit `--dry-run` reports `dry_run=true,
 cancelled=false`. Existing scripts that depended on plain retrieve being a
 preview must add `--dry-run`; scripts that passed `--live` must remove it;

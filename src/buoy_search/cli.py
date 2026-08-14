@@ -18,6 +18,7 @@ from buoy_search.applied_state import AppliedStateError, resolve_state_root
 from buoy_search.apply import (
     ApplyCleanupBinding,
     ApplyPlanError,
+    CatalogRegistrationPartialSuccess,
     apply_preflight_summary,
     discover_latest_plan_path,
     load_verified_apply_plan,
@@ -63,6 +64,11 @@ from buoy_search.evals import (
     load_eval_cases,
     run_live_evals,
 )
+from buoy_search.evidence import (
+    EvidenceCalibration,
+    EvidenceCalibrationError,
+    load_evidence_calibration,
+)
 from buoy_search.chunker import (
     DEFAULT_OVERLAP_SENTENCES,
     DEFAULT_TARGET_TOKENS,
@@ -70,16 +76,65 @@ from buoy_search.chunker import (
 from buoy_search.plan_cleanup import cleanup_applied_plan_directory
 from buoy_search.plan_diff import PlanDiffError
 from buoy_search.planning_service import PlanProgress, PlanningRequest, PlanningService
+from buoy_search.catalog import CatalogError, load_routing_embedder
+from buoy_search.catalog_cli import configure_catalog_parser
+from buoy_search.remote_catalog import (
+    REMOTE_CATALOG_NAMESPACE,
+    CompatibilityContract,
+    RemoteCatalogError,
+    create_client as create_remote_catalog_client,
+    read_remote_catalog,
+    require_complete_routing_coverage,
+    require_eligible,
+)
 from buoy_search.retriever import (
+    CalibratedEvidenceAssessor,
     DEFAULT_CANDIDATES,
     DEFAULT_TOP_K,
+    EVIDENCE_ASSESSMENT_TOP_K,
+    EvidenceRouteContext,
     HybridRetriever,
+    MultiNamespaceRetrievalPlan,
+    MultiNamespaceRetrievalResult,
+    MultiNamespaceRetriever,
     RetrievalOptions,
     RetrievalPlan,
     RetrievalResult,
     ranking_defaults_for_namespace,
+    multi_namespace_retrieval_plan,
     retrieval_plan,
 )
+from buoy_search.routing import (
+    DEFAULT_ROUTE_TOP_K,
+    MAX_ROUTE_TOP_K,
+    AutomaticRoutingError,
+    RoutedRetrievalPlan,
+    RoutedRetrievalResult,
+    hybrid_route,
+)
+
+
+REMOTE_CATALOG_CLIENT_FACTORY = create_remote_catalog_client
+ROUTING_EMBEDDER_FACTORY = load_routing_embedder
+
+
+def automatic_evidence_plan(calibration: EvidenceCalibration) -> dict[str, object]:
+    """Describe the local evidence gate without claiming a live decision."""
+
+    return {
+        "automatic_only": True,
+        "mode": calibration.mode,
+        "status": "requires_content_retrieval",
+        "reason": "evidence_scores_are_not_available_in_a_plan",
+        "model": calibration.model,
+        "model_revision": calibration.model_revision,
+        "calibration_id": calibration.calibration_id,
+        "calibration_revision": calibration.calibration_revision,
+        "feature_contract": calibration.feature_contract,
+        "threshold": calibration.threshold,
+        "max_candidates_scored": EVIDENCE_ASSESSMENT_TOP_K,
+        "enforcement_scope": "automatic_live_retrieval",
+    }
 
 
 class OneLineProgress:
@@ -221,6 +276,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     subparsers = parser.add_subparsers(dest="command")
+
+    configure_catalog_parser(subparsers)
 
     crawl_parser = subparsers.add_parser(
         "crawl",
@@ -648,10 +705,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     retrieve_parser = subparsers.add_parser(
         "retrieve",
-        help="retrieve relevant chunks from one explicit namespace",
+        help="retrieve relevant chunks across the most relevant corpora",
         description=(
-            "Execute hybrid retrieval against exactly one explicitly selected namespace. "
-            "Use --dry-run/--plan for a credential-free preview."
+            "Automatically route through the authenticated remote catalog, or bypass routing "
+            "with one or more explicit --namespace values."
         ),
     )
     retrieve_parser.add_argument(
@@ -663,7 +720,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--plan",
         dest="dry_run",
         action="store_true",
-        help="Preview retrieval locally without credentials, embeddings, or provider calls.",
+        help="Preview retrieval. Explicit previews are local; automatic previews read routing state but not content.",
     )
     retrieve_parser.add_argument(
         "--top-k",
@@ -706,7 +763,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional doc_kind filter, e.g. blog, library, platform, integrations.",
     )
-    add_runtime_config_arguments(retrieve_parser, require_namespace=True)
+    add_runtime_config_arguments(retrieve_parser, require_namespace=False)
     retrieve_parser.add_argument(
         "--json",
         action="store_true",
@@ -805,7 +862,7 @@ def add_runtime_config_arguments(
         "--namespace",
         action="append",
         required=require_namespace,
-        help="Explicit turbopuffer namespace to search; it must be supplied exactly once.",
+        help="Explicit turbopuffer namespace to search; repeat up to three times to bypass automatic routing.",
     )
     command_parser.add_argument(
         "--embedding-model",
@@ -824,7 +881,8 @@ def config_from_args(args: argparse.Namespace):
     """Load non-secret runtime config, applying CLI overrides when supplied."""
 
     config = load_config()
-    namespace = resolve_explicit_namespace(args)
+    raw_namespaces = args.namespace if isinstance(args.namespace, list) else []
+    namespace = raw_namespaces[0].strip() if raw_namespaces else ""
     return replace(
         config,
         region=args.region or config.region,
@@ -846,6 +904,28 @@ def resolve_explicit_namespace(args: argparse.Namespace) -> str:
         return content_namespace(namespace)
     except argparse.ArgumentTypeError as exc:
         raise RuntimeConfigError(str(exc)) from exc
+
+
+def resolve_retrieval_namespaces(args: argparse.Namespace) -> list[str]:
+    """Return zero to three unique explicit content namespaces in CLI order."""
+
+    raw_namespaces = args.namespace if isinstance(args.namespace, list) else []
+    namespaces: list[str] = []
+    for value in raw_namespaces:
+        try:
+            namespace = content_namespace(value)
+        except argparse.ArgumentTypeError as exc:
+            raise RuntimeConfigError(str(exc)) from exc
+        if namespace in namespaces:
+            raise RuntimeConfigError(f"--namespace must not repeat namespace ID {namespace!r}.")
+        namespaces.append(namespace)
+    if len(namespaces) > MAX_ROUTE_TOP_K:
+        raise RuntimeConfigError(
+            f"--namespace may be supplied at most {MAX_ROUTE_TOP_K} times."
+        )
+    return namespaces
+
+
 def resolve_cli_state_root(args: argparse.Namespace) -> bool:
     """Resolve an implicit plan/apply state root and emit warnings on stderr."""
 
@@ -932,6 +1012,32 @@ def retrieval_options_from_args(
         ranking_profile=ranking_profile_from_cli(ranking_profile),
         ranking_pool=args.ranking_pool or int(defaults["ranking_pool"]),
         ranking_aggregation=ranking_aggregation_from_cli(ranking_aggregation),
+    )
+
+
+def routed_retrieval_options_from_args(
+    args: argparse.Namespace,
+    *,
+    card: object,
+) -> RetrievalOptions:
+    """Build options from one validated card unless the CLI overrides them."""
+
+    return RetrievalOptions(
+        top_k=args.top_k,
+        candidates=args.candidates,
+        doc_kind=args.doc_kind,
+        ranking_mode=args.ranking_mode or str(getattr(card, "ranking_mode")),
+        ranking_profile=(
+            ranking_profile_from_cli(args.ranking_profile)
+            if args.ranking_profile
+            else str(getattr(card, "ranking_profile"))
+        ),
+        ranking_pool=args.ranking_pool or int(getattr(card, "ranking_pool")),
+        ranking_aggregation=(
+            ranking_aggregation_from_cli(args.ranking_aggregation)
+            if args.ranking_aggregation
+            else str(getattr(card, "ranking_aggregation"))
+        ),
     )
 
 
@@ -1322,6 +1428,23 @@ def _run_apply(args: argparse.Namespace) -> int:
         nonlocal cleanup_binding
         cleanup_binding = binding
 
+    def cleanup_committed_apply() -> list[str]:
+        """Consume an applied plan after content/state commit, including partial success."""
+
+        if cleanup_binding is None:
+            return [
+                "could not remove plan artifact directory: cleanup identity was unavailable"
+            ]
+        return cleanup_applied_plan_directory(
+            cleanup_binding.plan_path,
+            state_root=verified.state_root,
+            expected_plan_id=cleanup_binding.plan_id,
+            expected_artifact_hash=cleanup_binding.artifact_hash,
+            expected_namespace=cleanup_binding.namespace,
+            expected_directory_device=cleanup_binding.directory_device,
+            expected_directory_inode=cleanup_binding.directory_inode,
+        )
+
     try:
         summary = run_approved_apply(
             verified,
@@ -1333,6 +1456,17 @@ def _run_apply(args: argparse.Namespace) -> int:
             progress_callback=lambda message: progress.update(message, force=True) if progress.enabled else None,
             cleanup_binding_callback=capture_cleanup_binding,
         )
+    except CatalogRegistrationPartialSuccess as exc:
+        progress.finish()
+        cleanup_warnings = cleanup_committed_apply()
+        for warning in cleanup_warnings:
+            print(f"Warning: {warning}", file=sys.stderr)
+        if args.json:
+            _print_json(exc.summary)
+        else:
+            print_apply_text(exc.summary)
+            print(str(exc), file=sys.stderr)
+        return 2
     except (RuntimeError, AppliedStateError, OSError, ValueError) as exc:
         progress.finish()
         try:
@@ -1344,18 +1478,7 @@ def _run_apply(args: argparse.Namespace) -> int:
     progress.update("apply: cleaning up successful plan", force=True)
     # The binding is captured from the full verification that authorized apply
     # while the namespace lock was held. It is never added to user output.
-    if cleanup_binding is None:
-        cleanup_warnings = ["could not remove plan artifact directory: cleanup identity was unavailable"]
-    else:
-        cleanup_warnings = cleanup_applied_plan_directory(
-            cleanup_binding.plan_path,
-            state_root=verified.state_root,
-            expected_plan_id=cleanup_binding.plan_id,
-            expected_artifact_hash=cleanup_binding.artifact_hash,
-            expected_namespace=cleanup_binding.namespace,
-            expected_directory_device=cleanup_binding.directory_device,
-            expected_directory_inode=cleanup_binding.directory_inode,
-        )
+    cleanup_warnings = cleanup_committed_apply()
     progress.finish()
     for warning in cleanup_warnings:
         print(f"Warning: {warning}", file=sys.stderr)
@@ -1371,20 +1494,165 @@ def _run_retrieve(args: argparse.Namespace) -> int:
     if not query:
         print("A non-empty query is required for retrieval.", file=sys.stderr)
         return 2
-    config = config_from_args(args)
-    options = retrieval_options_from_args(args, config=config, doc_kind=args.doc_kind)
+    namespaces = resolve_retrieval_namespaces(args)
+    if namespaces:
+        base_config = config_from_args(args)
+        configs = [replace(base_config, namespace=namespace) for namespace in namespaces]
+        options = [
+            retrieval_options_from_args(args, config=config, doc_kind=args.doc_kind)
+            for config in configs
+        ]
+        if args.dry_run:
+            plan: RetrievalPlan | MultiNamespaceRetrievalPlan
+            plan = (
+                retrieval_plan(query, config=configs[0], options=options[0])
+                if len(configs) == 1
+                else multi_namespace_retrieval_plan(query, configs=configs, options=options)
+            )
+            if args.json:
+                _print_json(plan.to_dict())
+            else:
+                print_retrieval_text(plan)
+            return 0
+        try:
+            result: RetrievalResult | MultiNamespaceRetrievalResult
+            result = (
+                HybridRetriever.from_config(configs[0]).retrieve(query, options[0])
+                if len(configs) == 1
+                else MultiNamespaceRetriever.from_configs(configs).retrieve(query, options)
+            )
+        except RuntimeError as exc:
+            print(f"Retrieval failed: {exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            _print_json(result.to_dict())
+        else:
+            print_retrieval_text(result)
+        return 0
+
+    api_key = os.environ.get("TURBOPUFFER_API_KEY")
+    if not api_key:
+        print("TURBOPUFFER_API_KEY must be set for automatic routing.", file=sys.stderr)
+        return 2
+    try:
+        evidence_calibration = load_evidence_calibration()
+    except EvidenceCalibrationError as exc:
+        print(f"Automatic evidence assessment failed: {exc}", file=sys.stderr)
+        return 2
+    base_config = config_from_args(args)
+    compatibility = CompatibilityContract(
+        region=base_config.region,
+        embedding_model=base_config.embedding_model,
+        embedding_precision=base_config.embedding_precision,
+    )
+    try:
+        client = REMOTE_CATALOG_CLIENT_FACTORY(
+            api_key=api_key,
+            region=base_config.region,
+        )
+        snapshot = read_remote_catalog(
+            client,
+            region=base_config.region,
+            compatibility=compatibility,
+        )
+        snapshot = require_complete_routing_coverage(snapshot)
+        snapshot = require_eligible(snapshot)
+        route_embedder = ROUTING_EMBEDDER_FACTORY()
+        exclusion_ids = {
+            "missing_card": list(snapshot.missing_card_ids),
+            "stale_target": list(snapshot.stale_target_ids),
+            "disabled": list(snapshot.disabled_ids),
+            "incompatible": list(snapshot.incompatible_ids),
+        }
+        routing = hybrid_route(
+            query,
+            snapshot.eligible_cards,
+            embedder=route_embedder,
+            route_top_k=DEFAULT_ROUTE_TOP_K,
+            catalog_namespace=REMOTE_CATALOG_NAMESPACE,
+            region=base_config.region,
+            snapshot_revision=snapshot.snapshot_revision,
+            exclusion_counts={
+                key: len(values) for key, values in exclusion_ids.items() if values
+            },
+            exclusion_ids={
+                key: values for key, values in exclusion_ids.items() if values
+            },
+            remote_counts={
+                "listed_total": snapshot.counts.listed_total,
+                "control_plane_count": snapshot.counts.control_plane_count,
+                "content_live_count": snapshot.counts.content_live_count,
+                "card_count": snapshot.counts.card_count,
+                "stale_target_count": snapshot.counts.stale_target_count,
+                "missing_card_count": snapshot.counts.missing_card_count,
+                "disabled_count": snapshot.counts.disabled_count,
+                "incompatible_count": snapshot.counts.incompatible_count,
+                "eligible_count": snapshot.counts.eligible_count,
+            },
+            read_metrics={
+                "namespace_list_pages": snapshot.metrics.namespace_list_pages,
+                "metadata_requests": snapshot.metrics.metadata_requests,
+                "card_query_pages": snapshot.metrics.card_query_pages,
+                "billing": list(snapshot.metrics.billing),
+            },
+        )
+    except (RemoteCatalogError, CatalogError, AutomaticRoutingError, RuntimeError) as exc:
+        print(f"Automatic routing failed: {exc}", file=sys.stderr)
+        return 2
+
+    configs = [
+        replace(
+            base_config,
+            namespace=card.namespace,
+            region=card.region,
+            embedding_model=card.embedding_model,
+            embedding_precision=card.embedding_precision,
+        )
+        for card in routing.selected_cards
+    ]
+    options = [
+        routed_retrieval_options_from_args(args, card=card)
+        for card in routing.selected_cards
+    ]
     if args.dry_run:
-        plan = retrieval_plan(query, config=config, options=options)
+        plan = RoutedRetrievalPlan(
+            plan=multi_namespace_retrieval_plan(
+                query,
+                configs=configs,
+                options=options,
+                initial_fanout=routing.initial_fanout,
+            ),
+            routing=routing,
+            evidence=automatic_evidence_plan(evidence_calibration),
+        )
         if args.json:
             _print_json(plan.to_dict())
         else:
             print_retrieval_text(plan)
         return 0
-
     try:
-        result = HybridRetriever.from_config(config).retrieve(query, options)
+        top_route_entry = routing.entries[0]
+        retrieval_kwargs: dict[str, object] = {
+            "initial_fanout": routing.initial_fanout,
+            "evidence_assessor": CalibratedEvidenceAssessor(
+                evidence_calibration
+            ),
+            "evidence_route_context": EvidenceRouteContext(
+                selection_reason=routing.selection_reason,
+                semantic_score=top_route_entry.semantic_score,
+                semantic_margin=routing.semantic_margin,
+            ),
+        }
+        result = RoutedRetrievalResult(
+            result=MultiNamespaceRetriever.from_configs(configs).retrieve(
+                query,
+                options,
+                **retrieval_kwargs,
+            ),
+            routing=routing,
+        )
     except RuntimeError as exc:
-        print(f"Retrieval failed for namespace {config.namespace!r}: {exc}", file=sys.stderr)
+        print(f"Multi-corpus retrieval failed: {exc}", file=sys.stderr)
         return 2
     if args.json:
         _print_json(result.to_dict())
@@ -1703,38 +1971,146 @@ def print_apply_text(payload: dict[str, object], *, stream: TextIO | None = None
         label = "next retrieval step" if approved else "retrieval after successful apply"
         emit(f"  {label} (preview): {commands['preview']}")
         emit(f"  {label} (live): {commands['live']}")
+    if approved or "catalog_registration" in payload:
+        if payload.get("catalog_registered"):
+            emit(
+                "  routing catalog: "
+                f"{payload.get('catalog_mutation_status')} in {payload.get('catalog_namespace')}; "
+                f"enabled={payload.get('catalog_enabled_state')}"
+            )
+        elif payload.get("partial_success"):
+            emit("  routing catalog: registration failed after content/state commit")
+            if payload.get("catalog_repair_command"):
+                emit(f"  routing catalog repair: {payload['catalog_repair_command']}")
+        else:
+            emit("  routing catalog: preview only; registration follows a successful approved apply")
     if payload.get("confirmation_pending"):
         emit("  live: confirmation required at the prompt below")
     elif not approved:
         emit("  live: rerun without --dry-run for interactive confirmation, or pass --approve for automation")
 
 
-def print_retrieval_text(output: RetrievalPlan | RetrievalResult) -> None:
+def print_retrieval_text(
+    output: RetrievalPlan | RetrievalResult | MultiNamespaceRetrievalPlan | MultiNamespaceRetrievalResult | RoutedRetrievalPlan | RoutedRetrievalResult,
+) -> None:
     payload = output.to_dict()
     if payload.get("dry_run"):
-        print("Retrieval plan (dry-run; no credentials, embeddings, or turbopuffer API calls):")
-        print(f"  query: {payload['query']}")
-        print(f"  namespace: {payload['namespace']} ({payload['region']})")
+        if "namespace" in payload:
+            print("Retrieval plan (dry-run; no credentials, embeddings, or turbopuffer API calls):")
+            print(f"  query: {payload['query']}")
+            print(f"  namespace: {payload['namespace']} ({payload['region']})")
+        else:
+            routing = payload.get("routing") if isinstance(payload.get("routing"), dict) else {}
+            automatic_routing = bool(routing.get("active"))
+            mode = "automatic" if automatic_routing else "explicit multi-namespace"
+            print(f"{mode.title()} retrieval plan:")
+            print(f"  query: {payload['query']}")
+            namespaces = payload.get("namespaces", [])
+            rendered_namespaces = (
+                ", ".join(str(value) for value in namespaces)
+                if isinstance(namespaces, list)
+                else str(namespaces)
+            )
+            print(f"  namespaces: {rendered_namespaces} ({payload['region']})")
+            if automatic_routing:
+                print(
+                    "  route: "
+                    f"reason={routing.get('selection_reason')}; "
+                    f"initial_fanout={routing.get('initial_fanout')}; "
+                    f"high_confidence={routing.get('high_confidence')}; "
+                    f"margin={routing.get('semantic_margin')}"
+                )
+                print("  provider work: routing catalog was read; content was not queried")
+                evidence = payload.get("evidence")
+                if isinstance(evidence, dict):
+                    print(
+                        "  evidence: "
+                        f"mode={evidence.get('mode')}; "
+                        f"threshold={evidence.get('threshold')}; "
+                        "the gate runs during automatic live retrieval"
+                    )
         print(f"  embedding_model: {payload['embedding_model']}")
         print(f"  embedding_precision: {payload['embedding_precision']}")
         print(f"  top_k: {payload['top_k']}; candidates per subquery: {payload['candidates']}")
-        print(
-            "  ranking: "
-            f"mode={payload.get('ranking_mode')}; "
-            f"profile={payload.get('ranking_profile')}; "
-            f"pool={payload.get('ranking_pool')}; "
-            f"aggregation={payload.get('ranking_aggregation')}"
-        )
-        print("  hybrid: ANN over vector + boosted BM25 over title/section_path/content + RRF")
+        namespace_plans = payload.get("namespace_plans")
+        if isinstance(namespace_plans, list):
+            for namespace_plan in namespace_plans:
+                if not isinstance(namespace_plan, dict):
+                    continue
+                print(
+                    f"  ranking[{namespace_plan.get('namespace')}]: "
+                    f"mode={namespace_plan.get('ranking_mode')}; "
+                    f"profile={namespace_plan.get('ranking_profile')}; "
+                    f"pool={namespace_plan.get('ranking_pool')}; "
+                    f"aggregation={namespace_plan.get('ranking_aggregation')}"
+                )
+        else:
+            print(
+                "  ranking: "
+                f"mode={payload.get('ranking_mode')}; "
+                f"profile={payload.get('ranking_profile')}; "
+                f"pool={payload.get('ranking_pool')}; "
+                f"aggregation={payload.get('ranking_aggregation')}"
+            )
+        print("  hybrid: ANN over vector + boosted BM25 over title/section_path/content + RRF per namespace")
         print("  live: omit --dry-run/--plan to execute; TURBOPUFFER_API_KEY is read from the environment only")
         return
 
     hits = payload.get("hits", [])
-    print(
-        f"Retrieved {len(hits)} chunks from {payload['namespace']} using {payload.get('fusion')} "
-        f"with ranking mode={payload.get('ranking_mode')} profile={payload.get('ranking_profile')} "
-        f"aggregation={payload.get('ranking_aggregation')}:"
+    evidence = payload.get("evidence")
+    evidence_status = (
+        str(evidence.get("status")) if isinstance(evidence, dict) else ""
     )
+    if evidence_status == "no_relevant_evidence":
+        print("No sufficiently relevant evidence was found in the indexed corpora.")
+        print(f"  searched namespaces: {payload.get('namespaces', [])}")
+        return
+    if evidence_status == "inconclusive":
+        print(
+            "The retrieved evidence was insufficient, but one or more corpus "
+            "searches failed, so the result is inconclusive."
+        )
+        print(f"  searched namespaces: {payload.get('namespaces', [])}")
+        print(f"  namespace failures: {payload.get('namespace_failures', [])}")
+        return
+    if "namespace" in payload:
+        print(
+            f"Retrieved {len(hits)} chunks from {payload['namespace']} using {payload.get('fusion')} "
+            f"with ranking mode={payload.get('ranking_mode')} profile={payload.get('ranking_profile')} "
+            f"aggregation={payload.get('ranking_aggregation')}:"
+        )
+    else:
+        print(
+            f"Retrieved {len(hits)} chunks across {payload.get('namespaces', [])} "
+            f"using {payload.get('fusion')}:"
+        )
+        reranker = payload.get("reranker") or payload.get("reranking")
+        if isinstance(reranker, dict):
+            print(
+                "  reranker: "
+                f"applied={reranker.get('applied')}; model={reranker.get('model')}; "
+                f"candidates={reranker.get('candidates_after_dedupe', reranker.get('candidate_count'))}"
+            )
+        if payload.get("incomplete"):
+            print(f"  warning: partial namespace failures: {payload.get('namespace_failures', [])}")
+        if isinstance(evidence, dict):
+            if evidence_status == "unassessed":
+                print(
+                    "  evidence: scores collected; no calibrated relevance "
+                    "decision is active"
+                )
+            elif evidence_status == "assessment_failed":
+                print(
+                    "  evidence warning: assessment failed; results were "
+                    "preserved because abstention is not active"
+                )
+            elif evidence_status.startswith("would_"):
+                print(
+                    "  evidence shadow: "
+                    f"{evidence_status}; current hits were preserved"
+                )
+            elif evidence_status == "supported":
+                print("  evidence: supported by the provisional relevance gate")
     print(f"  embedding_precision: {payload['embedding_precision']}")
     for index, hit in enumerate(hits, start=1):
         if not isinstance(hit, dict):
@@ -1743,6 +2119,8 @@ def print_retrieval_text(output: RetrievalPlan | RetrievalResult) -> None:
         url = hit.get("url") or "no URL"
         section_path = hit.get("section_path") or ""
         print(f"\n{index}. {title}")
+        if hit.get("namespace"):
+            print(f"   Corpus: {hit['namespace']}")
         print(f"   URL: {url}")
         if section_path:
             print(f"   Section: {section_path}")

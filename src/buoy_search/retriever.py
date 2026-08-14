@@ -7,13 +7,33 @@ explicitly opted into a live turbopuffer query.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass, field, replace
+import hashlib
+import math
 import os
 import re
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Callable, Literal, Mapping, Protocol, Sequence
+import unicodedata
 
 from buoy_search.config import RuntimeConfig
 from buoy_search.chunker import SentenceTransformerEmbedder
+from buoy_search.cross_encoder import (
+    CROSS_ENCODER_MODEL,
+    CROSS_ENCODER_REVISION,
+    CrossEncoderReranker,
+    CrossEncoderRerankerError,
+    load_cross_encoder_reranker,
+)
+from buoy_search.evidence import (
+    EvidenceCalibration,
+    EvidenceCalibrationError,
+    EvidenceDecision as CalibratedEvidenceDecision,
+    NON_COLLECT_ACTIVATION_PAUSED_MESSAGE,
+    OWNER_AUTHORIZED_ACTIVE_CALIBRATION,
+    decide_evidence,
+    observe_evidence_scores,
+)
 
 DEFAULT_TOP_K = 5
 DEFAULT_CANDIDATES = 200
@@ -29,6 +49,49 @@ RANKING_MODES = {"chunk", "file", "page"}
 RANKING_PROFILES = {"none", "repo_code"}
 RANKING_AGGREGATIONS = {"max", "adaptive_sum_3", "capped_sum_3"}
 RRF_K = 60
+MAX_NAMESPACE_FANOUT = 3
+MAX_RERANK_CANDIDATES_PER_NAMESPACE = 8
+EVIDENCE_ASSESSMENT_TOP_K = 5
+EVIDENCE_PUBLIC_DIAGNOSTIC_FIELDS = frozenset(
+    {
+        "mode",
+        "status",
+        "reason",
+        "model",
+        "model_revision",
+        "calibration_id",
+        "calibration_revision",
+        "feature_contract",
+        "threshold",
+        "widening_triggered_by_weak_evidence",
+        "top_score",
+        "second_score",
+        "score_gap",
+        "candidates_scored",
+        "route_selection_reason",
+        "route_semantic_score",
+        "route_semantic_margin",
+        "namespace_failure_count",
+    }
+)
+CROSS_NAMESPACE_RRF_K = 60
+CROSS_NAMESPACE_FUSION_METHOD = "equal_weight_ordinal_rrf"
+CROSS_NAMESPACE_FUSION = "cross_namespace_equal_weight_ordinal_rrf"
+CROSS_NAMESPACE_FUSION_COMPONENTS = (
+    "cross_encoder_rank",
+    "namespace_rank",
+)
+CROSS_NAMESPACE_FUSION_TIE_BREAKERS = (
+    "cross_encoder_rank",
+    "route_rank",
+    "namespace_rank",
+    "namespace",
+    "id",
+)
+MAX_RERANK_TITLE_CHARS = 512
+MAX_RERANK_SECTION_CHARS = 1_024
+MAX_RERANK_LOCATION_CHARS = 2_048
+MAX_RERANK_CONTENT_CHARS = 8_192
 AGENT_ARTIFACT_PATH_SEGMENTS = {".10x", ".agents", ".buoy", ".claude", ".cursor", ".loom", ".pi", ".turbo-search"}
 RETRIEVAL_ATTRIBUTES = [
     "title",
@@ -91,6 +154,110 @@ class Embedder(Protocol):
 
 
 @dataclass(frozen=True)
+class EvidenceRouteContext:
+    """Routing facts bound to one automatic evidence assessment."""
+
+    selection_reason: str
+    semantic_score: float | None
+    semantic_margin: float | None
+
+
+class EvidenceDecisionLike(Protocol):
+    """Structural decision contract supplied by the calibration boundary."""
+
+    @property
+    def is_weak(self) -> bool | None:
+        """Return whether the observation is weak, or unknown in collect mode."""
+
+    @property
+    def status(self) -> str:
+        """Return the governed public evidence status."""
+
+    def to_dict(self) -> dict[str, object]:
+        """Return content-free public evidence diagnostics."""
+
+
+class EvidenceAssessor(Protocol):
+    """Injected automatic-only evidence scoring and calibration boundary."""
+
+    @property
+    def mode(self) -> str:
+        """Return collect, shadow, or active."""
+
+    def assess(
+        self,
+        *,
+        query: str,
+        hits: Sequence[SearchHit],
+        existing_scores: Sequence[float] | None,
+        route_context: EvidenceRouteContext,
+        namespace_failure_count: int,
+        widening_triggered_by_weak_evidence: bool,
+    ) -> EvidenceDecisionLike:
+        """Assess the exact ordered candidate set without changing its ranking."""
+
+
+class CalibratedEvidenceAssessor:
+    """Score exact automatic hits and apply one validated calibration artifact."""
+
+    def __init__(
+        self,
+        calibration: EvidenceCalibration,
+        *,
+        reranker_loader: Callable[[], CrossEncoderReranker] | None = None,
+    ) -> None:
+        if calibration.mode not in {"collect", "active"} or (
+            calibration.mode == "active"
+            and calibration != OWNER_AUTHORIZED_ACTIVE_CALIBRATION
+        ):
+            raise EvidenceCalibrationError(NON_COLLECT_ACTIVATION_PAUSED_MESSAGE)
+        self._calibration = calibration
+        self._reranker_loader = reranker_loader
+
+    @property
+    def mode(self) -> str:
+        return self._calibration.mode
+
+    def assess(
+        self,
+        *,
+        query: str,
+        hits: Sequence[SearchHit],
+        existing_scores: Sequence[float] | None,
+        route_context: EvidenceRouteContext,
+        namespace_failure_count: int,
+        widening_triggered_by_weak_evidence: bool,
+    ) -> CalibratedEvidenceDecision:
+        if existing_scores is None:
+            loader = self._reranker_loader or load_cross_encoder_reranker
+            reranker = loader()
+            scores = reranker.score(
+                query,
+                [cross_encoder_passage(hit) for hit in hits],
+            )
+        else:
+            scores = list(existing_scores)
+        if len(scores) != len(hits):
+            raise CrossEncoderRerankerError(
+                "pinned evidence scorer returned the wrong number of scores"
+            )
+        observation = observe_evidence_scores(
+            scores,
+            route_selection_reason=route_context.selection_reason,
+            route_semantic_score=route_context.semantic_score,
+            route_semantic_margin=route_context.semantic_margin,
+            namespace_failure_count=namespace_failure_count,
+        )
+        return decide_evidence(
+            self._calibration,
+            observation,
+            widening_triggered_by_weak_evidence=(
+                widening_triggered_by_weak_evidence
+            ),
+        )
+
+
+@dataclass(frozen=True)
 class RetrievalOptions:
     """Validated knobs for hybrid retrieval."""
 
@@ -136,6 +303,7 @@ class SearchHit:
     score_info: dict[str, object] = field(default_factory=dict)
     doc_kind: str = ""
     chunk_index: int | None = None
+    namespace: str = ""
 
     def to_dict(self, *, include_content: bool = True) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -154,6 +322,8 @@ class SearchHit:
             payload["doc_kind"] = self.doc_kind
         if self.chunk_index is not None:
             payload["chunk_index"] = self.chunk_index
+        if self.namespace:
+            payload["namespace"] = self.namespace
         return payload
 
 
@@ -201,6 +371,149 @@ class RetrievalResult:
             "fusion": self.fusion,
             "hits": [hit.to_dict() for hit in self.hits],
         }
+
+
+@dataclass(frozen=True)
+class NamespaceRetrievalFailure:
+    """Redacted failure for one attempted content namespace."""
+
+    namespace: str
+    route_rank: int
+    message: str = "Content retrieval failed for this namespace."
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "namespace": self.namespace,
+            "route_rank": self.route_rank,
+            "status": "failed",
+            "error": "namespace_retrieval_failed",
+            "message": self.message,
+        }
+
+
+@dataclass(frozen=True)
+class RetrievalFallback:
+    """One bounded widening decision made after an initial one-namespace route."""
+
+    widened: bool = False
+    reason: Literal["empty_top1", "failed_top1", "weak_top1"] | None = None
+    initial_namespaces: tuple[str, ...] = ()
+    added_namespaces: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "widened": self.widened,
+            "reason": self.reason,
+            "initial_namespaces": list(self.initial_namespaces),
+            "added_namespaces": list(self.added_namespaces),
+        }
+
+
+@dataclass(frozen=True)
+class CrossNamespaceReranking:
+    """Public accounting for the bounded local global-ranking step."""
+
+    applied: bool
+    candidates_before_dedupe: int
+    candidates_after_dedupe: int
+    model: str = CROSS_ENCODER_MODEL
+    revision: str = CROSS_ENCODER_REVISION
+    method: str | None = None
+    rrf_k: int | None = None
+    components: tuple[str, ...] = ()
+    tie_breakers: tuple[str, ...] = ()
+    namespace_coverage_possible: bool | None = None
+    namespace_coverage_required: tuple[str, ...] = ()
+    namespace_coverage_promoted: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "applied": self.applied,
+            "model": self.model,
+            "revision": self.revision,
+            "candidates_before_dedupe": self.candidates_before_dedupe,
+            "candidates_after_dedupe": self.candidates_after_dedupe,
+            "method": self.method,
+            "rrf_k": self.rrf_k,
+            "components": list(self.components),
+            "tie_breakers": list(self.tie_breakers),
+            "namespace_coverage": {
+                "enabled": self.applied,
+                "possible": self.namespace_coverage_possible,
+                "applied": bool(self.namespace_coverage_promoted),
+                "required_namespaces": list(self.namespace_coverage_required),
+                "promoted_namespaces": list(self.namespace_coverage_promoted),
+            },
+        }
+
+
+@dataclass(frozen=True)
+class MultiNamespaceRetrievalResult:
+    """Structured retrieval result across a bounded ordered namespace route."""
+
+    query: str
+    hits: list[SearchHit]
+    region: str
+    namespaces: list[str]
+    embedding_model: str
+    embedding_precision: str
+    top_k: int
+    candidates: int
+    namespace_results: list[RetrievalResult]
+    namespace_route_ranks: dict[str, int]
+    failures: list[NamespaceRetrievalFailure]
+    fallback: RetrievalFallback
+    reranking: CrossNamespaceReranking
+    incomplete: bool
+    fusion: str
+    evidence: dict[str, object] | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "command": "retrieve",
+            "dry_run": False,
+            "credentials_required": True,
+            "turbopuffer_api_calls": True,
+            "api_calls_occurred": True,
+            "content_retrieval_occurred": True,
+            "query": self.query,
+            "region": self.region,
+            "namespaces": list(self.namespaces),
+            "embedding_model": self.embedding_model,
+            "embedding_precision": self.embedding_precision,
+            "top_k": self.top_k,
+            "candidates": self.candidates,
+            "fusion": self.fusion,
+            "routing": {
+                "active": False,
+                "mode": "explicit",
+                "selected_namespaces": list(self.namespaces),
+                "initial_fanout": len(self.fallback.initial_namespaces),
+                "max_fanout": len(self.namespaces),
+            },
+            "incomplete": self.incomplete,
+            "fallback": self.fallback.to_dict(),
+            "reranking": self.reranking.to_dict(),
+            "namespace_results": [
+                {
+                    "namespace": result.namespace,
+                    "route_rank": self.namespace_route_ranks[result.namespace],
+                    "status": "ok",
+                    "fusion": result.fusion,
+                    "ranking_mode": result.ranking_mode,
+                    "ranking_profile": result.ranking_profile,
+                    "ranking_pool": result.ranking_pool,
+                    "ranking_aggregation": result.ranking_aggregation,
+                    "hit_count": len(result.hits),
+                }
+                for result in self.namespace_results
+            ],
+            "namespace_failures": [failure.to_dict() for failure in self.failures],
+            "hits": [hit.to_dict() for hit in self.hits],
+        }
+        if self.evidence is not None:
+            payload["evidence"] = dict(self.evidence)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -258,6 +571,74 @@ class RetrievalPlan:
         }
 
 
+@dataclass(frozen=True)
+class MultiNamespaceRetrievalPlan:
+    """Safe no-content-query plan for a bounded explicit namespace set."""
+
+    query: str
+    plans: list[RetrievalPlan]
+    initial_fanout: int | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        first = self.plans[0]
+        initial_fanout = self.initial_fanout or len(self.plans)
+        return {
+            "command": "retrieve",
+            "dry_run": True,
+            "plan": True,
+            "credentials_required": False,
+            "turbopuffer_api_calls": False,
+            "api_calls_occurred": False,
+            "query": self.query,
+            "region": first.config.region,
+            "content_retrieval_occurred": False,
+            "namespaces": [plan.config.namespace for plan in self.plans],
+            "embedding_model": first.config.embedding_model,
+            "embedding_precision": first.config.embedding_precision,
+            "top_k": first.options.top_k,
+            "candidates": first.options.candidates,
+            "fusion": CROSS_NAMESPACE_FUSION,
+            "initial_fanout": initial_fanout,
+            "max_fanout": len(self.plans),
+            "routing": {
+                "active": False,
+                "mode": "explicit",
+                "selected_namespaces": [
+                    plan.config.namespace for plan in self.plans
+                ],
+                "initial_fanout": initial_fanout,
+                "max_fanout": len(self.plans),
+            },
+            "reranking": {
+                "conditional": True,
+                "model": CROSS_ENCODER_MODEL,
+                "revision": CROSS_ENCODER_REVISION,
+                "method": CROSS_NAMESPACE_FUSION_METHOD,
+                "rrf_k": CROSS_NAMESPACE_RRF_K,
+                "components": list(CROSS_NAMESPACE_FUSION_COMPONENTS),
+                "tie_breakers": list(CROSS_NAMESPACE_FUSION_TIE_BREAKERS),
+                "max_candidates_per_namespace": MAX_RERANK_CANDIDATES_PER_NAMESPACE,
+                "max_candidates": len(self.plans)
+                * MAX_RERANK_CANDIDATES_PER_NAMESPACE,
+            },
+            "namespace_plans": [
+                {
+                    "namespace": plan.config.namespace,
+                    "route_rank": route_rank,
+                    "ranking_mode": plan.options.ranking_mode,
+                    "ranking_profile": plan.options.ranking_profile,
+                    "ranking_pool": plan.options.ranking_pool,
+                    "ranking_aggregation": plan.options.ranking_aggregation,
+                    "retrieval": plan.to_dict()["retrieval"],
+                }
+                for route_rank, plan in enumerate(self.plans, start=1)
+            ],
+            "live_execution": (
+                "omit --dry-run/--plan to embed once and query at most three selected namespaces"
+            ),
+        }
+
+
 class HybridRetriever:
     """Small wrapper around query embedding and turbopuffer multi-query."""
 
@@ -285,7 +666,12 @@ class HybridRetriever:
         embedder = SentenceTransformerEmbedder(
             config.embedding_model, precision=config.embedding_precision
         )
-        namespace = build_namespace(config=config, api_key=api_key)
+        try:
+            namespace = build_namespace(config=config, api_key=api_key)
+        except Exception:
+            raise RuntimeError(
+                f"Could not prepare namespace {config.namespace!r}."
+            ) from None
         return cls(namespace=namespace, embedder=embedder, config=config)
 
     def retrieve(self, query: str, options: RetrievalOptions) -> RetrievalResult:
@@ -323,7 +709,7 @@ class HybridRetriever:
                     missing_attribute not in OPTIONAL_RETRIEVAL_ATTRIBUTES
                     or missing_attribute not in include_attributes
                 ):
-                    raise ProviderCallError(user_friendly_query_error(exc)) from exc
+                    raise ProviderCallError(user_friendly_query_error(exc)) from None
                 include_attributes = [
                     attribute
                     for attribute in include_attributes
@@ -346,7 +732,7 @@ class HybridRetriever:
                     ][:ranking_pool]
                 hits = rank_hits(hits, options=options, query=query)[: options.top_k]
         except Exception as exc:
-            raise ProviderCallError(user_friendly_query_error(exc)) from exc
+            raise ProviderCallError(user_friendly_query_error(exc)) from None
         return RetrievalResult(
             query=query,
             hits=hits,
@@ -365,8 +751,820 @@ class HybridRetriever:
         )
 
 
+@dataclass(frozen=True)
+class _NamespaceRetrievalTarget:
+    route_rank: int
+    retriever: HybridRetriever
+    options: RetrievalOptions
+
+    @property
+    def namespace(self) -> str:
+        return self.retriever._config.namespace
+
+
+@dataclass(frozen=True)
+class _NamespaceRetrievalOutcome:
+    target: _NamespaceRetrievalTarget
+    result: RetrievalResult | None = None
+    failure: NamespaceRetrievalFailure | None = None
+
+
+@dataclass(frozen=True)
+class _RerankCandidate:
+    hit: SearchHit
+    route_rank: int
+    namespace_rank: int
+    duplicate_namespaces: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _FusedRerankCandidate:
+    candidate: _RerankCandidate
+    cross_encoder_score: float
+    cross_encoder_rank: int
+    cross_encoder_rrf_score: float
+    namespace_rrf_score: float
+    fusion_score: float
+    namespace_coverage_promoted: bool = False
+
+
+class MultiNamespaceRetriever:
+    """Embed once and query/rerank a bounded ordered namespace route."""
+
+    def __init__(
+        self,
+        *,
+        retrievers: list[HybridRetriever],
+        embedder: Embedder,
+        reranker_loader: Callable[[], CrossEncoderReranker] | None = None,
+    ) -> None:
+        if not retrievers:
+            raise ValueError("at least one namespace retriever is required")
+        if len(retrievers) > MAX_NAMESPACE_FANOUT:
+            raise ValueError(
+                f"at most {MAX_NAMESPACE_FANOUT} namespace retrievers are allowed"
+            )
+        namespaces = [retriever._config.namespace for retriever in retrievers]
+        if len(namespaces) != len(set(namespaces)):
+            raise ValueError("namespace retrievers must be unique")
+        first = retrievers[0]._config
+        contract = (first.region, first.embedding_model, first.embedding_precision)
+        if any(
+            (
+                retriever._config.region,
+                retriever._config.embedding_model,
+                retriever._config.embedding_precision,
+            )
+            != contract
+            for retriever in retrievers[1:]
+        ):
+            raise ValueError(
+                "all selected namespaces must use one region, embedding model, and precision"
+            )
+        self._retrievers = list(retrievers)
+        self._embedder = embedder
+        self._reranker_loader = reranker_loader
+
+    @classmethod
+    def from_configs(cls, configs: Sequence[RuntimeConfig]) -> "MultiNamespaceRetriever":
+        if not configs:
+            raise ValueError("at least one namespace config is required")
+        if len(configs) > MAX_NAMESPACE_FANOUT:
+            raise ValueError(f"at most {MAX_NAMESPACE_FANOUT} namespace configs are allowed")
+        first = configs[0]
+        contract = (first.region, first.embedding_model, first.embedding_precision)
+        if any(
+            (config.region, config.embedding_model, config.embedding_precision) != contract
+            for config in configs[1:]
+        ):
+            raise ValueError(
+                "all selected namespaces must use one region, embedding model, and precision"
+            )
+        namespaces = [config.namespace for config in configs]
+        if len(namespaces) != len(set(namespaces)):
+            raise ValueError("namespace configs must be unique")
+        api_key = os.environ.get("TURBOPUFFER_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "TURBOPUFFER_API_KEY must be set in the environment for live retrieval. "
+                "Use `retrieve --dry-run` or `retrieve --plan` to inspect the plan without credentials."
+            )
+        embedder = SentenceTransformerEmbedder(
+            first.embedding_model, precision=first.embedding_precision
+        )
+        retrievers: list[HybridRetriever] = []
+        for config in configs:
+            try:
+                namespace = build_namespace(config=config, api_key=api_key)
+            except Exception:
+                raise RuntimeError(
+                    f"Could not prepare namespace {config.namespace!r}."
+                ) from None
+            retrievers.append(
+                HybridRetriever(namespace=namespace, embedder=embedder, config=config)
+            )
+        return cls(retrievers=retrievers, embedder=embedder)
+
+    def retrieve(
+        self,
+        query: str,
+        options: Sequence[RetrievalOptions],
+        *,
+        initial_fanout: int | None = None,
+        evidence_assessor: EvidenceAssessor | None = None,
+        evidence_route_context: EvidenceRouteContext | None = None,
+    ) -> MultiNamespaceRetrievalResult:
+        if (evidence_assessor is None) != (evidence_route_context is None):
+            raise ValueError(
+                "evidence_assessor and evidence_route_context must be supplied together"
+            )
+        evidence_mode = (
+            _validated_evidence_mode(evidence_assessor.mode)
+            if evidence_assessor is not None
+            else None
+        )
+        if len(options) != len(self._retrievers):
+            raise ValueError("one retrieval option set is required per namespace")
+        first_options = options[0]
+        global_contract = (
+            first_options.top_k,
+            first_options.candidates,
+            first_options.doc_kind,
+        )
+        if any(
+            (item.top_k, item.candidates, item.doc_kind) != global_contract
+            for item in options[1:]
+        ):
+            raise ValueError(
+                "all selected namespaces must use one top_k, candidates, and doc_kind contract"
+            )
+        requested_fanout = len(self._retrievers) if initial_fanout is None else initial_fanout
+        if type(requested_fanout) is not int or not 1 <= requested_fanout <= len(
+            self._retrievers
+        ):
+            raise ValueError(
+                "initial_fanout must be between one and the selected namespace count"
+            )
+
+        cleaned_query = query.strip()
+        if not cleaned_query:
+            raise RuntimeError("A non-empty query is required for retrieval.")
+        vectors = self._embedder.encode([cleaned_query])
+        if not vectors or not vectors[0]:
+            raise RuntimeError("The embedding model returned no vector for the query.")
+
+        targets = [
+            _NamespaceRetrievalTarget(
+                route_rank=route_rank,
+                retriever=retriever,
+                options=namespace_options,
+            )
+            for route_rank, (retriever, namespace_options) in enumerate(
+                zip(self._retrievers, options, strict=True), start=1
+            )
+        ]
+        reranker: CrossEncoderReranker | None = None
+        if requested_fanout > 1:
+            reranker = self._load_reranker()
+        initial_targets = targets[:requested_fanout]
+        outcomes = self._retrieve_batch(
+            initial_targets,
+            query=cleaned_query,
+            query_vector=vectors[0],
+            multi_namespace=requested_fanout > 1,
+            single_namespace_top_k=first_options.top_k,
+        )
+        fallback = RetrievalFallback(
+            initial_namespaces=tuple(target.namespace for target in initial_targets)
+        )
+        evidence_payload: dict[str, object] | None = None
+        weak_evidence_widening_triggered = False
+
+        if requested_fanout == 1 and len(targets) > 1:
+            first_outcome = outcomes[0]
+            should_widen = first_outcome.failure is not None or not (
+                first_outcome.result and first_outcome.result.hits
+            )
+            fallback_reason: Literal[
+                "empty_top1", "failed_top1", "weak_top1"
+            ] = (
+                "failed_top1"
+                if first_outcome.failure is not None
+                else "empty_top1"
+            )
+            if not should_widen and evidence_assessor is not None:
+                initial_hits, _initial_reranking = cross_namespace_rerank(
+                    cleaned_query,
+                    [first_outcome],
+                    top_k=min(EVIDENCE_ASSESSMENT_TOP_K, first_options.top_k),
+                    reranker=None,
+                )
+                initial_decision, evidence_payload = _assess_retrieval_evidence(
+                    evidence_assessor,
+                    query=cleaned_query,
+                    hits=initial_hits[:EVIDENCE_ASSESSMENT_TOP_K],
+                    route_context=evidence_route_context,
+                    namespace_failure_count=0,
+                    weak_evidence_widening_triggered=False,
+                )
+                if initial_decision is not None and initial_decision.is_weak is True:
+                    should_widen = True
+                    fallback_reason = "weak_top1"
+                    weak_evidence_widening_triggered = True
+                    evidence_payload = None
+            if should_widen:
+                reranker = self._load_reranker()
+                added_targets = targets[1:MAX_NAMESPACE_FANOUT]
+                fallback = RetrievalFallback(
+                    widened=True,
+                    reason=fallback_reason,
+                    initial_namespaces=(first_outcome.target.namespace,),
+                    added_namespaces=tuple(target.namespace for target in added_targets),
+                )
+                outcomes.extend(
+                    self._retrieve_batch(
+                        added_targets,
+                        query=cleaned_query,
+                        query_vector=vectors[0],
+                        multi_namespace=True,
+                        single_namespace_top_k=first_options.top_k,
+                    )
+                )
+
+        outcomes.sort(key=lambda outcome: outcome.target.route_rank)
+        successful = [outcome for outcome in outcomes if outcome.result is not None]
+        failures = [
+            outcome.failure for outcome in outcomes if outcome.failure is not None
+        ]
+        if not successful:
+            attempted = ", ".join(repr(outcome.target.namespace) for outcome in outcomes)
+            raise ProviderCallError(
+                f"Retrieval failed for every attempted namespace: {attempted}."
+            )
+
+        hits, reranking = cross_namespace_rerank(
+            cleaned_query,
+            successful,
+            top_k=first_options.top_k,
+            reranker=reranker,
+        )
+        if evidence_assessor is not None:
+            assessment_hits = hits[:EVIDENCE_ASSESSMENT_TOP_K]
+            if evidence_payload is None:
+                decision, evidence_payload = _assess_retrieval_evidence(
+                    evidence_assessor,
+                    query=cleaned_query,
+                    hits=assessment_hits,
+                    route_context=evidence_route_context,
+                    namespace_failure_count=len(failures),
+                    weak_evidence_widening_triggered=(
+                        weak_evidence_widening_triggered
+                    ),
+                )
+                if (
+                    decision is not None
+                    and evidence_mode == "active"
+                    and decision.status in {"no_relevant_evidence", "inconclusive"}
+                ):
+                    hits = []
+        first_config = self._retrievers[0]._config
+        namespace_results = [
+            outcome.result for outcome in successful if outcome.result is not None
+        ]
+        return MultiNamespaceRetrievalResult(
+            query=cleaned_query,
+            hits=hits,
+            region=first_config.region,
+            namespaces=[outcome.target.namespace for outcome in outcomes],
+            embedding_model=first_config.embedding_model,
+            embedding_precision=first_config.embedding_precision,
+            top_k=first_options.top_k,
+            candidates=first_options.candidates,
+            namespace_results=namespace_results,
+            namespace_route_ranks={
+                outcome.target.namespace: outcome.target.route_rank
+                for outcome in successful
+            },
+            failures=[failure for failure in failures if failure is not None],
+            fallback=fallback,
+            reranking=reranking,
+            incomplete=bool(failures),
+            fusion=(
+                CROSS_NAMESPACE_FUSION
+                if reranking.applied
+                else "single_namespace"
+            ),
+            evidence=evidence_payload,
+        )
+
+    def _load_reranker(self) -> CrossEncoderReranker:
+        loader = self._reranker_loader or load_cross_encoder_reranker
+        return loader()
+
+    @staticmethod
+    def _retrieve_batch(
+        targets: Sequence[_NamespaceRetrievalTarget],
+        *,
+        query: str,
+        query_vector: Sequence[float],
+        multi_namespace: bool,
+        single_namespace_top_k: int | None = None,
+    ) -> list[_NamespaceRetrievalOutcome]:
+        if not targets:
+            return []
+        if len(targets) > MAX_NAMESPACE_FANOUT:
+            raise ValueError(f"at most {MAX_NAMESPACE_FANOUT} namespaces may be queried")
+
+        futures: dict[Future[RetrievalResult], _NamespaceRetrievalTarget] = {}
+        with ThreadPoolExecutor(max_workers=len(targets)) as executor:
+            for target in targets:
+                target_options = replace(
+                    target.options,
+                    top_k=(
+                        MAX_RERANK_CANDIDATES_PER_NAMESPACE
+                        if multi_namespace
+                        else single_namespace_top_k or target.options.top_k
+                    ),
+                )
+                future = executor.submit(
+                    target.retriever.retrieve_embedded,
+                    query,
+                    query_vector,
+                    target_options,
+                )
+                futures[future] = target
+
+            outcomes: list[_NamespaceRetrievalOutcome] = []
+            for future, target in futures.items():
+                try:
+                    result = future.result()
+                except (ProviderCallError, RuntimeError):
+                    outcomes.append(
+                        _NamespaceRetrievalOutcome(
+                            target=target,
+                            failure=NamespaceRetrievalFailure(
+                                namespace=target.namespace,
+                                route_rank=target.route_rank,
+                            ),
+                        )
+                    )
+                else:
+                    outcomes.append(
+                        _NamespaceRetrievalOutcome(target=target, result=result)
+                    )
+        outcomes.sort(key=lambda outcome: outcome.target.route_rank)
+        return outcomes
+
+
+def _validated_evidence_mode(value: object) -> Literal["collect", "shadow", "active"]:
+    if not isinstance(value, str) or value not in {"collect", "shadow", "active"}:
+        raise ValueError("evidence assessor mode must be collect, shadow, or active")
+    return value  # type: ignore[return-value]
+
+
+def _existing_cross_encoder_scores(
+    hits: Sequence[SearchHit],
+) -> tuple[float, ...] | None:
+    """Reuse scores only when every exact assessed hit carries a finite CE score."""
+
+    scores: list[float] = []
+    for hit in hits:
+        cross_namespace = hit.score_info.get("cross_namespace")
+        if not isinstance(cross_namespace, Mapping):
+            return None
+        value = cross_namespace.get("cross_encoder_score")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        score = float(value)
+        if not math.isfinite(score):
+            return None
+        scores.append(score)
+    return tuple(scores)
+
+
+def _assess_retrieval_evidence(
+    assessor: EvidenceAssessor,
+    *,
+    query: str,
+    hits: Sequence[SearchHit],
+    route_context: EvidenceRouteContext | None,
+    namespace_failure_count: int,
+    weak_evidence_widening_triggered: bool,
+) -> tuple[EvidenceDecisionLike | None, dict[str, object]]:
+    """Run one automatic assessment with mode-specific fail-closed behavior."""
+
+    if route_context is None:  # Guard the public pair invariant for type checkers.
+        raise ValueError("evidence_route_context is required")
+    mode = _validated_evidence_mode(assessor.mode)
+    assessed_hits = list(hits[:EVIDENCE_ASSESSMENT_TOP_K])
+    try:
+        decision = assessor.assess(
+            query=query,
+            hits=assessed_hits,
+            existing_scores=_existing_cross_encoder_scores(assessed_hits),
+            route_context=route_context,
+            namespace_failure_count=namespace_failure_count,
+            widening_triggered_by_weak_evidence=(
+                weak_evidence_widening_triggered
+            ),
+        )
+        status = decision.status
+        weak = decision.is_weak
+        allowed_statuses = {
+            "collect": {"unassessed": None},
+            "shadow": {
+                "would_support": False,
+                "would_abstain": True,
+                "would_be_inconclusive": True,
+            },
+            "active": {
+                "supported": False,
+                "no_relevant_evidence": True,
+                "inconclusive": True,
+            },
+        }
+        if status not in allowed_statuses[mode] or weak is not allowed_statuses[mode][status]:
+            raise ValueError("evidence decision is incompatible with assessor mode")
+        raw_payload = decision.to_dict()
+        if not isinstance(raw_payload, dict):
+            raise ValueError("evidence decision diagnostics must be an object")
+    except Exception:
+        if mode == "active":
+            raise RuntimeError("Automatic evidence assessment failed.") from None
+        return None, {
+            "mode": mode,
+            "status": "assessment_failed",
+            "reason": "evidence_assessment_failed",
+            "widening_triggered_by_weak_evidence": (
+                weak_evidence_widening_triggered
+            ),
+        }
+
+    if isinstance(decision, CalibratedEvidenceDecision):
+        payload = {
+            key: value
+            for key, value in raw_payload.items()
+            if key in EVIDENCE_PUBLIC_DIAGNOSTIC_FIELDS
+        }
+    else:
+        # Injected assessors control routing decisions for library callers, but
+        # their free-form values never cross Buoy's public diagnostic boundary.
+        payload = {"reason": "custom_evidence_assessor"}
+    payload["mode"] = mode
+    payload["status"] = status
+    payload["widening_triggered_by_weak_evidence"] = (
+        weak_evidence_widening_triggered
+    )
+    return decision, payload
+
+
+def cross_namespace_rerank(
+    query: str,
+    outcomes: Sequence[_NamespaceRetrievalOutcome],
+    *,
+    top_k: int,
+    reranker: CrossEncoderReranker | None,
+) -> tuple[list[SearchHit], CrossNamespaceReranking]:
+    """Fuse cross-encoder and local ordinal ranks without raw provider scores."""
+
+    ordered_outcomes = sorted(outcomes, key=lambda outcome: outcome.target.route_rank)
+    candidates: list[_RerankCandidate] = []
+    nonempty_namespaces: list[str] = []
+    candidate_limit = (
+        MAX_RERANK_CANDIDATES_PER_NAMESPACE
+        if len(ordered_outcomes) > 1
+        else top_k
+    )
+    for outcome in ordered_outcomes:
+        if outcome.result is None or not outcome.result.hits:
+            continue
+        namespace = outcome.target.namespace
+        nonempty_namespaces.append(namespace)
+        for namespace_rank, hit in enumerate(
+            outcome.result.hits[:candidate_limit], start=1
+        ):
+            candidates.append(
+                _RerankCandidate(
+                    hit=replace(hit, namespace=namespace),
+                    route_rank=outcome.target.route_rank,
+                    namespace_rank=namespace_rank,
+                    duplicate_namespaces=(namespace,),
+                )
+            )
+
+    before_dedupe = len(candidates)
+    if len(nonempty_namespaces) <= 1:
+        hits = [
+            _annotate_cross_namespace_candidate(candidate)
+            for candidate in candidates[:top_k]
+        ]
+        return hits, CrossNamespaceReranking(
+            applied=False,
+            candidates_before_dedupe=before_dedupe,
+            candidates_after_dedupe=before_dedupe,
+        )
+
+    if reranker is None:
+        raise CrossEncoderRerankerError(
+            "the pinned cross-namespace reranker was not loaded before content retrieval"
+        )
+    deduplicated = deduplicate_rerank_candidates(candidates)
+    passages = [cross_encoder_passage(candidate.hit) for candidate in deduplicated]
+    try:
+        scores = reranker.score(query, passages)
+    except CrossEncoderRerankerError:
+        raise
+    except Exception as exc:
+        raise CrossEncoderRerankerError(
+            "pinned cross-namespace reranker inference failed"
+        ) from exc
+    if len(scores) != len(deduplicated):
+        raise CrossEncoderRerankerError(
+            "pinned cross-namespace reranker returned the wrong number of scores"
+        )
+
+    scored: list[tuple[float, _RerankCandidate]] = []
+    for candidate, value in zip(deduplicated, scores, strict=True):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise CrossEncoderRerankerError(
+                "pinned cross-namespace reranker returned a non-numeric score"
+            )
+        score = float(value)
+        if not math.isfinite(score):
+            raise CrossEncoderRerankerError(
+                "pinned cross-namespace reranker returned a non-finite score"
+            )
+        scored.append((score, candidate))
+    scored.sort(
+        key=lambda item: (
+            -item[0],
+            item[1].route_rank,
+            item[1].namespace_rank,
+            item[1].hit.namespace,
+            item[1].hit.id,
+        )
+    )
+    fused: list[_FusedRerankCandidate] = []
+    for cross_encoder_rank, (cross_encoder_score, candidate) in enumerate(
+        scored, start=1
+    ):
+        cross_encoder_rrf_score = 1.0 / (
+            CROSS_NAMESPACE_RRF_K + cross_encoder_rank
+        )
+        namespace_rrf_score = 1.0 / (
+            CROSS_NAMESPACE_RRF_K + candidate.namespace_rank
+        )
+        fused.append(
+            _FusedRerankCandidate(
+                candidate=candidate,
+                cross_encoder_score=cross_encoder_score,
+                cross_encoder_rank=cross_encoder_rank,
+                cross_encoder_rrf_score=cross_encoder_rrf_score,
+                namespace_rrf_score=namespace_rrf_score,
+                fusion_score=cross_encoder_rrf_score + namespace_rrf_score,
+            )
+        )
+    fused.sort(
+        key=lambda item: (
+            -item.fusion_score,
+            item.cross_encoder_rank,
+            item.candidate.route_rank,
+            item.candidate.namespace_rank,
+            item.candidate.hit.namespace,
+            item.candidate.hit.id,
+        )
+    )
+    selected, coverage_possible, promoted_namespaces = _namespace_covered_top_k(
+        fused,
+        top_k=top_k,
+        required_namespaces=nonempty_namespaces,
+    )
+    hits = [
+        _annotate_cross_namespace_candidate(item.candidate, fused=item)
+        for item in selected
+    ]
+    return hits, CrossNamespaceReranking(
+        applied=True,
+        candidates_before_dedupe=before_dedupe,
+        candidates_after_dedupe=len(deduplicated),
+        method=CROSS_NAMESPACE_FUSION_METHOD,
+        rrf_k=CROSS_NAMESPACE_RRF_K,
+        components=CROSS_NAMESPACE_FUSION_COMPONENTS,
+        tie_breakers=CROSS_NAMESPACE_FUSION_TIE_BREAKERS,
+        namespace_coverage_possible=coverage_possible,
+        namespace_coverage_required=tuple(nonempty_namespaces),
+        namespace_coverage_promoted=promoted_namespaces,
+    )
+
+
+def _namespace_covered_top_k(
+    fused: Sequence[_FusedRerankCandidate],
+    *,
+    top_k: int,
+    required_namespaces: Sequence[str],
+) -> tuple[list[_FusedRerankCandidate], bool, tuple[str, ...]]:
+    """Preserve fused order while giving each nonempty namespace one slot."""
+
+    baseline_indexes = set(range(min(top_k, len(fused))))
+    selected_indexes = set(baseline_indexes)
+    if top_k < len(required_namespaces):
+        return [fused[index] for index in sorted(selected_indexes)], False, ()
+
+    def memberships(index: int) -> tuple[str, ...]:
+        return fused[index].candidate.duplicate_namespaces
+
+    promoted_indexes: set[int] = set()
+    promoted_namespaces: list[str] = []
+    for namespace in required_namespaces:
+        if any(namespace in memberships(index) for index in selected_indexes):
+            continue
+        # Coverage preserves the namespace retriever's strongest evidence,
+        # not whichever candidate the cross-encoder happened to prefer inside
+        # that corpus. This is the safety rail that keeps a locally ranked #1
+        # from disappearing when another corpus dominates the shared scores.
+        promotion_index = next(
+            (
+                index
+                for index in range(len(fused))
+                if fused[index].candidate.hit.namespace == namespace
+                and fused[index].candidate.namespace_rank == 1
+            ),
+            next(
+                (
+                    index
+                    for index in range(len(fused))
+                    if namespace in memberships(index)
+                ),
+                None,
+            ),
+        )
+        membership_counts: dict[str, int] = {}
+        for index in selected_indexes:
+            for represented_namespace in memberships(index):
+                membership_counts[represented_namespace] = (
+                    membership_counts.get(represented_namespace, 0) + 1
+                )
+        donor_index = next(
+            (
+                index
+                for index in sorted(selected_indexes, reverse=True)
+                if all(
+                    membership_counts[represented_namespace] > 1
+                    for represented_namespace in memberships(index)
+                )
+            ),
+            None,
+        )
+        if promotion_index is None or donor_index is None:
+            return [fused[index] for index in sorted(baseline_indexes)], False, ()
+        selected_indexes.remove(donor_index)
+        selected_indexes.add(promotion_index)
+        promoted_indexes.add(promotion_index)
+        promoted_namespaces.append(namespace)
+
+    covered_namespaces = {
+        namespace
+        for index in selected_indexes
+        for namespace in memberships(index)
+    }
+    if not set(required_namespaces).issubset(covered_namespaces):
+        return [fused[index] for index in sorted(baseline_indexes)], False, ()
+
+    return (
+        [
+            replace(
+                fused[index],
+                namespace_coverage_promoted=index in promoted_indexes,
+            )
+            for index in sorted(selected_indexes)
+        ],
+        True,
+        tuple(promoted_namespaces),
+    )
+
+
+def deduplicate_rerank_candidates(
+    candidates: Sequence[_RerankCandidate],
+) -> list[_RerankCandidate]:
+    """Collapse exact citation/section/content duplicates deterministically."""
+
+    ordered = sorted(
+        candidates,
+        key=lambda candidate: (
+            candidate.route_rank,
+            candidate.namespace_rank,
+            candidate.hit.namespace,
+            candidate.hit.id,
+        ),
+    )
+    representatives: dict[tuple[str, str, str], _RerankCandidate] = {}
+    duplicate_namespaces: dict[tuple[str, str, str], set[str]] = {}
+    for candidate in ordered:
+        key = rerank_dedupe_key(candidate.hit)
+        representatives.setdefault(key, candidate)
+        duplicate_namespaces.setdefault(key, set()).add(candidate.hit.namespace)
+    return [
+        replace(
+            representative,
+            duplicate_namespaces=tuple(sorted(duplicate_namespaces[key])),
+        )
+        for key, representative in representatives.items()
+    ]
+
+
+def rerank_dedupe_key(hit: SearchHit) -> tuple[str, str, str]:
+    """Return an exact cross-namespace identity without conflating relative paths."""
+
+    if hit.url:
+        locator = f"url:{normalize_page_url(hit.url)}"
+    elif hit.repo_path:
+        locator = f"repo:{hit.namespace}:{normalize_path(hit.repo_path).casefold()}"
+    elif hit.path:
+        locator = f"path:{hit.namespace}:{normalize_path(hit.path).casefold()}"
+    else:
+        locator = f"id:{hit.namespace}:{hit.id}"
+    section = " ".join(
+        unicodedata.normalize("NFKC", hit.section_path).casefold().split()
+    )
+    content_hash = hashlib.sha256(hit.content.encode("utf-8")).hexdigest()
+    return locator, section, content_hash
+
+
+def cross_encoder_passage(hit: SearchHit) -> str:
+    """Build one bounded, citation-aware passage for local reranking."""
+
+    location = hit.url or hit.repo_path or hit.path
+    header = [
+        f"Title: {hit.title[:MAX_RERANK_TITLE_CHARS]}",
+        f"Section: {hit.section_path[:MAX_RERANK_SECTION_CHARS]}",
+        f"Location: {location[:MAX_RERANK_LOCATION_CHARS]}",
+    ]
+    return "\n".join(header) + f"\n\n{hit.content[:MAX_RERANK_CONTENT_CHARS]}"
+
+
+def _annotate_cross_namespace_candidate(
+    candidate: _RerankCandidate,
+    *,
+    fused: _FusedRerankCandidate | None = None,
+) -> SearchHit:
+    score_info = dict(candidate.hit.score_info)
+    cross_namespace: dict[str, object] = {
+        "route_rank": candidate.route_rank,
+        "namespace_rank": candidate.namespace_rank,
+    }
+    if fused is not None:
+        cross_namespace.update(
+            {
+                "fusion_method": CROSS_NAMESPACE_FUSION_METHOD,
+                "rrf_k": CROSS_NAMESPACE_RRF_K,
+                "cross_encoder_rank": fused.cross_encoder_rank,
+                "cross_encoder_score": fused.cross_encoder_score,
+                "reranker_score": fused.cross_encoder_score,
+                "cross_encoder_rrf_score": fused.cross_encoder_rrf_score,
+                "namespace_rrf_score": fused.namespace_rrf_score,
+                "fusion_score": fused.fusion_score,
+            }
+        )
+        if fused.namespace_coverage_promoted:
+            cross_namespace["namespace_coverage_promoted"] = True
+    if len(candidate.duplicate_namespaces) > 1:
+        cross_namespace["duplicate_namespaces"] = list(
+            candidate.duplicate_namespaces
+        )
+    score_info["cross_namespace"] = cross_namespace
+    return replace(candidate.hit, score_info=score_info)
+
+
 def retrieval_plan(query: str, *, config: RuntimeConfig, options: RetrievalOptions) -> RetrievalPlan:
     return RetrievalPlan(query=query, config=config, options=options)
+
+
+def multi_namespace_retrieval_plan(
+    query: str,
+    *,
+    configs: Sequence[RuntimeConfig],
+    options: Sequence[RetrievalOptions],
+    initial_fanout: int | None = None,
+) -> MultiNamespaceRetrievalPlan:
+    if not configs or len(configs) > MAX_NAMESPACE_FANOUT:
+        raise ValueError(
+            f"between one and {MAX_NAMESPACE_FANOUT} namespace configs are required"
+        )
+    if len(configs) != len(options):
+        raise ValueError("one retrieval option set is required per namespace")
+    fanout = len(configs) if initial_fanout is None else initial_fanout
+    if type(fanout) is not int or not 1 <= fanout <= len(configs):
+        raise ValueError(
+            "initial_fanout must be between one and the selected namespace count"
+        )
+    return MultiNamespaceRetrievalPlan(
+        query=query,
+        plans=[
+            retrieval_plan(query, config=config, options=namespace_options)
+            for config, namespace_options in zip(configs, options, strict=True)
+        ],
+        initial_fanout=fanout,
+    )
 
 
 def build_multi_query_subqueries(
@@ -458,11 +1656,19 @@ def missing_schema_attribute(exc: BaseException) -> str | None:
 
 
 def user_friendly_query_error(exc: BaseException) -> str:
-    message = str(exc) or exc.__class__.__name__
+    status = getattr(exc, "status_code", None)
+    provider = re.sub(r"[^A-Za-z0-9_.-]", "", exc.__class__.__name__)[:80]
+    if not provider:
+        provider = "ProviderError"
+    detail = (
+        f"{provider} (status={status})"
+        if isinstance(status, int)
+        else provider
+    )
     return (
         "Live retrieval failed. Likely fixes: confirm TURBOPUFFER_API_KEY is set, "
         "the explicit --namespace has been indexed, and TURBOPUFFER_REGION matches the indexed corpus. "
-        f"Underlying error: {message}"
+        f"Provider error: {detail}."
     )
 
 
@@ -644,6 +1850,7 @@ def hit_with_ranking_info(
         score_info=score_info,
         doc_kind=hit.doc_kind,
         chunk_index=hit.chunk_index,
+        namespace=hit.namespace,
     )
 
 

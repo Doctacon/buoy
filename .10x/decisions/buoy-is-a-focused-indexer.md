@@ -1,8 +1,14 @@
 Status: active
 Created: 2026-07-30
-Updated: 2026-07-30
+Updated: 2026-08-13
+Amended-By: .10x/decisions/buoy-owns-bounded-multi-corpus-retrieval.md
 
 # Buoy Is a Focused Indexer
+
+The bounded catalog, automatic routing, and multi-corpus retrieval exclusions
+below are amended by
+`.10x/decisions/buoy-owns-bounded-multi-corpus-retrieval.md`. All other focused
+indexer boundaries remain active.
 
 ## Context
 
@@ -30,13 +36,15 @@ On 2026-07-30 the user ratified the split with these defaults:
 
 ## Decision
 
-Buoy owns one explicit indexing target at a time:
+Buoy owns one explicit indexing target at a time and one bounded retrieval
+route at a time:
 
 1. acquire one supported source;
 2. normalize and deterministically chunk it;
 3. create a local, reviewable, baseline-bound plan;
 4. apply the approved delta to one explicitly selected turbopuffer namespace;
-5. retrieve and evaluate within that one namespace.
+5. retrieve within one explicit namespace or an automatically selected set of
+   at most three compatible namespaces.
 
 Buoy retains:
 
@@ -46,28 +54,24 @@ Buoy retains:
   apply, applied-state safety, stale-row handling, retrieval, and evaluation;
 - source-aware ranking, syntax-aware chunking, tokenizer-aware subdivision,
   citations, result tags, and provider-free dry runs.
+- the fixed routing catalog, account inventory needed to validate it, bounded
+  automatic routing, and bounded multi-corpus reranking.
 
 Buoy does not own:
 
-- account-wide namespace discovery;
-- multi-namespace retrieval or cross-namespace result fusion;
-- automatic semantic routing;
-- local or remote routing catalogs;
 - evidence snapshots, concepts, mentions, assertions, taxonomy, ontology, or
   Data Vault mapping guidance;
 - a cross-plan, cross-namespace, or graph-oriented Command Center.
+- unbounded orchestration, general-purpose context management, or ACL
+  administration across an account.
 
-Those capabilities belong to Kite. Buoy may expose stable library functions
-that Kite can call, but it does not orchestrate Kite's account-wide context
-layer.
+Those broader capabilities belong to Kite. Buoy does not orchestrate Kite's
+account-wide context layer.
 
 This decision supersedes the following records as active Buoy product
 authority. They remain in history only as implementation provenance for Kite:
 
 - `production-routing-remote-catalog.md`;
-- the remote catalog, catalog CLI, namespace discovery, default routing, and
-  explicit multi-namespace retrieval specifications;
-- the approved-apply catalog-registration and database-catalog specifications;
 - the Command Center and Phase 2A planning-job specifications;
 - the remote evidence-snapshot specification;
 - the representative semantic-routing and account-wide baseline specifications;
@@ -79,15 +83,16 @@ authority. They remain in history only as implementation provenance for Kite:
 The refocus is a forward change. Published history, tags, and release records
 remain intact; `main` is never force-reset to the historical boundary.
 
-Retrieval and evaluation require exactly one target namespace supplied by
-`--namespace`; ambient namespace selection is not routing authority. Applying a
-plan writes only content and local applied state; it no longer creates or
-updates a routing card.
+Retrieval accepts an explicit namespace override or uses the validated remote
+catalog to select at most three targets. Ambient environment values remain
+non-authoritative. Successful approved apply registers its routing card only
+after content and local state commit; registration failure is explicit partial
+success and never rolls content back.
 
-The Command Center, catalog, routing, evidence-snapshot, and experimental
-account-wide modules leave the Buoy distribution. Historical `.10x` records
-remain available as provenance unless they would actively misstate current
-authority, in which case they are marked superseded.
+The catalog and bounded routing modules return to the Buoy distribution. The
+Command Center, evidence-snapshot, and experimental account-wide modules remain
+excluded. Historical `.10x` records remain provenance; only the new bounded
+decision and specification are current authority for restored behavior.
 
 The incomplete live evidence-snapshot attempt remains an external recovery
 concern for Kite. This decision authorizes no provider deletion or mutation.

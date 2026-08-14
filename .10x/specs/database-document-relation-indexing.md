@@ -1,16 +1,19 @@
 Status: active
 Created: 2026-07-22
-Updated: 2026-07-24
-Amended-By: .10x/specs/focused-buoy-boundary.md
+Updated: 2026-08-13
+Amended-By: .10x/specs/automatic-multi-corpus-retrieval.md
 
 # Database Document Relation Indexing
 
-## Focused-boundary amendment
+## Bounded-retrieval amendment
 
 This specification remains active for one document-shaped database relation,
 its source identity, bounded planning, content indexing, and document/page
-retrieval defaults. Routing-card and catalog semantics are superseded; the
-versioned Buoy apply receipt is the only cross-product handoff to Kite.
+retrieval defaults. The focused boundary's removal of routing-card and catalog
+semantics is superseded only for Buoy's bounded routing catalog under
+`.10x/specs/automatic-multi-corpus-retrieval.md`. Verified database source
+metadata may again generate a Buoy routing card after a successful approved
+apply; broader cross-product orchestration remains outside Buoy.
 
 ## Purpose and scope
 

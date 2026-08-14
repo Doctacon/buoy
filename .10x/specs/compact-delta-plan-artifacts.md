@@ -1,23 +1,25 @@
 Status: active
 Created: 2026-07-24
-Updated: 2026-07-24
-Amended-By: .10x/specs/focused-buoy-boundary.md
+Updated: 2026-08-13
+Amended-By: .10x/specs/automatic-multi-corpus-retrieval.md
 
 # Compact Delta Plan Artifacts
 
-## Focused-boundary amendment
+## Bounded-retrieval amendment
 
 This specification remains active for compact artifact identity, review,
 baseline binding, verification, and one-namespace apply. Catalog
-staging/recovery, routing-card writes, Command Center readers, managed jobs,
-and frontend presentation are superseded. A no-change apply performs no
-catalog write.
+staging/recovery, Command Center readers, managed jobs, and frontend
+presentation remain superseded. The later bounded-retrieval specification
+restores only an idempotent post-commit routing-card registration, including
+for a successfully approved no-change apply; it creates no pending catalog
+state.
 
 ## Purpose and scope
 
 Define schema-v2 plan output, incremental baseline binding, exact apply behavior, hard-cutover compatibility, and bounded local review for every current `buoy plan` source: credential-free HTTP(S) websites, public GitHub repositories, local Markdown/PDF documents, DuckDB relations, BigQuery relations, and Snowflake relations.
 
-This specification supersedes schema-v1 artifact-shape and local compatibility clauses in active source, planning, apply, managed-job, and Command Center specifications. Existing source acquisition, chunk identity, embedding identity, diff classification, stale retention/deletion policy, approval, prospective cleanup, remote catalog recovery, privacy, and provider boundaries remain unchanged unless explicitly replaced here.
+This specification supersedes schema-v1 artifact-shape and local compatibility clauses in active source, planning, apply, managed-job, and Command Center specifications. Existing source acquisition, chunk identity, embedding identity, diff classification, stale retention/deletion policy, approval, prospective cleanup, privacy, and provider boundaries remain unchanged unless explicitly replaced here. Routing-card registration and its partial-success boundary are governed by `.10x/specs/automatic-multi-corpus-retrieval.md`.
 
 ## Successful output
 
@@ -236,11 +238,11 @@ Planning remains turbopuffer/model/write inert. Existing database-source plannin
 
 Dry-run and pre-confirmation apply MUST fully verify schema-2 artifacts, reload matching applied state, recompute the exact baseline projection including `present`, and compare its hash. A mismatch fails with `Applied state changed after this plan was created; run buoy plan again.` before source reacquisition, credential reads, model load, provider calls, pending-state changes, or writes.
 
-Approved apply MUST acquire the namespace lock and repeat full artifact and baseline verification under lock before any remote or local mutation. It embeds/upserts only verified `upsert_rows`. Existing `--delete-stale` behavior acts only on verified stale IDs; otherwise stale rows become/remain retained stale. Next state combines unchanged baseline rows with delta operations and preserves current atomic commit and remote-catalog recovery.
+Approved apply MUST acquire the namespace lock and repeat full artifact and baseline verification under lock before any remote or local mutation. It embeds/upserts only verified `upsert_rows`. Existing `--delete-stale` behavior acts only on verified stale IDs; otherwise stale rows become/remain retained stale. Next state combines unchanged baseline rows with delta operations and preserves the current atomic commit. Only after that commit may the bounded routing-card registration run under `.10x/specs/automatic-multi-corpus-retrieval.md`.
 
 Apply MUST NOT crawl, clone, open source documents/databases, or require source credentials. It uploads exactly reviewed changed/new content.
 
-An approved no-change plan preserves current approved-apply semantics: it performs no content namespace upsert/delete, but still requires approval and turbopuffer credentials, validates/updates the remote catalog through current pending recovery, commits new plan/apply lineage plus one zero-row apply summary, and then performs prospective plan cleanup. This behavior changes the next baseline hash.
+An approved no-change plan preserves current approved-apply semantics: it performs no content namespace upsert/delete, but still requires approval and turbopuffer credentials, commits new plan/apply lineage plus one zero-row apply summary, then conditionally registers the routing card and performs prospective plan cleanup. Card failure is truthful partial success with a reviewed repair command; there is no pending catalog recovery layer. This behavior changes the next baseline hash.
 
 ## Remote catalog lineage
 
