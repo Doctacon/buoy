@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "calibration_id": "automatic-retrieval-evidence-v1",
-  "calibration_revision": "collect-unassessed-v1",
-  "mode": "collect",
+  "calibration_revision": "owner-approved-provisional-minus-8-v1",
+  "mode": "active",
   "model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
   "model_revision": "c5ee24cb16019beea0893ab7796b1df96625c6b8",
   "feature_contract": "cross_encoder_top_score_threshold_v1",
-  "threshold": null,
-  "owner_approved": false,
+  "threshold": -8.0,
+  "owner_approved": true,
   "bindings": {
     "retrieval_revision": null,
     "dataset_revision": null,

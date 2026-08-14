@@ -133,7 +133,7 @@ def automatic_evidence_plan(calibration: EvidenceCalibration) -> dict[str, objec
         "feature_contract": calibration.feature_contract,
         "threshold": calibration.threshold,
         "max_candidates_scored": EVIDENCE_ASSESSMENT_TOP_K,
-        "collection_scope": "json_and_governed_evaluator",
+        "enforcement_scope": "automatic_live_retrieval",
     }
 
 
@@ -1634,20 +1634,15 @@ def _run_retrieve(args: argparse.Namespace) -> int:
         top_route_entry = routing.entries[0]
         retrieval_kwargs: dict[str, object] = {
             "initial_fanout": routing.initial_fanout,
+            "evidence_assessor": CalibratedEvidenceAssessor(
+                evidence_calibration
+            ),
+            "evidence_route_context": EvidenceRouteContext(
+                selection_reason=routing.selection_reason,
+                semantic_score=top_route_entry.semantic_score,
+                semantic_margin=routing.semantic_margin,
+            ),
         }
-        if args.json:
-            retrieval_kwargs.update(
-                {
-                    "evidence_assessor": CalibratedEvidenceAssessor(
-                        evidence_calibration
-                    ),
-                    "evidence_route_context": EvidenceRouteContext(
-                        selection_reason=routing.selection_reason,
-                        semantic_score=top_route_entry.semantic_score,
-                        semantic_margin=routing.semantic_margin,
-                    ),
-                }
-            )
         result = RoutedRetrievalResult(
             result=MultiNamespaceRetriever.from_configs(configs).retrieve(
                 query,
@@ -2031,7 +2026,8 @@ def print_retrieval_text(
                     print(
                         "  evidence: "
                         f"mode={evidence.get('mode')}; "
-                        "collection runs only for live JSON or the governed evaluator"
+                        f"threshold={evidence.get('threshold')}; "
+                        "the gate runs during automatic live retrieval"
                     )
         print(f"  embedding_model: {payload['embedding_model']}")
         print(f"  embedding_precision: {payload['embedding_precision']}")
@@ -2114,7 +2110,7 @@ def print_retrieval_text(
                     f"{evidence_status}; current hits were preserved"
                 )
             elif evidence_status == "supported":
-                print("  evidence: supported by the calibrated relevance gate")
+                print("  evidence: supported by the provisional relevance gate")
     print(f"  embedding_precision: {payload['embedding_precision']}")
     for index, hit in enumerate(hits, start=1):
         if not isinstance(hit, dict):

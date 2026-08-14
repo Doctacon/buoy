@@ -11,9 +11,12 @@ from fractions import Fraction
 import math
 from typing import Literal, Mapping, Sequence
 
+from buoy_search.cross_encoder import CROSS_ENCODER_MODEL, CROSS_ENCODER_REVISION
 from buoy_search.evidence import (
+    COLLECT_EVIDENCE_CALIBRATION_REVISION,
+    EVIDENCE_CALIBRATION_ID,
+    EVIDENCE_FEATURE_CONTRACT,
     MAX_FALSE_EVIDENCE_RISK,
-    load_evidence_calibration,
 )
 from buoy_search.multi_corpus_evals import normalize_collected_evidence
 
@@ -101,7 +104,13 @@ def observations_from_collected_cases(
     labels: Sequence[EvidenceEvalLabel],
     cases: Sequence[Mapping[str, object]],
 ) -> tuple[EvidenceEvalObservation, ...]:
-    """Join reviewed labels to content-free collector scores by question ID."""
+    """Join labels to frozen historical collect observations by question ID.
+
+    This offline calibration input deliberately remains bound to the original
+    collect-only contract even after the packaged runtime artifact becomes
+    active.  Active runs suppress weak hits and are not interchangeable with
+    the pre-activation observations used to choose a threshold.
+    """
 
     if isinstance(labels, (str, bytes, bytearray)) or isinstance(
         cases, (str, bytes, bytearray)
@@ -130,7 +139,6 @@ def observations_from_collected_cases(
         )
 
     observations: list[EvidenceEvalObservation] = []
-    calibration = load_evidence_calibration()
     for label in reviewed:
         collected = by_id[label.question_id]
         route = collected.get("route")
@@ -213,11 +221,11 @@ def observations_from_collected_cases(
             "mode": "collect",
             "status": "unassessed",
             "reason": "threshold_not_calibrated",
-            "model": calibration.model,
-            "model_revision": calibration.model_revision,
-            "calibration_id": calibration.calibration_id,
-            "calibration_revision": calibration.calibration_revision,
-            "feature_contract": calibration.feature_contract,
+            "model": CROSS_ENCODER_MODEL,
+            "model_revision": CROSS_ENCODER_REVISION,
+            "calibration_id": EVIDENCE_CALIBRATION_ID,
+            "calibration_revision": COLLECT_EVIDENCE_CALIBRATION_REVISION,
+            "feature_contract": EVIDENCE_FEATURE_CONTRACT,
             "threshold": None,
             "widening_triggered_by_weak_evidence": False,
         }

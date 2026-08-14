@@ -30,6 +30,7 @@ from buoy_search.evidence import (
     EvidenceCalibrationError,
     EvidenceDecision as CalibratedEvidenceDecision,
     NON_COLLECT_ACTIVATION_PAUSED_MESSAGE,
+    OWNER_AUTHORIZED_ACTIVE_CALIBRATION,
     decide_evidence,
     observe_evidence_scores,
 )
@@ -205,7 +206,10 @@ class CalibratedEvidenceAssessor:
         *,
         reranker_loader: Callable[[], CrossEncoderReranker] | None = None,
     ) -> None:
-        if calibration.mode != "collect":
+        if calibration.mode not in {"collect", "active"} or (
+            calibration.mode == "active"
+            and calibration != OWNER_AUTHORIZED_ACTIVE_CALIBRATION
+        ):
             raise EvidenceCalibrationError(NON_COLLECT_ACTIVATION_PAUSED_MESSAGE)
         self._calibration = calibration
         self._reranker_loader = reranker_loader

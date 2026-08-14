@@ -10,11 +10,16 @@ import unittest
 from buoy_search.cross_encoder import CROSS_ENCODER_MODEL, CROSS_ENCODER_REVISION
 from buoy_search.evidence import (
     CalibrationBindings,
+    COLLECT_EVIDENCE_CALIBRATION_REVISION,
     DEFAULT_EVIDENCE_CALIBRATION_PATH,
+    EVIDENCE_CALIBRATION_ID,
     EVIDENCE_FEATURE_CONTRACT,
     EvidenceCertification,
     EvidenceCalibrationError,
     NON_COLLECT_ACTIVATION_PAUSED_MESSAGE,
+    OWNER_AUTHORIZED_ACTIVE_CALIBRATION,
+    OWNER_AUTHORIZED_ACTIVE_CALIBRATION_REVISION,
+    OWNER_AUTHORIZED_ACTIVE_THRESHOLD,
     decide_evidence,
     load_evidence_calibration,
     observe_evidence_scores,
@@ -28,6 +33,14 @@ class EvidenceCalibrationTests(unittest.TestCase):
             DEFAULT_EVIDENCE_CALIBRATION_PATH.read_text(encoding="utf-8")
         )
 
+    def collect_payload(self) -> dict[str, object]:
+        payload = json.loads(json.dumps(self.default_payload))
+        payload["mode"] = "collect"
+        payload["calibration_revision"] = COLLECT_EVIDENCE_CALIBRATION_REVISION
+        payload["threshold"] = None
+        payload["owner_approved"] = False
+        return payload
+
     def write_payload(self, payload: object, *, raw: str | None = None) -> Path:
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -39,7 +52,7 @@ class EvidenceCalibrationTests(unittest.TestCase):
         return path
 
     def shadow_payload(self, *, threshold: float = 0.5) -> dict[str, object]:
-        payload = json.loads(json.dumps(self.default_payload))
+        payload = self.collect_payload()
         payload["mode"] = "shadow"
         payload["calibration_revision"] = "shadow-candidate-v1"
         payload["threshold"] = threshold
@@ -80,6 +93,7 @@ class EvidenceCalibrationTests(unittest.TestCase):
             mode="shadow",
             calibration_revision="shadow-candidate-v1",
             threshold=threshold,
+            owner_approved=False,
             bindings=CalibrationBindings(
                 retrieval_revision="retrieval-v1",
                 dataset_revision="dataset-v1",
@@ -126,20 +140,42 @@ class EvidenceCalibrationTests(unittest.TestCase):
             namespace_failure_count=failures,
         )
 
-    def test_packaged_artifact_is_unassessed_collect_mode(self) -> None:
+    def test_packaged_artifact_is_exact_owner_authorized_active_mode(self) -> None:
         calibration = load_evidence_calibration()
 
-        self.assertEqual(calibration.mode, "collect")
-        self.assertIsNone(calibration.threshold)
-        self.assertFalse(calibration.owner_approved)
+        self.assertEqual(calibration, OWNER_AUTHORIZED_ACTIVE_CALIBRATION)
+        self.assertEqual(calibration.mode, "active")
+        self.assertEqual(calibration.threshold, OWNER_AUTHORIZED_ACTIVE_THRESHOLD)
+        self.assertTrue(calibration.owner_approved)
+        self.assertEqual(calibration.calibration_id, EVIDENCE_CALIBRATION_ID)
+        self.assertEqual(
+            calibration.calibration_revision,
+            OWNER_AUTHORIZED_ACTIVE_CALIBRATION_REVISION,
+        )
         self.assertEqual(calibration.model, CROSS_ENCODER_MODEL)
         self.assertEqual(calibration.model_revision, CROSS_ENCODER_REVISION)
         self.assertEqual(calibration.feature_contract, EVIDENCE_FEATURE_CONTRACT)
+        self.assertFalse(calibration.bindings.complete)
+        self.assertFalse(calibration.certification.passes_bound_gates)
 
-        decision = decide_evidence(calibration, self.observation([9.0, -4.0]))
-        self.assertEqual(decision.status, "unassessed")
-        self.assertIsNone(decision.is_weak)
-        self.assertEqual(decision.reason, "threshold_not_calibrated")
+    def test_packaged_minus_8_boundary_is_inclusive(self) -> None:
+        calibration = load_evidence_calibration()
+
+        supported = decide_evidence(
+            calibration,
+            self.observation([OWNER_AUTHORIZED_ACTIVE_THRESHOLD]),
+        )
+        weak = decide_evidence(
+            calibration,
+            self.observation([OWNER_AUTHORIZED_ACTIVE_THRESHOLD - 0.000001]),
+        )
+
+        self.assertEqual(supported.status, "supported")
+        self.assertFalse(supported.is_weak)
+        self.assertEqual(supported.reason, "top_score_at_or_above_threshold")
+        self.assertEqual(weak.status, "no_relevant_evidence")
+        self.assertTrue(weak.is_weak)
+        self.assertEqual(weak.reason, "top_score_below_threshold")
 
     def test_observation_uses_top_two_scores_and_emits_no_content(self) -> None:
         observation = observe_evidence_scores(
@@ -257,25 +293,41 @@ class EvidenceCalibrationTests(unittest.TestCase):
                 with self.assertRaises(EvidenceCalibrationError):
                     decide_evidence(calibration, self.observation([0.7]))
 
-    def test_packaged_loader_rejects_shadow_and_active_until_activation_review(self) -> None:
-        for payload in (self.shadow_payload(), self.active_payload()):
+    def test_loader_and_assessor_allow_only_exact_packaged_active_artifact(self) -> None:
+        packaged = load_evidence_calibration()
+        self.assertEqual(CalibratedEvidenceAssessor(packaged).mode, "active")
+
+        alternatives = (
+            self.shadow_payload(),
+            self.active_payload(),
+            json.loads(json.dumps(self.default_payload)),
+        )
+        for payload in alternatives:
             with self.subTest(mode=payload["mode"]):
                 with self.assertRaisesRegex(
                     EvidenceCalibrationError,
-                    "shadow and active evidence modes remain paused",
+                    "only the exact packaged owner-authorized",
                 ):
                     load_evidence_calibration(self.write_payload(payload))
-        self.assertIn("separately reviewed", NON_COLLECT_ACTIVATION_PAUSED_MESSAGE)
-        for calibration in (self.shadow_calibration(), self.active_calibration()):
+        self.assertIn("provisional -8.0", NON_COLLECT_ACTIVATION_PAUSED_MESSAGE)
+        for calibration in (
+            self.shadow_calibration(),
+            self.active_calibration(),
+            replace(
+                packaged,
+                threshold=OWNER_AUTHORIZED_ACTIVE_THRESHOLD - 0.1,
+            ),
+            replace(packaged, calibration_revision="substitute-active-v1"),
+        ):
             with self.subTest(assessor_mode=calibration.mode):
                 with self.assertRaisesRegex(
                     EvidenceCalibrationError,
-                    "shadow and active evidence modes remain paused",
+                    "only the exact packaged owner-authorized",
                 ):
                     CalibratedEvidenceAssessor(calibration)
 
     def test_collect_forbids_threshold_and_shadow_requires_finite_threshold(self) -> None:
-        collect = json.loads(json.dumps(self.default_payload))
+        collect = self.collect_payload()
         collect["threshold"] = 0.0
         with self.assertRaises(EvidenceCalibrationError):
             load_evidence_calibration(self.write_payload(collect))
@@ -400,4 +452,3 @@ class EvidenceCalibrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-    NON_COLLECT_ACTIVATION_PAUSED_MESSAGE,

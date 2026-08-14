@@ -1234,18 +1234,6 @@ def _normalize_run_case(
             raise ValueError(
                 f"Live evaluation case {case.id!r} undercounts exhaustive multi_query invocations."
             )
-        if normalized_calls["reranker_logical_calls"] not in {0, 1}:
-            raise ValueError(
-                f"Live evaluation case {case.id!r} may perform at most one reranker inference."
-            )
-        if (
-            hits["pre_rerank_hits"] != hits["reranked_hits"]
-            and normalized_calls["reranker_logical_calls"] != 1
-        ):
-            raise ValueError(
-                f"Live evaluation case {case.id!r} changed order without one reranker inference."
-            )
-
     failures = _required_mapping(
         payload.get("failures"), where=f"evaluation case {case.id!r} failures"
     )
@@ -1282,6 +1270,49 @@ def _normalize_run_case(
             "successfully queried route namespace."
         )
 
+    normalized_evidence: dict[str, object] | None = None
+    if "evidence" in payload:
+        normalized_evidence = normalize_collected_evidence(
+            payload.get("evidence"),
+            where=f"evaluation case {case.id!r} evidence",
+            automatic_failure_count=len(
+                normalized_failures["automatic_namespaces"]
+            ),
+        )
+
+    if mode == "live":
+        weak_evidence_widening = bool(
+            normalized_evidence is not None
+            and normalized_evidence.get("mode") == "active"
+            and normalized_evidence.get(
+                "widening_triggered_by_weak_evidence"
+            )
+            is True
+        )
+        reranker_calls = normalized_calls["reranker_logical_calls"]
+        widening_contract_satisfied = bool(
+            reranker_calls == 2
+            and initial_high_confidence is not None
+            and len(namespaces) > 1
+        )
+        if (
+            weak_evidence_widening and not widening_contract_satisfied
+        ) or (
+            not weak_evidence_widening and reranker_calls not in {0, 1}
+        ):
+            raise ValueError(
+                f"Live evaluation case {case.id!r} reranker inference count is "
+                "incompatible with the active weak-evidence widening contract."
+            )
+        if (
+            hits["pre_rerank_hits"] != hits["reranked_hits"]
+            and reranker_calls not in {1, 2}
+        ):
+            raise ValueError(
+                f"Live evaluation case {case.id!r} changed order without a "
+                "reranker inference."
+            )
+
     normalized_case: dict[str, object] = {
         "id": case.id,
         "route": {
@@ -1293,14 +1324,8 @@ def _normalize_run_case(
         "calls": normalized_calls,
         "failures": normalized_failures,
     }
-    if "evidence" in payload:
-        normalized_case["evidence"] = normalize_collected_evidence(
-            payload.get("evidence"),
-            where=f"evaluation case {case.id!r} evidence",
-            automatic_failure_count=len(
-                normalized_failures["automatic_namespaces"]
-            ),
-        )
+    if normalized_evidence is not None:
+        normalized_case["evidence"] = normalized_evidence
     return normalized_case
 
 

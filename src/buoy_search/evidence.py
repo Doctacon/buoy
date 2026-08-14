@@ -2,8 +2,8 @@
 
 Raw cross-encoder logits are not probabilities.  This module therefore keeps
 score observation separate from the versioned calibration artifact that is
-allowed to interpret those scores.  The packaged artifact starts in collect
-mode and intentionally contains no threshold.
+allowed to interpret those scores.  Only the exact packaged, owner-authorized
+active artifact may enforce the provisional threshold.
 """
 
 from __future__ import annotations
@@ -19,6 +19,12 @@ from buoy_search.cross_encoder import CROSS_ENCODER_MODEL, CROSS_ENCODER_REVISIO
 
 EVIDENCE_CALIBRATION_SCHEMA_VERSION = 1
 EVIDENCE_FEATURE_CONTRACT = "cross_encoder_top_score_threshold_v1"
+EVIDENCE_CALIBRATION_ID = "automatic-retrieval-evidence-v1"
+COLLECT_EVIDENCE_CALIBRATION_REVISION = "collect-unassessed-v1"
+OWNER_AUTHORIZED_ACTIVE_CALIBRATION_REVISION = (
+    "owner-approved-provisional-minus-8-v1"
+)
+OWNER_AUTHORIZED_ACTIVE_THRESHOLD = -8.0
 DEFAULT_EVIDENCE_CALIBRATION_PATH = (
     Path(__file__).with_name("data")
     / "automatic_retrieval_evidence_calibration.json"
@@ -30,8 +36,8 @@ MIN_NO_ANSWER_ABSTENTION_RATE = 0.90
 MAX_SOURCE_KIND_GATE_DELTA = 0.05
 MAX_AUTOMATIC_FANOUT = 3
 NON_COLLECT_ACTIVATION_PAUSED_MESSAGE = (
-    "shadow and active evidence modes remain paused until a separately reviewed "
-    "calibration report and runtime binding check are implemented"
+    "shadow and unrecognized active evidence modes are disabled; only the exact "
+    "packaged owner-authorized provisional -8.0 calibration may be active"
 )
 
 EvidenceMode = Literal["collect", "shadow", "active"]
@@ -170,6 +176,46 @@ class EvidenceCalibration:
     certification: EvidenceCertification
 
 
+# This exception is intentionally exact and narrow.  The owner authorized the
+# observed -8.0 boundary as a provisional built-in behavior, not a general
+# mechanism for externally supplied JSON to activate itself.  The diagnostic
+# fields truthfully record that the 50-case observation was not a locked or
+# sample-sufficient certification.
+OWNER_AUTHORIZED_ACTIVE_CALIBRATION = EvidenceCalibration(
+    schema_version=EVIDENCE_CALIBRATION_SCHEMA_VERSION,
+    calibration_id=EVIDENCE_CALIBRATION_ID,
+    calibration_revision=OWNER_AUTHORIZED_ACTIVE_CALIBRATION_REVISION,
+    mode="active",
+    model=CROSS_ENCODER_MODEL,
+    model_revision=CROSS_ENCODER_REVISION,
+    feature_contract=EVIDENCE_FEATURE_CONTRACT,
+    threshold=OWNER_AUTHORIZED_ACTIVE_THRESHOLD,
+    owner_approved=True,
+    bindings=CalibrationBindings(
+        retrieval_revision=None,
+        dataset_revision=None,
+        evaluator_revision=None,
+        source_mix_revision=None,
+    ),
+    certification=EvidenceCertification(
+        false_evidence_accepted_queries=None,
+        accepted_queries=None,
+        retained_answer_bearing_queries=None,
+        pre_gate_answer_bearing_queries=None,
+        abstained_no_answer_queries=None,
+        no_answer_queries=None,
+        max_source_false_evidence_risk_delta=None,
+        max_source_retained_recall_regression=None,
+        observed_max_fanout=None,
+        question_level_split_verified=False,
+        locked_certification_verified=False,
+        sample_sufficiency_passed=False,
+        source_kind_gates_passed=False,
+        multi_corpus_gates_passed=False,
+    ),
+)
+
+
 @dataclass(frozen=True)
 class EvidenceObservation:
     """Bounded numeric features from an exact final retrieval hit set."""
@@ -256,7 +302,14 @@ def load_evidence_calibration(
 
     artifact = _parse_calibration(payload)
     _validate_calibration_contract(artifact)
-    if artifact.mode != "collect":
+    if artifact.mode == "collect":
+        return artifact
+    if (
+        artifact.mode != "active"
+        or artifact != OWNER_AUTHORIZED_ACTIVE_CALIBRATION
+        or artifact_path.resolve()
+        != DEFAULT_EVIDENCE_CALIBRATION_PATH.resolve()
+    ):
         raise EvidenceCalibrationError(NON_COLLECT_ACTIVATION_PAUSED_MESSAGE)
     return artifact
 
@@ -569,6 +622,10 @@ def _validate_calibration_contract(calibration: EvidenceCalibration) -> None:
             raise EvidenceCalibrationError("collect mode cannot declare complete bindings")
         return
 
+    if calibration.mode == "active" and calibration == (
+        OWNER_AUTHORIZED_ACTIVE_CALIBRATION
+    ):
+        return
     if calibration.threshold is None or not math.isfinite(calibration.threshold):
         raise EvidenceCalibrationError(
             "shadow and active modes require a finite calibrated threshold"

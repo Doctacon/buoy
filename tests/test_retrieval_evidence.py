@@ -5,6 +5,7 @@ import json
 import unittest
 
 from buoy_search.config import RuntimeConfig
+from buoy_search.evidence import load_evidence_calibration
 from buoy_search.retriever import (
     CalibratedEvidenceAssessor,
     EvidenceRouteContext,
@@ -377,6 +378,81 @@ class RetrievalEvidenceOrchestrationTests(unittest.TestCase):
 
 
 class CalibratedEvidenceAssessorTests(unittest.TestCase):
+    def test_packaged_active_assessor_applies_minus_8_to_runtime_hits(self) -> None:
+        class FixedReranker:
+            def __init__(self, score: float) -> None:
+                self.fixed_score = score
+
+            def score(self, _query: str, passages: list[str]) -> list[float]:
+                return [self.fixed_score] * len(passages)
+
+        for score, expected_status, expected_hit_count in (
+            (-8.0, "supported", 1),
+            (-8.000001, "no_relevant_evidence", 0),
+        ):
+            with self.subTest(score=score):
+                calls: list[str] = []
+                namespace = Namespace("one", ["a"], calls)
+                embedder = RecordingEmbedder()
+                retriever = MultiNamespaceRetriever(
+                    retrievers=[
+                        HybridRetriever(
+                            namespace=namespace,
+                            embedder=embedder,
+                            config=RuntimeConfig(namespace="namespace-one"),
+                        )
+                    ],
+                    embedder=embedder,
+                )
+                assessor = CalibratedEvidenceAssessor(
+                    load_evidence_calibration(),
+                    reranker_loader=lambda score=score: FixedReranker(score),
+                )
+
+                result = retriever.retrieve(
+                    "query",
+                    [RetrievalOptions()],
+                    evidence_assessor=assessor,
+                    evidence_route_context=ROUTE_CONTEXT,
+                )
+
+                self.assertEqual(result.evidence["status"], expected_status)
+                self.assertEqual(len(result.hits), expected_hit_count)
+
+    def test_packaged_active_scorer_failure_is_fatal_and_redacted(self) -> None:
+        calls: list[str] = []
+        namespace = Namespace("one", ["a"], calls)
+        embedder = RecordingEmbedder()
+        retriever = MultiNamespaceRetriever(
+            retrievers=[
+                HybridRetriever(
+                    namespace=namespace,
+                    embedder=embedder,
+                    config=RuntimeConfig(namespace="namespace-one"),
+                )
+            ],
+            embedder=embedder,
+        )
+        assessor = CalibratedEvidenceAssessor(
+            load_evidence_calibration(),
+            reranker_loader=lambda: (_ for _ in ()).throw(
+                RuntimeError("secret scorer detail")
+            ),
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Automatic evidence assessment failed",
+        ) as raised:
+            retriever.retrieve(
+                "query",
+                [RetrievalOptions()],
+                evidence_assessor=assessor,
+                evidence_route_context=ROUTE_CONTEXT,
+            )
+
+        self.assertNotIn("secret", str(raised.exception))
+
     def test_existing_scores_bypass_model_and_bind_route_context(self) -> None:
         from unittest.mock import patch
 

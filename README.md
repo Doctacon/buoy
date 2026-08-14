@@ -96,24 +96,32 @@ buoy catalog disable site-example-one-v1 --approve
 ```
 
 Multi-corpus results are deduplicated and locally reranked. Automatic retrieval
-also has a post-retrieval evidence-assessment boundary, so an automatic JSON or
-governed evaluation of one selected corpus may load the same pinned MiniLM model
-without changing the namespace-local order. A single explicit `--namespace`
-keeps the established lightweight path and does not load MiniLM for evidence
-assessment.
+also checks the relevance of its best final result with the same pinned MiniLM
+model. This check runs for both normal text and JSON output. A single explicit
+`--namespace` keeps the established raw-search path and bypasses this automatic
+evidence check.
 Successful corpora are still returned if another selected namespace fails,
 with the result marked `incomplete`; failure of every attempted namespace fails
 the request.
 
-Evidence assessment rolls out in three governed modes. The packaged artifact is
-currently collect-only with a null threshold: live automatic JSON and the
-governed evaluator report `unassessed` score observations while preserving every
-hit. Ordinary text retrieval skips this collect-only scoring cost. Shadow and
-active artifacts are mechanically rejected until a later reviewed change binds
-them to exact runtime and certification evidence. Once that gate exists,
-`shadow` can preview a decision without hiding hits and owner-approved `active`
-can suppress weak evidence. Even then, Buoy says only that it did not find
-sufficiently relevant evidence in the indexed corpora; it never claims that no
+The provisional cutoff is `-8.0`. This is a raw model score, not a percentage
+or probability. In the first 50-question diagnostic, it separated the five
+questions labeled `no_answer` (`-11.2867` to `-9.6270`) from the 45 labeled
+`answer_expected` (`-5.8328` and above). Those labels describe the questions,
+not whether the returned passages were actually relevant. One known
+counterexample scored `-5.8328` and was accepted despite returning unrelated
+Dagster, Oscilar, and Thistle passages for a Turbopuffer vector-recall question.
+The project owner explicitly approved packaged revision
+`owner-approved-provisional-minus-8-v1` on 2026-08-14 despite this limitation.
+There is no command-line, environment, or runtime threshold override. The
+cutoff must be monitored and may change only through a new reviewed packaged
+revision as broader passage-level judgments are collected.
+
+If a confident one-corpus result is below the cutoff, Buoy widens once to the
+next two likely corpora. If the final result is still weak and every search
+succeeded, Buoy returns no hits and says that it found no sufficiently relevant
+evidence in the indexed corpora. If any selected corpus failed, it reports the
+result as inconclusive instead of making that claim. Buoy never claims that no
 answer exists.
 
 Multi-corpus ordering uses the exact cached
