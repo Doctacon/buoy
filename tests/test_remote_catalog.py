@@ -606,6 +606,50 @@ class RemoteSchemaAndCardTests(unittest.TestCase):
         with self.assertRaisesRegex(RemoteCatalogError, "vector_hash is stale or invalid"):
             card_from_remote_row(ProviderRow(row), region=REGION)
 
+    def test_provider_prototype_decimal_in_same_float32_bucket_restores_exact_card(self) -> None:
+        card = make_card(
+            "site-oscilar-com-v1",
+            routing_examples=["Where are retry policies configured?"],
+        )
+        row = card_to_remote_row(card, schema_version=REMOTE_SCHEMA_V2)
+        provider_vector = list(card.routing_prototype_vector)
+        provider_vector[0] = 1.00000001
+        row["routing_prototype_vector"] = provider_vector
+
+        restored = card_from_remote_row(
+            ProviderRow(row),
+            region=REGION,
+            schema_version=REMOTE_SCHEMA_V2,
+        )
+
+        self.assertEqual(restored.routing_prototype_vector, card.routing_prototype_vector)
+        self.assertEqual(
+            restored.routing_prototype_vector_hash,
+            vector_hash(card.routing_prototype_vector),
+        )
+        self.assertEqual(restored.card_revision, card_revision(card))
+        self.assertEqual(restored, card)
+
+    def test_provider_prototype_decimal_in_adjacent_float32_bucket_rejects_stale_hash(self) -> None:
+        card = make_card(
+            "site-oscilar-com-v1",
+            routing_examples=["Where are retry policies configured?"],
+        )
+        row = card_to_remote_row(card, schema_version=REMOTE_SCHEMA_V2)
+        provider_vector = list(card.routing_prototype_vector)
+        provider_vector[0] = 0.99999994
+        row["routing_prototype_vector"] = provider_vector
+
+        with self.assertRaisesRegex(
+            RemoteCatalogError,
+            "routing_prototype_vector_hash is stale or invalid",
+        ):
+            card_from_remote_row(
+                ProviderRow(row),
+                region=REGION,
+                schema_version=REMOTE_SCHEMA_V2,
+            )
+
     def test_provider_vector_rejects_nonfinite_overflow_and_type_errors(self) -> None:
         card = make_card("site-oscilar-com-v1")
         for value in (float("nan"), float("inf"), float("-inf"), 3.5e38, "1.0", True):
@@ -1216,6 +1260,43 @@ class MutationTests(unittest.TestCase):
         self.assertEqual(resource.write_calls[-1]["upsert_condition"], ("card_revision", "Eq", old.card_revision))
         with self.assertRaisesRegex(RemoteCatalogError, "newer remote revision"):
             update_remote_card(resource, old, expected_revision=old.card_revision, region=REGION)
+
+    def test_update_verification_accepts_provider_prototype_decimal_drift(self) -> None:
+        class PrototypeDriftResource(StatefulResource):
+            def query(self, **kwargs: object) -> object:
+                response = super().query(**kwargs)
+                rows = response["rows"]
+                for row in rows:
+                    if row.get("routing_examples"):
+                        vector = list(row["routing_prototype_vector"])
+                        vector[0] = 1.00000001
+                        row["routing_prototype_vector"] = vector
+                return response
+
+        old = make_card("site-example-v1")
+        intended = make_card(
+            "site-example-v1",
+            routing_examples=["Where are retry policies configured?"],
+            now="2026-07-18T13:00:00+00:00",
+        )
+        resource = PrototypeDriftResource(
+            [old],
+            metadata=metadata_schema(schema_version=REMOTE_SCHEMA_V2),
+        )
+
+        result = update_remote_card(
+            resource,
+            intended,
+            expected_revision=old.card_revision,
+            region=REGION,
+            schema_version=REMOTE_SCHEMA_V2,
+        )
+
+        self.assertTrue(result.changed)
+        self.assertEqual(result.card, intended)
+        self.assertEqual(result.affected_ids, (remote_card_id(intended.namespace),))
+        self.assertEqual(result.metrics.write_requests, 1)
+        self.assertEqual(result.metrics.verification_query_requests, 2)
 
 
 class ErrorTests(unittest.TestCase):
