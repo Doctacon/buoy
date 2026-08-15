@@ -359,10 +359,30 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         captured: dict[str, object] = {}
         assessor = object()
 
+        class FakeResult:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "command": "retrieve",
+                    "dry_run": False,
+                    "content_retrieval_occurred": True,
+                    "namespaces": ["dagster"],
+                    "embedding_precision": "float32",
+                    "fusion": "cross_namespace_equal_weight_ordinal_rrf",
+                    "hits": [
+                        {
+                            "id": "dagster-hit",
+                            "title": "Dagster assets",
+                            "url": "https://docs.dagster.io/guides/build/assets",
+                            "content": "Assets model persistent objects.",
+                        }
+                    ],
+                    "evidence": {"mode": "active", "status": "supported"},
+                }
+
         class FakeRetriever:
             def retrieve(self, _query, _options, **kwargs):  # noqa: ANN001
                 captured.update(kwargs)
-                return object()
+                return FakeResult()
 
         with patch(
             "buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY", return_value=object()
@@ -376,13 +396,20 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         ), patch(
             "buoy_search.cli.CalibratedEvidenceAssessor",
             return_value=assessor,
-        ), patch("buoy_search.cli.print_retrieval_text"):
+        ):
             result, stdout, stderr = run_cli(
                 ["retrieve", "Dagster assets"],
                 env={"TURBOPUFFER_API_KEY": self.API_KEY},
             )
 
-        self.assertEqual((result, stdout, stderr), (0, "", ""))
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertEqual(
+            stdout,
+            "Found 1 passage.\n\n"
+            "1. Dagster assets\n"
+            "   https://docs.dagster.io/guides/build/assets\n"
+            "   Assets model persistent objects.\n",
+        )
         self.assertIs(captured["evidence_assessor"], assessor)
         self.assertIsInstance(
             captured["evidence_route_context"], EvidenceRouteContext

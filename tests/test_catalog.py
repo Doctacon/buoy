@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import replace
 import json
 import math
@@ -610,6 +611,23 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
 
 
 class CatalogModelTests(unittest.TestCase):
+    def test_model_constructor_suppresses_third_party_progress(self) -> None:
+        class FakeSentenceTransformer:
+            def __init__(self, *_args: object, **_kwargs: object) -> None:
+                pass
+
+        import types
+
+        fake_module = types.ModuleType("sentence_transformers")
+        fake_module.SentenceTransformer = FakeSentenceTransformer  # type: ignore[attr-defined]
+        with patch.dict("sys.modules", {"sentence_transformers": fake_module}), patch(
+            "buoy_search.catalog.suppress_model_progress_bars",
+            return_value=nullcontext(),
+        ) as suppress:
+            load_routing_embedder()
+
+        suppress.assert_called_once_with()
+
     def test_model_constructor_is_exact_pinned_local_only_and_missing_cache_fails_closed(self) -> None:
         calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 

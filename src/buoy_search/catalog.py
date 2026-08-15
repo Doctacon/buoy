@@ -17,6 +17,7 @@ from typing import Iterable, Mapping, Protocol, Sequence
 import unicodedata
 from urllib.parse import urlsplit
 
+from buoy_search.model_progress import suppress_model_progress_bars
 from buoy_search.plan_artifacts import PLAN_SCHEMA_VERSION, stable_hash
 from buoy_search.retriever import RANKING_AGGREGATIONS, RANKING_MODES, RANKING_PROFILES
 
@@ -568,11 +569,12 @@ class _SentenceTransformerRoutingEmbedder:
         except ImportError as exc:  # pragma: no cover
             raise CatalogError("sentence-transformers is required for catalog vectors; run `uv sync` first") from exc
         try:
-            self._model = SentenceTransformer(
-                ROUTING_MODEL,
-                revision=ROUTING_MODEL_REVISION,
-                local_files_only=True,
-            )
+            with suppress_model_progress_bars():
+                self._model = SentenceTransformer(
+                    ROUTING_MODEL,
+                    revision=ROUTING_MODEL_REVISION,
+                    local_files_only=True,
+                )
         except Exception as exc:
             raise CatalogError(
                 f"pinned routing model {ROUTING_MODEL}@{ROUTING_MODEL_REVISION} is not cached locally; "

@@ -19,6 +19,8 @@ as GitHub Release assets rather than to PyPI.
   packaged cutoff of `-8.0`; weak results widen once, then return either no
   relevant evidence or an inconclusive result when a namespace failed. There
   is no command-line, environment, or runtime threshold override.
+- Added `buoy retrieve --explain` for the established detailed live text
+  diagnostics. It is presentation-only and cannot be combined with `--json`.
 
 ### Changed
 
@@ -32,6 +34,11 @@ as GitHub Release assets rather than to PyPI.
   The `-8.0` cutoff is a raw model score rather than a probability; it was
   approved as a provisional starting point from the observed 50-question run
   and remains subject to monitoring against a broader reviewed sample.
+- Live `buoy retrieve` text now defaults to compact citation-first passages
+  with whitespace-collapsed excerpts capped at 320 characters. Routing,
+  ranking, per-corpus coverage promotion, evidence behavior, JSON, and provider
+  calls are unchanged; partial-failure and `assessment_failed` warnings remain
+  visible.
 
 ## [0.5.1] - 2026-08-13
 

@@ -14,6 +14,41 @@ buoy retrieve "How is approximate vector recall evaluated?" --dry-run
 buoy retrieve "How is approximate vector recall evaluated?"
 ```
 
+## Output modes
+
+Every successful live retrieval uses compact, citation-first text by default,
+including an explicit single namespace:
+
+```text
+Found 1 passage.
+
+1. Retry behavior
+   https://docs.example.com/retries · Backoff
+   Requests use bounded exponential backoff and stop after the configured...
+```
+
+Each hit contains its rank, title, best available citation, optional section,
+and a whitespace-collapsed excerpt capped at 320 characters. Citation choice
+prefers a URL, then a repository path, source path, or stable row identifier.
+Compact text omits namespace and ranking diagnostics, tags, redundant paths,
+model and precision details, scores, and positive evidence diagnostics.
+
+Use `--explain` to render the same result in the established detailed text
+format. It includes the namespace, ordered tags, paths, embedding precision,
+model, fusion/reranking, scores, and evidence diagnostics that apply. `--json`
+retains the existing structured contract. `--explain` and `--json` are mutually
+exclusive; combining them fails before configuration, credentials, model
+loading, or provider calls. Dry-run and plan output remain detailed.
+
+Output mode is presentation only. It does not change routing, widening,
+retrieval, deduplication, ranking, deterministic tie-breaking, per-corpus
+coverage promotion, result limits, evidence assessment, or provider calls.
+Partial-failure warnings still identify failed namespaces. The existing
+`assessment_failed` warning also remains visible in compact text, while
+`supported`, `unassessed`, and shadow `would_*` evidence diagnostics are hidden.
+No-relevant-evidence and inconclusive messages are unchanged. Buoy returns
+passages and citations; it does not synthesize an answer.
+
 `--plan` is an alias for `--dry-run`. Buoy reads credentials only from the
 process environment and does not load `.env` automatically. If a local `.env`
 is the intended credential source, load it explicitly into the command
@@ -77,8 +112,10 @@ buoy retrieve "Compare retry and deployment guidance" \
 ```
 
 Explicit namespaces must be unique and may be repeated at most three times. A
-single explicit namespace preserves the established text and JSON result
-contract. An explicit preview is local, credential-free, and provider-free.
+single explicit namespace preserves its established retrieval, ranking, and
+JSON result contract; its default live text uses the same compact renderer as
+every other live retrieval. An explicit preview is local, credential-free, and
+provider-free.
 
 ## Search, widening, and reranking
 
@@ -200,14 +237,16 @@ but cannot make an evidence decision.
 
 ## Results and failures
 
-Every result retains its source URL/path, title, section, content preview,
-stable row identity, score diagnostics, and ordered tags. Automatic and
-explicit multi-corpus JSON also report selected `namespaces`, routing and
-reranking details, per-hit `namespace`, per-namespace summaries, and failures.
-Automatic live JSON additionally reports the governed `evidence` mode, status,
-model and calibration identities, the `-8.0` threshold, bounded score features,
-and whether weak evidence triggered widening. It does not include extra raw
-content in evidence diagnostics.
+The underlying result retains its source URL/path, title, section, content
+preview, stable row identity, score diagnostics, and ordered tags. Compact text
+shows only the citation-first subset described above; `--explain` exposes the
+detailed text representation. Automatic and explicit multi-corpus JSON retain
+selected `namespaces`, routing and reranking details, per-hit `namespace`,
+per-namespace summaries, and failures. Automatic live JSON additionally
+retains the governed `evidence` mode, status, model and calibration identities,
+the `-8.0` threshold, bounded score features, and whether weak evidence
+triggered widening. It does not include extra raw content in evidence
+diagnostics.
 
 One selected namespace failing does not discard successful results. Buoy
 redacts and attributes the failed namespace and marks the combined response
