@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import nullcontext, redirect_stderr, redirect_stdout
 from io import StringIO
 import json
 import os
@@ -783,12 +783,16 @@ class CrossEncoderLoaderTests(unittest.TestCase):
 
         module.CrossEncoder = FakeCrossEncoder  # type: ignore[attr-defined]
         load_cross_encoder_reranker.cache_clear()
-        with patch.dict(sys.modules, {"sentence_transformers": module}):
+        with patch.dict(sys.modules, {"sentence_transformers": module}), patch(
+            "buoy_search.cross_encoder.suppress_model_progress_bars",
+            return_value=nullcontext(),
+        ) as suppress:
             first = load_cross_encoder_reranker()
             second = load_cross_encoder_reranker()
             scores = first.score("query", ["one", "two"])
 
         self.assertIs(first, second)
+        suppress.assert_called_once_with()
         self.assertEqual(len(init_calls), 1)
         model, kwargs = init_calls[0]
         self.assertEqual(model, CROSS_ENCODER_MODEL)
@@ -951,7 +955,7 @@ class MultiNamespaceCliTests(unittest.TestCase):
         self.assertIn("Retrieval failed", stderr.getvalue())
         self.assertIn("service unavailable", stderr.getvalue())
 
-    def test_plain_and_compatibility_live_explicit_outputs_are_identical(self) -> None:
+    def test_multi_namespace_live_explicit_output_is_compact(self) -> None:
         class TextResult:
             def to_dict(self) -> dict[str, object]:
                 return {
@@ -1009,11 +1013,16 @@ class MultiNamespaceCliTests(unittest.TestCase):
 
         self.assertEqual(result, 0, stderr.getvalue())
         self.assertEqual(len(retriever.calls), 1)
-        output = stdout.getvalue()
-        self.assertIn("Corpus: site-one-v1", output)
-        self.assertIn("Corpus: site-two-v1", output)
-        self.assertIn("Tags: library, guide", output)
-        self.assertEqual(output.count("Tags:"), 1)
+        self.assertEqual(
+            stdout.getvalue(),
+            "Found 2 passages.\n\n"
+            "1. One\n"
+            "   https://one.example/\n"
+            "   one\n\n"
+            "2. Two\n"
+            "   https://two.example/\n"
+            "   two\n",
+        )
 
     def test_live_namespace_failure_prints_no_partial_payload(self) -> None:
         class FailingMultiRetriever:

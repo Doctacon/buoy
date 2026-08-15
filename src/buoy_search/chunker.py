@@ -16,6 +16,7 @@ from typing import Iterable, Iterator, Sequence, TypeVar
 from urllib.parse import urlparse
 
 from buoy_search.config import RuntimeConfig
+from buoy_search.model_progress import suppress_model_progress_bars
 
 VECTOR_DIMENSIONS = 384
 DEFAULT_TARGET_TOKENS = 300
@@ -538,7 +539,8 @@ class SentenceTransformerEmbedder:
             raise RuntimeError(
                 "sentence-transformers is required for approved live embedding. Run `uv sync` first."
             ) from exc
-        self._model = SentenceTransformer(model_name)
+        with suppress_model_progress_bars():
+            self._model = SentenceTransformer(model_name)
         if precision == "float16":
             device_type = str(self._model.device).split(":", 1)[0]
             if device_type not in {"cuda", "mps"}:

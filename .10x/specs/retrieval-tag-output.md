@@ -1,7 +1,8 @@
 Status: active
 Created: 2026-07-19
-Updated: 2026-08-13
+Updated: 2026-08-15
 Amended-By: .10x/specs/automatic-multi-corpus-retrieval.md
+Amended-By: .10x/specs/compact-retrieval-output.md
 
 # Retrieval Tag Output
 
@@ -32,7 +33,16 @@ This per-hit field is additive. Existing single-namespace fields, multi-namespac
 
 ## Text output
 
-A live retrieval hit with one or more tags MUST include a `Tags: ` line containing the stored tags in order, separated by `, `. A hit with no tags MUST omit the line. Single-namespace and multi-namespace text MUST render tags identically; existing namespace citations and other hit lines remain unchanged.
+Every live result retains its stored tag list regardless of presentation mode.
+In detailed live text selected by `--explain`, a hit with one or more tags MUST
+include a `Tags: ` line containing the stored tags in order, separated by
+`, `; a hit with no tags MUST omit the line. Single-namespace and
+multi-namespace explained text MUST render tags identically.
+
+Default compact live text MAY omit the `Tags:` line. That presentation omission
+MUST NOT remove or change tags on the hit, JSON output, ranking, filtering, or
+provider attributes. Dry-run/plan output remains detailed, but contains no hits
+and therefore no per-hit tag line.
 
 ## Missing-schema portability
 
@@ -45,17 +55,24 @@ A live retrieval hit with one or more tags MUST include a `Tags: ` line containi
 
 ## Acceptance scenarios
 
-### Tagged JSON and text
+### Tagged JSON and explained text
 
 **Given** a retrieved chunk with stored tags `['library', 'guide']`
-**When** JSON and text output are rendered
-**Then** JSON contains `"tags": ["library", "guide"]` and text contains `Tags: library, guide`.
+**When** JSON and `--explain` text are rendered
+**Then** JSON contains `"tags": ["library", "guide"]` and explained text contains `Tags: library, guide`.
 
 ### Empty tags
 
 **Given** a retrieved chunk with no stored tags
-**When** JSON and text output are rendered
-**Then** JSON contains `"tags": []` and text contains no `Tags:` line.
+**When** JSON and `--explain` text are rendered
+**Then** JSON contains `"tags": []` and explained text contains no `Tags:` line.
+
+### Compact omission
+
+**Given** a retrieved chunk with stored tags
+**When** default compact live text is rendered
+**Then** the hit retains its tags and JSON still exposes them, but compact text
+may omit the `Tags:` line.
 
 ### Single/multi consistency
 
@@ -81,4 +98,5 @@ A live retrieval hit with one or more tags MUST include a `Tags: ` line containi
 - No semantic tag extraction, taxonomy, ontology, concept graph, knowledge graph, or tag governance change.
 - No chunking, plan, apply, remote schema, row, namespace, or deterministic-ID change.
 - No live Turbopuffer write, migration, backfill, or namespace recreation.
-- Dry-run plans contain no hits and require no tag-specific output change.
+- Dry-run plans remain detailed but contain no hits and therefore require no
+  per-hit tag line.
