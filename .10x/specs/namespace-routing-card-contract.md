@@ -1,6 +1,7 @@
 Status: superseded
 Created: 2026-07-18
-Updated: 2026-07-24
+Updated: 2026-08-15
+Amended-By: .10x/specs/scalable-routing-quality.md
 
 # Namespace Routing Card Contract
 
@@ -47,6 +48,16 @@ Duplicate normalization applies Unicode NFKC, `casefold()`, maximal non-alphanum
 
 Manual upsert sets `semantic_origin=manual`. Approved apply preserves manual title/summary/aliases/tags/origin and every existing enabled state. Generated semantics may refresh deterministically.
 
+The scalable-routing amendment adds an exact four-field prototype bundle to
+the same card row under remote schema v2: zero-to-eight canonical
+`routing_examples`, `routing_prototype_hash`, an ordinary non-ANN
+`routing_prototype_vector`, and `routing_prototype_vector_hash`. New readers
+reconstruct all four from the base projection for schema-v1/provider-null rows
+and reject partial state; manual apply preservation extends to the bundle.
+Examples are not aliases or tags. Exact schema compatibility, projection,
+hashing, activation, and migration rules are defined by
+`.10x/specs/scalable-routing-quality.md`.
+
 ### Retrieval contract
 
 - `region`: non-empty and equal to remote catalog region;
@@ -91,6 +102,11 @@ Stored fields:
 Vector norm must be non-zero and within `1e-4` of 1.0. Stale hashes/model, NaN/infinity, wrong dimensions, or non-normalization fail before routing/write. Recompute only when semantic hash or fixed routing contract changes. Enabled/retrieval/lineage-only edits preserve a valid vector.
 
 Model construction uses exact model/revision, float32 normalized output, and `local_files_only=True`; no download/substitution/hosted embedding.
+
+This passage, `semantic_hash`, ANN-indexed `vector`, and `vector_hash` remain
+byte-for-byte the legacy projection even when `routing_examples` is non-empty.
+Examples affect only the separate prototype hash/vector/hash bundle defined in
+`.10x/specs/scalable-routing-quality.md`.
 
 Golden fixtures:
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import replace
 from io import StringIO
 import json
 import math
@@ -15,6 +16,7 @@ from buoy_search.catalog import (
     CardFields,
     NamespaceCard,
     prepare_card,
+    vector_hash,
 )
 from buoy_search.cli import main
 from buoy_search.evidence import EvidenceCalibrationError
@@ -28,6 +30,8 @@ from buoy_search.routing import (
     AutomaticRoutingError,
     hybrid_route,
     named_route,
+    prototype_route,
+    prototype_route_scores,
     semantic_route,
 )
 
@@ -55,6 +59,21 @@ class FixedEmbedder:
         return [list(self.vector) for _ in texts]
 
 
+class FixedReranker:
+    def __init__(self, scores: list[float]) -> None:
+        self.scores = list(scores)
+        self.calls: list[tuple[str, list[str]]] = []
+
+    def score(self, query: str, passages):  # noqa: ANN001 - protocol test double.
+        values = list(passages)
+        self.calls.append((query, values))
+        if len(values) != len(self.scores):
+            raise AssertionError(
+                f"expected {len(self.scores)} passages, received {len(values)}"
+            )
+        return list(self.scores)
+
+
 def make_card(
     namespace: str,
     *,
@@ -64,6 +83,7 @@ def make_card(
     vector: list[float] | None = None,
     enabled: bool = True,
     embedding_precision: str = "float32",
+    routing_examples: list[str] | None = None,
 ) -> NamespaceCard:
     return prepare_card(
         CardFields(
@@ -85,6 +105,7 @@ def make_card(
             ranking_profile="none",
             ranking_pool=20,
             ranking_aggregation="max",
+            routing_examples=list(routing_examples or []),
         ),
         embedder=FixedEmbedder(vector),
         now="2026-08-13T12:00:00+00:00",
@@ -253,6 +274,327 @@ class RoutingAlgorithmTests(unittest.TestCase):
         self.assertEqual(embedder.calls, [[f"{ROUTING_QUERY_PREFIX}routing question"]])
         with self.assertRaisesRegex(AutomaticRoutingError, "exactly 384"):
             semantic_route("query", [card], embedder=FixedEmbedder([1.0]))
+
+    def test_prototype_route_uses_one_embedding_and_max_example_score(self) -> None:
+        cards = [
+            make_card(
+                "alpha",
+                vector=cosine_vector(0.9),
+                routing_examples=["Which API returns namespace schema metadata?"],
+            ),
+            make_card("beta", vector=cosine_vector(0.8)),
+        ]
+        embedder = FixedEmbedder()
+        reranker = FixedReranker([-5.0, 8.0, 7.0])
+        collect = prototype_route(
+            "How can I inspect schema metadata?",
+            cards,
+            embedder=embedder,
+            reranker_loader=lambda: reranker,
+            route_top_k=3,
+        )
+        self.assertEqual(len(embedder.calls), 1)
+        self.assertEqual(
+            embedder.calls,
+            [[f"{ROUTING_QUERY_PREFIX}How can I inspect schema metadata?"]],
+        )
+        self.assertEqual(len(reranker.calls), 1)
+        self.assertEqual([card.namespace for card in collect.selected_cards], ["alpha", "beta"])
+        self.assertEqual(collect.initial_fanout, 2)
+        self.assertFalse(collect.high_confidence)
+        self.assertEqual(collect.entries[0].winning_prototype_kind, "example")
+        self.assertEqual(collect.entries[0].winning_prototype_index, 0)
+        self.assertNotIn(
+            "Which API returns",
+            json.dumps(collect.to_dict()),
+        )
+        self.assertFalse(collect.to_dict()["active"])
+        self.assertEqual(
+            collect.to_dict()["confidence_artifact"]["mode"], "collect"
+        )
+
+    def test_prototype_shortlist_is_exact_and_bounded_to_twelve(self) -> None:
+        cards = [make_card(f"card-{index:02d}") for index in range(13)]
+        reranker = FixedReranker([float(index) for index in range(12)])
+        scores = prototype_route_scores(
+            "descriptor-free question",
+            cards,
+            embedder=FixedEmbedder(),
+            reranker=reranker,
+        )
+        self.assertEqual(len(scores), 12)
+        self.assertNotIn("card-12", {item.card.namespace for item in scores})
+        self.assertEqual(len(reranker.calls[0][1]), 12)
+
+    def test_prototype_stage_one_is_isolated_from_legacy_base_vectors(self) -> None:
+        first_axis = unit_vector(0)
+        second_axis = unit_vector(1)
+        base_first = make_card(
+            "base-first",
+            vector=first_axis,
+            routing_examples=["Base-first prototype example"],
+        )
+        prototype_first = make_card(
+            "prototype-first",
+            vector=second_axis,
+            routing_examples=["Prototype-first example"],
+        )
+        base_first = replace(
+            base_first,
+            routing_prototype_vector=second_axis,
+            routing_prototype_vector_hash=vector_hash(second_axis),
+        )
+        prototype_first = replace(
+            prototype_first,
+            routing_prototype_vector=first_axis,
+            routing_prototype_vector_hash=vector_hash(first_axis),
+        )
+        cards = [base_first, prototype_first]
+
+        legacy = semantic_route(
+            "descriptor-free query",
+            cards,
+            embedder=FixedEmbedder(first_axis),
+        )
+        candidate = prototype_route_scores(
+            "descriptor-free query",
+            cards,
+            embedder=FixedEmbedder(first_axis),
+            reranker=FixedReranker([1.0, 1.0, 1.0, 1.0]),
+        )
+        hybrid = hybrid_route(
+            "descriptor-free query",
+            cards,
+            embedder=FixedEmbedder(first_axis),
+            route_top_k=3,
+        )
+
+        self.assertEqual(legacy[0][0].namespace, "base-first")
+        self.assertEqual(hybrid.selected_cards[0].namespace, "base-first")
+        self.assertEqual(candidate[0].card.namespace, "prototype-first")
+        self.assertEqual(candidate[0].shortlist_rank, 1)
+
+    def test_thousand_card_catalog_keeps_one_embedding_and_twelve_local_scores(self) -> None:
+        cards = [make_card(f"card-{index:04d}") for index in range(1000)]
+        embedder = FixedEmbedder()
+        reranker = FixedReranker([0.0] * 12)
+
+        scores = prototype_route_scores(
+            "descriptor-free scale question",
+            list(reversed(cards)),
+            embedder=embedder,
+            reranker=reranker,
+        )
+
+        self.assertEqual(len(embedder.calls), 1)
+        self.assertEqual(len(reranker.calls), 1)
+        self.assertEqual(len(reranker.calls[0][1]), 12)
+        self.assertEqual(
+            [item.card.namespace for item in scores],
+            [f"card-{index:04d}" for index in range(12)],
+        )
+
+    def test_named_quality_observation_prepends_exact_card_to_bounded_shortlist(self) -> None:
+        cards = [make_card(f"card-{index:02d}") for index in range(12)]
+        cards.append(make_card("zz-named", title="Named Product"))
+        scores = prototype_route_scores(
+            "How does Named Product work?",
+            cards,
+            embedder=FixedEmbedder(),
+            reranker=FixedReranker([0.0] * 12),
+            include_exact_names=True,
+        )
+        named = next(item for item in scores if item.card.namespace == "zz-named")
+        self.assertEqual(named.shortlist_rank, 1)
+        self.assertEqual(len(scores), 12)
+
+    def test_prototype_scoring_enforces_the_exact_108_passage_bound(self) -> None:
+        examples = [f"Capability example {index}" for index in range(8)]
+        cards = [
+            make_card(f"card-{index:02d}", routing_examples=examples)
+            for index in range(12)
+        ]
+        reranker = FixedReranker([0.0] * 108)
+        prototype_route_scores(
+            "bounded question",
+            cards,
+            embedder=FixedEmbedder(),
+            reranker=reranker,
+        )
+        self.assertEqual(len(reranker.calls[0][1]), 108)
+
+        invalid = replace(
+            cards[0],
+            routing_examples=[f"Too many {index}" for index in range(9)],
+        )
+        embedder = FixedEmbedder()
+        with self.assertRaisesRegex(AutomaticRoutingError, "at most 8"):
+            prototype_route_scores(
+                "question",
+                [invalid],
+                embedder=embedder,
+                reranker=FixedReranker([]),
+            )
+        self.assertEqual(embedder.calls, [])
+
+        overlong = replace(cards[0], routing_examples=["q" * 513])
+        with self.assertRaisesRegex(AutomaticRoutingError, "examples are invalid"):
+            prototype_route_scores(
+                "question",
+                [overlong],
+                embedder=FixedEmbedder(),
+                reranker=FixedReranker([]),
+            )
+
+        stale = replace(
+            cards[0],
+            routing_prototype_vector_hash="0" * 64,
+        )
+        stale_embedder = FixedEmbedder()
+        with self.assertRaisesRegex(AutomaticRoutingError, "projection is stale"):
+            prototype_route_scores(
+                "question",
+                [stale],
+                embedder=stale_embedder,
+                reranker=FixedReranker([]),
+            )
+        self.assertEqual(stale_embedder.calls, [])
+
+    def test_named_prototype_route_preserves_shortcut_and_skips_reranker(self) -> None:
+        class FailingReranker:
+            def score(self, _query, _passages):  # noqa: ANN001
+                raise AssertionError("named route loaded reranker")
+
+        embedder = FixedEmbedder()
+        selection = prototype_route(
+            "How does Dagster model assets?",
+            [
+                make_card("dagster", title="Dagster"),
+                make_card("other", title="Other"),
+            ],
+            embedder=embedder,
+            reranker_loader=lambda: FailingReranker(),
+            route_top_k=3,
+        )
+        self.assertEqual(len(embedder.calls), 1)
+        self.assertEqual(selection.initial_fanout, 1)
+        self.assertEqual(selection.selection_reason, "unique_title_or_alias")
+        self.assertEqual(selection.selected_cards[0].namespace, "dagster")
+
+    def test_named_prototype_route_does_not_construct_reranker(self) -> None:
+        selection = prototype_route(
+            "How does Dagster model assets?",
+            [make_card("dagster", title="Dagster"), make_card("other")],
+            embedder=FixedEmbedder(),
+            reranker_loader=lambda: (_ for _ in ()).throw(
+                AssertionError("named route constructed reranker")
+            ),
+            route_top_k=3,
+        )
+        self.assertEqual(selection.selection_reason, "unique_title_or_alias")
+
+    def test_prototype_reranker_failure_is_redacted(self) -> None:
+        secret = "routing-prototype-secret"
+
+        class LeakyReranker:
+            def score(self, _query, _passages):  # noqa: ANN001
+                raise RuntimeError(f"Bearer {secret}")
+
+        with self.assertRaisesRegex(
+            AutomaticRoutingError, "routing shortlist reranking failed"
+        ) as raised:
+            prototype_route_scores(
+                "query",
+                [make_card("one")],
+                embedder=FixedEmbedder(),
+                reranker=LeakyReranker(),
+            )
+        self.assertNotIn(secret, str(raised.exception))
+
+    def test_prototype_reranker_loader_failure_is_redacted(self) -> None:
+        secret = "routing-loader-secret"
+
+        with self.assertRaisesRegex(
+            AutomaticRoutingError, "routing shortlist reranker loading failed"
+        ) as raised:
+            prototype_route(
+                "descriptor-free query",
+                [make_card("one")],
+                embedder=FixedEmbedder(),
+                reranker_loader=lambda: (_ for _ in ()).throw(
+                    RuntimeError(f"Bearer {secret}")
+                ),
+                route_top_k=3,
+            )
+        self.assertNotIn(secret, str(raised.exception))
+
+    def test_empty_prototype_cards_fail_before_model_work(self) -> None:
+        embedder = FixedEmbedder()
+        reranker = FixedReranker([])
+        with self.assertRaisesRegex(AutomaticRoutingError, "at least one eligible"):
+            prototype_route_scores(
+                "query",
+                [],
+                embedder=embedder,
+                reranker=reranker,
+            )
+        self.assertEqual(embedder.calls, [])
+        self.assertEqual(reranker.calls, [])
+
+    def test_base_and_card_score_ties_keep_frozen_order_and_null_index(self) -> None:
+        cards = [
+            make_card("alpha", routing_examples=["Example"]),
+            make_card("beta"),
+        ]
+        scores = prototype_route_scores(
+            "query",
+            cards,
+            embedder=FixedEmbedder(),
+            reranker=FixedReranker([2.0, 2.0, 2.0]),
+        )
+        self.assertEqual([item.card.namespace for item in scores], ["alpha", "beta"])
+        self.assertEqual(scores[0].winning_prototype_kind, "card")
+        selection = prototype_route(
+            "query",
+            cards,
+            embedder=FixedEmbedder(),
+            reranker_loader=lambda: FixedReranker([2.0, 2.0, 2.0]),
+            route_top_k=3,
+        )
+        first = selection.to_dict()["selected_cards"][0]
+        self.assertIn("winning_prototype_index", first)
+        self.assertIsNone(first["winning_prototype_index"])
+
+    def test_malformed_prototype_score_sequence_fails_safely(self) -> None:
+        class InvalidReranker:
+            def score(self, _query, _passages):  # noqa: ANN001
+                return object()
+
+        with self.assertRaisesRegex(AutomaticRoutingError, "invalid score sequence"):
+            prototype_route_scores(
+                "query",
+                [make_card("one")],
+                embedder=FixedEmbedder(),
+                reranker=InvalidReranker(),
+            )
+
+    def test_prototype_embedder_failure_is_redacted(self) -> None:
+        secret = "routing-embedder-secret"
+
+        class LeakyEmbedder:
+            def encode(self, _texts):  # noqa: ANN001
+                raise RuntimeError(f"Bearer {secret}")
+
+        with self.assertRaisesRegex(
+            AutomaticRoutingError, "routing query embedding failed"
+        ) as raised:
+            prototype_route_scores(
+                "query",
+                [make_card("one")],
+                embedder=LeakyEmbedder(),
+                reranker=FixedReranker([1.0]),
+            )
+        self.assertNotIn(secret, str(raised.exception))
 
 
 class AutomaticRoutingCliTests(unittest.TestCase):
