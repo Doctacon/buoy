@@ -13,6 +13,7 @@ import ipaddress
 import math
 from pathlib import Path
 import re
+import struct
 from typing import Iterable, Mapping, Protocol, Sequence
 import unicodedata
 from urllib.parse import urlsplit
@@ -530,6 +531,27 @@ def validate_vector(
     return vector
 
 
+def canonicalize_float32_vector(
+    value: object,
+    *,
+    namespace: str,
+    field: str = "vector",
+) -> list[float]:
+    """Return one normalized vector with stable IEEE-754 binary32 identity."""
+
+    vector = validate_vector(value, namespace=namespace, field=field)
+    canonical: list[float] = []
+    for index, item in enumerate(vector):
+        try:
+            number = struct.unpack("!f", struct.pack("!f", float(item)))[0]
+        except (OverflowError, struct.error):
+            raise CatalogError(
+                f"namespace {namespace!r} field {field}[{index}] must be a finite float32 number"
+            ) from None
+        canonical.append(number)
+    return validate_vector(canonical, namespace=namespace, field=field)
+
+
 def parse_card(payload: object) -> NamespaceCard:
     return _parse_card(payload, persisted=True)
 
@@ -644,11 +666,18 @@ def _parse_card(payload: object, *, persisted: bool) -> NamespaceCard:
         raise CatalogError(f"namespace {namespace!r} field semantic_hash is stale or invalid")
     if payload["vector_hash"] != vector_hash(vector):
         raise CatalogError(f"namespace {namespace!r} field vector_hash is stale or invalid")
-    routing_prototype_vector = validate_vector(
-        routing_prototype_vector_raw,
-        namespace=namespace,
-        field="routing_prototype_vector",
-    )
+    if routing_examples:
+        routing_prototype_vector = canonicalize_float32_vector(
+            routing_prototype_vector_raw,
+            namespace=namespace,
+            field="routing_prototype_vector",
+        )
+    else:
+        routing_prototype_vector = validate_vector(
+            routing_prototype_vector_raw,
+            namespace=namespace,
+            field="routing_prototype_vector",
+        )
     expected_prototype_hash = routing_prototype_hash_for_fields(
         title=title,
         summary=str(payload["summary"]),
@@ -952,6 +981,12 @@ def _prepare_card(
                 namespace=fields.namespace,
                 field="routing_prototype_vector",
             )
+    if fields.routing_examples:
+        routing_prototype_vector = canonicalize_float32_vector(
+            routing_prototype_vector,
+            namespace=fields.namespace,
+            field="routing_prototype_vector",
+        )
     provisional = NamespaceCard(
         namespace=fields.namespace,
         enabled=fields.enabled,
