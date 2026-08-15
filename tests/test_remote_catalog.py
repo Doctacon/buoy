@@ -29,6 +29,7 @@ from buoy_search.remote_catalog import (
     REMOTE_CATALOG_SCHEMA,
     REMOTE_CATALOG_SCHEMA_V1,
     REMOTE_CATALOG_SCHEMA_V2,
+    REMOTE_CATALOG_SCHEMA_V2_ADDITIONS,
     REMOTE_SCHEMA_V1,
     REMOTE_SCHEMA_V2,
     CatalogCounts,
@@ -39,12 +40,15 @@ from buoy_search.remote_catalog import (
     classify_remote_catalog,
     create_client,
     create_remote_cards,
+    migrate_remote_catalog_schema_v2,
     normalize_remote_schema,
     read_remote_catalog,
     require_complete_routing_coverage,
     require_eligible,
     redact_remote_error,
     remote_card_id,
+    remote_catalog_projection_sha256,
+    remote_catalog_schema_fingerprint,
     update_remote_card,
     validate_remote_schema,
 )
@@ -412,6 +416,51 @@ class RemoteSchemaAndCardTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(RemoteCatalogError, "changed"):
             validate_remote_schema(indexed_prototype)
+
+    def test_migration_bindings_are_exact_and_projection_is_schema_stable(self) -> None:
+        self.assertEqual(
+            REMOTE_CATALOG_SCHEMA_V2_ADDITIONS,
+            {
+                "routing_examples": {"type": "[]string", "filterable": False},
+                "routing_prototype_hash": {"type": "string", "filterable": False},
+                "routing_prototype_vector": {"type": "[]float", "filterable": False},
+                "routing_prototype_vector_hash": {
+                    "type": "string",
+                    "filterable": False,
+                },
+            },
+        )
+        self.assertNotEqual(
+            remote_catalog_schema_fingerprint(REMOTE_SCHEMA_V1),
+            remote_catalog_schema_fingerprint(REMOTE_SCHEMA_V2),
+        )
+        cards = [make_card("site-a-v1"), make_card("site-b-v1", enabled=False)]
+        compatibility = CompatibilityContract(REGION, MODEL, "float32")
+        v1 = classify_remote_catalog(
+            live_namespace_ids=(
+                REMOTE_CATALOG_NAMESPACE,
+                "site-a-v1",
+                "site-b-v1",
+            ),
+            cards=cards,
+            compatibility=compatibility,
+            catalog_schema_version=REMOTE_SCHEMA_V1,
+        )
+        v2 = replace(v1, catalog_schema_version=REMOTE_SCHEMA_V2)
+        self.assertEqual(
+            remote_catalog_projection_sha256(v1),
+            remote_catalog_projection_sha256(v2),
+        )
+        changed_inventory = classify_remote_catalog(
+            live_namespace_ids=(REMOTE_CATALOG_NAMESPACE, "site-a-v1"),
+            cards=cards,
+            compatibility=compatibility,
+            catalog_schema_version=REMOTE_SCHEMA_V1,
+        )
+        self.assertNotEqual(
+            remote_catalog_projection_sha256(v1),
+            remote_catalog_projection_sha256(changed_inventory),
+        )
 
     def test_provider_shaped_full_schema_omits_only_vector_filterable(self) -> None:
         provider_metadata = SimpleNamespace(schema={
@@ -1014,6 +1063,59 @@ class RemoteReadTests(unittest.TestCase):
 
 
 class MutationTests(unittest.TestCase):
+    def test_schema_v2_migration_is_one_exact_schema_only_write(self) -> None:
+        class SchemaOnlyResource:
+            def __init__(self, response: object) -> None:
+                self.response = response
+                self.write_calls: list[dict[str, object]] = []
+
+            def write(self, **kwargs: object) -> object:
+                self.write_calls.append(kwargs)
+                return self.response
+
+        resource = SchemaOnlyResource(
+            {
+                "status": "OK",
+                "rows_affected": 0,
+                "rows_deleted": 0,
+                "rows_patched": 0,
+                "rows_upserted": 0,
+                "deleted_ids": None,
+                "patched_ids": None,
+                "upserted_ids": None,
+                "billing": {"write_units": 1},
+            }
+        )
+        result = migrate_remote_catalog_schema_v2(resource)  # type: ignore[arg-type]
+        self.assertTrue(result.changed)
+        self.assertEqual(result.rows_affected, 0)
+        self.assertEqual(result.affected_ids, ())
+        self.assertEqual(result.metrics.write_requests, 1)
+        self.assertEqual(result.metrics.verification_query_requests, 0)
+        self.assertEqual(result.metrics.billing, ({"write_units": 1},))
+        self.assertEqual(
+            resource.write_calls,
+            [
+                {
+                    "distance_metric": DISTANCE_METRIC,
+                    "schema": REMOTE_CATALOG_SCHEMA_V2,
+                }
+            ],
+        )
+
+        for response in (
+            {"rows_affected": 0},
+            {"status": "OK", "rows_affected": 1},
+            {"status": "NO", "rows_affected": 0},
+            {"status": "OK", "rows_affected": 0, "rows_remaining": True},
+            {"status": "OK", "rows_affected": 0, "rows_upserted": 1},
+            {"status": "OK", "rows_affected": 0, "upserted_ids": ["row"]},
+        ):
+            with self.subTest(response=response), self.assertRaises(RemoteCatalogError):
+                migrate_remote_catalog_schema_v2(  # type: ignore[arg-type]
+                    SchemaOnlyResource(response)
+                )
+
     def test_mutations_prevalidate_region_reserved_target_duplicates_and_revision(self) -> None:
         card = make_card()
         wrong_region = make_card(region="gcp-us-east4")

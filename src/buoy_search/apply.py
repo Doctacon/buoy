@@ -653,8 +653,11 @@ def generated_card_for_apply(
         summary=existing.summary if manual else semantics.summary,
         aliases=list(existing.aliases if manual else semantics.aliases),
         tags=list(existing.tags if manual else semantics.tags),
+        # Reviewed routing questions are operator-owned prototype authority.
+        # Generated refreshes may neither invent them for a new card nor clear
+        # them from any existing manual or generated card.
         routing_examples=list(
-            existing.routing_examples if manual else semantics.routing_examples
+            existing.routing_examples if existing is not None else []
         ),
         semantic_origin="manual" if manual else "generated",
         region=region,

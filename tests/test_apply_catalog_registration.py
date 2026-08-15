@@ -83,6 +83,36 @@ def manual_card(namespace: str):  # noqa: ANN201 - test helper
     )
 
 
+def generated_card(namespace: str):  # noqa: ANN201 - test helper
+    return prepare_card(
+        CardFields(
+            namespace=namespace,
+            enabled=True,
+            source_kind="website",
+            source_uri="https://old-generated.example.com/",
+            site_id="old-generated-site",
+            title="Old generated title",
+            summary="Old generated routing summary.",
+            aliases=["old generated alias"],
+            tags=["old generated tag"],
+            semantic_origin="generated",
+            region=REGION,
+            embedding_model=MODEL,
+            embedding_precision="float32",
+            plan_schema_version=2,
+            ranking_mode="page",
+            ranking_profile="none",
+            ranking_pool=20,
+            ranking_aggregation="max",
+            last_plan_id="plan_previous",
+            last_apply_id="apply_previous",
+            routing_examples=["How do I use the reviewed generated-card workflow?"],
+        ),
+        embedder=FixedRoutingEmbedder(),
+        now="2026-08-12T00:00:00+00:00",
+    )
+
+
 class ApplyCatalogRegistrationTests(unittest.TestCase):
     def setUp(self) -> None:
         reset_fakes()
@@ -208,6 +238,78 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
                         mutation.call_args.kwargs["schema_version"],
                         REMOTE_SCHEMA_V2,
                     )
+
+    def test_generated_v2_registration_preserves_reviewed_examples(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_root = root / "state"
+            artifacts, plan_path = build_saved_plan(root, state_root=state_root)
+            verified = load_verified_apply_plan(
+                plan_path=plan_path,
+                namespace=artifacts.manifest.namespace,
+                state_root=state_root,
+            )
+            namespace = artifacts.manifest.namespace
+            existing = generated_card(namespace)
+            snapshot = classify_remote_catalog(
+                live_namespace_ids=(REMOTE_CATALOG_NAMESPACE, namespace),
+                cards=(existing,),
+                compatibility=CompatibilityContract(
+                    region=REGION,
+                    embedding_model=MODEL,
+                    embedding_precision="float32",
+                ),
+                catalog_schema_version=REMOTE_SCHEMA_V2,
+            )
+            client = FakeClient()
+            updated_cards = []
+
+            def update(_resource, card, **_kwargs):  # noqa: ANN001, ANN003, ANN202
+                updated_cards.append(card)
+                return MutationResult(
+                    True,
+                    card,
+                    1,
+                    (remote_card_id(namespace),),
+                    MutationMetrics(1, 2, ()),
+                )
+
+            with patch.object(
+                apply_module,
+                "REMOTE_CATALOG_CLIENT_FACTORY",
+                return_value=client,
+            ), patch.object(
+                apply_module,
+                "read_remote_catalog",
+                return_value=snapshot,
+            ), patch.object(
+                apply_module,
+                "update_remote_card",
+                side_effect=update,
+            ), patch(
+                "buoy_search.catalog.load_routing_embedder",
+                return_value=FixedRoutingEmbedder(),
+            ):
+                result = register_apply_catalog_card(
+                    verified,
+                    config=RuntimeConfig(region=REGION, namespace=namespace),
+                    namespace=namespace,
+                    apply_id="apply_current",
+                    api_key="test-key",
+                )
+
+        self.assertEqual(result["catalog_mutation_status"], "updated")
+        self.assertFalse(result["catalog_manual_semantics_preserved"])
+        self.assertEqual(len(updated_cards), 1)
+        updated = updated_cards[0]
+        self.assertEqual(updated.semantic_origin, "generated")
+        self.assertEqual(updated.routing_examples, existing.routing_examples)
+        self.assertNotEqual(updated.title, existing.title)
+        self.assertNotEqual(updated.routing_prototype_hash, existing.routing_prototype_hash)
+        self.assertEqual(updated.source_uri, artifacts.plan.source["uri"])
+        self.assertEqual(updated.site_id, artifacts.plan.site_id)
+        self.assertEqual(updated.last_plan_id, artifacts.plan.plan_id)
+        self.assertEqual(updated.last_apply_id, "apply_current")
 
     def test_failure_before_catalog_read_only_suggests_safe_inspection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

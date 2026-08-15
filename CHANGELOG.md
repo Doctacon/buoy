@@ -14,6 +14,12 @@ as GitHub Release assets rather than to PyPI.
   pinned MiniLM model without extra provider searches. Production routing and
   the three-corpus content fanout remain unchanged until per-corpus canaries,
   calibration, owner approval, and a separate live schema migration pass.
+- Added preview-first `catalog migrate-routing-v2` and
+  `catalog set-routing-examples` operators. The schema migration is bound to
+  the exact catalog snapshot and vector-inclusive projection; each reviewed
+  example update is bound to one exact card revision and one deterministic
+  row. Both operations report bounded request accounting and leave content and
+  production routing untouched.
 - Restored the fixed `buoy-routing-catalog-v1` card lifecycle and bounded
   `catalog list/show/upsert/enable/disable` commands. Mutations preview by
   default and require explicit approval.
@@ -30,6 +36,9 @@ as GitHub Release assets rather than to PyPI.
 
 ### Changed
 
+- Ordinary apply registration now preserves operator-reviewed routing examples
+  on both manual and generated cards while continuing to refresh verified
+  source, retrieval, plan, and apply-lineage fields.
 - `--namespace` is now a repeatable deterministic retrieval override; one
   explicit namespace retains the v0.5.1 result contract.
 - Successful approved applies register their routing card after content and

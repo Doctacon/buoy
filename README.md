@@ -120,7 +120,33 @@ per-corpus routing examples and a bounded local shortlist/rerank candidate, but
 the candidate remains inactive until route canaries and calibrated confidence
 gates pass. Adding ordinary corpora does not expand the fixed end-to-end answer
 key; each corpus gets a small route-only canary pack instead. The live catalog
-is not migrated by this change, and content fanout remains capped at three.
+is changed only through a separately reviewed, explicit schema-migration
+approval; deploying the compatible reader alone performs no write. Content
+fanout remains capped at three.
+
+The migration and per-card example operators are preview-first and require
+fresh exact bindings on approval:
+
+```bash
+# Read-only previews. Copy the emitted exact digests/revision only after review.
+buoy catalog migrate-routing-v2 --json
+buoy catalog set-routing-examples site-example-one-v1 \
+  --routing-example "How do I configure bounded retries?" --json
+
+# Approved forms require the values from those fresh previews.
+buoy catalog migrate-routing-v2 \
+  --expected-snapshot-revision REPLACE_WITH_PREVIEW_SHA256 \
+  --expected-projection-sha256 REPLACE_WITH_PREVIEW_SHA256 --approve --json
+buoy catalog set-routing-examples site-example-one-v1 \
+  --routing-example "How do I configure bounded retries?" \
+  --expected-card-revision REPLACE_WITH_PREVIEW_SHA256 --approve --json
+```
+
+The first approval adds only four nonfilterable routing-prototype attributes to
+the shared catalog schema. The second changes only one card's reviewed example
+bundle, timestamp, and revision. Neither command writes content, deletes rows,
+changes card enablement, or activates candidate routing. Later ordinary applies
+preserve reviewed examples on both manual and generated cards.
 
 Multi-corpus results are deduplicated and locally reranked. Automatic retrieval
 also checks the relevance of its best final result with the same pinned MiniLM
