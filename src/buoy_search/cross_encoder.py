@@ -6,6 +6,8 @@ from functools import lru_cache
 import math
 from typing import Protocol, Sequence
 
+from buoy_search.model_progress import suppress_model_progress_bars
+
 CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 CROSS_ENCODER_REVISION = "c5ee24cb16019beea0893ab7796b1df96625c6b8"
 CROSS_ENCODER_MAX_LENGTH = 512
@@ -34,15 +36,16 @@ class _PinnedMiniLMReranker:
             ) from exc
 
         try:
-            self._model = CrossEncoder(
-                CROSS_ENCODER_MODEL,
-                revision=CROSS_ENCODER_REVISION,
-                local_files_only=True,
-                trust_remote_code=False,
-                device="cpu",
-                max_length=CROSS_ENCODER_MAX_LENGTH,
-                model_kwargs={"use_safetensors": True},
-            )
+            with suppress_model_progress_bars():
+                self._model = CrossEncoder(
+                    CROSS_ENCODER_MODEL,
+                    revision=CROSS_ENCODER_REVISION,
+                    local_files_only=True,
+                    trust_remote_code=False,
+                    device="cpu",
+                    max_length=CROSS_ENCODER_MAX_LENGTH,
+                    model_kwargs={"use_safetensors": True},
+                )
         except Exception as exc:
             raise CrossEncoderRerankerError(
                 f"pinned reranker {CROSS_ENCODER_MODEL}@{CROSS_ENCODER_REVISION} "

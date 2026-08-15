@@ -12,6 +12,8 @@ from buoy_search.catalog import CardFields, ROUTING_DIMENSIONS, prepare_card
 from buoy_search.cli import main
 from buoy_search.remote_catalog import (
     REMOTE_CATALOG_NAMESPACE,
+    REMOTE_SCHEMA_V1,
+    REMOTE_SCHEMA_V2,
     CompatibilityContract,
     MutationMetrics,
     MutationResult,
@@ -72,6 +74,7 @@ def make_card(
     enabled: bool = True,
     title: str = "Example",
     region: str = REGION,
+    routing_examples: list[str] | None = None,
 ):
     return prepare_card(
         CardFields(
@@ -95,13 +98,18 @@ def make_card(
             ranking_aggregation="max",
             last_plan_id=None,
             last_apply_id=None,
+            routing_examples=list(routing_examples or []),
         ),
         embedder=FixedEmbedder(),
         now="2026-07-18T00:00:00Z",
     )
 
 
-def make_snapshot(*cards, live: tuple[str, ...] | None = None):  # noqa: ANN002
+def make_snapshot(
+    *cards,
+    live: tuple[str, ...] | None = None,
+    schema_version: int = REMOTE_SCHEMA_V1,
+):  # noqa: ANN002
     if live is None:
         live = tuple(card.namespace for card in cards)
     return classify_remote_catalog(
@@ -113,6 +121,7 @@ def make_snapshot(*cards, live: tuple[str, ...] | None = None):  # noqa: ANN002
             embedding_precision="float32",
         ),
         metrics=ReadMetrics(2, 1, 2, ({"query_units": 2},)),
+        catalog_schema_version=schema_version,
     )
 
 
@@ -191,6 +200,7 @@ class CatalogCliTests(unittest.TestCase):
         result, stdout, stderr = run_cli(["catalog", "upsert", "--help"], env={})
         self.assertEqual((result, stderr), (0, ""))
         self.assertIn("database", stdout)
+        self.assertIn("--routing-example", stdout)
 
         result, stdout, stderr = run_cli(["catalog", "list", "--catalog", "legacy.json"])
         self.assertEqual((result, stdout), (2, ""))
@@ -350,6 +360,79 @@ class CatalogCliTests(unittest.TestCase):
         self.assertIn("conditional card update conflicted", stderr)
         self.assertEqual(update.call_args.kwargs["expected_revision"], final_card.card_revision)
         self.assertEqual(update.call_args.args[1].title, changed.title)
+
+    def test_routing_example_preview_and_reader_first_v1_write_gate(self) -> None:
+        live_v1 = make_snapshot(live=("site-example-v1",))
+        examples = ["Where are retries configured?", "How do I set a timeout?"]
+        args = [
+            *upsert_args(),
+            *(item for example in examples for item in ("--routing-example", example)),
+        ]
+        write = Mock(side_effect=AssertionError("preview wrote"))
+        embedder = FixedEmbedder()
+
+        result, stdout, stderr = run_cli(args, patches=(
+            patch("buoy_search.catalog_cli.read_remote_catalog", return_value=live_v1),
+            patch("buoy_search.catalog_cli.create_remote_cards", write),
+            patch("buoy_search.catalog.load_routing_embedder", return_value=embedder),
+        ))
+
+        self.assertEqual((result, stderr), (0, ""))
+        payload = json.loads(stdout)
+        self.assertEqual(payload["mutation_status"], "preview")
+        self.assertEqual(payload["card"]["routing_examples"], sorted(examples))
+        self.assertEqual(len(embedder.calls[0]), 3)
+        write.assert_not_called()
+
+        model = Mock(side_effect=AssertionError("v1 approval loaded model"))
+        result, stdout, stderr = run_cli([*args, "--approve"], patches=(
+            patch("buoy_search.catalog_cli.read_remote_catalog", return_value=live_v1),
+            patch("buoy_search.catalog_cli.create_remote_cards", write),
+            patch("buoy_search.catalog.load_routing_embedder", model),
+        ))
+        self.assertEqual((result, stdout), (2, ""))
+        self.assertIn("reader-first", stderr)
+        self.assertIn("no schema-v1 write occurred", stderr)
+        model.assert_not_called()
+        write.assert_not_called()
+
+    def test_routing_example_approval_uses_observed_v2_schema(self) -> None:
+        example = "Where are retries configured?"
+        final_card = make_card(routing_examples=[example])
+        empty = make_snapshot(
+            live=(final_card.namespace,), schema_version=REMOTE_SCHEMA_V2
+        )
+        final = make_snapshot(final_card, schema_version=REMOTE_SCHEMA_V2)
+        create = Mock(return_value=MutationResult(
+            True,
+            final_card,
+            1,
+            (remote_card_id(final_card.namespace),),
+            MutationMetrics(1, 2, ()),
+        ))
+
+        result, stdout, stderr = run_cli(
+            [*upsert_args(), "--routing-example", example, "--approve"],
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.read_remote_catalog",
+                    side_effect=[empty, final],
+                ),
+                patch("buoy_search.catalog_cli.create_remote_cards", create),
+                patch(
+                    "buoy_search.catalog.load_routing_embedder",
+                    return_value=FixedEmbedder(),
+                ),
+            ),
+        )
+
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertEqual(json.loads(stdout)["mutation_status"], "created")
+        self.assertEqual(create.call_args.kwargs["schema_version"], REMOTE_SCHEMA_V2)
+        self.assertEqual(
+            create.call_args.args[1][0].routing_examples,
+            [example],
+        )
 
     def test_upsert_rejects_nonlive_reserved_and_malformed_card_arguments_before_write(self) -> None:
         create = Mock(side_effect=AssertionError("invalid upsert wrote"))

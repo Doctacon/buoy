@@ -73,6 +73,12 @@ def configure_catalog_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     parser.add_argument("--summary", required=True)
     parser.add_argument("--alias", action="append", default=[])
     parser.add_argument("--tag", action="append", default=[])
+    parser.add_argument(
+        "--routing-example",
+        action="append",
+        default=[],
+        help="Add a descriptor-free example question (repeatable, maximum eight).",
+    )
     parser.add_argument("--embedding-model", required=True)
     parser.add_argument("--embedding-precision", required=True, choices=["float32", "float16"])
     parser.add_argument("--plan-schema-version", required=True, type=int)
@@ -204,7 +210,14 @@ def _remote_failure(exc: Exception) -> int:
 def _matches(card: NamespaceCard, needle: str) -> bool:
     return any(
         needle in canonical_text(value)
-        for value in (card.namespace, card.title, card.summary, *card.aliases, *card.tags)
+        for value in (
+            card.namespace,
+            card.title,
+            card.summary,
+            *card.aliases,
+            *card.tags,
+            *card.routing_examples,
+        )
     )
 
 
@@ -325,14 +338,35 @@ def _run_upsert(args: argparse.Namespace) -> int:
             ranking_aggregation=args.ranking_aggregation.replace("-", "_"),
             last_plan_id=existing.last_plan_id if existing else None,
             last_apply_id=existing.last_apply_id if existing else None,
+            routing_examples=list(args.routing_example),
         )
+        if (
+            args.approve
+            and fields.routing_examples
+            and snapshot.catalog_schema_version == 1
+        ):
+            raise RemoteCatalogError(
+                "routing_examples approval requires the explicit reader-first "
+                "remote catalog schema-v2 migration; no schema-v1 write occurred"
+            )
         card = prepare_card(fields, existing=existing)
         if args.approve:
             resource = remote_catalog_resource(client)
             result = (
-                create_remote_cards(resource, [card], region=region)
+                create_remote_cards(
+                    resource,
+                    [card],
+                    region=region,
+                    schema_version=snapshot.catalog_schema_version,
+                )
                 if existing is None
-                else update_remote_card(resource, card, expected_revision=existing.card_revision, region=region)
+                else update_remote_card(
+                    resource,
+                    card,
+                    expected_revision=existing.card_revision,
+                    region=region,
+                    schema_version=snapshot.catalog_schema_version,
+                )
             )
             final = read_remote_catalog(client, region=region, compatibility=_compatibility(region))
             card = _find(final, args.namespace)
@@ -389,7 +423,9 @@ def _run_toggle(args: argparse.Namespace) -> int:
         else:
             mutation = update_remote_card(
                 remote_catalog_resource(client), intended,
-                expected_revision=current.card_revision, region=region,
+                expected_revision=current.card_revision,
+                region=region,
+                schema_version=snapshot.catalog_schema_version,
             )
             changed = mutation.changed
             affected_ids = list(mutation.affected_ids)

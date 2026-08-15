@@ -7,7 +7,7 @@ an exact cached revision with downloads disabled.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 import ipaddress
 import math
@@ -17,6 +17,7 @@ from typing import Iterable, Mapping, Protocol, Sequence
 import unicodedata
 from urllib.parse import urlsplit
 
+from buoy_search.model_progress import suppress_model_progress_bars
 from buoy_search.plan_artifacts import PLAN_SCHEMA_VERSION, stable_hash
 from buoy_search.retriever import RANKING_AGGREGATIONS, RANKING_MODES, RANKING_PROFILES
 
@@ -54,7 +55,11 @@ DATABASE_LOW_LEVEL_KINDS = {
 }
 SEMANTIC_ORIGINS = {"generated", "manual"}
 EMBEDDING_PRECISIONS = {"float32", "float16"}
-CARD_FIELDS = {
+MAX_ROUTING_EXAMPLES = 8
+MAX_ROUTING_EXAMPLE_CHARACTERS = 512
+ROUTING_PROJECTION = "separate_prototype_vector_normalized_mean_v1"
+ROUTING_PROTOTYPE_CONTRACT = "bounded_card_prototypes_v1"
+CARD_FIELDS_V1 = {
     "namespace", "enabled", "created_at", "updated_at", "card_revision",
     "last_plan_id", "last_apply_id", "source_kind", "source_uri", "site_id",
     "title", "summary", "aliases", "tags", "semantic_origin", "region",
@@ -63,6 +68,15 @@ CARD_FIELDS = {
     "ranking_aggregation", "routing_model", "routing_model_revision",
     "semantic_hash", "vector", "vector_hash",
 }
+ROUTING_PROTOTYPE_FIELD_ORDER = (
+    "routing_examples",
+    "routing_prototype_hash",
+    "routing_prototype_vector",
+    "routing_prototype_vector_hash",
+)
+ROUTING_PROTOTYPE_FIELDS = frozenset(ROUTING_PROTOTYPE_FIELD_ORDER)
+CARD_FIELDS_V2 = {*CARD_FIELDS_V1, *ROUTING_PROTOTYPE_FIELDS}
+CARD_FIELDS = CARD_FIELDS_V2
 DOCUMENT_FIELDS = {"schema_version", "catalog_revision", "updated_at", "cards"}
 
 
@@ -106,6 +120,10 @@ class NamespaceCard:
     semantic_hash: str
     vector: list[float]
     vector_hash: str
+    routing_examples: list[str] = field(default_factory=list)
+    routing_prototype_hash: str = ""
+    routing_prototype_vector: list[float] = field(default_factory=list)
+    routing_prototype_vector_hash: str = ""
 
 
 @dataclass(frozen=True)
@@ -124,6 +142,7 @@ class GeneratedSemantics:
     summary: str
     aliases: list[str]
     tags: list[str]
+    routing_examples: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -150,6 +169,7 @@ class CardFields:
     ranking_aggregation: str
     last_plan_id: str | None = None
     last_apply_id: str | None = None
+    routing_examples: list[str] = field(default_factory=list)
 
 
 def utc_now() -> str:
@@ -179,6 +199,16 @@ def normalize_semantic_values(values: Iterable[str], *, field: str) -> list[str]
     return sorted(cleaned)
 
 
+def normalize_routing_examples(values: Iterable[str]) -> list[str]:
+    examples = normalize_semantic_values(values, field="routing_examples")
+    if any(len(example) > MAX_ROUTING_EXAMPLE_CHARACTERS for example in examples):
+        raise CatalogError(
+            "routing_examples entries must contain at most "
+            f"{MAX_ROUTING_EXAMPLE_CHARACTERS} characters"
+        )
+    return examples
+
+
 def card_passage_text(*, title: str, summary: str, aliases: Sequence[str], tags: Sequence[str]) -> str:
     return (
         f"Title: {title}\n"
@@ -188,12 +218,75 @@ def card_passage_text(*, title: str, summary: str, aliases: Sequence[str], tags:
     )
 
 
-def semantic_hash_for_fields(*, title: str, summary: str, aliases: Sequence[str], tags: Sequence[str]) -> str:
+def routing_example_passage_text(*, title: str, summary: str, example: str) -> str:
+    return f"Title: {title}\nSummary: {summary}\nRouting example: {example}"
+
+
+def routing_passage_texts(
+    *,
+    title: str,
+    summary: str,
+    aliases: Sequence[str],
+    tags: Sequence[str],
+    routing_examples: Sequence[str],
+) -> list[str]:
+    return [
+        card_passage_text(title=title, summary=summary, aliases=aliases, tags=tags),
+        *(
+            routing_example_passage_text(title=title, summary=summary, example=example)
+            for example in routing_examples
+        ),
+    ]
+
+
+def semantic_hash_for_fields(
+    *,
+    title: str,
+    summary: str,
+    aliases: Sequence[str],
+    tags: Sequence[str],
+) -> str:
+    passage = card_passage_text(
+        title=title,
+        summary=summary,
+        aliases=aliases,
+        tags=tags,
+    )
     return stable_hash(
         {
-            "passage_text": card_passage_text(
-                title=title, summary=summary, aliases=aliases, tags=tags
+            "passage_text": passage,
+            "routing_contract": ROUTING_CONTRACT,
+        }
+    )
+
+
+def routing_prototype_hash_for_fields(
+    *,
+    title: str,
+    summary: str,
+    aliases: Sequence[str],
+    tags: Sequence[str],
+    routing_examples: Sequence[str],
+) -> str:
+    """Hash the isolated prototype projection without changing legacy semantics."""
+
+    if not routing_examples:
+        return semantic_hash_for_fields(
+            title=title,
+            summary=summary,
+            aliases=aliases,
+            tags=tags,
+        )
+    return stable_hash(
+        {
+            "passage_texts": routing_passage_texts(
+                title=title,
+                summary=summary,
+                aliases=aliases,
+                tags=tags,
+                routing_examples=routing_examples,
             ),
+            "projection": ROUTING_PROJECTION,
             "routing_contract": ROUTING_CONTRACT,
         }
     )
@@ -214,10 +307,29 @@ def card_revision(card: NamespaceCard) -> str:
     return stable_hash(payload)
 
 
-def card_to_dict(card: NamespaceCard, *, include_vector: bool = False) -> dict[str, object]:
+def card_to_dict(
+    card: NamespaceCard,
+    *,
+    include_vector: bool = False,
+    include_routing_examples: bool | None = None,
+) -> dict[str, object]:
     payload = asdict(card)
+    prototype = {
+        field: payload.pop(field) for field in ROUTING_PROTOTYPE_FIELD_ORDER
+    }
+    examples = prototype["routing_examples"]
+    distinct_prototype = bool(examples) or (
+        prototype["routing_prototype_hash"] != payload["semantic_hash"]
+        or prototype["routing_prototype_vector"] != payload["vector"]
+        or prototype["routing_prototype_vector_hash"] != payload["vector_hash"]
+    )
+    if include_routing_examples is True or (
+        include_routing_examples is None and distinct_prototype
+    ):
+        payload.update(prototype)
     if not include_vector:
         payload.pop("vector")
+        payload.pop("routing_prototype_vector", None)
     return payload
 
 
@@ -394,22 +506,27 @@ def _validate_source_uri(
     )
 
 
-def validate_vector(value: object, *, namespace: str) -> list[float]:
+def validate_vector(
+    value: object,
+    *,
+    namespace: str,
+    field: str = "vector",
+) -> list[float]:
     if not isinstance(value, list) or len(value) != ROUTING_DIMENSIONS:
         raise CatalogError(
-            f"namespace {namespace!r} field vector must contain exactly {ROUTING_DIMENSIONS} numbers"
+            f"namespace {namespace!r} field {field} must contain exactly {ROUTING_DIMENSIONS} numbers"
         )
     vector: list[float] = []
     for index, item in enumerate(value):
         if isinstance(item, bool) or not isinstance(item, (int, float)):
-            raise CatalogError(f"namespace {namespace!r} field vector[{index}] must be a finite JSON number")
+            raise CatalogError(f"namespace {namespace!r} field {field}[{index}] must be a finite JSON number")
         number = float(item)
         if not math.isfinite(number):
-            raise CatalogError(f"namespace {namespace!r} field vector[{index}] must be a finite JSON number")
+            raise CatalogError(f"namespace {namespace!r} field {field}[{index}] must be a finite JSON number")
         vector.append(item)
     norm = math.sqrt(sum(item * item for item in vector))
     if norm == 0.0 or abs(norm - 1.0) > 1e-4:
-        raise CatalogError(f"namespace {namespace!r} field vector must be normalized and non-zero")
+        raise CatalogError(f"namespace {namespace!r} field {field} must be normalized and non-zero")
     return vector
 
 
@@ -426,18 +543,56 @@ def parse_prospective_card(payload: object) -> NamespaceCard:
 def _parse_card(payload: object, *, persisted: bool) -> NamespaceCard:
     if not isinstance(payload, dict):
         raise CatalogError("catalog cards entries must be JSON objects")
-    _require_exact_fields(payload, CARD_FIELDS, label="catalog card")
+    payload_fields = set(payload)
+    if payload_fields == CARD_FIELDS_V1:
+        routing_examples_raw: object = []
+        routing_prototype_hash_raw: object = payload["semantic_hash"]
+        routing_prototype_vector_raw: object = payload["vector"]
+        routing_prototype_vector_hash_raw: object = payload["vector_hash"]
+    elif payload_fields == CARD_FIELDS_V2:
+        routing_examples_raw = payload["routing_examples"]
+        routing_prototype_hash_raw = payload["routing_prototype_hash"]
+        routing_prototype_vector_raw = payload["routing_prototype_vector"]
+        routing_prototype_vector_hash_raw = payload[
+            "routing_prototype_vector_hash"
+        ]
+    else:
+        # Report against the closest compatible shape while retaining the
+        # established unknown-before-missing diagnostic precedence.
+        expected = (
+            CARD_FIELDS_V2
+            if payload_fields & ROUTING_PROTOTYPE_FIELDS
+            else CARD_FIELDS_V1
+        )
+        _require_exact_fields(payload, expected, label="catalog card")
+        raise AssertionError("unreachable")
     namespace = _require_string(payload["namespace"], field="namespace")
     aliases_raw = payload["aliases"]
     tags_raw = payload["tags"]
-    if not isinstance(aliases_raw, list) or not isinstance(tags_raw, list):
-        raise CatalogError(f"namespace {namespace!r} aliases and tags must be arrays")
+    if (
+        not isinstance(aliases_raw, list)
+        or not isinstance(tags_raw, list)
+        or not isinstance(routing_examples_raw, list)
+    ):
+        raise CatalogError(
+            f"namespace {namespace!r} aliases, tags, and routing_examples must be arrays"
+        )
     aliases = normalize_semantic_values(aliases_raw, field="aliases")
     tags = normalize_semantic_values(tags_raw, field="tags")
+    routing_examples = normalize_routing_examples(routing_examples_raw)
+    if len(routing_examples) > MAX_ROUTING_EXAMPLES:
+        raise CatalogError(
+            f"namespace {namespace!r} field routing_examples must contain at most "
+            f"{MAX_ROUTING_EXAMPLES} entries"
+        )
     if aliases != aliases_raw:
         raise CatalogError(f"namespace {namespace!r} field aliases must be sorted and canonical")
     if tags != tags_raw:
         raise CatalogError(f"namespace {namespace!r} field tags must be sorted and canonical")
+    if routing_examples != routing_examples_raw:
+        raise CatalogError(
+            f"namespace {namespace!r} field routing_examples must be sorted and canonical"
+        )
     title = _require_string(payload["title"], field="title", namespace=namespace)
     if canonical_text(title) in {canonical_text(alias) for alias in aliases}:
         raise CatalogError(f"namespace {namespace!r} field aliases must not contain the normalized title")
@@ -489,6 +644,34 @@ def _parse_card(payload: object, *, persisted: bool) -> NamespaceCard:
         raise CatalogError(f"namespace {namespace!r} field semantic_hash is stale or invalid")
     if payload["vector_hash"] != vector_hash(vector):
         raise CatalogError(f"namespace {namespace!r} field vector_hash is stale or invalid")
+    routing_prototype_vector = validate_vector(
+        routing_prototype_vector_raw,
+        namespace=namespace,
+        field="routing_prototype_vector",
+    )
+    expected_prototype_hash = routing_prototype_hash_for_fields(
+        title=title,
+        summary=str(payload["summary"]),
+        aliases=aliases,
+        tags=tags,
+        routing_examples=routing_examples,
+    )
+    if routing_prototype_hash_raw != expected_prototype_hash:
+        raise CatalogError(
+            f"namespace {namespace!r} field routing_prototype_hash is stale or invalid"
+        )
+    if routing_prototype_vector_hash_raw != vector_hash(routing_prototype_vector):
+        raise CatalogError(
+            f"namespace {namespace!r} field routing_prototype_vector_hash is stale or invalid"
+        )
+    if not routing_examples and (
+        routing_prototype_hash_raw != payload["semantic_hash"]
+        or routing_prototype_vector != vector
+        or routing_prototype_vector_hash_raw != payload["vector_hash"]
+    ):
+        raise CatalogError(
+            f"namespace {namespace!r} empty routing prototype must equal the base projection"
+        )
     last_plan_id, last_apply_id = _validate_lineage(
         semantic_origin=semantic_origin,
         last_plan_id=payload["last_plan_id"],
@@ -528,6 +711,10 @@ def _parse_card(payload: object, *, persisted: bool) -> NamespaceCard:
         semantic_hash=str(payload["semantic_hash"]),
         vector=vector,
         vector_hash=str(payload["vector_hash"]),
+        routing_examples=routing_examples,
+        routing_prototype_hash=str(routing_prototype_hash_raw),
+        routing_prototype_vector=routing_prototype_vector,
+        routing_prototype_vector_hash=str(routing_prototype_vector_hash_raw),
     )
     if card.card_revision != card_revision(card):
         raise CatalogError(f"namespace {namespace!r} field card_revision is stale or invalid")
@@ -568,11 +755,12 @@ class _SentenceTransformerRoutingEmbedder:
         except ImportError as exc:  # pragma: no cover
             raise CatalogError("sentence-transformers is required for catalog vectors; run `uv sync` first") from exc
         try:
-            self._model = SentenceTransformer(
-                ROUTING_MODEL,
-                revision=ROUTING_MODEL_REVISION,
-                local_files_only=True,
-            )
+            with suppress_model_progress_bars():
+                self._model = SentenceTransformer(
+                    ROUTING_MODEL,
+                    revision=ROUTING_MODEL_REVISION,
+                    local_files_only=True,
+                )
         except Exception as exc:
             raise CatalogError(
                 f"pinned routing model {ROUTING_MODEL}@{ROUTING_MODEL_REVISION} is not cached locally; "
@@ -602,6 +790,16 @@ def validate_card_fields(fields: CardFields, *, persisted: bool = True) -> CardF
     summary = _require_string(fields.summary, field="summary", namespace=namespace).strip()
     aliases = normalize_semantic_values(fields.aliases, field="aliases")
     tags = normalize_semantic_values(fields.tags, field="tags")
+    if not isinstance(fields.routing_examples, list):
+        raise CatalogError(
+            f"namespace {namespace!r} field routing_examples must be an array"
+        )
+    routing_examples = normalize_routing_examples(fields.routing_examples)
+    if len(routing_examples) > MAX_ROUTING_EXAMPLES:
+        raise CatalogError(
+            f"namespace {namespace!r} field routing_examples must contain at most "
+            f"{MAX_ROUTING_EXAMPLES} entries"
+        )
     if canonical_text(title) in {canonical_text(alias) for alias in aliases}:
         raise CatalogError(f"namespace {namespace!r} field aliases must not contain the normalized title")
     if fields.semantic_origin not in SEMANTIC_ORIGINS:
@@ -631,7 +829,15 @@ def validate_card_fields(fields: CardFields, *, persisted: bool = True) -> CardF
         namespace=namespace,
         persisted=persisted,
     )
-    return replace(fields, namespace=namespace, title=title, summary=summary, aliases=aliases, tags=tags)
+    return replace(
+        fields,
+        namespace=namespace,
+        title=title,
+        summary=summary,
+        aliases=aliases,
+        tags=tags,
+        routing_examples=routing_examples,
+    )
 
 
 def prepare_card(
@@ -673,29 +879,79 @@ def _prepare_card(
     fields = validate_card_fields(fields, persisted=persisted)
     timestamp = now or utc_now()
     semantic_hash = semantic_hash_for_fields(
-        title=fields.title, summary=fields.summary, aliases=fields.aliases, tags=fields.tags
+        title=fields.title,
+        summary=fields.summary,
+        aliases=fields.aliases,
+        tags=fields.tags,
+    )
+    routing_prototype_hash = routing_prototype_hash_for_fields(
+        title=fields.title,
+        summary=fields.summary,
+        aliases=fields.aliases,
+        tags=fields.tags,
+        routing_examples=fields.routing_examples,
     )
     if (
         existing is not None
         and existing.semantic_hash == semantic_hash
+        and existing.routing_prototype_hash == routing_prototype_hash
         and existing.routing_model == ROUTING_MODEL
         and existing.routing_model_revision == ROUTING_MODEL_REVISION
     ):
         vector = list(existing.vector)
+        routing_prototype_vector = list(existing.routing_prototype_vector)
     else:
-        passage = card_passage_text(
-            title=fields.title, summary=fields.summary, aliases=fields.aliases, tags=fields.tags
+        passages = routing_passage_texts(
+            title=fields.title,
+            summary=fields.summary,
+            aliases=fields.aliases,
+            tags=fields.tags,
+            routing_examples=fields.routing_examples,
         )
+        encoder = embedder or load_routing_embedder()
+        encoded: list[list[float]] | None = None
         try:
-            encoder = embedder or load_routing_embedder()
-            encoded = encoder.encode([passage])
-        except CatalogError:
-            raise
-        except Exception as exc:
-            raise CatalogError(f"namespace {fields.namespace!r}: routing model failed: {exc}") from exc
-        if len(encoded) != 1:
-            raise CatalogError(f"namespace {fields.namespace!r}: routing model must return exactly one vector")
-        vector = validate_vector(encoded[0], namespace=fields.namespace)
+            encoded = encoder.encode(passages)
+        except Exception:
+            pass
+        if encoded is None:
+            # Exit the provider/model exception scope before raising so neither
+            # its text nor exception chain can reach CLI diagnostics.
+            raise CatalogError(
+                f"namespace {fields.namespace!r}: routing model failed"
+            ) from None
+        if len(encoded) != len(passages):
+            raise CatalogError(
+                f"namespace {fields.namespace!r}: routing model must return exactly "
+                f"{len(passages)} vectors"
+            )
+        passage_vectors = [
+            validate_vector(value, namespace=fields.namespace) for value in encoded
+        ]
+        if existing is not None and existing.semantic_hash == semantic_hash:
+            # An example-only edit cannot rewrite the legacy base projection.
+            vector = list(existing.vector)
+        else:
+            vector = passage_vectors[0]
+        if len(passage_vectors) == 1:
+            # Preserve exact float serialization and hashes for schema-v1 cards.
+            routing_prototype_vector = list(vector)
+        else:
+            mean = [
+                sum(float(item[index]) for item in passage_vectors)
+                / len(passage_vectors)
+                for index in range(ROUTING_DIMENSIONS)
+            ]
+            norm = math.sqrt(sum(item * item for item in mean))
+            if norm == 0.0 or not math.isfinite(norm):
+                raise CatalogError(
+                    f"namespace {fields.namespace!r}: routing prototype mean must be finite and non-zero"
+                )
+            routing_prototype_vector = validate_vector(
+                [item / norm for item in mean],
+                namespace=fields.namespace,
+                field="routing_prototype_vector",
+            )
     provisional = NamespaceCard(
         namespace=fields.namespace,
         enabled=fields.enabled,
@@ -726,6 +982,10 @@ def _prepare_card(
         semantic_hash=semantic_hash,
         vector=vector,
         vector_hash=vector_hash(vector),
+        routing_examples=list(fields.routing_examples),
+        routing_prototype_hash=routing_prototype_hash,
+        routing_prototype_vector=routing_prototype_vector,
+        routing_prototype_vector_hash=vector_hash(routing_prototype_vector),
     )
     card = replace(provisional, card_revision=card_revision(provisional))
     return _parse_card(card_to_dict(card, include_vector=True), persisted=persisted)
@@ -754,6 +1014,10 @@ def merge_system_card(existing: NamespaceCard | None, incoming: NamespaceCard) -
             summary=existing.summary,
             aliases=list(existing.aliases),
             tags=list(existing.tags),
+            routing_examples=list(existing.routing_examples),
+            routing_prototype_hash=existing.routing_prototype_hash,
+            routing_prototype_vector=list(existing.routing_prototype_vector),
+            routing_prototype_vector_hash=existing.routing_prototype_vector_hash,
             semantic_origin="manual",
             semantic_hash=existing.semantic_hash,
             vector=list(existing.vector),
@@ -954,4 +1218,5 @@ def generated_semantics(
         summary=summary,
         aliases=sorted(aliases),
         tags=sorted(tags),
+        routing_examples=[],
     )

@@ -84,6 +84,26 @@ buoy retrieve "Compare the two approaches" \
   --namespace site-example-two-v1
 ```
 
+Live text is compact and citation-first by default:
+
+```text
+Found 1 passage.
+
+1. Retry behavior
+   https://docs.example.com/retries · Backoff
+   Requests use bounded exponential backoff and stop after the configured...
+```
+
+Each excerpt is whitespace-collapsed and capped at 320 characters. Use
+`--explain` for the existing detailed text diagnostics, or `--json` for the
+unchanged structured result; the two flags cannot be combined. Dry-run and
+plan output remain detailed. These modes render the same retrieval result:
+routing, ranking, per-corpus coverage promotion, evidence assessment, and
+provider calls do not change. Partial-failure and evidence-assessment-failure
+warnings remain prominent, and abstention/inconclusive messages are unchanged.
+Compact retrieval returns passages and citations; it does not synthesize an
+answer.
+
 An approved apply registers or refreshes that namespace's routing card after
 content and local state commit. Catalog inspection is read-only; mutations are
 previews until separately approved:
@@ -94,6 +114,13 @@ buoy catalog show site-example-one-v1
 buoy catalog disable site-example-one-v1       # preview
 buoy catalog disable site-example-one-v1 --approve
 ```
+
+**Unreleased routing-scale foundation:** new readers accept reviewed
+per-corpus routing examples and a bounded local shortlist/rerank candidate, but
+the candidate remains inactive until route canaries and calibrated confidence
+gates pass. Adding ordinary corpora does not expand the fixed end-to-end answer
+key; each corpus gets a small route-only canary pack instead. The live catalog
+is not migrated by this change, and content fanout remains capped at three.
 
 Multi-corpus results are deduplicated and locally reranked. Automatic retrieval
 also checks the relevance of its best final result with the same pinned MiniLM

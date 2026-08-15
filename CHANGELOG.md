@@ -8,6 +8,12 @@ as GitHub Release assets rather than to PyPI.
 
 ### Added
 
+- Added an inactive scalable-routing foundation: routing cards may carry up to
+  eight reviewed example questions under a reader-first additive schema, and a
+  candidate router can rerank an exact local top-twelve card shortlist with the
+  pinned MiniLM model without extra provider searches. Production routing and
+  the three-corpus content fanout remain unchanged until per-corpus canaries,
+  calibration, owner approval, and a separate live schema migration pass.
 - Restored the fixed `buoy-routing-catalog-v1` card lifecycle and bounded
   `catalog list/show/upsert/enable/disable` commands. Mutations preview by
   default and require explicit approval.
@@ -19,6 +25,8 @@ as GitHub Release assets rather than to PyPI.
   packaged cutoff of `-8.0`; weak results widen once, then return either no
   relevant evidence or an inconclusive result when a namespace failed. There
   is no command-line, environment, or runtime threshold override.
+- Added `buoy retrieve --explain` for the established detailed live text
+  diagnostics. It is presentation-only and cannot be combined with `--json`.
 
 ### Changed
 
@@ -32,6 +40,11 @@ as GitHub Release assets rather than to PyPI.
   The `-8.0` cutoff is a raw model score rather than a probability; it was
   approved as a provisional starting point from the observed 50-question run
   and remains subject to monitoring against a broader reviewed sample.
+- Live `buoy retrieve` text now defaults to compact citation-first passages
+  with whitespace-collapsed excerpts capped at 320 characters. Routing,
+  ranking, per-corpus coverage promotion, evidence behavior, JSON, and provider
+  calls are unchanged; partial-failure and `assessment_failed` warnings remain
+  visible.
 
 ## [0.5.1] - 2026-08-13
 

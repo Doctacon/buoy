@@ -1,7 +1,8 @@
 Status: active
 Created: 2026-08-13
-Updated: 2026-08-13
+Updated: 2026-08-15
 Amends: .10x/decisions/buoy-is-a-focused-indexer.md
+Amended-By: .10x/decisions/buoy-uses-bounded-prototype-routing.md
 
 # Buoy Owns Bounded Multi-Corpus Retrieval
 

@@ -76,6 +76,7 @@ from buoy_search.chunker import (
 from buoy_search.plan_cleanup import cleanup_applied_plan_directory
 from buoy_search.plan_diff import PlanDiffError
 from buoy_search.planning_service import PlanProgress, PlanningRequest, PlanningService
+from buoy_search.model_progress import suppress_model_progress_bars
 from buoy_search.catalog import CatalogError, load_routing_embedder
 from buoy_search.catalog_cli import configure_catalog_parser
 from buoy_search.remote_catalog import (
@@ -768,6 +769,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Print JSON output. Text output is used by default for live results.",
+    )
+    retrieve_parser.add_argument(
+        "--explain",
+        action="store_true",
+        help="Print detailed live retrieval diagnostics instead of compact passages.",
     )
     retrieve_parser.set_defaults(func=_run_retrieve)
 
@@ -1516,18 +1522,19 @@ def _run_retrieve(args: argparse.Namespace) -> int:
             return 0
         try:
             result: RetrievalResult | MultiNamespaceRetrievalResult
-            result = (
-                HybridRetriever.from_config(configs[0]).retrieve(query, options[0])
-                if len(configs) == 1
-                else MultiNamespaceRetriever.from_configs(configs).retrieve(query, options)
-            )
+            with suppress_model_progress_bars():
+                result = (
+                    HybridRetriever.from_config(configs[0]).retrieve(query, options[0])
+                    if len(configs) == 1
+                    else MultiNamespaceRetriever.from_configs(configs).retrieve(query, options)
+                )
         except RuntimeError as exc:
             print(f"Retrieval failed: {exc}", file=sys.stderr)
             return 2
         if args.json:
             _print_json(result.to_dict())
         else:
-            print_retrieval_text(result)
+            print_retrieval_text(result, explain=args.explain)
         return 0
 
     api_key = os.environ.get("TURBOPUFFER_API_KEY")
@@ -1557,7 +1564,8 @@ def _run_retrieve(args: argparse.Namespace) -> int:
         )
         snapshot = require_complete_routing_coverage(snapshot)
         snapshot = require_eligible(snapshot)
-        route_embedder = ROUTING_EMBEDDER_FACTORY()
+        with suppress_model_progress_bars():
+            route_embedder = ROUTING_EMBEDDER_FACTORY()
         exclusion_ids = {
             "missing_card": list(snapshot.missing_card_ids),
             "stale_target": list(snapshot.stale_target_ids),
@@ -1643,21 +1651,22 @@ def _run_retrieve(args: argparse.Namespace) -> int:
                 semantic_margin=routing.semantic_margin,
             ),
         }
-        result = RoutedRetrievalResult(
-            result=MultiNamespaceRetriever.from_configs(configs).retrieve(
-                query,
-                options,
-                **retrieval_kwargs,
-            ),
-            routing=routing,
-        )
+        with suppress_model_progress_bars():
+            result = RoutedRetrievalResult(
+                result=MultiNamespaceRetriever.from_configs(configs).retrieve(
+                    query,
+                    options,
+                    **retrieval_kwargs,
+                ),
+                routing=routing,
+            )
     except RuntimeError as exc:
         print(f"Multi-corpus retrieval failed: {exc}", file=sys.stderr)
         return 2
     if args.json:
         _print_json(result.to_dict())
     else:
-        print_retrieval_text(result)
+        print_retrieval_text(result, explain=args.explain)
     return 0
 
 
@@ -1990,8 +1999,56 @@ def print_apply_text(payload: dict[str, object], *, stream: TextIO | None = None
         emit("  live: rerun without --dry-run for interactive confirmation, or pass --approve for automation")
 
 
+COMPACT_RETRIEVAL_EXCERPT_LIMIT = 320
+
+
+def _single_line(value: object) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _compact_excerpt(value: object) -> str:
+    content = _single_line(value)
+    if len(content) <= COMPACT_RETRIEVAL_EXCERPT_LIMIT:
+        return content
+    prefix = content[: COMPACT_RETRIEVAL_EXCERPT_LIMIT - 3].rstrip()
+    if (
+        prefix
+        and len(prefix) < len(content)
+        and not content[len(prefix)].isspace()
+        and " " in prefix
+    ):
+        prefix = prefix.rsplit(" ", 1)[0].rstrip()
+    return prefix + "..."
+
+
+def _best_retrieval_citation(hit: dict[str, object]) -> str:
+    for field in ("url", "repo_path", "path", "id"):
+        citation = _single_line(hit.get(field))
+        if citation:
+            return citation
+    return "Unknown source"
+
+
+def _print_partial_retrieval_warning(payload: dict[str, object]) -> None:
+    if not payload.get("incomplete"):
+        return
+    raw_failures = payload.get("namespace_failures")
+    failures = raw_failures if isinstance(raw_failures, list) else []
+    namespaces = [
+        _single_line(failure.get("namespace"))
+        for failure in failures
+        if isinstance(failure, dict) and _single_line(failure.get("namespace"))
+    ]
+    if namespaces:
+        print(f"Warning: Some corpora could not be searched: {', '.join(namespaces)}.")
+    else:
+        print("Warning: Some corpora could not be searched.")
+
+
 def print_retrieval_text(
     output: RetrievalPlan | RetrievalResult | MultiNamespaceRetrievalPlan | MultiNamespaceRetrievalResult | RoutedRetrievalPlan | RoutedRetrievalResult,
+    *,
+    explain: bool = False,
 ) -> None:
     payload = output.to_dict()
     if payload.get("dry_run"):
@@ -2072,6 +2129,28 @@ def print_retrieval_text(
         )
         print(f"  searched namespaces: {payload.get('namespaces', [])}")
         print(f"  namespace failures: {payload.get('namespace_failures', [])}")
+        return
+    if not explain:
+        rendered_hits = [hit for hit in hits if isinstance(hit, dict)]
+        noun = "passage" if len(rendered_hits) == 1 else "passages"
+        print(f"Found {len(rendered_hits)} {noun}.")
+        if evidence_status == "assessment_failed":
+            print(
+                "Warning: Evidence relevance could not be assessed; "
+                "retrieved passages are shown."
+            )
+        _print_partial_retrieval_warning(payload)
+        for index, hit in enumerate(rendered_hits, start=1):
+            title = _single_line(hit.get("title")) or "Untitled"
+            citation = _best_retrieval_citation(hit)
+            section_path = _single_line(hit.get("section_path"))
+            if section_path:
+                citation = f"{citation} · {section_path}"
+            print(f"\n{index}. {title}")
+            print(f"   {citation}")
+            excerpt = _compact_excerpt(hit.get("content"))
+            if excerpt:
+                print(f"   {excerpt}")
         return
     if "namespace" in payload:
         print(
@@ -2182,6 +2261,13 @@ def print_eval_text(payload: dict[str, object]) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if (
+        getattr(args, "command", None) == "retrieve"
+        and bool(getattr(args, "json", False))
+        and bool(getattr(args, "explain", False))
+    ):
+        print("Choose either --json or --explain, not both.", file=sys.stderr)
+        return 2
     if (
         getattr(args, "command", None) == "crawl"
         and getattr(args, "base_url", None) is None

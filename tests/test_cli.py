@@ -242,7 +242,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("result is inconclusive", rendered)
         self.assertIn("site-two-v1", rendered)
 
-    def test_retrieval_text_calls_supported_gate_provisional(self) -> None:
+    def test_retrieval_text_hides_supported_gate_unless_explained(self) -> None:
         class Output:
             def to_dict(self) -> dict[str, object]:
                 return {
@@ -258,15 +258,21 @@ class CliTests(unittest.TestCase):
                     },
                 }
 
-        stdout = StringIO()
-        with redirect_stdout(stdout):
+        compact_stdout = StringIO()
+        with redirect_stdout(compact_stdout):
             print_retrieval_text(Output())  # type: ignore[arg-type]
 
-        rendered = stdout.getvalue()
+        self.assertEqual(compact_stdout.getvalue(), "Found 0 passages.\n")
+
+        explained_stdout = StringIO()
+        with redirect_stdout(explained_stdout):
+            print_retrieval_text(Output(), explain=True)  # type: ignore[arg-type]
+
+        rendered = explained_stdout.getvalue()
         self.assertIn("supported by the provisional relevance gate", rendered)
         self.assertNotIn("calibrated relevance gate", rendered)
 
-    def test_live_retrieval_and_eval_text_expose_embedding_precision(self) -> None:
+    def test_embedding_precision_stays_in_explain_and_eval_but_not_compact_retrieval(self) -> None:
         class Output:
             def __init__(self, payload: dict[str, object]) -> None:
                 self.payload = payload
@@ -274,15 +280,21 @@ class CliTests(unittest.TestCase):
             def to_dict(self) -> dict[str, object]:
                 return self.payload
 
-        stdout = StringIO()
-        with redirect_stdout(stdout):
+        compact_stdout = StringIO()
+        with redirect_stdout(compact_stdout):
             print_retrieval_text(Output({"dry_run": False, "namespace": "site-example-v1", "hits": [], "fusion": "server_rrf", "ranking_mode": "page", "ranking_profile": "none", "ranking_aggregation": "max", "embedding_precision": "float16"}))
+
+        self.assertNotIn("embedding_precision", compact_stdout.getvalue())
+
+        detailed_stdout = StringIO()
+        with redirect_stdout(detailed_stdout):
+            print_retrieval_text(Output({"dry_run": False, "namespace": "site-example-v1", "hits": [], "fusion": "server_rrf", "ranking_mode": "page", "ranking_profile": "none", "ranking_aggregation": "max", "embedding_precision": "float16"}), explain=True)
             for dry_run in (True, False):
                 print_eval_text({"dry_run": dry_run, "namespace": "site-example-v1", "region": "gcp-us-central1", "embedding_precision": "float16", "total": 0, "top_k": 5, "candidates": 50, "ranking_mode": "page", "ranking_profile": "none", "ranking_aggregation": "max", "passed": 0, "pass_rate": 0.0, "cases": []})
 
-        self.assertEqual(stdout.getvalue().count("embedding_precision: float16"), 3)
+        self.assertEqual(detailed_stdout.getvalue().count("embedding_precision: float16"), 3)
 
-    def test_retrieval_text_prints_tags_only_when_non_empty_in_stored_order(self) -> None:
+    def test_retrieval_text_hides_tags_unless_explained(self) -> None:
         class Output:
             def to_dict(self) -> dict[str, object]:
                 return {
@@ -309,12 +321,361 @@ class CliTests(unittest.TestCase):
                     ],
                 }
 
+        compact_stdout = StringIO()
+        with redirect_stdout(compact_stdout):
+            print_retrieval_text(Output())  # type: ignore[arg-type]
+
+        self.assertNotIn("Tags:", compact_stdout.getvalue())
+
+        explained_stdout = StringIO()
+        with redirect_stdout(explained_stdout):
+            print_retrieval_text(Output(), explain=True)  # type: ignore[arg-type]
+
+        self.assertIn("Tags: library, guide", explained_stdout.getvalue())
+        self.assertEqual(explained_stdout.getvalue().count("Tags:"), 1)
+
+    def test_compact_retrieval_text_is_citation_first_and_hides_diagnostics(self) -> None:
+        class Output:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "dry_run": False,
+                    "namespaces": ["site-rentptr-com-v1", "site-other-v1"],
+                    "fusion": "cross_namespace_equal_weight_ordinal_rrf",
+                    "embedding_precision": "float32",
+                    "reranking": {
+                        "applied": True,
+                        "model": "private/model-detail",
+                    },
+                    "evidence": {"mode": "active", "status": "supported"},
+                    "hits": [
+                        {
+                            "id": "ptr-hit",
+                            "title": " Work at PTR |  Join Our Team ",
+                            "url": "https://rentptr.com/about/join-our-team",
+                            "repo_path": "ignored/repo-path.md",
+                            "path": "ignored/internal-path.md",
+                            "section_path": "What it is like\n to work at PTR",
+                            "namespace": "site-rentptr-com-v1",
+                            "tags": ["company", "careers"],
+                            "score_info": {"cross_encoder": 9.5},
+                            "content": " PTR has given me\n the support   and opportunity to grow. ",
+                        },
+                        {
+                            "id": "repo-hit",
+                            "title": "Repository result",
+                            "url": "",
+                            "repo_path": "docs/retrieval.md",
+                            "path": "ignored/path.md",
+                            "section_path": "",
+                            "namespace": "repo-example-v1",
+                            "tags": [],
+                            "score_info": {"rrf": 0.1},
+                            "content": "Evidence from a repository.",
+                        },
+                    ],
+                }
+
         stdout = StringIO()
         with redirect_stdout(stdout):
             print_retrieval_text(Output())  # type: ignore[arg-type]
 
-        self.assertIn("Tags: library, guide", stdout.getvalue())
-        self.assertEqual(stdout.getvalue().count("Tags:"), 1)
+        self.assertEqual(
+            stdout.getvalue(),
+            "Found 2 passages.\n"
+            "\n"
+            "1. Work at PTR | Join Our Team\n"
+            "   https://rentptr.com/about/join-our-team · What it is like to work at PTR\n"
+            "   PTR has given me the support and opportunity to grow.\n"
+            "\n"
+            "2. Repository result\n"
+            "   docs/retrieval.md\n"
+            "   Evidence from a repository.\n",
+        )
+
+    def test_compact_retrieval_citation_fallbacks_and_empty_fields(self) -> None:
+        class Output:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "dry_run": False,
+                    "namespace": "site-example-v1",
+                    "hits": [
+                        {"id": "path-hit", "title": "", "path": " docs/page.md ", "content": ""},
+                        {"id": "stable-id", "title": None, "content": None},
+                        {"id": "", "title": "No source", "content": "evidence"},
+                    ],
+                }
+
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            print_retrieval_text(Output())  # type: ignore[arg-type]
+
+        self.assertEqual(
+            stdout.getvalue(),
+            "Found 3 passages.\n\n"
+            "1. Untitled\n"
+            "   docs/page.md\n\n"
+            "2. Untitled\n"
+            "   stable-id\n\n"
+            "3. No source\n"
+            "   Unknown source\n"
+            "   evidence\n",
+        )
+
+    def test_compact_retrieval_excerpt_is_collapsed_and_at_most_320_characters(self) -> None:
+        class Output:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "dry_run": False,
+                    "namespace": "site-example-v1",
+                    "hits": [
+                        {
+                            "id": "long-hit",
+                            "title": "Long result",
+                            "content": ("alpha   beta\n" * 40),
+                        }
+                    ],
+                }
+
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            print_retrieval_text(Output())  # type: ignore[arg-type]
+
+        lines = stdout.getvalue().splitlines()
+        self.assertEqual(lines[0], "Found 1 passage.")
+        self.assertEqual(lines[3], "   long-hit")
+        excerpt = lines[4].removeprefix("   ")
+        self.assertLessEqual(len(excerpt), 320)
+        self.assertTrue(excerpt.endswith(("alpha...", "beta...")))
+        self.assertNotIn("  ", excerpt)
+
+    def test_compact_partial_failure_warning_is_attributed_and_redacted(self) -> None:
+        class Output:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "dry_run": False,
+                    "namespaces": ["site-one-v1", "site-two-v1"],
+                    "hits": [],
+                    "incomplete": True,
+                    "namespace_failures": [
+                        {
+                            "namespace": "site-two-v1",
+                            "message": "Bearer secret-provider-token",
+                        }
+                    ],
+                }
+
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            print_retrieval_text(Output())  # type: ignore[arg-type]
+
+        rendered = stdout.getvalue()
+        self.assertIn("Found 0 passages.", rendered)
+        self.assertIn("site-two-v1", rendered)
+        self.assertNotIn("secret-provider-token", rendered)
+        self.assertNotIn("Bearer", rendered)
+
+    def test_explained_multi_partial_text_matches_legacy_golden(self) -> None:
+        class Output:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "dry_run": False,
+                    "namespaces": ["site-one-v1", "site-two-v1"],
+                    "fusion": "cross_namespace_rrf",
+                    "embedding_precision": "float32",
+                    "incomplete": True,
+                    "namespace_failures": [
+                        {"namespace": "site-two-v1", "message": "unavailable"}
+                    ],
+                    "reranking": {
+                        "applied": True,
+                        "model": "pinned-model",
+                        "candidates_after_dedupe": 2,
+                    },
+                    "evidence": {"mode": "active", "status": "supported"},
+                    "hits": [
+                        {
+                            "id": "hit-one",
+                            "title": "Example",
+                            "namespace": "site-one-v1",
+                            "url": "https://example.com/docs",
+                            "section_path": "Overview",
+                            "path": "docs/example.md",
+                            "tags": ["guide"],
+                            "score_info": {"rank": 1},
+                            "content": "Useful evidence.",
+                        }
+                    ],
+                }
+
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            print_retrieval_text(Output(), explain=True)  # type: ignore[arg-type]
+
+        self.assertEqual(
+            stdout.getvalue(),
+            "Retrieved 1 chunks across ['site-one-v1', 'site-two-v1'] using cross_namespace_rrf:\n"
+            "  reranker: applied=True; model=pinned-model; candidates=2\n"
+            "  warning: partial namespace failures: "
+            "[{'namespace': 'site-two-v1', 'message': 'unavailable'}]\n"
+            "  evidence: supported by the provisional relevance gate\n"
+            "  embedding_precision: float32\n\n"
+            "1. Example\n"
+            "   Corpus: site-one-v1\n"
+            "   URL: https://example.com/docs\n"
+            "   Section: Overview\n"
+            "   Path: docs/example.md\n"
+            "   Tags: guide\n"
+            "   Score: {'rank': 1}\n"
+            "   Content: Useful evidence.\n",
+        )
+
+    def test_compact_assessment_failure_warning_remains_prominent(self) -> None:
+        class Output:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "dry_run": False,
+                    "namespaces": ["site-one-v1"],
+                    "hits": [],
+                    "embedding_precision": "float32",
+                    "evidence": {"mode": "active", "status": "assessment_failed"},
+                }
+
+        compact_stdout = StringIO()
+        with redirect_stdout(compact_stdout):
+            print_retrieval_text(Output())  # type: ignore[arg-type]
+        self.assertIn("Warning: Evidence relevance could not be assessed", compact_stdout.getvalue())
+
+        explained_stdout = StringIO()
+        with redirect_stdout(explained_stdout):
+            print_retrieval_text(Output(), explain=True)  # type: ignore[arg-type]
+        self.assertIn(
+            "evidence warning: assessment failed; results were preserved because abstention is not active",
+            explained_stdout.getvalue(),
+        )
+
+    def test_retrieve_rejects_json_and_explain_before_runtime_work(self) -> None:
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch.dict(
+            os.environ,
+            {"TURBO_SEARCH_EMBEDDING_MODEL": "removed/model"},
+            clear=True,
+        ), patch(
+            "buoy_search.cli.removed_embedding_environment_error",
+            side_effect=AssertionError("environment compatibility inspected"),
+        ), patch(
+            "buoy_search.cli.load_config",
+            side_effect=AssertionError("runtime config loaded"),
+        ), patch(
+            "buoy_search.cli.load_evidence_calibration",
+            side_effect=AssertionError("evidence model loaded"),
+        ), patch(
+            "buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY",
+            side_effect=AssertionError("provider client constructed"),
+        ), redirect_stdout(stdout), redirect_stderr(stderr):
+            result = main(["retrieve", "What is PTR?", "--json", "--explain"])
+
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(
+            stderr.getvalue(),
+            "Choose either --json or --explain, not both.\n",
+        )
+
+    def test_retrieval_plan_text_is_detailed_even_with_explain(self) -> None:
+        class Output:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "dry_run": True,
+                    "query": "What is PTR?",
+                    "namespace": "site-rentptr-com-v1",
+                    "region": "gcp-us-central1",
+                    "embedding_model": "BAAI/bge-small-en-v1.5",
+                    "embedding_precision": "float32",
+                    "top_k": 5,
+                    "candidates": 50,
+                    "ranking_mode": "page",
+                    "ranking_profile": "none",
+                    "ranking_pool": 20,
+                    "ranking_aggregation": "max",
+                }
+
+        default_stdout = StringIO()
+        with redirect_stdout(default_stdout):
+            print_retrieval_text(Output())  # type: ignore[arg-type]
+        explained_stdout = StringIO()
+        with redirect_stdout(explained_stdout):
+            print_retrieval_text(Output(), explain=True)  # type: ignore[arg-type]
+
+        self.assertEqual(default_stdout.getvalue(), explained_stdout.getvalue())
+        self.assertIn("Retrieval plan (dry-run", default_stdout.getvalue())
+        self.assertIn("embedding_precision: float32", default_stdout.getvalue())
+
+    def test_retrieve_presentation_modes_preserve_calls_and_exact_json(self) -> None:
+        calls: list[tuple[str, object]] = []
+        expected_payload: dict[str, object] = {
+            "dry_run": False,
+            "namespace": "site-example-v1",
+            "embedding_precision": "float32",
+            "fusion": "server_rrf",
+            "ranking_mode": "page",
+            "ranking_profile": "none",
+            "ranking_aggregation": "max",
+            "hits": [
+                {
+                    "id": "hit-one",
+                    "title": "Example",
+                    "url": "https://example.com/docs",
+                    "content": "Useful evidence.",
+                    "score_info": {"rank": 1},
+                }
+            ],
+        }
+
+        class Result:
+            def to_dict(self) -> dict[str, object]:
+                return expected_payload
+
+        class Retriever:
+            def retrieve(self, query: str, options: object) -> Result:
+                calls.append((query, options))
+                return Result()
+
+        outputs: dict[str, str] = {}
+        with patch.dict(os.environ, {}, clear=True), patch(
+            "buoy_search.cli.HybridRetriever.from_config",
+            return_value=Retriever(),
+        ):
+            for mode, extra_args in (
+                ("compact", []),
+                ("explain", ["--explain"]),
+                ("json", ["--json"]),
+            ):
+                stdout = StringIO()
+                stderr = StringIO()
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    result = main(
+                        [
+                            "retrieve",
+                            "Useful question",
+                            "--namespace",
+                            "site-example-v1",
+                            *extra_args,
+                        ]
+                    )
+                self.assertEqual((result, stderr.getvalue()), (0, ""))
+                outputs[mode] = stdout.getvalue()
+
+        self.assertEqual([query for query, _options in calls], ["Useful question"] * 3)
+        self.assertEqual(calls[0][1], calls[1][1])
+        self.assertEqual(calls[0][1], calls[2][1])
+        self.assertIn("Found 1 passage.", outputs["compact"])
+        self.assertNotIn("Score:", outputs["compact"])
+        self.assertIn("Retrieved 1 chunks from site-example-v1", outputs["explain"])
+        self.assertIn("Score: {'rank': 1}", outputs["explain"])
+        self.assertEqual(json.loads(outputs["json"]), expected_payload)
+        self.assertNotIn("presentation", outputs["json"])
+        self.assertNotIn("explain", outputs["json"])
 
     def test_help_identifies_primary_buoy_cli(self) -> None:
         parser = build_parser()

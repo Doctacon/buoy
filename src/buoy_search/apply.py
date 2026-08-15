@@ -653,6 +653,9 @@ def generated_card_for_apply(
         summary=existing.summary if manual else semantics.summary,
         aliases=list(existing.aliases if manual else semantics.aliases),
         tags=list(existing.tags if manual else semantics.tags),
+        routing_examples=list(
+            existing.routing_examples if manual else semantics.routing_examples
+        ),
         semantic_origin="manual" if manual else "generated",
         region=region,
         embedding_model=str(verified.plan["embedding_model"]),
@@ -693,6 +696,9 @@ def _catalog_repair_command(
     summary = card.summary if card is not None else semantics.summary
     aliases = card.aliases if card is not None else semantics.aliases
     tags = card.tags if card is not None else semantics.tags
+    routing_examples = (
+        card.routing_examples if card is not None else semantics.routing_examples
+    )
     command = [
         "buoy",
         "catalog",
@@ -713,6 +719,8 @@ def _catalog_repair_command(
         command.extend(("--alias", alias))
     for tag in tags:
         command.extend(("--tag", tag))
+    for example in routing_examples:
+        command.extend(("--routing-example", example))
     command.extend(
         (
             "--embedding-model",
@@ -814,13 +822,19 @@ def register_apply_catalog_card(
         )
         resource = remote_catalog_resource(client)
         mutation = (
-            create_remote_cards(resource, [card], region=config.region)
+            create_remote_cards(
+                resource,
+                [card],
+                region=config.region,
+                schema_version=snapshot.catalog_schema_version,
+            )
             if existing is None
             else update_remote_card(
                 resource,
                 card,
                 expected_revision=existing.card_revision,
                 region=config.region,
+                schema_version=snapshot.catalog_schema_version,
             )
         )
     except Exception as exc:

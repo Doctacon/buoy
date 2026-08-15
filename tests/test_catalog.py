@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import replace
 import json
 import math
+import traceback
 import unittest
 from unittest.mock import patch
 
 from buoy_search.catalog import (
+    MAX_ROUTING_EXAMPLES,
     ROUTING_DIMENSIONS,
     ROUTING_MODEL,
     ROUTING_MODEL_REVISION,
+    ROUTING_PROJECTION,
     CardFields,
     CatalogError,
     NamespaceCard,
@@ -25,6 +29,8 @@ from buoy_search.catalog import (
     parse_catalog,
     prepare_card,
     prepare_prospective_card,
+    routing_example_passage_text,
+    routing_prototype_hash_for_fields,
     semantic_hash_for_fields,
     vector_hash,
 )
@@ -47,6 +53,21 @@ class FixedEmbedder:
 class FailingEmbedder:
     def encode(self, texts):  # noqa: ANN001 - test sentinel.
         raise AssertionError(f"model must not be called: {texts}")
+
+
+class SequenceEmbedder:
+    def __init__(self, vectors: list[list[float]]) -> None:
+        self.vectors = vectors
+        self.calls: list[list[str]] = []
+
+    def encode(self, texts):  # noqa: ANN001 - test protocol implementation.
+        self.calls.append(list(texts))
+        return [list(vector) for vector in self.vectors]
+
+
+class SecretEchoEmbedder:
+    def encode(self, texts):  # noqa: ANN001 - adversarial test sentinel.
+        raise RuntimeError("Authorization: Bearer routing-secret-sentinel")
 
 
 def fields(**overrides: object) -> CardFields:
@@ -118,6 +139,154 @@ class CatalogProjectionTests(unittest.TestCase):
             "ba682adfaa5fe942ba23457dbe6188c5ebd9f2fb0fa009e7a8cab5773452fae8",
         )
 
+        legacy = make_card()
+        legacy_payload = card_to_dict(legacy, include_vector=True)
+        self.assertEqual(len(legacy_payload), 29)
+        self.assertNotIn("routing_examples", legacy_payload)
+        self.assertEqual(
+            legacy.card_revision,
+            "fc5239d6b296c29dbd8f070fbb8a703fdc4775bcfe61a35ca53ad5a2c69326d8",
+        )
+        self.assertEqual(parse_card(legacy_payload), legacy)
+
+    def test_routing_examples_project_as_normalized_mean_and_round_trip(self) -> None:
+        second_unit = [0.0, 1.0] + [0.0] * (ROUTING_DIMENSIONS - 2)
+        example = "How do I configure request retries?"
+        embedder = SequenceEmbedder([UNIT_VECTOR, second_unit])
+
+        card = prepare_card(
+            fields(routing_examples=[example]),
+            embedder=embedder,
+            now="2026-07-15T12:00:00+00:00",
+        )
+
+        self.assertEqual(
+            embedder.calls,
+            [[
+                card_passage_text(
+                    title="Example",
+                    summary="Example source.",
+                    aliases=["example docs", "example project"],
+                    tags=["docs", "python"],
+                ),
+                routing_example_passage_text(
+                    title="Example",
+                    summary="Example source.",
+                    example=example,
+                ),
+            ]],
+        )
+        expected_coordinate = 1 / math.sqrt(2)
+        self.assertEqual(card.vector, UNIT_VECTOR)
+        self.assertAlmostEqual(
+            card.routing_prototype_vector[0], expected_coordinate
+        )
+        self.assertAlmostEqual(
+            card.routing_prototype_vector[1], expected_coordinate
+        )
+        self.assertEqual(
+            card.routing_prototype_vector[2:],
+            [0.0] * (ROUTING_DIMENSIONS - 2),
+        )
+        self.assertEqual(card.routing_examples, [example])
+        self.assertEqual(
+            card.semantic_hash,
+            semantic_hash_for_fields(
+                title=card.title,
+                summary=card.summary,
+                aliases=card.aliases,
+                tags=card.tags,
+            ),
+        )
+        self.assertEqual(
+            card.routing_prototype_hash,
+            routing_prototype_hash_for_fields(
+                title=card.title,
+                summary=card.summary,
+                aliases=card.aliases,
+                tags=card.tags,
+                routing_examples=[example],
+            ),
+        )
+        self.assertEqual(
+            ROUTING_PROJECTION,
+            "separate_prototype_vector_normalized_mean_v1",
+        )
+        payload = card_to_dict(card, include_vector=True)
+        self.assertEqual(payload["routing_examples"], [example])
+        self.assertIn("routing_prototype_hash", payload)
+        self.assertIn("routing_prototype_vector", payload)
+        self.assertIn("routing_prototype_vector_hash", payload)
+        self.assertEqual(parse_card(payload), card)
+        public_payload = card_to_dict(card)
+        self.assertNotIn("vector", public_payload)
+        self.assertNotIn("routing_prototype_vector", public_payload)
+        self.assertEqual(public_payload["routing_examples"], [example])
+
+    def test_example_only_edit_reuses_base_projection_but_recomputes_prototype(self) -> None:
+        original = make_card()
+        second_unit = [0.0, 1.0] + [0.0] * (ROUTING_DIMENSIONS - 2)
+        embedder = SequenceEmbedder([second_unit, second_unit])
+
+        updated = prepare_card(
+            fields(routing_examples=["How do I configure retries?"]),
+            existing=original,
+            embedder=embedder,
+        )
+
+        self.assertEqual(len(embedder.calls), 1)
+        self.assertEqual(updated.semantic_hash, original.semantic_hash)
+        self.assertEqual(updated.vector, original.vector)
+        self.assertEqual(updated.vector_hash, original.vector_hash)
+        self.assertEqual(updated.routing_prototype_vector, second_unit)
+        self.assertNotEqual(
+            updated.routing_prototype_vector_hash, original.vector_hash
+        )
+
+    def test_v2_bundle_is_all_or_nothing_and_empty_bundle_equals_base(self) -> None:
+        legacy = make_card()
+        explicit = card_to_dict(
+            legacy,
+            include_vector=True,
+            include_routing_examples=True,
+        )
+        self.assertEqual(parse_card(explicit), legacy)
+        for field in (
+            "routing_examples",
+            "routing_prototype_hash",
+            "routing_prototype_vector",
+            "routing_prototype_vector_hash",
+        ):
+            with self.subTest(field=field):
+                partial = json.loads(json.dumps(explicit))
+                partial.pop(field)
+                with self.assertRaisesRegex(CatalogError, "missing"):
+                    parse_card(partial)
+
+        mismatched = json.loads(json.dumps(explicit))
+        mismatched["routing_prototype_hash"] = "0" * 64
+        with self.assertRaisesRegex(CatalogError, "routing_prototype_hash"):
+            parse_card(mismatched)
+
+    def test_routing_examples_are_canonical_arrays_bounded_at_eight(self) -> None:
+        card = prepare_card(
+            fields(routing_examples=["z question", "A question"]),
+            embedder=FixedEmbedder(),
+        )
+        self.assertEqual(card.routing_examples, ["A question", "z question"])
+        self.assertEqual(MAX_ROUTING_EXAMPLES, 8)
+        for value, message in (
+            (["Question"] * 2, "duplicate normalized"),
+            ([f"Question {index}" for index in range(9)], "at most 8"),
+            (["q" * 513], "at most 512 characters"),
+            ("not-an-array", "must be an array"),
+        ):
+            with self.subTest(message=message), self.assertRaisesRegex(CatalogError, message):
+                prepare_card(
+                    fields(routing_examples=value),  # type: ignore[arg-type]
+                    embedder=FailingEmbedder(),
+                )
+
     def test_stable_json_contract_remains_compact_unicode_and_recursive(self) -> None:
         value = {"z": True, "é": {"b": None, "a": [2, 1]}}
         self.assertEqual(stable_json_dumps(value), '{"z":true,"é":{"a":[2,1],"b":null}}')
@@ -160,6 +329,25 @@ class CatalogProjectionTests(unittest.TestCase):
         self.assertEqual(card.routing_model, ROUTING_MODEL)
         self.assertEqual(card.routing_model_revision, ROUTING_MODEL_REVISION)
         self.assertEqual(card.vector_dimensions, 384)
+
+    def test_embedder_failure_is_content_free_and_has_no_exception_chain(self) -> None:
+        with self.assertRaises(CatalogError) as raised:
+            prepare_card(fields(), embedder=SecretEchoEmbedder())
+
+        self.assertEqual(
+            str(raised.exception),
+            "namespace 'site-example-v1': routing model failed",
+        )
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+        formatted = "".join(
+            traceback.format_exception(
+                type(raised.exception),
+                raised.exception,
+                raised.exception.__traceback__,
+            )
+        )
+        self.assertNotIn("routing-secret-sentinel", formatted)
 
     def test_duplicate_normalized_alias_tag_and_title_alias_fail(self) -> None:
         for override, message in (
@@ -275,7 +463,14 @@ class CatalogParsingTests(unittest.TestCase):
     def test_integer_json_vectors_validate_against_their_exact_stable_hash(self) -> None:
         card = make_card()
         integer_vector = [1] + [0] * 383
-        provisional = replace(card, vector=integer_vector, vector_hash=vector_hash(integer_vector), card_revision="pending")
+        provisional = replace(
+            card,
+            vector=integer_vector,
+            vector_hash=vector_hash(integer_vector),
+            routing_prototype_vector=integer_vector,
+            routing_prototype_vector_hash=vector_hash(integer_vector),
+            card_revision="pending",
+        )
         integer_card = replace(provisional, card_revision=card_revision(provisional))
         parsed = parse_catalog(catalog_payload_for_parse([integer_card]))
         self.assertEqual(parsed.cards[0].vector[0], 1)
@@ -312,6 +507,11 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
             (existing.title, existing.summary, existing.aliases, existing.tags, "manual"),
         )
         self.assertEqual(merged.vector, existing.vector)
+        self.assertEqual(merged.routing_examples, existing.routing_examples)
+        self.assertEqual(
+            merged.routing_prototype_vector,
+            existing.routing_prototype_vector,
+        )
         self.assertEqual(merged.region, "gcp-us-east4")
         self.assertEqual((merged.last_plan_id, merged.last_apply_id), ("plan-new", "apply-new"))
         self.assertEqual(merged.created_at, existing.created_at)
@@ -353,6 +553,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
         self.assertEqual(repo.title, "Doctacon/buoy")
         self.assertEqual(repo.aliases, ["buoy"])
         self.assertEqual(repo.tags, ["github", "repository"])
+        self.assertEqual(repo.routing_examples, [])
         legacy_repo = generated_semantics(
             base_url="https://github.com/Doctacon/buoy",
             site_id="repo-site",
@@ -610,6 +811,23 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
 
 
 class CatalogModelTests(unittest.TestCase):
+    def test_model_constructor_suppresses_third_party_progress(self) -> None:
+        class FakeSentenceTransformer:
+            def __init__(self, *_args: object, **_kwargs: object) -> None:
+                pass
+
+        import types
+
+        fake_module = types.ModuleType("sentence_transformers")
+        fake_module.SentenceTransformer = FakeSentenceTransformer  # type: ignore[attr-defined]
+        with patch.dict("sys.modules", {"sentence_transformers": fake_module}), patch(
+            "buoy_search.catalog.suppress_model_progress_bars",
+            return_value=nullcontext(),
+        ) as suppress:
+            load_routing_embedder()
+
+        suppress.assert_called_once_with()
+
     def test_model_constructor_is_exact_pinned_local_only_and_missing_cache_fails_closed(self) -> None:
         calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 

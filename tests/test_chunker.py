@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 import sys
 import tempfile
 from pathlib import Path
@@ -111,6 +112,19 @@ class MarkdownChunkerTests(unittest.TestCase):
 
 
 class SentenceTransformerEmbedderTests(unittest.TestCase):
+    def test_constructor_suppresses_third_party_progress(self) -> None:
+        model = SimpleNamespace(device="cpu")
+        with patch.dict(
+            sys.modules,
+            {"sentence_transformers": SimpleNamespace(SentenceTransformer=lambda _name: model)},
+        ), patch(
+            "buoy_search.chunker.suppress_model_progress_bars",
+            return_value=nullcontext(),
+        ) as suppress:
+            SentenceTransformerEmbedder("model")
+
+        suppress.assert_called_once_with()
+
     def test_float16_requires_accelerator_and_halves_accelerator_model(self) -> None:
         class FakeModel:
             def __init__(self, device: str) -> None:
