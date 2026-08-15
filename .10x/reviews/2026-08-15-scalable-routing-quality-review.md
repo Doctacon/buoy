@@ -117,12 +117,12 @@ separately authorized future deletion.
   validation, compilation, trailing-whitespace checks, and `git diff --check`
   passed.
 - The 65-case current-real suite has digest
-  `d77e03c447dee4aa38bc7b7b5e0c03cbd9f635762c182890d476cae49f29be4f`
+  `d3577d32e848acfa648ba1f377ef2acd3045d57dc7af439373639e4c226abaed`
   and matched all seven eligible cards at the final snapshot, with catalog
   projection digest
   `d8f8c814ef4f13b512843e15aa058b45434b4997a4b648b04c17f571158a1525`.
   The later 85-case suite has digest
-  `220b693d9e0322ff3d19c6734a49543c0d8294114334c5ebde8be6cf83c0a5ad`.
+  `227c44671d65beac8b829604cae85e93efc61f7f284b7e0e700872e933a3f28e`.
   Loading and validation were read-only; all new ground truth remains candidate
   unless already inherited exactly from the previously approved basket.
 - Distribution validation produced a 66-file wheel with SHA-256
@@ -134,6 +134,28 @@ separately authorized future deletion.
   routing-quality module and calibration artifact; the source archive contains
   the source-only evaluator and its focused tests. Nothing was published.
 
+## Post-implementation live baseline
+
+The final source-only collector ran from exact clean commit
+`100efc9242fbd90f16a9ee014feb23957b9c6e5b` and tree
+`079b52a2b81cfc98612fd8c51c64cb8f76f24f9b`. Its content-free report at
+`/private/tmp/buoy-routing-quality-current-100efc9.json` has SHA-256
+`7b7da9b0bc53054f31cd695cfa82d86bb96abcbe82a0fc25cf8a784e663ac3b9`.
+The run made 65 query-embedding calls, 65 bounded MiniLM calls over 455 total
+base-card passages, and no content query, per-card provider query, model
+download or write.
+
+The exact shortlist contained all `67/67` required routes. Candidate top-three
+Recall@3 was `65/67`, versus `63/67` for the legacy selector. That aggregate
+improvement did not satisfy the frozen gate: the candidate fixed four misses
+but introduced two different regressions, leaving Salesforce at `2/3` and
+Oscilar at `8/9`. The strict per-corpus and no-regression checks therefore
+failed. The collector also correctly failed owner-approval and active-artifact
+checks, returned `collect_only`, and changed no production routing behavior.
+Because every live card still had zero routing examples, this is a base-card
+reranking baseline rather than evidence for the proposed example-enhanced
+projection.
+
 ## Verdict and remaining gates
 
 PASS for the bounded inactive implementation and integration handoff. The
@@ -142,6 +164,11 @@ provider/model work, keeps calibration under packaged owner authority, creates
 no repository overlay, and gives the collector no content-write boundary. The
 real fixture effects are fully disclosed and their final disabled state is
 verified.
+
+The post-implementation live baseline does not change this implementation
+verdict, but it is an explicit quality STOP: the candidate selector must not be
+activated from these results. Integration of the compatible inactive reader is
+separable from, and does not imply approval of, routing activation.
 
 The active ticket must remain open until all new canary judgments receive
 explicit owner approval; the compatible reader is integrated and deployed;

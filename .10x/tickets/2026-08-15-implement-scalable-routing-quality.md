@@ -124,6 +124,12 @@ ACL/taxonomy work and automatic threshold tuning in production.
   they form a collectible 65-case suite over every currently eligible card;
   adding the four disabled fixture packs produces the later 85-case experiment
   suite. All seven packs remain owner-unapproved candidates.
+- 2026-08-15: Ran the 65-case source-only collector from clean commit
+  `100efc9242fbd90f16a9ee014feb23957b9c6e5b`. The exact shortlist found all
+  `67/67` required routes and candidate top-three routing improved aggregate
+  recall from legacy `63/67` to `65/67`, but introduced two different case
+  regressions and failed strict per-corpus/no-regression gates. The collector
+  returned `collect_only`; no product route or provider state changed.
 
 ## Blockers
 
@@ -131,5 +137,9 @@ ACL/taxonomy work and automatic threshold tuning in production.
   requires explicit human approval before it can support activation.
 - No active confidence thresholds exist. They must be selected on calibration
   data, pass a locked certification split, and receive explicit owner approval.
+- The clean base-card reranking baseline failed the frozen route-quality gate.
+  Reviewed routing examples and a new locked run may be evaluated only after
+  compatible-reader integration and the separately approved schema-v2
+  migration; the current report cannot authorize activation.
 - Schema-v2 migration and prototype examples wait on the mechanical
   reader-first integration boundary and their exact drift-checked previews.

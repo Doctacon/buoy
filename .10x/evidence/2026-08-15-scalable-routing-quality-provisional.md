@@ -37,10 +37,10 @@ IDs are `plan_da4c396651a57537`, `plan_e13db0a262accd14`,
 route canaries now cover the four fixtures plus RentPTR, WhiteboxGeo, and
 Salesforce. With the approved legacy-50 projection, all seven packs load as an
 85-case suite with SHA-256
-`220b693d9e0322ff3d19c6734a49543c0d8294114334c5ebde8be6cf83c0a5ad`.
+`227c44671d65beac8b829604cae85e93efc61f7f284b7e0e700872e933a3f28e`.
 The current three-pack subset for the seven presently eligible real corpora
 loads as 65 cases with SHA-256
-`d77e03c447dee4aa38bc7b7b5e0c03cbd9f635762c182890d476cae49f29be4f`.
+`d3577d32e848acfa648ba1f377ef2acd3045d57dc7af439373639e4c226abaed`.
 Planning reported zero source/provider API calls. The source fixtures,
 candidate canaries, and four applied-state receipts live under
 `/private/tmp/buoy-routing-test-corpora`; the successfully consumed plan
@@ -48,11 +48,11 @@ artifacts were not retained. No test source or card overlay was added to the
 repository.
 
 The three current-real-corpus pack hashes are RentPTR
-`04b382e61448b587d7b6276a69067c7c67641c2105d45f98514bdda29664f123`,
+`db61a02552aaf653ac470a4d4e86309d395cdfcd19b5dec75d0a5beccea0a5e6`,
 WhiteboxGeo
-`a73e38f527e6a428a5210f8af25e68464a6bc7ec8d833ccb601eb7a3a222e032`,
+`7f0e3a5a486b90b18d133f02fc4cc067d355bee09f362a2bcd237a16daa450b9`,
 and Salesforce
-`15a087c94cfdb0b0758f251c0748d4a3fe0566c9954408d443680947e223af9a`.
+`e2ee61c00adab12c571b1e1eb0f006cae2554f45d9ce5b97c97619724d709eda`.
 RentPTR reuses exact owner-approved questions `u21-rentptr-purpose` and
 `u22-rentptr-telematics`; WhiteboxGeo reuses exact owner-approved questions
 `u23-whiteboxgeo-purpose` and `u24-whiteboxgeo-interfaces`. Their other three
@@ -115,6 +115,51 @@ schema validator rejects an added field. The recorded migration is therefore
 reader-first and separately approved rather than an implementation side
 effect.
 
+## Clean current-catalog collection
+
+A read-only collection ran from exact clean commit
+`100efc9242fbd90f16a9ee014feb23957b9c6e5b` and tree
+`079b52a2b81cfc98612fd8c51c64cb8f76f24f9b` against the 65-case current
+suite and live schema-v1 catalog snapshot
+`793f6844d7141959b43a5f03c33dbbd7b657d4ff186c622ac0ee1635be9217f7`.
+The content-free report is
+`/private/tmp/buoy-routing-quality-current-100efc9.json`, SHA-256
+`7b7da9b0bc53054f31cd695cfa82d86bb96abcbe82a0fc25cf8a784e663ac3b9`.
+
+The exact local vector shortlist found all `67/67` required routes. The
+candidate MiniLM top-three route found `65/67 = 0.9701493`, compared with the
+legacy selector's `63/67 = 0.9402985`. It recovered the two historical
+Turbopuffer misses (`d11-vector-recall-debug` and
+`d12-namespace-schema-inspection`) and two WhiteboxGeo cases, but regressed
+`d06-collections-decisioning` and `salesforce-capability-gate`. Consequently,
+Salesforce finished at `2/3` and Oscilar at `8/9`; the strict per-corpus and
+no-regression gates failed even though aggregate Recall@3 passed. Named routes
+passed `23/23`, named multi-corpus coverage passed `10/10`, average initial
+fanout was exactly `2.0`, maximum fanout was `3`, and incorrect/no-answer
+high-confidence singletons were both zero.
+
+The unapproved calibration slice selected provisional score and margin floors
+of `-5.865832328796387` and `4.98243522644043` over six cases, with zero
+incorrect high-confidence singletons. These are report diagnostics, not an
+active or approved artifact. All live cards still had zero routing examples,
+so this run tests exact-shortlist plus base-card MiniLM reranking, not the
+future example-enhanced projection.
+
+Call accounting was exactly 65 real query embeddings, 65 bounded MiniLM calls,
+455 passages total and at most seven passages in any call. The provider work
+was two namespace-list pages, one metadata request, two card-query pages, zero
+content queries, zero per-card/shortlist queries, zero downloads and zero
+writes. Median case latency was `43.74 ms` and p95 was `77.31 ms`; the first
+model-warm case accounted for the `585.11 ms` maximum. The serialized report
+contains case IDs, namespaces, ranks, scores and hashes, but no query text,
+routing example, vector, content passage, credential, secret or provider
+payload.
+
+The collector correctly returned `collect_only` and refused activation. Its
+failed checks were route-quality gates, owner approval of all three new packs,
+an owner-approved active confidence artifact, and exact artifact bindings.
+No product routing decision changed.
+
 ## Implementation validation
 
 - Focused catalog, remote-catalog, apply-registration, automatic-routing,
@@ -149,8 +194,9 @@ effect.
 ## Provisional activation state
 
 - No route-canary dataset or judgment is approved for this work.
-- No calibration/certification split has been frozen.
-- No MiniLM score or margin threshold has been selected or approved.
+- No calibration/certification split has been frozen or approved.
+- The clean run selected candidate MiniLM score and margin diagnostics, but no
+  threshold is certified, packaged for activation, or approved.
 - The required initial artifact is collect-only, owner-unapproved, and has
   null thresholds. It cannot change ordinary automatic routing.
 - No schema-v2 migration is authorized. The pre-existing live card rows and
