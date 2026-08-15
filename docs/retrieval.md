@@ -298,11 +298,66 @@ buoy catalog enable site-example-docs-v1 --approve
 `catalog upsert` creates or replaces one complete manual card; use
 `buoy catalog upsert --help` for its required source, embedding, and ranking
 fields. The unreleased reader accepts repeatable `--routing-example` values
-for a complete manual-card preview. Approval against a schema-v1 catalog fails
-safely until the separately reviewed reader-first migration. `upsert`,
-`enable`, and `disable` are previews unless `--approve` is
-present. They modify routing cards only. They never delete, enable, disable, or
-otherwise mutate a content namespace.
+for a complete manual-card preview. Prefer the narrower reviewed-example
+operator below when only that field is changing. `upsert`, `enable`, and
+`disable` are previews unless `--approve` is present. They modify routing cards
+only. They never delete, enable, disable, or otherwise mutate a content
+namespace.
+
+### Reader-first schema and reviewed examples
+
+Deploy the exact v1/v2-compatible reader everywhere before changing the shared
+catalog schema. The reader deployment itself is inert. Then capture a fresh
+read-only migration preview:
+
+```bash
+buoy catalog migrate-routing-v2 --json
+```
+
+Review its normalized schema fingerprint, exact four nonfilterable additions,
+complete namespace/card-revision bindings, vector-inclusive projection hash,
+old-reader warning, and zero performed writes. Approval must use both exact
+values emitted by that same preview:
+
+```bash
+buoy catalog migrate-routing-v2 \
+  --expected-snapshot-revision REPLACE_WITH_PREVIEW_SHA256 \
+  --expected-projection-sha256 REPLACE_WITH_PREVIEW_SHA256 \
+  --approve --json
+```
+
+The approved migration issues one schema-only request. It sends no rows and
+then requires an unchanged, complete schema-v2 strong read. Drift or incomplete
+verification is a failure requiring a new preview; Buoy never attempts schema
+rollback.
+
+After schema v2 is verified, preview one card's reviewed questions. Repeat
+`--routing-example` for one through eight exact questions:
+
+```bash
+buoy catalog set-routing-examples site-example-docs-v1 \
+  --routing-example "How do I configure bounded retries?" \
+  --routing-example "Where is request timeout behavior defined?" --json
+```
+
+Review the normalized questions, current and intended revisions, both prototype
+hashes, and the one-card/one-write budget. Approval is conditional on the exact
+current revision from that preview:
+
+```bash
+buoy catalog set-routing-examples site-example-docs-v1 \
+  --routing-example "How do I configure bounded retries?" \
+  --routing-example "Where is request timeout behavior defined?" \
+  --expected-card-revision REPLACE_WITH_PREVIEW_SHA256 --approve --json
+```
+
+This operation preserves every base and non-prototype card field and must affect
+exactly the target's deterministic row ID. Repeating an already-stored canonical
+set is a zero-model, zero-write success. Later ordinary applies preserve reviewed
+examples on both manual and generated cards. Neither command reads or writes a
+content namespace, changes enablement, or activates prototype routing; production
+automatic retrieval continues to use the legacy base-vector route until a
+separate activation release passes.
 
 ## Evaluation
 

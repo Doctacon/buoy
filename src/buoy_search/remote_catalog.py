@@ -19,12 +19,14 @@ from buoy_search.catalog import (
     CatalogError,
     NamespaceCard,
     ROUTING_DIMENSIONS,
+    ROUTING_PROTOTYPE_FIELD_ORDER,
     ROUTING_PROTOTYPE_FIELDS,
     card_revision,
     card_to_dict,
     catalog_revision,
     parse_card,
 )
+from buoy_search.plan_artifacts import stable_hash
 
 REMOTE_CATALOG_NAMESPACE = "buoy-routing-catalog-v1"
 NAMESPACE_PAGE_SIZE = 1000
@@ -94,6 +96,10 @@ REMOTE_CATALOG_SCHEMA_V2: dict[str, dict[str, object]] = {
     "routing_prototype_hash": _schema("string", filterable=False),
     "routing_prototype_vector": _schema("[]float", filterable=False),
     "routing_prototype_vector_hash": _schema("string", filterable=False),
+}
+REMOTE_CATALOG_SCHEMA_V2_ADDITIONS: dict[str, dict[str, object]] = {
+    name: REMOTE_CATALOG_SCHEMA_V2[name]
+    for name in ROUTING_PROTOTYPE_FIELD_ORDER
 }
 REMOTE_CATALOG_SCHEMA_V1 = REMOTE_CATALOG_SCHEMA
 
@@ -256,6 +262,52 @@ def _remote_card_attributes(schema_version: int) -> tuple[str, ...]:
         REMOTE_CARD_ATTRIBUTES
         if schema_version == REMOTE_SCHEMA_V1
         else REMOTE_CARD_ATTRIBUTES_V2
+    )
+
+
+def remote_catalog_schema_fingerprint(schema_version: int) -> str:
+    """Return the stable identity of one exact supported remote schema."""
+
+    return stable_hash(_remote_schema(schema_version))
+
+
+def remote_catalog_projection_sha256(snapshot: RemoteCatalogSnapshot) -> str:
+    """Bind the complete vector-inclusive v1 row and live-target projection.
+
+    The projection deliberately excludes the additive prototype values and the
+    observed schema version. It therefore remains identical across the v1-to-v2
+    schema-only migration while still binding every legacy card field, row ID,
+    vector, stale card, and live content namespace. The stored card revision is
+    retained, so later example edits are still bound transitively.
+    """
+
+    cards = tuple(
+        sorted(
+            (
+                parse_card(card_to_dict(card, include_vector=True))
+                for card in snapshot.cards
+            ),
+            key=lambda card: card.namespace,
+        )
+    )
+    _validate_card_id_collisions(cards)
+    return stable_hash(
+        {
+            "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
+            "projection": "remote_catalog_v1_vector_inclusive_v1",
+            "live_namespace_ids": list(snapshot.live_namespace_ids),
+            "cards": [
+                {
+                    "id": remote_card_id(card.namespace),
+                    **card_to_dict(
+                        card,
+                        include_vector=True,
+                        include_routing_examples=False,
+                    ),
+                }
+                for card in cards
+            ],
+        }
     )
 
 
@@ -608,6 +660,38 @@ def classify_remote_catalog(
         counts=counts,
         metrics=metrics or ReadMetrics(0, 0, 0, ()),
         catalog_schema_version=catalog_schema_version,
+    )
+
+
+@_sanitized_remote_operation("schema migration processing")
+def migrate_remote_catalog_schema_v2(
+    resource: NamespaceResource,
+) -> MutationResult:
+    """Add the exact inert prototype bundle in one schema-only write.
+
+    Callers must establish and bind an exact v1 strong-read snapshot before
+    exposing this primitive. No rows, conditions, deletes, or prototype values
+    are sent by this function.
+    """
+
+    response = _call(
+        "schema migration write",
+        lambda: resource.write(
+            distance_metric=DISTANCE_METRIC,
+            schema=REMOTE_CATALOG_SCHEMA_V2,
+        ),
+    )
+    _validate_schema_only_write_result(response)
+    return MutationResult(
+        changed=True,
+        card=None,
+        rows_affected=0,
+        affected_ids=(),
+        metrics=MutationMetrics(
+            write_requests=1,
+            verification_query_requests=0,
+            billing=_response_billing(response),
+        ),
     )
 
 
@@ -1020,6 +1104,26 @@ def _write_result(response: object, *, kind: str) -> tuple[int, list[str]]:
     if any(not isinstance(value, str) for value in ids):
         raise RemoteCatalogError(f"remote write returned invalid {key}")
     return affected, ids
+
+
+def _validate_schema_only_write_result(response: object) -> None:
+    plain = _call("schema write response normalization", _plain, response)
+    if not isinstance(plain, dict):
+        raise RemoteCatalogError("remote schema write returned an invalid response")
+    affected = plain.get("rows_affected")
+    if type(affected) is not int or affected != 0:
+        raise RemoteCatalogError("remote schema write unexpectedly affected rows")
+    status = plain.get("status")
+    if status != "OK":
+        raise RemoteCatalogError("remote schema write returned an invalid status")
+    if plain.get("rows_remaining") not in (None, False):
+        raise RemoteCatalogError("remote schema write unexpectedly reported remaining rows")
+    for key in ("rows_deleted", "rows_patched", "rows_upserted"):
+        if plain.get(key) not in (None, 0):
+            raise RemoteCatalogError("remote schema write unexpectedly reported row mutation")
+    for key in ("deleted_ids", "patched_ids", "upserted_ids"):
+        if plain.get(key) not in (None, []):
+            raise RemoteCatalogError("remote schema write unexpectedly reported affected IDs")
 
 
 def _response_billing(response: object) -> tuple[dict[str, object], ...]:

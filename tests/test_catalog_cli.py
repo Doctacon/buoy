@@ -8,8 +8,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from buoy_search.catalog import CardFields, ROUTING_DIMENSIONS, prepare_card
+from buoy_search.catalog import CardFields, CatalogError, ROUTING_DIMENSIONS, prepare_card
 from buoy_search.cli import main
+from buoy_search.config import RuntimeConfigError
 from buoy_search.remote_catalog import (
     REMOTE_CATALOG_NAMESPACE,
     REMOTE_SCHEMA_V1,
@@ -21,6 +22,7 @@ from buoy_search.remote_catalog import (
     RemoteCatalogError,
     classify_remote_catalog,
     remote_card_id,
+    remote_catalog_projection_sha256,
 )
 
 
@@ -74,6 +76,7 @@ def make_card(
     enabled: bool = True,
     title: str = "Example",
     region: str = REGION,
+    embedding_model: str = "BAAI/bge-small-en-v1.5",
     routing_examples: list[str] | None = None,
 ):
     return prepare_card(
@@ -89,7 +92,7 @@ def make_card(
             tags=["docs"],
             semantic_origin="manual",
             region=region,
-            embedding_model="BAAI/bge-small-en-v1.5",
+            embedding_model=embedding_model,
             embedding_precision="float32",
             plan_schema_version=1,
             ranking_mode="page",
@@ -190,7 +193,15 @@ class CatalogCliTests(unittest.TestCase):
     def test_parser_help_and_removed_catalog_argument(self) -> None:
         result, stdout, stderr = run_cli(["catalog", "--help"], env={})
         self.assertEqual((result, stderr), (0, ""))
-        for command in ("list", "show", "upsert", "enable", "disable"):
+        for command in (
+            "list",
+            "show",
+            "upsert",
+            "migrate-routing-v2",
+            "set-routing-examples",
+            "enable",
+            "disable",
+        ):
             self.assertIn(command, stdout)
         self.assertNotIn("remove", stdout)
         self.assertNotIn("migrate-local", stdout)
@@ -209,6 +220,68 @@ class CatalogCliTests(unittest.TestCase):
         result, stdout, stderr = run_cli([*upsert_args(), "--ranking-pool", "0"])
         self.assertEqual((result, stdout), (2, ""))
         self.assertIn("must be greater than zero", stderr)
+
+    def test_routing_v2_operators_report_invalid_config_before_remote_access(self) -> None:
+        invalid_precision = "SECRET-INVALID-PRECISION"
+        factory = Mock(
+            side_effect=AssertionError("invalid config constructed a remote client")
+        )
+        commands = (
+            ["catalog", "migrate-routing-v2", "--json"],
+            [
+                "catalog",
+                "set-routing-examples",
+                "site-example-v1",
+                "--routing-example",
+                "How does the example work?",
+                "--json",
+            ],
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                result, stdout, stderr = run_cli(
+                    command,
+                    env={
+                        "TURBOPUFFER_API_KEY": API_KEY,
+                        "BUOY_EMBEDDING_PRECISION": invalid_precision,
+                    },
+                    patches=(
+                        patch(
+                            "buoy_search.catalog_cli.REMOTE_CATALOG_CLIENT_FACTORY",
+                            factory,
+                        ),
+                        patch(
+                            "buoy_search.catalog_cli.load_config",
+                            side_effect=RuntimeConfigError(
+                                "BUOY_EMBEDDING_PRECISION must be float32 or float16"
+                            ),
+                        ),
+                    ),
+                )
+                self.assertEqual((result, stderr), (2, ""))
+                payload = json.loads(stdout)
+                self.assertEqual(payload["mutation_status"], "precondition_failed")
+                self.assertFalse(payload["write_attempted"])
+                self.assertTrue(payload["operation_accounting_complete"])
+                self.assertTrue(
+                    payload["request_summary"]["accounting_complete"]
+                )
+                self.assertEqual(
+                    payload["operations_performed"],
+                    {
+                        "strong_read_calls": 0,
+                        "model_inferences": 0,
+                        "schema_writes": 0,
+                        "card_writes": 0,
+                        "content_writes": 0,
+                        "content_operations": 0,
+                        "deletes": 0,
+                    },
+                )
+                self.assertEqual(payload["request_summary"]["total_requests"], 0)
+                self.assertEqual(payload["request_summary"]["write_requests"], 0)
+                self.assertNotIn(invalid_precision, stdout)
+        factory.assert_not_called()
 
     def test_list_filters_orders_classifies_and_redacts_vectors(self) -> None:
         enabled = make_card("z-live", title="Data_Vault")
@@ -433,6 +506,936 @@ class CatalogCliTests(unittest.TestCase):
             create.call_args.args[1][0].routing_examples,
             [example],
         )
+
+    def test_schema_v2_migration_preview_approval_and_idempotence(self) -> None:
+        card = make_card()
+        v1 = make_snapshot(card, schema_version=REMOTE_SCHEMA_V1)
+        v2 = make_snapshot(card, schema_version=REMOTE_SCHEMA_V2)
+        projection = remote_catalog_projection_sha256(v1)
+        migrate = Mock(
+            return_value=MutationResult(
+                True,
+                None,
+                0,
+                (),
+                MutationMetrics(1, 0, ({"write_units": 1},)),
+            )
+        )
+
+        result, stdout, stderr = run_cli(
+            ["catalog", "migrate-routing-v2", "--json"],
+            patches=(
+                patch("buoy_search.catalog_cli.read_remote_catalog", return_value=v1),
+                patch(
+                    "buoy_search.catalog_cli.migrate_remote_catalog_schema_v2",
+                    side_effect=AssertionError("preview wrote"),
+                ),
+                patch(
+                    "buoy_search.catalog.load_routing_embedder",
+                    side_effect=AssertionError("migration loaded model"),
+                ),
+            ),
+        )
+        self.assertEqual((result, stderr), (0, ""))
+        preview = json.loads(stdout)
+        self.assertEqual(preview["mutation_status"], "preview")
+        self.assertEqual(preview["observed_snapshot_revision"], v1.snapshot_revision)
+        self.assertEqual(preview["expected_projection_sha256"], projection)
+        self.assertEqual(preview["schema"]["observed_version"], REMOTE_SCHEMA_V1)
+        self.assertEqual(preview["schema"]["target_version"], REMOTE_SCHEMA_V2)
+        self.assertFalse(preview["verification_complete"])
+        self.assertNotIn("ann", preview["schema"]["additions"]["routing_prototype_vector"])
+        self.assertEqual(preview["operations_performed"]["schema_writes"], 0)
+        self.assertEqual(preview["operation_budget"]["schema_writes"], 1)
+
+        result, text_preview, stderr = run_cli(
+            ["catalog", "migrate-routing-v2"],
+            patches=(
+                patch("buoy_search.catalog_cli.read_remote_catalog", return_value=v1),
+            ),
+        )
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertIn(preview["schema"]["observed_fingerprint_sha256"], text_preview)
+        self.assertIn("routing_examples: {\"filterable\":false,\"type\":\"[]string\"}", text_preview)
+        self.assertIn(card.namespace, text_preview)
+        self.assertIn(remote_card_id(card.namespace), text_preview)
+        self.assertIn(card.card_revision, text_preview)
+        self.assertIn("strong_reads=1; model_inferences=0", text_preview)
+        self.assertIn(
+            "approval budget: strong_reads<=2; model_inferences=0; "
+            "schema_writes<=1; card_writes=0; content=0; deletes=0",
+            text_preview,
+        )
+
+        approval = [
+            "catalog",
+            "migrate-routing-v2",
+            "--expected-snapshot-revision",
+            v1.snapshot_revision,
+            "--expected-projection-sha256",
+            projection,
+            "--approve",
+            "--json",
+        ]
+        config_read = Mock(
+            return_value=SimpleNamespace(
+                embedding_model="BAAI/bge-small-en-v1.5",
+                embedding_precision="float32",
+            )
+        )
+        result, stdout, stderr = run_cli(
+            approval,
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.read_remote_catalog",
+                    side_effect=[v1, v2],
+                ),
+                patch(
+                    "buoy_search.catalog_cli.migrate_remote_catalog_schema_v2",
+                    migrate,
+                ),
+                patch("buoy_search.catalog_cli.load_config", config_read),
+            ),
+        )
+        self.assertEqual((result, stderr), (0, ""))
+        approved = json.loads(stdout)
+        self.assertEqual(approved["mutation_status"], "migrated")
+        self.assertTrue(approved["verification_complete"])
+        self.assertEqual(approved["schema"]["final_version"], REMOTE_SCHEMA_V2)
+        self.assertEqual(approved["operations_performed"]["strong_read_calls"], 2)
+        self.assertEqual(approved["operations_performed"]["schema_writes"], 1)
+        self.assertEqual(approved["request_summary"]["write_requests"], 1)
+        config_read.assert_called_once_with()
+
+        result, stdout, stderr = run_cli(
+            [
+                "catalog",
+                "migrate-routing-v2",
+                "--expected-snapshot-revision",
+                v2.snapshot_revision,
+                "--expected-projection-sha256",
+                remote_catalog_projection_sha256(v2),
+                "--approve",
+                "--json",
+            ],
+            patches=(
+                patch("buoy_search.catalog_cli.read_remote_catalog", return_value=v2),
+                patch(
+                    "buoy_search.catalog_cli.migrate_remote_catalog_schema_v2",
+                    side_effect=AssertionError("exact v2 wrote"),
+                ),
+            ),
+        )
+        self.assertEqual((result, stderr), (0, ""))
+        unchanged = json.loads(stdout)
+        self.assertEqual(unchanged["mutation_status"], "already_v2")
+        self.assertTrue(unchanged["verification_complete"])
+        self.assertEqual(unchanged["operations_performed"]["schema_writes"], 0)
+        self.assertEqual(unchanged["operations_performed"]["strong_read_calls"], 1)
+
+        result, text_unchanged, stderr = run_cli(
+            [
+                "catalog",
+                "migrate-routing-v2",
+                "--expected-snapshot-revision",
+                v2.snapshot_revision,
+                "--expected-projection-sha256",
+                remote_catalog_projection_sha256(v2),
+                "--approve",
+            ],
+            patches=(
+                patch("buoy_search.catalog_cli.read_remote_catalog", return_value=v2),
+            ),
+        )
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertIn("already exact schema v2", text_unchanged)
+        self.assertIn("strong_reads=1; model_inferences=0", text_unchanged)
+        self.assertIn("writes: schema=0; cards=0; content=0; deletes=0", text_unchanged)
+
+    def test_schema_migration_bindings_preflight_and_failed_attempt_are_bounded(self) -> None:
+        factory = Mock(side_effect=AssertionError("factory called before binding validation"))
+        for args in (
+            ["catalog", "migrate-routing-v2", "--approve", "--json"],
+            [
+                "catalog",
+                "migrate-routing-v2",
+                "--expected-snapshot-revision",
+                "ABC",
+                "--expected-projection-sha256",
+                "0" * 64,
+                "--approve",
+                "--json",
+            ],
+        ):
+            with self.subTest(args=args):
+                result, stdout, stderr = run_cli(
+                    args,
+                    env={},
+                    patches=(
+                        patch(
+                            "buoy_search.catalog_cli.REMOTE_CATALOG_CLIENT_FACTORY",
+                            factory,
+                        ),
+                    ),
+                )
+                self.assertEqual((result, stderr), (2, ""))
+                failure = json.loads(stdout)
+                self.assertIn("64 lowercase hexadecimal", failure["failure"])
+                self.assertEqual(failure["mutation_status"], "precondition_failed")
+                self.assertFalse(failure["write_attempted"])
+                self.assertEqual(failure["operations_performed"]["strong_read_calls"], 0)
+                self.assertEqual(failure["operations_performed"]["schema_writes"], 0)
+        factory.assert_not_called()
+
+        result, stdout, text_error = run_cli(
+            ["catalog", "migrate-routing-v2", "--approve"],
+            env={},
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.REMOTE_CATALOG_CLIENT_FACTORY",
+                    factory,
+                ),
+            ),
+        )
+        self.assertEqual((result, stdout), (2, ""))
+        self.assertIn("No mutation was attempted", text_error)
+        self.assertIn(
+            "strong_reads=0; model_inferences=0; schema_writes=0; card_writes=0",
+            text_error,
+        )
+        factory.assert_not_called()
+
+        card = make_card()
+        v1 = make_snapshot(card, schema_version=REMOTE_SCHEMA_V1)
+        projection = remote_catalog_projection_sha256(v1)
+        no_write = Mock(side_effect=AssertionError("drifted approval wrote"))
+        result, stdout, stderr = run_cli(
+            [
+                "catalog",
+                "migrate-routing-v2",
+                "--expected-snapshot-revision",
+                "0" * 64,
+                "--expected-projection-sha256",
+                projection,
+                "--approve",
+                "--json",
+            ],
+            patches=(
+                patch("buoy_search.catalog_cli.read_remote_catalog", return_value=v1),
+                patch("buoy_search.catalog_cli.migrate_remote_catalog_schema_v2", no_write),
+            ),
+        )
+        self.assertEqual((result, stderr), (2, ""))
+        drifted = json.loads(stdout)
+        self.assertIn("snapshot drifted", drifted["failure"])
+        self.assertEqual(drifted["operations_performed"]["strong_read_calls"], 1)
+        self.assertEqual(drifted["request_summary"]["write_requests"], 0)
+        no_write.assert_not_called()
+
+        no_resource = Mock(
+            side_effect=AssertionError("projection-drifted approval acquired resource")
+        )
+        result, stdout, stderr = run_cli(
+            [
+                "catalog",
+                "migrate-routing-v2",
+                "--expected-snapshot-revision",
+                v1.snapshot_revision,
+                "--expected-projection-sha256",
+                "0" * 64,
+                "--approve",
+                "--json",
+            ],
+            patches=(
+                patch("buoy_search.catalog_cli.read_remote_catalog", return_value=v1),
+                patch("buoy_search.catalog_cli.remote_catalog_resource", no_resource),
+                patch("buoy_search.catalog_cli.migrate_remote_catalog_schema_v2", no_write),
+            ),
+        )
+        self.assertEqual((result, stderr), (2, ""))
+        projection_drifted = json.loads(stdout)
+        self.assertIn("projection drifted", projection_drifted["failure"])
+        self.assertFalse(projection_drifted["write_attempted"])
+        self.assertEqual(
+            projection_drifted["operations_performed"]["strong_read_calls"],
+            1,
+        )
+        self.assertEqual(projection_drifted["request_summary"]["write_requests"], 0)
+        no_resource.assert_not_called()
+        no_write.assert_not_called()
+
+        read_secret = "READ-STAGE-SECRET"
+        result, stdout, stderr = run_cli(
+            ["catalog", "migrate-routing-v2", "--json"],
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.read_remote_catalog",
+                    side_effect=RemoteCatalogError(
+                        f"provider leaked {read_secret}"
+                    ),
+                ),
+            ),
+        )
+        self.assertEqual((result, stderr), (2, ""))
+        self.assertNotIn(read_secret, stdout)
+        read_failed = json.loads(stdout)
+        self.assertIsNone(
+            read_failed["operations_performed"]["strong_read_calls"]
+        )
+        self.assertFalse(read_failed["request_summary"]["accounting_complete"])
+        self.assertEqual(read_failed["request_summary"]["write_requests"], 0)
+
+        mutation = MutationResult(
+            True,
+            None,
+            0,
+            (),
+            MutationMetrics(1, 0, ({"write_units": 1},)),
+        )
+        result, stdout, stderr = run_cli(
+            [
+                "catalog",
+                "migrate-routing-v2",
+                "--expected-snapshot-revision",
+                v1.snapshot_revision,
+                "--expected-projection-sha256",
+                projection,
+                "--approve",
+                "--json",
+            ],
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.read_remote_catalog",
+                    side_effect=[v1, v1],
+                ),
+                patch(
+                    "buoy_search.catalog_cli.migrate_remote_catalog_schema_v2",
+                    return_value=mutation,
+                ),
+            ),
+        )
+        self.assertEqual((result, stderr), (2, ""))
+        failed = json.loads(stdout)
+        self.assertEqual(failed["mutation_status"], "verification_failed")
+        self.assertTrue(failed["write_attempted"])
+        self.assertFalse(failed["verification_complete"])
+        self.assertTrue(failed["retry_requires_fresh_preview"])
+        self.assertTrue(failed["request_summary"]["accounting_complete"])
+        self.assertEqual(failed["request_summary"]["write_requests"], 1)
+
+    def test_dedicated_routing_example_preview_approval_and_idempotence(self) -> None:
+        current = make_card()
+        snapshot = make_snapshot(current, schema_version=REMOTE_SCHEMA_V2)
+        questions = ["Where are retries configured?", "How do I set timeouts?"]
+        embedder = FixedEmbedder()
+        no_write = Mock(side_effect=AssertionError("preview wrote"))
+        result, stdout, stderr = run_cli(
+            [
+                "catalog",
+                "set-routing-examples",
+                current.namespace,
+                "--routing-example",
+                questions[0],
+                "--routing-example",
+                questions[1],
+                "--json",
+            ],
+            patches=(
+                patch("buoy_search.catalog_cli.read_remote_catalog", return_value=snapshot),
+                patch("buoy_search.catalog_cli.update_remote_card", no_write),
+                patch(
+                    "buoy_search.catalog.load_routing_embedder",
+                    return_value=embedder,
+                ),
+            ),
+        )
+        self.assertEqual((result, stderr), (0, ""))
+        preview = json.loads(stdout)
+        self.assertEqual(preview["routing_examples"], sorted(questions))
+        self.assertFalse(preview["verification_complete"])
+        self.assertIsNone(preview["verified_card_revision"])
+        self.assertEqual(preview["expected_card_revision"], current.card_revision)
+        self.assertEqual(preview["operations_performed"]["model_inferences"], 1)
+        self.assertEqual(preview["operations_performed"]["card_writes"], 0)
+        self.assertTrue(preview["legacy_projection_preserved"])
+        self.assertEqual(len(embedder.calls), 1)
+        self.assertEqual(len(embedder.calls[0]), 3)
+        no_write.assert_not_called()
+
+        result, text_preview, stderr = run_cli(
+            [
+                "catalog",
+                "set-routing-examples",
+                current.namespace,
+                "--routing-example",
+                questions[0],
+                "--routing-example",
+                questions[1],
+            ],
+            patches=(
+                patch("buoy_search.catalog_cli.read_remote_catalog", return_value=snapshot),
+                patch(
+                    "buoy_search.catalog.load_routing_embedder",
+                    return_value=FixedEmbedder(),
+                ),
+            ),
+        )
+        self.assertEqual((result, stderr), (0, ""))
+        for question in questions:
+            self.assertIn(json.dumps(question), text_preview)
+        self.assertIn(preview["intended_routing_prototype_vector_hash"], text_preview)
+        self.assertIn("strong_reads=1; model_inferences=1", text_preview)
+        self.assertIn(
+            "approval budget: strong_reads<=2; model_inferences<=1; "
+            "schema_writes=0; card_writes<=1; affected_cards<=1; "
+            "content=0; deletes=0",
+            text_preview,
+        )
+
+        sent: list[object] = []
+        config_read = Mock(
+            return_value=SimpleNamespace(
+                embedding_model="BAAI/bge-small-en-v1.5",
+                embedding_precision="float32",
+            )
+        )
+
+        def write(_resource, card, **_kwargs):  # noqa: ANN001, ANN003, ANN202
+            sent.append(card)
+            return MutationResult(
+                True,
+                card,
+                1,
+                (remote_card_id(card.namespace),),
+                MutationMetrics(1, 2, ()),
+            )
+
+        def read_catalog(*_args, **_kwargs):  # noqa: ANN002, ANN003, ANN202
+            if not sent:
+                return snapshot
+            return make_snapshot(sent[0], schema_version=REMOTE_SCHEMA_V2)
+
+        result, stdout, stderr = run_cli(
+            [
+                "catalog",
+                "set-routing-examples",
+                current.namespace,
+                *(
+                    item
+                    for question in questions
+                    for item in ("--routing-example", question)
+                ),
+                "--expected-card-revision",
+                current.card_revision,
+                "--approve",
+                "--json",
+            ],
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.read_remote_catalog",
+                    side_effect=read_catalog,
+                ),
+                patch("buoy_search.catalog_cli.update_remote_card", side_effect=write),
+                patch(
+                    "buoy_search.catalog.load_routing_embedder",
+                    return_value=FixedEmbedder(),
+                ),
+                patch(
+                    "buoy_search.catalog_cli.utc_now",
+                    return_value="2026-08-15T12:00:00+00:00",
+                ),
+                patch("buoy_search.catalog_cli.load_config", config_read),
+            ),
+        )
+        self.assertEqual((result, stderr), (0, ""))
+        approved = json.loads(stdout)
+        self.assertEqual(approved["mutation_status"], "updated")
+        self.assertTrue(approved["verification_complete"])
+        self.assertEqual(
+            approved["verified_card_revision"],
+            approved["intended_card_revision"],
+        )
+        self.assertEqual(approved["operations_performed"]["card_writes"], 1)
+        self.assertEqual(approved["operations_performed"]["strong_read_calls"], 2)
+        intended = sent[0]
+        self.assertEqual(intended.vector, current.vector)
+        self.assertEqual(intended.vector_hash, current.vector_hash)
+        self.assertEqual(intended.semantic_hash, current.semantic_hash)
+        self.assertEqual(intended.title, current.title)
+        self.assertEqual(intended.source_uri, current.source_uri)
+        config_read.assert_called_once_with()
+
+        idempotent = make_card(routing_examples=sorted(questions))
+        idempotent_snapshot = make_snapshot(
+            idempotent,
+            schema_version=REMOTE_SCHEMA_V2,
+        )
+        result, stdout, stderr = run_cli(
+            [
+                "catalog",
+                "set-routing-examples",
+                idempotent.namespace,
+                "--routing-example",
+                questions[1],
+                "--routing-example",
+                questions[0],
+                "--expected-card-revision",
+                idempotent.card_revision,
+                "--approve",
+                "--json",
+            ],
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.read_remote_catalog",
+                    return_value=idempotent_snapshot,
+                ),
+                patch(
+                    "buoy_search.catalog_cli.update_remote_card",
+                    side_effect=AssertionError("idempotent example update wrote"),
+                ),
+                patch(
+                    "buoy_search.catalog_cli.remote_catalog_resource",
+                    side_effect=AssertionError("idempotent update acquired write resource"),
+                ),
+                patch(
+                    "buoy_search.catalog.load_routing_embedder",
+                    side_effect=AssertionError("idempotent example update loaded model"),
+                ),
+            ),
+        )
+        self.assertEqual((result, stderr), (0, ""))
+        unchanged = json.loads(stdout)
+        self.assertEqual(unchanged["mutation_status"], "unchanged")
+        self.assertTrue(unchanged["verification_complete"])
+        self.assertEqual(unchanged["verified_card_revision"], idempotent.card_revision)
+        self.assertEqual(unchanged["operations_performed"]["model_inferences"], 0)
+        self.assertEqual(unchanged["operations_performed"]["card_writes"], 0)
+
+        result, text_unchanged, stderr = run_cli(
+            [
+                "catalog",
+                "set-routing-examples",
+                idempotent.namespace,
+                "--routing-example",
+                questions[1],
+                "--routing-example",
+                questions[0],
+                "--expected-card-revision",
+                idempotent.card_revision,
+                "--approve",
+            ],
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.read_remote_catalog",
+                    return_value=idempotent_snapshot,
+                ),
+                patch(
+                    "buoy_search.catalog_cli.remote_catalog_resource",
+                    side_effect=AssertionError("idempotent text acquired write resource"),
+                ),
+                patch(
+                    "buoy_search.catalog.load_routing_embedder",
+                    side_effect=AssertionError("idempotent text loaded model"),
+                ),
+            ),
+        )
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertIn("canonical routing examples were already present", text_unchanged)
+        self.assertIn("strong_reads=1; model_inferences=0", text_unchanged)
+        self.assertIn("writes: schema=0; cards=0; content=0; deletes=0", text_unchanged)
+
+    def test_dedicated_example_preconditions_targets_and_failed_attempt_are_safe(self) -> None:
+        secret_question = "Where is SECRET-CANARY configured?"
+        factory = Mock(side_effect=AssertionError("factory called before revision validation"))
+        for args in (
+            [
+                "catalog",
+                "set-routing-examples",
+                "site-example-v1",
+                "--routing-example",
+                secret_question,
+                "--approve",
+                "--json",
+            ],
+            [
+                "catalog",
+                "set-routing-examples",
+                "site-example-v1",
+                "--routing-example",
+                secret_question,
+                "--expected-card-revision",
+                "INVALID",
+                "--approve",
+                "--json",
+            ],
+            [
+                "catalog",
+                "set-routing-examples",
+                "site-example-v1",
+                "--routing-example",
+                secret_question,
+                "--routing-example",
+                secret_question,
+                "--json",
+            ],
+        ):
+            with self.subTest(args=args):
+                result, stdout, stderr = run_cli(
+                    args,
+                    env={},
+                    patches=(
+                        patch(
+                            "buoy_search.catalog_cli.REMOTE_CATALOG_CLIENT_FACTORY",
+                            factory,
+                        ),
+                    ),
+                )
+                self.assertEqual((result, stderr), (2, ""))
+                self.assertNotIn(secret_question, stdout)
+                failure = json.loads(stdout)
+                self.assertEqual(failure["mutation_status"], "precondition_failed")
+                self.assertFalse(failure["write_attempted"])
+                self.assertEqual(failure["operations_performed"]["card_writes"], 0)
+        factory.assert_not_called()
+
+        unsafe_namespace = "../../SECRET-NAMESPACE/token"
+        result, stdout, stderr = run_cli(
+            [
+                "catalog",
+                "set-routing-examples",
+                unsafe_namespace,
+                "--routing-example",
+                secret_question,
+                "--json",
+            ],
+            env={},
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.REMOTE_CATALOG_CLIENT_FACTORY",
+                    factory,
+                ),
+            ),
+        )
+        self.assertEqual((result, stderr), (2, ""))
+        unsafe_failure = json.loads(stdout)
+        self.assertIn("target namespace must match", unsafe_failure["failure"])
+        self.assertNotIn(unsafe_namespace, stdout)
+        factory.assert_not_called()
+
+        model = Mock(side_effect=AssertionError("rejected target loaded model"))
+        update = Mock(side_effect=AssertionError("rejected target wrote"))
+        for snapshot, message in (
+            (
+                make_snapshot(
+                    make_card(),
+                    live=(),
+                    schema_version=REMOTE_SCHEMA_V2,
+                ),
+                "eligible or disabled non-stale",
+            ),
+            (
+                make_snapshot(
+                    make_card(embedding_model="other-model"),
+                    schema_version=REMOTE_SCHEMA_V2,
+                ),
+                "eligible or disabled non-stale",
+            ),
+            (
+                make_snapshot(make_card(), schema_version=REMOTE_SCHEMA_V1),
+                "exact schema-v2",
+            ),
+        ):
+            with self.subTest(message=message):
+                result, stdout, stderr = run_cli(
+                    [
+                        "catalog",
+                        "set-routing-examples",
+                        "site-example-v1",
+                        "--routing-example",
+                        secret_question,
+                        "--json",
+                    ],
+                    patches=(
+                        patch(
+                            "buoy_search.catalog_cli.read_remote_catalog",
+                            return_value=snapshot,
+                        ),
+                        patch("buoy_search.catalog.load_routing_embedder", model),
+                        patch("buoy_search.catalog_cli.update_remote_card", update),
+                    ),
+                )
+                self.assertEqual((result, stderr), (2, ""))
+                self.assertNotIn(secret_question, stdout)
+                rejected = json.loads(stdout)
+                self.assertIn(message, rejected["failure"])
+                self.assertEqual(
+                    rejected["operations_performed"]["strong_read_calls"],
+                    1,
+                )
+                self.assertEqual(rejected["operations_performed"]["model_inferences"], 0)
+        model.assert_not_called()
+        update.assert_not_called()
+
+        current = make_card()
+        current_snapshot = make_snapshot(
+            current,
+            schema_version=REMOTE_SCHEMA_V2,
+        )
+        no_resource = Mock(
+            side_effect=AssertionError("stale revision acquired write resource")
+        )
+        result, stdout, stderr = run_cli(
+            [
+                "catalog",
+                "set-routing-examples",
+                current.namespace,
+                "--routing-example",
+                secret_question,
+                "--expected-card-revision",
+                "0" * 64,
+                "--approve",
+                "--json",
+            ],
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.read_remote_catalog",
+                    return_value=current_snapshot,
+                ),
+                patch("buoy_search.catalog_cli.remote_catalog_resource", no_resource),
+                patch("buoy_search.catalog.load_routing_embedder", model),
+                patch("buoy_search.catalog_cli.update_remote_card", update),
+            ),
+        )
+        self.assertEqual((result, stderr), (2, ""))
+        stale_revision = json.loads(stdout)
+        self.assertIn("card revision drifted", stale_revision["failure"])
+        self.assertFalse(stale_revision["write_attempted"])
+        self.assertEqual(
+            stale_revision["operations_performed"]["model_inferences"],
+            0,
+        )
+        self.assertEqual(stale_revision["request_summary"]["write_requests"], 0)
+        self.assertNotIn(secret_question, stdout)
+        no_resource.assert_not_called()
+        model.assert_not_called()
+        update.assert_not_called()
+
+        disabled = make_card(enabled=False, embedding_model="other-model")
+        disabled_snapshot = make_snapshot(
+            disabled,
+            schema_version=REMOTE_SCHEMA_V2,
+        )
+        result, stdout, stderr = run_cli(
+            [
+                "catalog",
+                "set-routing-examples",
+                disabled.namespace,
+                "--routing-example",
+                secret_question,
+                "--json",
+            ],
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.read_remote_catalog",
+                    return_value=disabled_snapshot,
+                ),
+                patch(
+                    "buoy_search.catalog.load_routing_embedder",
+                    return_value=FixedEmbedder(),
+                ),
+            ),
+        )
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertEqual(json.loads(stdout)["catalog_status"], "disabled")
+
+        model_secret = "MODEL-STAGE-SECRET"
+        model_target = make_card()
+        model_snapshot = make_snapshot(
+            model_target,
+            schema_version=REMOTE_SCHEMA_V2,
+        )
+        result, stdout, stderr = run_cli(
+            [
+                "catalog",
+                "set-routing-examples",
+                model_target.namespace,
+                "--routing-example",
+                secret_question,
+                "--json",
+            ],
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.read_remote_catalog",
+                    return_value=model_snapshot,
+                ),
+                patch(
+                    "buoy_search.catalog.load_routing_embedder",
+                    side_effect=CatalogError(
+                        f"model leaked {model_secret} {secret_question}"
+                    ),
+                ),
+            ),
+        )
+        self.assertEqual((result, stderr), (2, ""))
+        self.assertNotIn(model_secret, stdout)
+        self.assertNotIn(secret_question, stdout)
+        model_failed = json.loads(stdout)
+        self.assertEqual(
+            model_failed["operations_performed"]["strong_read_calls"],
+            1,
+        )
+        self.assertIsNone(
+            model_failed["operations_performed"]["model_inferences"]
+        )
+        self.assertFalse(model_failed["operation_accounting_complete"])
+        self.assertEqual(model_failed["operations_performed"]["card_writes"], 0)
+
+        current = make_card()
+        v2 = make_snapshot(current, schema_version=REMOTE_SCHEMA_V2)
+        result, stdout, stderr = run_cli(
+            [
+                "catalog",
+                "set-routing-examples",
+                current.namespace,
+                "--routing-example",
+                secret_question,
+                "--expected-card-revision",
+                current.card_revision,
+                "--approve",
+                "--json",
+            ],
+            patches=(
+                patch("buoy_search.catalog_cli.read_remote_catalog", return_value=v2),
+                patch(
+                    "buoy_search.catalog_cli.update_remote_card",
+                    side_effect=RemoteCatalogError(
+                        f"provider leaked {secret_question}"
+                    ),
+                ),
+                patch(
+                    "buoy_search.catalog.load_routing_embedder",
+                    return_value=FixedEmbedder(),
+                ),
+            ),
+        )
+        self.assertEqual((result, stderr), (2, ""))
+        self.assertNotIn(secret_question, stdout)
+        failed = json.loads(stdout)
+        self.assertEqual(failed["mutation_status"], "verification_failed")
+        self.assertTrue(failed["write_attempted"])
+        self.assertFalse(failed["request_summary"]["accounting_complete"])
+        self.assertIsNone(failed["request_summary"]["total_requests"])
+        self.assertEqual(failed["request_summary"]["write_requests"], 1)
+
+        result, stdout, text_error = run_cli(
+            [
+                "catalog",
+                "set-routing-examples",
+                current.namespace,
+                "--routing-example",
+                secret_question,
+                "--expected-card-revision",
+                current.card_revision,
+                "--approve",
+            ],
+            patches=(
+                patch("buoy_search.catalog_cli.read_remote_catalog", return_value=v2),
+                patch(
+                    "buoy_search.catalog_cli.update_remote_card",
+                    side_effect=RemoteCatalogError(
+                        f"provider leaked {secret_question}"
+                    ),
+                ),
+                patch(
+                    "buoy_search.catalog.load_routing_embedder",
+                    return_value=FixedEmbedder(),
+                ),
+            ),
+        )
+        self.assertEqual((result, stdout), (2, ""))
+        self.assertNotIn(secret_question, text_error)
+        self.assertIn(
+            "strong_reads=1; model_inferences=1; schema_writes=0; card_writes=1; "
+            "content=0; deletes=0",
+            text_error,
+        )
+        self.assertIn("request accounting: known lower bound", text_error)
+
+        def bad_result(kind: str):  # noqa: ANN202
+            def update_result(_resource, intended, **_kwargs):  # noqa: ANN001, ANN003, ANN202
+                expected_id = remote_card_id(intended.namespace)
+                if kind == "zero":
+                    return MutationResult(
+                        False,
+                        intended,
+                        0,
+                        (),
+                        MutationMetrics(1, 2, ()),
+                    )
+                if kind == "multiple":
+                    return MutationResult(
+                        True,
+                        intended,
+                        2,
+                        (expected_id, "bc_unexpected"),
+                        MutationMetrics(1, 2, ()),
+                    )
+                if kind == "wrong_id":
+                    return MutationResult(
+                        True,
+                        intended,
+                        1,
+                        ("bc_unexpected",),
+                        MutationMetrics(1, 2, ()),
+                    )
+                return MutationResult(
+                    True,
+                    current,
+                    1,
+                    (expected_id,),
+                    MutationMetrics(1, 2, ()),
+                )
+
+            return update_result
+
+        for kind in ("zero", "multiple", "wrong_id", "wrong_card"):
+            with self.subTest(kind=kind):
+                result, stdout, stderr = run_cli(
+                    [
+                        "catalog",
+                        "set-routing-examples",
+                        current.namespace,
+                        "--routing-example",
+                        secret_question,
+                        "--expected-card-revision",
+                        current.card_revision,
+                        "--approve",
+                        "--json",
+                    ],
+                    patches=(
+                        patch(
+                            "buoy_search.catalog_cli.read_remote_catalog",
+                            return_value=v2,
+                        ),
+                        patch(
+                            "buoy_search.catalog_cli.update_remote_card",
+                            side_effect=bad_result(kind),
+                        ),
+                        patch(
+                            "buoy_search.catalog.load_routing_embedder",
+                            return_value=FixedEmbedder(),
+                        ),
+                    ),
+                )
+                self.assertEqual((result, stderr), (2, ""))
+                self.assertNotIn(secret_question, stdout)
+                rejected = json.loads(stdout)
+                self.assertEqual(
+                    rejected["mutation_status"],
+                    "verification_failed",
+                )
+                self.assertTrue(rejected["request_summary"]["accounting_complete"])
+                self.assertEqual(rejected["request_summary"]["write_requests"], 1)
 
     def test_upsert_rejects_nonlive_reserved_and_malformed_card_arguments_before_write(self) -> None:
         create = Mock(side_effect=AssertionError("invalid upsert wrote"))

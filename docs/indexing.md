@@ -387,6 +387,17 @@ write, delete, enable, disable, or otherwise mutate the target content
 namespace. Disabled cards remain catalog coverage but are not eligible for
 automatic routes; stale cards are reported and never deleted automatically.
 
+Schema-v2 and reviewed-example maintenance use narrower revision-bound
+operators. Deploy the compatible v1/v2 reader first, preview
+`buoy catalog migrate-routing-v2 --json`, and approve only with that preview's
+exact snapshot and projection hashes. Then preview
+`buoy catalog set-routing-examples NAMESPACE --routing-example QUESTION --json`
+and approve only with its exact card revision. See
+[`retrieval.md`](retrieval.md#reader-first-schema-and-reviewed-examples) for the
+full review sequence and safety accounting. These catalog-only operations do
+not write indexed content or activate candidate routing, and normal future
+applies preserve the reviewed questions.
+
 ## Stale rows
 
 Preview stale deletion locally:
