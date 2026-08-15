@@ -226,15 +226,18 @@ class ReleaseAutomationTests(unittest.TestCase):
             "cross_encoder.py",
             "remote_catalog.py",
             "routing.py",
+            "routing_quality.py",
         ):
             self.assertTrue((ROOT / "src/buoy_search" / module).is_file())
         self.assertEqual(
             release_automation.REQUIRED_SDIST_MEMBERS,
-            ("scripts/evaluate_multi_corpus_retrieval.py",),
+            (
+                "scripts/evaluate_multi_corpus_retrieval.py",
+                "scripts/evaluate_routing_quality.py",
+            ),
         )
-        self.assertTrue(
-            (ROOT / release_automation.REQUIRED_SDIST_MEMBERS[0]).is_file()
-        )
+        for member in release_automation.REQUIRED_SDIST_MEMBERS:
+            self.assertTrue((ROOT / member).is_file())
         self.assertFalse((ROOT / "src/buoy_search/command_center_static").exists())
         readiness = (ROOT / ".github/workflows/release-readiness.yml").read_text(
             encoding="utf-8"

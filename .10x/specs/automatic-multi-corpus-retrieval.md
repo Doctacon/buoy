@@ -1,7 +1,8 @@
 Status: active
 Created: 2026-08-13
-Updated: 2026-08-13
+Updated: 2026-08-15
 Decision: .10x/decisions/buoy-owns-bounded-multi-corpus-retrieval.md
+Amended-By: .10x/specs/scalable-routing-quality.md
 
 # Automatic Multi-Corpus Retrieval
 
@@ -13,6 +14,15 @@ semantic, embedding, ranking, lineage, enablement, revision, and pinned
 384-dimensional BGE routing-vector fields. `buoy-routing-catalog-v1` and
 `buoy-evidence-*` are reserved control-plane namespaces and MUST NOT become
 content candidates.
+
+The inactive scalable-routing amendment adds new-reader support for exact
+schema v1 and exact additive schema v2. Schema v2 adds the four-field prototype
+bundle defined by `.10x/specs/scalable-routing-quality.md`:
+`routing_examples`, `routing_prototype_hash`, `routing_prototype_vector`, and
+`routing_prototype_vector_hash`. It does not authorize a live schema write or
+alter current production routing. The exact projection, shortlist, reranker,
+calibration, activation, and reader-first migration contract is governed by
+that scalable-routing spec.
 
 Automatic routing requires a card for every live content namespace. Disabled
 cards count as intentionally covered but are not eligible. Missing, stale,
@@ -49,6 +59,11 @@ semantic projection.
   `0.65` and exceeds top-2 by at least `0.05`.
 - Every other route selects the semantic top three, or all eligible cards when
   fewer than three exist.
+
+These score and margin thresholds remain production authority until the
+scalable-routing candidate has human-approved canaries, passes its locked
+quality gates, and receives an explicit owner-approved packaged activation.
+Exact-name behavior and the three-namespace maximum survive that amendment.
 
 Automatic preview performs only inventory/catalog reads and local route
 embedding. It MUST report selected cards, scores, confidence/margin, coverage,

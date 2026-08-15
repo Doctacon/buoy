@@ -18,6 +18,7 @@ from buoy_search.catalog import CardFields, ROUTING_DIMENSIONS, prepare_card
 from buoy_search.config import RuntimeConfig
 from buoy_search.remote_catalog import (
     REMOTE_CATALOG_NAMESPACE,
+    REMOTE_SCHEMA_V2,
     CompatibilityContract,
     MutationMetrics,
     MutationResult,
@@ -75,6 +76,7 @@ def manual_card(namespace: str):  # noqa: ANN201 - test helper
             ranking_aggregation="max",
             last_plan_id="plan_previous",
             last_apply_id="apply_previous",
+            routing_examples=["How do I use the operator routing policy?"],
         ),
         embedder=FixedRoutingEmbedder(),
         now="2026-08-12T00:00:00+00:00",
@@ -111,6 +113,7 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
         self.assertEqual(card.summary, existing.summary)
         self.assertEqual(card.aliases, existing.aliases)
         self.assertEqual(card.tags, existing.tags)
+        self.assertEqual(card.routing_examples, existing.routing_examples)
         self.assertEqual(card.vector, existing.vector)
         self.assertEqual(card.source_uri, artifacts.plan.source["uri"])
         self.assertEqual(card.site_id, artifacts.plan.site_id)
@@ -152,6 +155,7 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
                             embedding_model=MODEL,
                             embedding_precision="float32",
                         ),
+                        catalog_schema_version=REMOTE_SCHEMA_V2,
                     )
                     mutation = Mock(
                         return_value=MutationResult(
@@ -200,6 +204,10 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
                             mutation.call_args.kwargs["expected_revision"],
                             existing.card_revision,
                         )
+                    self.assertEqual(
+                        mutation.call_args.kwargs["schema_version"],
+                        REMOTE_SCHEMA_V2,
+                    )
 
     def test_failure_before_catalog_read_only_suggests_safe_inspection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -297,6 +305,7 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
         self.assertNotIn(secret, str(raised.exception))
         self.assertNotIn("Authorization", str(raised.exception))
         self.assertIn("buoy catalog upsert", raised.exception.repair_command)
+        self.assertIn("--routing-example", raised.exception.repair_command)
         self.assertIn("--approve", raised.exception.repair_command)
         self.assertEqual(client.namespace_calls, [REMOTE_CATALOG_NAMESPACE])
 

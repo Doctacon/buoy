@@ -8,6 +8,12 @@ as GitHub Release assets rather than to PyPI.
 
 ### Added
 
+- Added an inactive scalable-routing foundation: routing cards may carry up to
+  eight reviewed example questions under a reader-first additive schema, and a
+  candidate router can rerank an exact local top-twelve card shortlist with the
+  pinned MiniLM model without extra provider searches. Production routing and
+  the three-corpus content fanout remain unchanged until per-corpus canaries,
+  calibration, owner approval, and a separate live schema migration pass.
 - Restored the fixed `buoy-routing-catalog-v1` card lifecycle and bounded
   `catalog list/show/upsert/enable/disable` commands. Mutations preview by
   default and require explicit approval.

@@ -86,6 +86,7 @@ REQUIRED_PACKAGE_MEMBERS = (
     "buoy_search/cross_encoder.py",
     "buoy_search/data/automatic_multi_corpus_retrieval_evals.json",
     "buoy_search/data/automatic_retrieval_evidence_calibration.json",
+    "buoy_search/data/automatic_routing_confidence_calibration.json",
     "buoy_search/evidence.py",
     "buoy_search/evidence_evals.py",
     "buoy_search/multi_corpus_evals.py",
@@ -93,9 +94,11 @@ REQUIRED_PACKAGE_MEMBERS = (
     "buoy_search/remote_catalog.py",
     "buoy_search/retriever.py",
     "buoy_search/routing.py",
+    "buoy_search/routing_quality.py",
 )
 REQUIRED_SDIST_MEMBERS = (
     "scripts/evaluate_multi_corpus_retrieval.py",
+    "scripts/evaluate_routing_quality.py",
 )
 TOKENIZER_MEMBER_SUFFIXES = (
     "data/bge-small-en-v1.5/5c38ec7c405ec4b44b94cc5a9bb96e735b38267a/special_tokens_map.json",

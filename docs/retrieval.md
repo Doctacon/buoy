@@ -93,6 +93,30 @@ one local route embedding, then reports selected cards, confidence, coverage,
 and expected fanout. It does not embed the content query, query a content
 namespace, or write provider state.
 
+### Growing the routing catalog
+
+Adding a corpus does not require adding it to the fixed end-to-end retrieval
+answer key. Each new enabled corpus instead gets a small reviewed route-canary
+pack: a named query, two descriptor-free capability queries, one query that is
+easy to confuse with a neighboring corpus, and one contrast query that should
+route elsewhere. The complete route-only suite is replayed against the current
+eligible catalog so a new card cannot silently steal an existing route.
+
+The unreleased scalable-routing foundation also understands an additive
+`routing_examples` card field containing at most eight reviewed questions the
+corpus can answer. These examples are separate from aliases and tags and never
+trigger exact-name routing. A candidate router takes an exact in-memory vector
+shortlist of at most twelve cards from the already-read catalog, then compares
+their base text and examples with the pinned local MiniLM model. It still
+queries at most three content namespaces and adds no provider query per card.
+
+This candidate is intentionally inactive until its canaries are approved and
+its confidence thresholds pass a locked calibration/certification run. The
+live catalog remains schema v1 and the current cosine router remains production
+authority. A later reader-first migration may add examples only after the new
+reader is deployed; ordinary apply cannot invent capability examples from a
+URL or source name and preserves reviewed manual examples.
+
 ## Explicit override
 
 Supply `--namespace` to bypass namespace listing, catalog reads, and route-model
@@ -273,7 +297,10 @@ buoy catalog enable site-example-docs-v1 --approve
 
 `catalog upsert` creates or replaces one complete manual card; use
 `buoy catalog upsert --help` for its required source, embedding, and ranking
-fields. `upsert`, `enable`, and `disable` are previews unless `--approve` is
+fields. The unreleased reader accepts repeatable `--routing-example` values
+for a complete manual-card preview. Approval against a schema-v1 catalog fails
+safely until the separately reviewed reader-first migration. `upsert`,
+`enable`, and `disable` are previews unless `--approve` is
 present. They modify routing cards only. They never delete, enable, disable, or
 otherwise mutate a content namespace.
 

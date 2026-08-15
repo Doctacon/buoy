@@ -115,6 +115,13 @@ buoy catalog disable site-example-one-v1       # preview
 buoy catalog disable site-example-one-v1 --approve
 ```
 
+**Unreleased routing-scale foundation:** new readers accept reviewed
+per-corpus routing examples and a bounded local shortlist/rerank candidate, but
+the candidate remains inactive until route canaries and calibrated confidence
+gates pass. Adding ordinary corpora does not expand the fixed end-to-end answer
+key; each corpus gets a small route-only canary pack instead. The live catalog
+is not migrated by this change, and content fanout remains capped at three.
+
 Multi-corpus results are deduplicated and locally reranked. Automatic retrieval
 also checks the relevance of its best final result with the same pinned MiniLM
 model. This check runs for both normal text and JSON output. A single explicit

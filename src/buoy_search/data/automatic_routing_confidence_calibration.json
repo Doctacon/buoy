@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "calibration_id": "automatic-routing-confidence-v2",
+  "calibration_revision": "collect-unassessed-v1",
+  "mode": "collect",
+  "owner_approved": false,
+  "score_floor": null,
+  "margin_floor": null,
+  "bindings": {
+    "routing_model": "BAAI/bge-small-en-v1.5",
+    "routing_model_revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+    "routing_reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    "routing_reranker_revision": "c5ee24cb16019beea0893ab7796b1df96625c6b8",
+    "schema_contract": "remote-routing-card-schema-v1-v2",
+    "projection": "separate_prototype_vector_normalized_mean_v1",
+    "shortlist_limit": 12,
+    "max_examples": 8,
+    "feature_contract": "max_prototype_score_and_margin_v1",
+    "score_field": "reranker_score",
+    "margin_field": "reranker_margin",
+    "canary_suite_sha256": null,
+    "catalog_projection_sha256": null
+  },
+  "certification": {
+    "passed": false,
+    "case_count": 0,
+    "verdict_sha256": null
+  }
+}

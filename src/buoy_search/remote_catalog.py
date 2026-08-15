@@ -19,6 +19,7 @@ from buoy_search.catalog import (
     CatalogError,
     NamespaceCard,
     ROUTING_DIMENSIONS,
+    ROUTING_PROTOTYPE_FIELDS,
     card_revision,
     card_to_dict,
     catalog_revision,
@@ -31,7 +32,13 @@ CARD_PAGE_SIZE = 100
 MAX_PAGES_PER_PASS = 10_000
 DISTANCE_METRIC = "cosine_distance"
 STRONG_CONSISTENCY = {"level": "strong"}
-REMOTE_CARD_ATTRIBUTES = tuple(field.name for field in fields(NamespaceCard))
+REMOTE_SCHEMA_V1 = 1
+REMOTE_SCHEMA_V2 = 2
+REMOTE_CARD_ATTRIBUTES_V2 = tuple(field.name for field in fields(NamespaceCard))
+REMOTE_CARD_ATTRIBUTES = tuple(
+    name for name in REMOTE_CARD_ATTRIBUTES_V2 if name not in ROUTING_PROTOTYPE_FIELDS
+)
+REMOTE_CARD_ATTRIBUTES_V1 = REMOTE_CARD_ATTRIBUTES
 
 
 def _schema(
@@ -81,6 +88,14 @@ REMOTE_CATALOG_SCHEMA: dict[str, dict[str, object]] = {
     "semantic_hash": _schema("string", filterable=False),
     "vector_hash": _schema("string", filterable=False),
 }
+REMOTE_CATALOG_SCHEMA_V2: dict[str, dict[str, object]] = {
+    **REMOTE_CATALOG_SCHEMA,
+    "routing_examples": _schema("[]string", filterable=False),
+    "routing_prototype_hash": _schema("string", filterable=False),
+    "routing_prototype_vector": _schema("[]float", filterable=False),
+    "routing_prototype_vector_hash": _schema("string", filterable=False),
+}
+REMOTE_CATALOG_SCHEMA_V1 = REMOTE_CATALOG_SCHEMA
 
 _SCHEMA_KEYS = {
     "type",
@@ -155,6 +170,7 @@ class RemoteCatalogSnapshot:
     snapshot_revision: str
     counts: CatalogCounts
     metrics: ReadMetrics
+    catalog_schema_version: int = REMOTE_SCHEMA_V1
 
 
 @dataclass(frozen=True)
@@ -224,25 +240,87 @@ def remote_card_id(namespace: str) -> str:
     return f"bc_{digest[:61]}"
 
 
-def card_to_remote_row(card: NamespaceCard) -> dict[str, object]:
+def _remote_schema(schema_version: int) -> dict[str, dict[str, object]]:
+    if schema_version == REMOTE_SCHEMA_V1:
+        return REMOTE_CATALOG_SCHEMA
+    if schema_version == REMOTE_SCHEMA_V2:
+        return REMOTE_CATALOG_SCHEMA_V2
+    raise RemoteCatalogError(
+        f"remote catalog schema version must be {REMOTE_SCHEMA_V1} or {REMOTE_SCHEMA_V2}"
+    )
+
+
+def _remote_card_attributes(schema_version: int) -> tuple[str, ...]:
+    _remote_schema(schema_version)
+    return (
+        REMOTE_CARD_ATTRIBUTES
+        if schema_version == REMOTE_SCHEMA_V1
+        else REMOTE_CARD_ATTRIBUTES_V2
+    )
+
+
+def card_to_remote_row(
+    card: NamespaceCard,
+    *,
+    schema_version: int = REMOTE_SCHEMA_V1,
+) -> dict[str, object]:
     parsed = parse_card(card_to_dict(card, include_vector=True))
-    return {"id": remote_card_id(parsed.namespace), **card_to_dict(parsed, include_vector=True)}
+    if schema_version == REMOTE_SCHEMA_V1 and parsed.routing_examples:
+        raise RemoteCatalogError(
+            "routing_examples requires the explicit reader-first remote catalog "
+            "schema-v2 migration; schema-v1 writes cannot add it incidentally"
+        )
+    payload = card_to_dict(
+        parsed,
+        include_vector=True,
+        include_routing_examples=schema_version == REMOTE_SCHEMA_V2,
+    )
+    _remote_schema(schema_version)
+    return {"id": remote_card_id(parsed.namespace), **payload}
 
 
-def card_from_remote_row(row: object, *, region: str) -> NamespaceCard:
+def card_from_remote_row(
+    row: object,
+    *,
+    region: str,
+    schema_version: int = REMOTE_SCHEMA_V1,
+) -> NamespaceCard:
     payload = _call("card row normalization", _plain, row)
     if not isinstance(payload, dict):
         raise RemoteCatalogError("remote card row must be an object")
     row_id = payload.pop("id", None)
     payload.pop("$dist", None)
     payload.pop("dist", None)
-    # The provider omits requested attributes whose stored value is null.
-    # Only the two application-nullable lineage fields may be reconstructed.
+    # The provider omits requested attributes whose stored value is null. The
+    # two application-nullable lineage fields may always be reconstructed.
     payload.setdefault("last_plan_id", None)
     payload.setdefault("last_apply_id", None)
-    if set(payload) != set(REMOTE_CARD_ATTRIBUTES):
-        unknown = sorted(set(payload) - set(REMOTE_CARD_ATTRIBUTES))
-        missing = sorted(set(REMOTE_CARD_ATTRIBUTES) - set(payload))
+    reconstruct_prototype = False
+    if schema_version == REMOTE_SCHEMA_V2:
+        # A row predating the additive bundle has provider-null state for all
+        # four attributes. Reconstruct that complete legacy projection, but
+        # reject partial backfills because no mixed authority is safe.
+        present = set(payload) & ROUTING_PROTOTYPE_FIELDS
+        if present and present != ROUTING_PROTOTYPE_FIELDS:
+            raise RemoteCatalogError(
+                "remote card row has partial routing prototype state "
+                f"(present={sorted(present)}, "
+                f"missing={sorted(ROUTING_PROTOTYPE_FIELDS - present)})"
+            )
+        if not present:
+            reconstruct_prototype = True
+            payload.update(
+                {
+                    "routing_examples": [],
+                    "routing_prototype_hash": payload.get("semantic_hash"),
+                    "routing_prototype_vector": [],
+                    "routing_prototype_vector_hash": payload.get("vector_hash"),
+                }
+            )
+    expected_attributes = set(_remote_card_attributes(schema_version))
+    if set(payload) != expected_attributes:
+        unknown = sorted(set(payload) - expected_attributes)
+        missing = sorted(expected_attributes - set(payload))
         detail = []
         if unknown:
             detail.append(f"unknown={unknown}")
@@ -268,6 +346,25 @@ def card_from_remote_row(row: object, *, region: str) -> NamespaceCard:
                 ) from None
             canonical_vector.append(number)
         payload["vector"] = canonical_vector
+    if reconstruct_prototype:
+        payload["routing_prototype_vector"] = list(payload.get("vector", []))
+    prototype_vector = payload.get("routing_prototype_vector")
+    if isinstance(prototype_vector, list):
+        canonical_prototype_vector: list[float] = []
+        for index, item in enumerate(prototype_vector):
+            if isinstance(item, bool) or not isinstance(item, (int, float)):
+                raise RemoteCatalogError(
+                    "remote card field routing_prototype_vector"
+                    f"[{index}] must be a finite number"
+                )
+            number = float(item)
+            if not math.isfinite(number):
+                raise RemoteCatalogError(
+                    "remote card field routing_prototype_vector"
+                    f"[{index}] must be a finite number"
+                )
+            canonical_prototype_vector.append(number)
+        payload["routing_prototype_vector"] = canonical_prototype_vector
     try:
         card = parse_card(payload)
     except CatalogError as exc:
@@ -336,13 +433,18 @@ def validate_remote_schema(metadata: object) -> dict[str, dict[str, object]]:
     implicit_id = schema.pop("id", None)
     if implicit_id != {"type": "string", "filterable": True}:
         raise RemoteCatalogError("remote catalog implicit id schema must be filterable string")
-    if schema != REMOTE_CATALOG_SCHEMA:
-        missing = sorted(set(REMOTE_CATALOG_SCHEMA) - set(schema))
-        extra = sorted(set(schema) - set(REMOTE_CATALOG_SCHEMA))
+    if schema not in (REMOTE_CATALOG_SCHEMA, REMOTE_CATALOG_SCHEMA_V2):
+        expected = (
+            REMOTE_CATALOG_SCHEMA_V2
+            if "routing_examples" in schema
+            else REMOTE_CATALOG_SCHEMA
+        )
+        missing = sorted(set(expected) - set(schema))
+        extra = sorted(set(schema) - set(expected))
         changed = sorted(
             name
-            for name in set(schema) & set(REMOTE_CATALOG_SCHEMA)
-            if schema[name] != REMOTE_CATALOG_SCHEMA[name]
+            for name in set(schema) & set(expected)
+            if schema[name] != expected[name]
         )
         raise RemoteCatalogError(
             f"remote catalog schema mismatch (missing={missing}, extra={extra}, changed={changed})"
@@ -364,9 +466,16 @@ def read_remote_catalog(
         )
     resource = remote_catalog_resource(client)
     metadata = _call("metadata read", lambda: resource.metadata())
-    validate_remote_schema(metadata)
-    first_cards, first_card_pages, first_billing = _read_card_pass(resource, region=region)
-    second_cards, second_card_pages, second_billing = _read_card_pass(resource, region=region)
+    schema = validate_remote_schema(metadata)
+    schema_version = (
+        REMOTE_SCHEMA_V2 if schema == REMOTE_CATALOG_SCHEMA_V2 else REMOTE_SCHEMA_V1
+    )
+    first_cards, first_card_pages, first_billing = _read_card_pass(
+        resource, region=region, schema_version=schema_version
+    )
+    second_cards, second_card_pages, second_billing = _read_card_pass(
+        resource, region=region, schema_version=schema_version
+    )
     first_identity = [(card.namespace, card.card_revision) for card in first_cards]
     second_identity = [(card.namespace, card.card_revision) for card in second_cards]
     first_revision = catalog_revision(first_cards)
@@ -386,6 +495,7 @@ def read_remote_catalog(
             card_query_pages=first_card_pages + second_card_pages,
             billing=tuple([*first_billing, *second_billing]),
         ),
+        catalog_schema_version=schema_version,
     )
 
 
@@ -442,7 +552,9 @@ def classify_remote_catalog(
     cards: Sequence[NamespaceCard],
     compatibility: CompatibilityContract,
     metrics: ReadMetrics | None = None,
+    catalog_schema_version: int = REMOTE_SCHEMA_V1,
 ) -> RemoteCatalogSnapshot:
+    _remote_schema(catalog_schema_version)
     listed = tuple(sorted(live_namespace_ids))
     if len(listed) != len(set(listed)):
         raise RemoteCatalogError("remote namespace listing contains duplicate IDs")
@@ -495,6 +607,7 @@ def classify_remote_catalog(
         snapshot_revision=catalog_revision(ordered_cards),
         counts=counts,
         metrics=metrics or ReadMetrics(0, 0, 0, ()),
+        catalog_schema_version=catalog_schema_version,
     )
 
 
@@ -504,17 +617,19 @@ def create_remote_cards(
     cards: Sequence[NamespaceCard],
     *,
     region: str,
+    schema_version: int = REMOTE_SCHEMA_V1,
 ) -> MutationResult:
+    schema = _remote_schema(schema_version)
     ordered = tuple(sorted((parse_card(card_to_dict(card, include_vector=True)) for card in cards), key=lambda c: c.namespace))
     if not ordered:
         raise RemoteCatalogError("remote card create requires at least one card")
     _validate_mutation_cards(ordered, region=region)
-    rows = [card_to_remote_row(card) for card in ordered]
+    rows = [card_to_remote_row(card, schema_version=schema_version) for card in ordered]
     response = _call(
         "conditional card create",
         lambda: resource.write(
             distance_metric=DISTANCE_METRIC,
-            schema=REMOTE_CATALOG_SCHEMA,
+            schema=schema,
             upsert_rows=rows,
             upsert_condition=("id", "Eq", None),
             return_affected_ids=True,
@@ -527,7 +642,8 @@ def create_remote_cards(
     metrics = MutationMetrics(1, len(expected_ids) * 2, ())
     if affected == 0:
         current = _read_exact_cards_twice(
-            resource, expected_ids, region=region, billing=verification_billing
+            resource, expected_ids, region=region, schema_version=schema_version,
+            billing=verification_billing,
         )
         metrics = replace(metrics, billing=tuple([*billing, *verification_billing]))
         if _same_cards(current, ordered):
@@ -537,13 +653,14 @@ def create_remote_cards(
         # Strong read makes any partial race observable for the next migration attempt.
         _read_exact_cards_twice(
             resource, expected_ids, region=region, allow_missing=True,
-            billing=verification_billing,
+            schema_version=schema_version, billing=verification_billing,
         )
         raise RemoteCatalogError(
             f"conditional card create affected unexpected IDs: expected {sorted(expected_ids)}, got {sorted(affected_ids)}"
         )
     current = _read_exact_cards_twice(
-        resource, expected_ids, region=region, billing=verification_billing
+        resource, expected_ids, region=region, schema_version=schema_version,
+        billing=verification_billing,
     )
     if not _same_cards(current, ordered):
         raise RemoteCatalogError("remote card create verification did not match intended cards")
@@ -561,7 +678,9 @@ def update_remote_card(
     *,
     expected_revision: str,
     region: str,
+    schema_version: int = REMOTE_SCHEMA_V1,
 ) -> MutationResult:
+    schema = _remote_schema(schema_version)
     parsed = parse_card(card_to_dict(card, include_vector=True))
     _validate_mutation_cards((parsed,), region=region)
     if not isinstance(expected_revision, str) or not expected_revision:
@@ -571,8 +690,8 @@ def update_remote_card(
         "conditional card update",
         lambda: resource.write(
             distance_metric=DISTANCE_METRIC,
-            schema=REMOTE_CATALOG_SCHEMA,
-            upsert_rows=[card_to_remote_row(parsed)],
+            schema=schema,
+            upsert_rows=[card_to_remote_row(parsed, schema_version=schema_version)],
             upsert_condition=("card_revision", "Eq", expected_revision),
             return_affected_ids=True,
         ),
@@ -581,7 +700,7 @@ def update_remote_card(
     verification_billing: list[dict[str, object]] = []
     current = _read_exact_cards_twice(
         resource, [expected_id], region=region, allow_missing=True,
-        billing=verification_billing,
+        schema_version=schema_version, billing=verification_billing,
     )
     metrics = MutationMetrics(
         1, 2, tuple([*_response_billing(response), *verification_billing])
@@ -697,7 +816,9 @@ def _read_card_pass(
     resource: NamespaceResource,
     *,
     region: str,
+    schema_version: int,
 ) -> tuple[tuple[NamespaceCard, ...], int, tuple[dict[str, object], ...]]:
+    attributes = _remote_card_attributes(schema_version)
     cards: list[NamespaceCard] = []
     seen_row_ids: set[str] = set()
     last_id: str | None = None
@@ -712,7 +833,7 @@ def _read_card_pass(
         kwargs: dict[str, object] = {
             "rank_by": ("id", "asc"),
             "top_k": CARD_PAGE_SIZE,
-            "include_attributes": list(REMOTE_CARD_ATTRIBUTES),
+            "include_attributes": list(attributes),
             "vector_encoding": "float",
             "consistency": dict(STRONG_CONSISTENCY),
         }
@@ -742,7 +863,11 @@ def _read_card_pass(
             if row_id in seen_row_ids:
                 raise RemoteCatalogError("remote card pagination repeated a row ID")
             seen_row_ids.add(row_id)
-            cards.append(card_from_remote_row(row_plain, region=region))
+            cards.append(
+                card_from_remote_row(
+                    row_plain, region=region, schema_version=schema_version
+                )
+            )
         page_signature = tuple(page_ids)
         if page_signature in seen_page_signatures:
             raise RemoteCatalogError("remote card pagination repeated a page signature")
@@ -772,10 +897,12 @@ def _read_exact_cards_twice(
     row_ids: Sequence[str],
     *,
     region: str,
+    schema_version: int = REMOTE_SCHEMA_V1,
     allow_missing: bool = False,
     preserve_single_reads: bool = False,
     billing: list[dict[str, object]] | None = None,
 ) -> tuple[NamespaceCard, ...]:
+    attributes = _remote_card_attributes(schema_version)
     expected = tuple(sorted(row_ids))
     passes: list[tuple[NamespaceCard, ...]] = []
     for _ in range(2):
@@ -787,7 +914,7 @@ def _read_exact_cards_twice(
                     rank_by=("id", "asc"),
                     top_k=2,
                     filters=("id", "Eq", row_id),
-                    include_attributes=list(REMOTE_CARD_ATTRIBUTES),
+                    include_attributes=list(attributes),
                     vector_encoding="float",
                     consistency=dict(STRONG_CONSISTENCY),
                 ),
@@ -806,7 +933,9 @@ def _read_exact_cards_twice(
             if len(values) > 1:
                 raise RemoteCatalogError("card verification returned duplicate row IDs")
             if values:
-                card = card_from_remote_row(values[0], region=region)
+                card = card_from_remote_row(
+                    values[0], region=region, schema_version=schema_version
+                )
                 if remote_card_id(card.namespace) != row_id:
                     raise RemoteCatalogError("card verification returned an unexpected row")
                 rows.append(card)
