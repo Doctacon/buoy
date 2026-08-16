@@ -209,6 +209,20 @@ class EvidenceCalibrationTests(unittest.TestCase):
         self.assertNotIn("content", serialized)
         self.assertNotIn("passage", serialized)
 
+    def test_prototype_route_reasons_preserve_the_evidence_feature_contract(self) -> None:
+        for reason in ("high_confidence_prototype", "ambiguous_prototype"):
+            with self.subTest(reason=reason):
+                observation = observe_evidence_scores(
+                    [-3.0, -4.0],
+                    route_selection_reason=reason,
+                    route_semantic_score=0.72,
+                    route_semantic_margin=0.08,
+                    namespace_failure_count=0,
+                )
+
+                self.assertEqual(observation.route_selection_reason, reason)
+                self.assertEqual(observation.top_score, -3.0)
+
     def test_empty_observation_is_exact_weak_signal_when_threshold_exists(self) -> None:
         calibration = self.shadow_calibration()
         observation = self.observation([])
