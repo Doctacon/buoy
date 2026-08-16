@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "corpus_id": "salesforce",
+  "namespace": "site-developer-salesforce-com-v1",
+  "review_status": "approved",
+  "human_approved": true,
+  "route_contract_revision": "bounded_card_prototypes_v1",
+  "canaries_disjoint_from_routing_examples": true,
+  "cases": [
+    {
+      "id": "salesforce-named",
+      "role": "named_self",
+      "split": "gate",
+      "question": "What developer guidance is available on developer.salesforce.com?",
+      "expected_namespaces": ["site-developer-salesforce-com-v1"],
+      "confusable_with": []
+    },
+    {
+      "id": "salesforce-capability-calibration",
+      "role": "capability_self",
+      "split": "calibration",
+      "question": "How should a Lightning web component call an API that Lightning Data Service does not support?",
+      "expected_namespaces": ["site-developer-salesforce-com-v1"],
+      "confusable_with": []
+    },
+    {
+      "id": "salesforce-capability-gate",
+      "role": "capability_self",
+      "split": "gate",
+      "question": "How does an external client app use OAuth before accessing a connected organization's REST resources?",
+      "expected_namespaces": ["site-developer-salesforce-com-v1"],
+      "confusable_with": []
+    },
+    {
+      "id": "salesforce-confusable",
+      "role": "confusable_self",
+      "split": "gate",
+      "question": "Where can web-component developers find the namespaced modules for CRM Analytics datasets and dashboards?",
+      "expected_namespaces": ["site-developer-salesforce-com-v1"],
+      "confusable_with": ["turbopuffer"]
+    },
+    {
+      "id": "salesforce-contrast",
+      "role": "contrast_other",
+      "split": "calibration",
+      "question": "Which shared engine on whiteboxgeo.com produces consistent geospatial results across QGIS, Python, and R?",
+      "expected_namespaces": ["site-whiteboxgeo-com-v1"],
+      "confusable_with": ["salesforce"]
+    }
+  ]
+}

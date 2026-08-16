@@ -8,12 +8,18 @@ as GitHub Release assets rather than to PyPI.
 
 ### Added
 
-- Added an inactive scalable-routing foundation: routing cards may carry up to
-  eight reviewed example questions under a reader-first additive schema, and a
-  candidate router can rerank an exact local top-twelve card shortlist with the
-  pinned MiniLM model without extra provider searches. Production routing and
-  the three-corpus content fanout remain unchanged until per-corpus canaries,
-  calibration, owner approval, and a separate live schema migration pass.
+- Added the staged activation contract for bounded prototype routing. Routing
+  cards may carry up to eight reviewed example questions, and the router can
+  rerank an exact local top-twelve card shortlist with the pinned MiniLM model
+  without extra provider searches. The clean dormant checkpoint retains the
+  packaged collect artifact and legacy selector; only an independently audited
+  exact 65-case result can authorize the artifact-only active checkpoint that
+  is the intended final state of this Unreleased package. An active task tree
+  remains separate from integration, publication, and deployment.
+- Packaged the exact owner-approved RentPTR, Salesforce, and WhiteboxGeo route-
+  canary packs as reproducible evaluation ground truth. Source, wheel, source-
+  distribution, and clean-install checks bind their raw hashes and reconstructed
+  suite identity, while ordinary routing never reads their question text.
 - Added preview-first `catalog migrate-routing-v2` and
   `catalog set-routing-examples` operators. The schema migration is bound to
   the exact catalog snapshot and vector-inclusive projection; each reviewed

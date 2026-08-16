@@ -60,6 +60,8 @@ _ROUTE_SELECTION_REASONS = frozenset(
         "multiple_named_corpora",
         "high_confidence_semantic",
         "ambiguous_semantic",
+        "high_confidence_prototype",
+        "ambiguous_prototype",
     }
 )
 

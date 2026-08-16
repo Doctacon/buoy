@@ -115,14 +115,25 @@ buoy catalog disable site-example-one-v1       # preview
 buoy catalog disable site-example-one-v1 --approve
 ```
 
-**Unreleased routing-scale foundation:** new readers accept reviewed
-per-corpus routing examples and a bounded local shortlist/rerank candidate, but
-the candidate remains inactive until route canaries and calibrated confidence
-gates pass. Adding ordinary corpora does not expand the fixed end-to-end answer
-key; each corpus gets a small route-only canary pack instead. The live catalog
-is changed only through a separately reviewed, explicit schema-migration
-approval; deploying the compatible reader alone performs no write. Content
-fanout remains capped at three.
+**Unreleased bounded-routing activation:** Buoy packages the exact approved
+RentPTR, Salesforce, and WhiteboxGeo route-canary packs and a strict routing-
+confidence authority. Activation is deliberately staged: the clean dormant
+checkpoint retains packaged `mode=collect` and the legacy hybrid selector while
+the source, wheel, source distribution, and 65-case suite are certified. Only
+an independently audited exact match permits the artifact-only `mode=active`
+checkpoint that is the intended final state of this Unreleased source package.
+Until that certification is recorded, the dormant checkpoint remains collect-
+only. Active mode reranks an exact local top-twelve card shortlist with the
+pinned MiniLM model, uses the approved score and margin floors for a one-corpus
+route, and otherwise selects at most three. It adds no provider search per card.
+
+Adding ordinary corpora does not expand the fixed end-to-end answer key; each
+corpus gets a small reviewed route-only canary pack instead. Changing eligible
+card semantics requires a new calibration, certification, and owner-approved
+packaged artifact. Even the final active task tree is not integration,
+publication, or deployment. The live catalog is changed only through a
+separately reviewed, explicit schema-migration approval, and content fanout
+remains capped at three.
 
 The migration and per-card example operators are preview-first and require
 fresh exact bindings on approval:
@@ -145,8 +156,10 @@ buoy catalog set-routing-examples site-example-one-v1 \
 The first approval adds only four nonfilterable routing-prototype attributes to
 the shared catalog schema. The second changes only one card's reviewed example
 bundle, timestamp, and revision. Neither command writes content, deletes rows,
-changes card enablement, or activates candidate routing. Later ordinary applies
-preserve reviewed examples on both manual and generated cards.
+changes card enablement, or changes the packaged routing authority. Collect
+mode retains legacy routing; only the separately certified active artifact can
+select the prototype route. Later ordinary applies preserve reviewed examples
+on both manual and generated cards.
 
 Multi-corpus results are deduplicated and locally reranked. Automatic retrieval
 also checks the relevance of its best final result with the same pinned MiniLM

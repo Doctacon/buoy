@@ -8,13 +8,30 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
+from unittest.mock import patch
 
+from buoy_search import routing_quality as routing_quality_module
 from buoy_search.catalog import ROUTING_MODEL, ROUTING_MODEL_REVISION
 from buoy_search.cross_encoder import CROSS_ENCODER_MODEL, CROSS_ENCODER_REVISION
 from buoy_search.routing_quality import (
     DEFAULT_ROUTING_CALIBRATION,
+    ROUTING_ACTIVE_CALIBRATION_CASE_COUNT,
+    ROUTING_ACTIVE_CALIBRATION_CASE_IDS_SHA256,
+    ROUTING_ACTIVE_CALIBRATION_REVISION,
+    ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION,
+    ROUTING_ACTIVE_CANARY_SUITE_SHA256,
+    ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
+    ROUTING_ACTIVE_CERTIFICATION_CASE_COUNT,
+    ROUTING_ACTIVE_CERTIFICATION_CASE_IDS_SHA256,
+    ROUTING_ACTIVE_MARGIN_FLOOR,
+    ROUTING_ACTIVE_QUALITY_VERDICT_SHA256,
+    ROUTING_ACTIVE_SCORE_FLOOR,
+    ROUTING_ACTIVATION_AUTHORIZATION_REPORT_SHA256,
+    ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_COMMIT,
+    ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_TREE,
     ROUTING_CALIBRATION_ID,
     ROUTING_CALIBRATION_SCHEMA_VERSION,
+    ROUTING_COLLECT_ARTIFACT_SHA256,
     ROUTING_CONFIDENCE_FEATURE_CONTRACT,
     ROUTING_CONFIDENCE_MARGIN_FIELD,
     ROUTING_CONFIDENCE_SCORE_FIELD,
@@ -42,8 +59,13 @@ from buoy_search.routing_quality import (
     score_routing_quality,
     score_route_selection_quality,
     validate_canary_catalog_contract,
+    validate_routing_confidence_calibration,
 )
 from buoy_search.multi_corpus_evals import load_multi_corpus_eval_dataset
+from tests.routing_confidence_fixtures import (
+    collect_calibration_payload,
+    load_collect_routing_confidence_fixture,
+)
 
 
 DAGSTER_NAMESPACE = "site-dagster-io-v1"
@@ -206,15 +228,20 @@ def perfect_observations(
     return observations
 
 
-def collect_calibration_payload() -> dict[str, object]:
+def active_calibration_payload() -> dict[str, object]:
+    module_dir = Path(routing_quality_module.__file__).resolve().parent
+
+    def file_hash(name: str) -> str:
+        return hashlib.sha256((module_dir / name).read_bytes()).hexdigest()
+
     return {
-        "schema_version": ROUTING_CALIBRATION_SCHEMA_VERSION,
+        "schema_version": ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION,
         "calibration_id": ROUTING_CALIBRATION_ID,
-        "calibration_revision": "collect-unassessed-v1",
-        "mode": "collect",
-        "owner_approved": False,
-        "score_floor": None,
-        "margin_floor": None,
+        "calibration_revision": ROUTING_ACTIVE_CALIBRATION_REVISION,
+        "mode": "active",
+        "owner_approved": True,
+        "score_floor": ROUTING_ACTIVE_SCORE_FLOOR,
+        "margin_floor": ROUTING_ACTIVE_MARGIN_FLOOR,
         "bindings": {
             "routing_model": ROUTING_MODEL,
             "routing_model_revision": ROUTING_MODEL_REVISION,
@@ -227,13 +254,42 @@ def collect_calibration_payload() -> dict[str, object]:
             "feature_contract": ROUTING_CONFIDENCE_FEATURE_CONTRACT,
             "score_field": ROUTING_CONFIDENCE_SCORE_FIELD,
             "margin_field": ROUTING_CONFIDENCE_MARGIN_FIELD,
-            "canary_suite_sha256": None,
-            "catalog_projection_sha256": None,
+            "canary_suite_sha256": ROUTING_ACTIVE_CANARY_SUITE_SHA256,
+            "catalog_projection_sha256": (
+                ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256
+            ),
+        },
+        "calibration": {
+            "case_count": ROUTING_ACTIVE_CALIBRATION_CASE_COUNT,
+            "case_ids_sha256": ROUTING_ACTIVE_CALIBRATION_CASE_IDS_SHA256,
+            "incorrect_high_confidence_singletons": 0,
         },
         "certification": {
-            "passed": False,
-            "case_count": 0,
-            "verdict_sha256": None,
+            "passed": True,
+            "case_count": ROUTING_ACTIVE_CERTIFICATION_CASE_COUNT,
+            "case_ids_sha256": ROUTING_ACTIVE_CERTIFICATION_CASE_IDS_SHA256,
+            "verdict_sha256": ROUTING_ACTIVE_QUALITY_VERDICT_SHA256,
+        },
+        "receipts": {
+            "authorization_report_sha256": (
+                ROUTING_ACTIVATION_AUTHORIZATION_REPORT_SHA256
+            ),
+            "authorization_source_commit": (
+                ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_COMMIT
+            ),
+            "authorization_source_tree": (
+                ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_TREE
+            ),
+            "certified_dormant_report_sha256": "ab" * 32,
+            "certified_dormant_source_commit": "bc" * 20,
+            "certified_dormant_source_tree": "cd" * 20,
+            "certified_dormant_working_tree_clean": True,
+            "evaluator_runner_sha256": "de" * 32,
+            "evaluator_scorer_sha256": file_hash("routing_quality.py"),
+            "routing_module_sha256": file_hash("routing.py"),
+            "cli_module_sha256": file_hash("cli.py"),
+            "evidence_module_sha256": file_hash("evidence.py"),
+            "collect_artifact_sha256": ROUTING_COLLECT_ARTIFACT_SHA256,
         },
     }
 
@@ -864,6 +920,20 @@ class RoutingQualityGateTests(unittest.TestCase):
 
 
 class RoutingConfidenceCalibrationLoaderTests(unittest.TestCase):
+    def write_payload(self, payload: object) -> tuple[tempfile.TemporaryDirectory, Path]:
+        temporary = tempfile.TemporaryDirectory()
+        path = Path(temporary.name) / "calibration.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return temporary, path
+
+    def load_active_calibration(self):  # noqa: ANN201 - focused test helper.
+        temporary, path = self.write_payload(active_calibration_payload())
+        self.addCleanup(temporary.cleanup)
+        with patch.object(
+            routing_quality_module, "DEFAULT_ROUTING_CALIBRATION", path
+        ):
+            return load_routing_confidence_calibration()
+
     def test_default_path_and_exact_collect_artifact_are_inactive(self) -> None:
         self.assertEqual(
             DEFAULT_ROUTING_CALIBRATION.name,
@@ -893,7 +963,7 @@ class RoutingConfidenceCalibrationLoaderTests(unittest.TestCase):
                         "margin_floor": 0.1,
                     }
                 ),
-                "Only collect-mode",
+                "Schema-v1",
             ),
             (
                 "wrong model",
@@ -931,6 +1001,477 @@ class RoutingConfidenceCalibrationLoaderTests(unittest.TestCase):
                 path.write_text(json.dumps(payload), encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, message):
                     load_routing_confidence_calibration(path)
+
+    def test_exact_schema_v2_active_artifact_loads_only_as_package_resource(self) -> None:
+        temporary, path = self.write_payload(active_calibration_payload())
+        self.addCleanup(temporary.cleanup)
+
+        with self.assertRaisesRegex(ValueError, "installed package artifact"):
+            load_routing_confidence_calibration(path)
+
+        with patch.object(
+            routing_quality_module, "DEFAULT_ROUTING_CALIBRATION", path
+        ):
+            calibration = load_routing_confidence_calibration()
+
+        self.assertEqual(calibration.mode, "active")
+        self.assertTrue(calibration.owner_approved)
+        self.assertEqual(calibration.score_floor, ROUTING_ACTIVE_SCORE_FLOOR)
+        self.assertEqual(calibration.margin_floor, ROUTING_ACTIVE_MARGIN_FLOOR)
+        self.assertTrue(calibration.certification_passed)
+        self.assertEqual(
+            calibration.certification_case_ids_sha256,
+            ROUTING_ACTIVE_CERTIFICATION_CASE_IDS_SHA256,
+        )
+        self.assertIsNotNone(calibration.calibration)
+        self.assertIsNotNone(calibration.receipts)
+
+    def test_explicit_collect_authority_is_independent_of_default_active_phase(
+        self,
+    ) -> None:
+        temporary, path = self.write_payload(active_calibration_payload())
+        self.addCleanup(temporary.cleanup)
+        with patch.object(
+            routing_quality_module, "DEFAULT_ROUTING_CALIBRATION", path
+        ):
+            active = load_routing_confidence_calibration()
+            collect = load_collect_routing_confidence_fixture()
+
+        self.assertEqual(active.mode, "active")
+        self.assertEqual(collect.mode, "collect")
+        self.assertFalse(collect.owner_approved)
+        validate_routing_confidence_calibration(collect)
+
+    def test_schema_v2_active_artifact_rejects_every_frozen_authority_change(self) -> None:
+        mutations = (
+            ("revision", lambda value: value.update({"calibration_revision": "other-v1"})),
+            ("owner", lambda value: value.update({"owner_approved": False})),
+            ("score", lambda value: value.update({"score_floor": ROUTING_ACTIVE_SCORE_FLOOR + 0.1})),
+            ("margin", lambda value: value.update({"margin_floor": ROUTING_ACTIVE_MARGIN_FLOOR + 0.1})),
+            ("suite", lambda value: value["bindings"].update({"canary_suite_sha256": "12" * 32})),
+            ("projection", lambda value: value["bindings"].update({"catalog_projection_sha256": "23" * 32})),
+            ("calibration", lambda value: value["calibration"].update({"case_count": 7})),
+            ("certification", lambda value: value["certification"].update({"passed": False})),
+            ("authorization", lambda value: value["receipts"].update({"authorization_report_sha256": "34" * 32})),
+            ("dirty", lambda value: value["receipts"].update({"certified_dormant_working_tree_clean": False})),
+            ("source", lambda value: value["receipts"].update({"routing_module_sha256": "45" * 32})),
+            ("unknown", lambda value: value.update({"threshold_override": 0.0})),
+        )
+        for label, mutate in mutations:
+            with self.subTest(label=label):
+                payload = active_calibration_payload()
+                mutate(payload)
+                temporary, path = self.write_payload(payload)
+                self.addCleanup(temporary.cleanup)
+                with patch.object(
+                    routing_quality_module, "DEFAULT_ROUTING_CALIBRATION", path
+                ), self.assertRaises(ValueError):
+                    load_routing_confidence_calibration()
+
+    def test_schema_v2_active_artifact_rejects_each_bound_byte_hash_mismatch(
+        self,
+    ) -> None:
+        for receipt_field in (
+            "evaluator_scorer_sha256",
+            "routing_module_sha256",
+            "cli_module_sha256",
+            "evidence_module_sha256",
+            "collect_artifact_sha256",
+        ):
+            with self.subTest(receipt_field=receipt_field):
+                payload = active_calibration_payload()
+                payload["receipts"][receipt_field] = "00" * 32
+                temporary, path = self.write_payload(payload)
+                self.addCleanup(temporary.cleanup)
+                with patch.object(
+                    routing_quality_module, "DEFAULT_ROUTING_CALIBRATION", path
+                ), self.assertRaises(ValueError):
+                    load_routing_confidence_calibration()
+
+    def test_schema_v2_active_artifact_rejects_each_missing_receipt_field(
+        self,
+    ) -> None:
+        receipt_fields = tuple(active_calibration_payload()["receipts"])
+        for receipt_field in receipt_fields:
+            with self.subTest(receipt_field=receipt_field):
+                payload = active_calibration_payload()
+                del payload["receipts"][receipt_field]
+                temporary, path = self.write_payload(payload)
+                self.addCleanup(temporary.cleanup)
+                with patch.object(
+                    routing_quality_module, "DEFAULT_ROUTING_CALIBRATION", path
+                ), self.assertRaises(ValueError):
+                    load_routing_confidence_calibration()
+
+    def test_schema_v2_active_artifact_rejects_malformed_receipts(self) -> None:
+        mutations = (
+            ("receipt container", lambda value: value.update({"receipts": []})),
+            (
+                "digest",
+                lambda value: value["receipts"].update(
+                    {"evaluator_runner_sha256": "not-a-sha256"}
+                ),
+            ),
+            (
+                "commit",
+                lambda value: value["receipts"].update(
+                    {"certified_dormant_source_commit": "ab" * 19}
+                ),
+            ),
+            (
+                "tree",
+                lambda value: value["receipts"].update(
+                    {"certified_dormant_source_tree": "not-a-git-object"}
+                ),
+            ),
+            (
+                "clean flag",
+                lambda value: value["receipts"].update(
+                    {"certified_dormant_working_tree_clean": 1}
+                ),
+            ),
+        )
+        for label, mutate in mutations:
+            with self.subTest(label=label):
+                payload = active_calibration_payload()
+                mutate(payload)
+                temporary, path = self.write_payload(payload)
+                self.addCleanup(temporary.cleanup)
+                with patch.object(
+                    routing_quality_module, "DEFAULT_ROUTING_CALIBRATION", path
+                ), self.assertRaises(ValueError):
+                    load_routing_confidence_calibration()
+
+    def test_schema_mode_mixtures_and_nonfinite_active_thresholds_fail(self) -> None:
+        schema_two_collect = collect_calibration_payload()
+        schema_two_collect["schema_version"] = ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION
+        schema_one_active = active_calibration_payload()
+        schema_one_active["schema_version"] = ROUTING_CALIBRATION_SCHEMA_VERSION
+        for label, payload in (
+            ("schema-two collect", schema_two_collect),
+            ("schema-one active", schema_one_active),
+        ):
+            with self.subTest(label=label):
+                temporary, path = self.write_payload(payload)
+                self.addCleanup(temporary.cleanup)
+                with patch.object(
+                    routing_quality_module, "DEFAULT_ROUTING_CALIBRATION", path
+                ), self.assertRaises(ValueError):
+                    load_routing_confidence_calibration()
+
+        for value in (math.nan, math.inf, -math.inf, True):
+            with self.subTest(threshold=value):
+                payload = active_calibration_payload()
+                payload["score_floor"] = value
+                temporary, path = self.write_payload(payload)
+                self.addCleanup(temporary.cleanup)
+                with patch.object(
+                    routing_quality_module, "DEFAULT_ROUTING_CALIBRATION", path
+                ), self.assertRaises(ValueError):
+                    load_routing_confidence_calibration()
+
+    def test_schema_version_requires_an_exact_integer_for_both_schemas(self) -> None:
+        cases = (
+            ("schema-v1 boolean", collect_calibration_payload, True),
+            ("schema-v1 float", collect_calibration_payload, 1.0),
+            ("schema-v2 boolean", active_calibration_payload, True),
+            ("schema-v2 float", active_calibration_payload, 2.0),
+        )
+        for label, payload_factory, schema_version in cases:
+            with self.subTest(label=label):
+                payload = payload_factory()
+                payload["schema_version"] = schema_version
+                temporary, path = self.write_payload(payload)
+                self.addCleanup(temporary.cleanup)
+                with patch.object(
+                    routing_quality_module, "DEFAULT_ROUTING_CALIBRATION", path
+                ), self.assertRaisesRegex(ValueError, "schema is incompatible"):
+                    load_routing_confidence_calibration()
+
+    def test_raw_frozen_fields_reject_coercible_values_in_both_schemas(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "collect ID whitespace",
+                collect_calibration_payload,
+                lambda value: value.update(
+                    {"calibration_id": f" {ROUTING_CALIBRATION_ID} "}
+                ),
+            ),
+            (
+                "active ID whitespace",
+                active_calibration_payload,
+                lambda value: value.update(
+                    {"calibration_id": f" {ROUTING_CALIBRATION_ID} "}
+                ),
+            ),
+            (
+                "collect shortlist float",
+                collect_calibration_payload,
+                lambda value: value["bindings"].update(
+                    {"shortlist_limit": float(ROUTING_SHORTLIST_LIMIT)}
+                ),
+            ),
+            (
+                "active shortlist float",
+                active_calibration_payload,
+                lambda value: value["bindings"].update(
+                    {"shortlist_limit": float(ROUTING_SHORTLIST_LIMIT)}
+                ),
+            ),
+            (
+                "collect max examples float",
+                collect_calibration_payload,
+                lambda value: value["bindings"].update(
+                    {"max_examples": float(ROUTING_MAX_EXAMPLES)}
+                ),
+            ),
+            (
+                "active max examples float",
+                active_calibration_payload,
+                lambda value: value["bindings"].update(
+                    {"max_examples": float(ROUTING_MAX_EXAMPLES)}
+                ),
+            ),
+            (
+                "collect certification count float",
+                collect_calibration_payload,
+                lambda value: value["certification"].update({"case_count": 0.0}),
+            ),
+            (
+                "active calibration count float",
+                active_calibration_payload,
+                lambda value: value["calibration"].update(
+                    {"case_count": float(ROUTING_ACTIVE_CALIBRATION_CASE_COUNT)}
+                ),
+            ),
+            (
+                "active calibration false singleton count float",
+                active_calibration_payload,
+                lambda value: value["calibration"].update(
+                    {"incorrect_high_confidence_singletons": 0.0}
+                ),
+            ),
+            (
+                "active certification count float",
+                active_calibration_payload,
+                lambda value: value["certification"].update(
+                    {"case_count": float(ROUTING_ACTIVE_CERTIFICATION_CASE_COUNT)}
+                ),
+            ),
+            (
+                "collect owner integer",
+                collect_calibration_payload,
+                lambda value: value.update({"owner_approved": 0}),
+            ),
+            (
+                "active owner integer",
+                active_calibration_payload,
+                lambda value: value.update({"owner_approved": 1}),
+            ),
+            (
+                "collect certification integer",
+                collect_calibration_payload,
+                lambda value: value["certification"].update({"passed": 0}),
+            ),
+            (
+                "active certification integer",
+                active_calibration_payload,
+                lambda value: value["certification"].update({"passed": 1}),
+            ),
+            (
+                "active clean integer",
+                active_calibration_payload,
+                lambda value: value["receipts"].update(
+                    {"certified_dormant_working_tree_clean": 1}
+                ),
+            ),
+        )
+        for label, payload_factory, mutate in cases:
+            with self.subTest(label=label):
+                payload = payload_factory()
+                mutate(payload)
+                temporary, path = self.write_payload(payload)
+                self.addCleanup(temporary.cleanup)
+                with patch.object(
+                    routing_quality_module, "DEFAULT_ROUTING_CALIBRATION", path
+                ), self.assertRaises(ValueError):
+                    load_routing_confidence_calibration()
+
+    def test_constructed_collect_authority_requires_exact_scalar_types(self) -> None:
+        class StringSubclass(str):
+            pass
+
+        collect = load_collect_routing_confidence_fixture()
+        mutations = (
+            ("schema", lambda value: replace(value, schema_version=1.0)),
+            ("ID", lambda value: replace(
+                value,
+                calibration_id=StringSubclass(ROUTING_CALIBRATION_ID),
+            )),
+            ("owner", lambda value: replace(value, owner_approved=0)),
+            (
+                "certification passed",
+                lambda value: replace(value, certification_passed=0),
+            ),
+            (
+                "certification count",
+                lambda value: replace(value, certification_case_count=0.0),
+            ),
+            (
+                "shortlist",
+                lambda value: replace(
+                    value,
+                    bindings=replace(
+                        value.bindings,
+                        shortlist_limit=float(ROUTING_SHORTLIST_LIMIT),
+                    ),
+                ),
+            ),
+            (
+                "max examples",
+                lambda value: replace(
+                    value,
+                    bindings=replace(
+                        value.bindings,
+                        max_examples=float(ROUTING_MAX_EXAMPLES),
+                    ),
+                ),
+            ),
+            (
+                "binding string",
+                lambda value: replace(
+                    value,
+                    bindings=replace(
+                        value.bindings,
+                        routing_model=StringSubclass(ROUTING_MODEL),
+                    ),
+                ),
+            ),
+        )
+        for label, mutate in mutations:
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                validate_routing_confidence_calibration(mutate(collect))
+
+    def test_constructed_active_authority_validates_the_exact_nested_graph(
+        self,
+    ) -> None:
+        class StringSubclass(str):
+            pass
+
+        class FloatSubclass(float):
+            pass
+
+        active = self.load_active_calibration()
+        mutations = (
+            ("schema", lambda value: replace(value, schema_version=2.0)),
+            ("owner", lambda value: replace(value, owner_approved=1)),
+            (
+                "score",
+                lambda value: replace(
+                    value,
+                    score_floor=FloatSubclass(ROUTING_ACTIVE_SCORE_FLOOR),
+                ),
+            ),
+            (
+                "certification passed",
+                lambda value: replace(value, certification_passed=1),
+            ),
+            (
+                "certification count",
+                lambda value: replace(
+                    value,
+                    certification_case_count=float(
+                        ROUTING_ACTIVE_CERTIFICATION_CASE_COUNT
+                    ),
+                ),
+            ),
+            (
+                "shortlist",
+                lambda value: replace(
+                    value,
+                    bindings=replace(
+                        value.bindings,
+                        shortlist_limit=float(ROUTING_SHORTLIST_LIMIT),
+                    ),
+                ),
+            ),
+            (
+                "max examples",
+                lambda value: replace(
+                    value,
+                    bindings=replace(
+                        value.bindings,
+                        max_examples=float(ROUTING_MAX_EXAMPLES),
+                    ),
+                ),
+            ),
+            (
+                "calibration count",
+                lambda value: replace(
+                    value,
+                    calibration=replace(
+                        value.calibration,
+                        case_count=float(ROUTING_ACTIVE_CALIBRATION_CASE_COUNT),
+                    ),
+                ),
+            ),
+            (
+                "calibration false singleton count",
+                lambda value: replace(
+                    value,
+                    calibration=replace(
+                        value.calibration,
+                        incorrect_high_confidence_singletons=0.0,
+                    ),
+                ),
+            ),
+            (
+                "receipt clean",
+                lambda value: replace(
+                    value,
+                    receipts=replace(
+                        value.receipts,
+                        certified_dormant_working_tree_clean=1,
+                    ),
+                ),
+            ),
+            (
+                "receipt string",
+                lambda value: replace(
+                    value,
+                    receipts=replace(
+                        value.receipts,
+                        evaluator_runner_sha256=StringSubclass(
+                            value.receipts.evaluator_runner_sha256
+                        ),
+                    ),
+                ),
+            ),
+            (
+                "bindings structural stand-in",
+                lambda value: replace(
+                    value, bindings=SimpleNamespace(**vars(value.bindings))
+                ),
+            ),
+            (
+                "calibration structural stand-in",
+                lambda value: replace(
+                    value,
+                    calibration=SimpleNamespace(**vars(value.calibration)),
+                ),
+            ),
+            (
+                "receipts structural stand-in",
+                lambda value: replace(
+                    value, receipts=SimpleNamespace(**vars(value.receipts))
+                ),
+            ),
+        )
+        for label, mutate in mutations:
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                validate_routing_confidence_calibration(mutate(active))
 
     def test_duplicate_json_fields_and_nonfinite_values_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

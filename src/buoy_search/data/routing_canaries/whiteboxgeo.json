@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "corpus_id": "whiteboxgeo",
+  "namespace": "site-whiteboxgeo-com-v1",
+  "review_status": "approved",
+  "human_approved": true,
+  "route_contract_revision": "bounded_card_prototypes_v1",
+  "canaries_disjoint_from_routing_examples": true,
+  "cases": [
+    {
+      "id": "whiteboxgeo-named",
+      "role": "named_self",
+      "split": "gate",
+      "question": "What does whiteboxgeo.com provide for terrain, hydrology, LiDAR, remote-sensing, and vector GIS analysis?",
+      "expected_namespaces": ["site-whiteboxgeo-com-v1"],
+      "confusable_with": []
+    },
+    {
+      "id": "whiteboxgeo-capability-calibration",
+      "role": "capability_self",
+      "split": "calibration",
+      "question": "How can terrain and environmental raster layers be combined to assess landslide susceptibility?",
+      "expected_namespaces": ["site-whiteboxgeo-com-v1"],
+      "confusable_with": []
+    },
+    {
+      "id": "whiteboxgeo-capability-gate",
+      "role": "capability_self",
+      "split": "gate",
+      "question": "Which toolkit offers more than 700 tools for terrain, hydrology, LiDAR, remote sensing, and vector GIS?",
+      "expected_namespaces": ["site-whiteboxgeo-com-v1"],
+      "confusable_with": []
+    },
+    {
+      "id": "whiteboxgeo-confusable",
+      "role": "confusable_self",
+      "split": "gate",
+      "question": "Which geospatial workflow optimizes fleet routes and dispatch over a road network?",
+      "expected_namespaces": ["site-whiteboxgeo-com-v1"],
+      "confusable_with": ["rentptr"]
+    },
+    {
+      "id": "whiteboxgeo-contrast",
+      "role": "contrast_other",
+      "split": "calibration",
+      "question": "Which developer.salesforce.com guide explains when a Lightning component must call an API through Apex?",
+      "expected_namespaces": ["site-developer-salesforce-com-v1"],
+      "confusable_with": ["whiteboxgeo"]
+    }
+  ]
+}

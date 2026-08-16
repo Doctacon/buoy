@@ -87,6 +87,9 @@ REQUIRED_PACKAGE_MEMBERS = (
     "buoy_search/data/automatic_multi_corpus_retrieval_evals.json",
     "buoy_search/data/automatic_retrieval_evidence_calibration.json",
     "buoy_search/data/automatic_routing_confidence_calibration.json",
+    "buoy_search/data/routing_canaries/rentptr.json",
+    "buoy_search/data/routing_canaries/salesforce.json",
+    "buoy_search/data/routing_canaries/whiteboxgeo.json",
     "buoy_search/evidence.py",
     "buoy_search/evidence_evals.py",
     "buoy_search/multi_corpus_evals.py",
@@ -95,6 +98,43 @@ REQUIRED_PACKAGE_MEMBERS = (
     "buoy_search/retriever.py",
     "buoy_search/routing.py",
     "buoy_search/routing_quality.py",
+)
+ROUTING_CANARY_MEMBERS = {
+    "buoy_search/data/routing_canaries/rentptr.json": (
+        "5a39c38d302cbc5c6d758b1e48d4456456a4357248f559a6cf56e0234742f4f5"
+    ),
+    "buoy_search/data/routing_canaries/salesforce.json": (
+        "32106e02d877788e676cdb3db3f7a3567f57f96fa009a7a558b82ca1d407d13d"
+    ),
+    "buoy_search/data/routing_canaries/whiteboxgeo.json": (
+        "5558a4e8a786f0a5553ba0237ebf8248a5d576bd1937ffd69cf9af66a8ac0916"
+    ),
+}
+ROUTING_CANARY_LEGACY_MEMBER = (
+    "buoy_search/data/automatic_multi_corpus_retrieval_evals.json"
+)
+ROUTING_CANARY_LEGACY_DATASET_ID = "automatic-multi-corpus-retrieval-v1"
+ROUTING_CANARY_LEGACY_DATASET_SHA256 = (
+    "29064e773a71e2f31a4e6af45db793cdb30436dbf9fc61e818a03dd127ce1e2b"
+)
+ROUTING_CANARY_SUITE_SHA256 = (
+    "0e648b1222298b443439aa8b85527048b54f51b7ef2518956d43cd6bee2981e5"
+)
+ROUTING_CONFIDENCE_ARTIFACT_MEMBER = (
+    "buoy_search/data/automatic_routing_confidence_calibration.json"
+)
+ROUTING_COLLECT_ARTIFACT_SHA256 = (
+    "23fb14c49263933a2adb2299a9c04089888fb2ec734b790d9eadda2df295cbed"
+)
+ACTIVE_ROUTING_RECEIPT_MODULES = {
+    "evaluator_scorer_sha256": "buoy_search/routing_quality.py",
+    "routing_module_sha256": "buoy_search/routing.py",
+    "cli_module_sha256": "buoy_search/cli.py",
+    "evidence_module_sha256": "buoy_search/evidence.py",
+}
+ACTIVE_ROUTING_RUNNER_RECEIPT = (
+    "evaluator_runner_sha256",
+    "scripts/evaluate_routing_quality.py",
 )
 REQUIRED_SDIST_MEMBERS = (
     "scripts/evaluate_multi_corpus_retrieval.py",
@@ -143,6 +183,234 @@ def _member_matches(name: str, member: str) -> bool:
     return name == member or name.endswith(f"/{member}")
 
 
+def _routing_canary_member(name: str) -> str | None:
+    marker = "buoy_search/data/routing_canaries/"
+    index = name.find(marker)
+    if index < 0:
+        return None
+    return name[index:]
+
+
+def _validate_routing_canary_inventory(
+    names: Sequence[str], *, where: str
+) -> None:
+    actual = [
+        logical
+        for name in names
+        if (logical := _routing_canary_member(name)) is not None
+    ]
+    expected = sorted(ROUTING_CANARY_MEMBERS)
+    if sorted(actual) != expected:
+        raise ReleaseError(
+            f"{where} routing canary inventory must be exactly {expected}; "
+            f"found {sorted(actual)}"
+        )
+
+
+def _stable_hash(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _load_strict_json(raw: bytes, *, where: str) -> object:
+    def reject_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ReleaseError(f"{where} contains duplicate fields")
+            result[key] = value
+        return result
+
+    def reject_constant(value: str) -> object:
+        raise ReleaseError(f"{where} contains non-finite value {value}")
+
+    try:
+        return json.loads(
+            raw,
+            object_pairs_hook=reject_duplicates,
+            parse_constant=reject_constant,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ReleaseError(f"{where} is not valid JSON") from exc
+
+
+def _validate_routing_authority_bytes(
+    artifact: bytes,
+    modules: dict[str, bytes],
+    *,
+    where: str,
+) -> dict[str, object]:
+    expected_modules = sorted(ACTIVE_ROUTING_RECEIPT_MODULES.values())
+    if sorted(modules) != expected_modules:
+        raise ReleaseError(
+            f"{where} routing authority must include exact module bytes for "
+            f"{expected_modules}; found {sorted(modules)}"
+        )
+    artifact_sha256 = hashlib.sha256(artifact).hexdigest()
+    payload = _load_strict_json(artifact, where=f"{where} routing authority")
+    if not isinstance(payload, dict):
+        raise ReleaseError(f"{where} routing authority must be a JSON object")
+    mode = payload.get("mode")
+    if mode == "collect":
+        if artifact_sha256 != ROUTING_COLLECT_ARTIFACT_SHA256:
+            raise ReleaseError(
+                f"{where} collect routing authority does not match its governed bytes"
+            )
+        return {
+            "mode": "collect",
+            "artifact_sha256": artifact_sha256,
+            "active_module_receipts_validated": False,
+            "module_sha256": None,
+        }
+    if mode != "active":
+        raise ReleaseError(f"{where} routing authority mode is invalid")
+
+    receipts = payload.get("receipts")
+    if not isinstance(receipts, dict):
+        raise ReleaseError(f"{where} active routing authority has no receipts")
+    module_hashes = {
+        member: hashlib.sha256(modules[member]).hexdigest()
+        for member in expected_modules
+    }
+    for receipt_field, member in ACTIVE_ROUTING_RECEIPT_MODULES.items():
+        receipt = receipts.get(receipt_field)
+        if not isinstance(receipt, str) or re.fullmatch(r"[0-9a-f]{64}", receipt) is None:
+            raise ReleaseError(
+                f"{where} active routing receipt {receipt_field!r} is invalid"
+            )
+        if receipt != module_hashes[member]:
+            raise ReleaseError(
+                f"{where} active routing receipt {receipt_field!r} does not "
+                f"match {member}"
+            )
+    return {
+        "mode": "active",
+        "artifact_sha256": artifact_sha256,
+        "active_module_receipts_validated": True,
+        "module_sha256": module_hashes,
+    }
+
+
+def _validate_routing_runner_receipt(
+    artifact: bytes,
+    runner: bytes,
+    *,
+    where: str,
+) -> dict[str, object]:
+    payload = _load_strict_json(artifact, where=f"{where} routing authority")
+    if not isinstance(payload, dict):
+        raise ReleaseError(f"{where} routing authority must be a JSON object")
+    mode = payload.get("mode")
+    if mode == "collect":
+        return {
+            "active_runner_receipt_validated": False,
+            "evaluator_runner_sha256": None,
+        }
+    if mode != "active":
+        raise ReleaseError(f"{where} routing authority mode is invalid")
+    receipts = payload.get("receipts")
+    if not isinstance(receipts, dict):
+        raise ReleaseError(f"{where} active routing authority has no receipts")
+    receipt_field, member = ACTIVE_ROUTING_RUNNER_RECEIPT
+    receipt = receipts.get(receipt_field)
+    actual = hashlib.sha256(runner).hexdigest()
+    if not isinstance(receipt, str) or re.fullmatch(r"[0-9a-f]{64}", receipt) is None:
+        raise ReleaseError(
+            f"{where} active routing receipt {receipt_field!r} is invalid"
+        )
+    if receipt != actual:
+        raise ReleaseError(
+            f"{where} active routing receipt {receipt_field!r} does not match {member}"
+        )
+    return {
+        "active_runner_receipt_validated": True,
+        "evaluator_runner_sha256": actual,
+    }
+
+
+def _validate_routing_canary_bytes(
+    canaries: dict[str, bytes],
+    legacy_dataset: bytes,
+    *,
+    where: str,
+) -> dict[str, object]:
+    expected_members = sorted(ROUTING_CANARY_MEMBERS)
+    if sorted(canaries) != expected_members:
+        raise ReleaseError(
+            f"{where} routing canary bytes must be provided for exactly "
+            f"{expected_members}"
+        )
+
+    actual_hashes = {
+        member: hashlib.sha256(canaries[member]).hexdigest()
+        for member in expected_members
+    }
+    if actual_hashes != ROUTING_CANARY_MEMBERS:
+        raise ReleaseError(
+            f"{where} routing canary hashes do not match the approved bytes"
+        )
+
+    legacy_hash = hashlib.sha256(legacy_dataset).hexdigest()
+    if legacy_hash != ROUTING_CANARY_LEGACY_DATASET_SHA256:
+        raise ReleaseError(
+            f"{where} legacy routing dataset does not match its approved bytes"
+        )
+    try:
+        legacy_payload = json.loads(legacy_dataset)
+        pack_payloads = {
+            member: json.loads(canaries[member]) for member in expected_members
+        }
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ReleaseError(f"{where} routing quality inputs are not valid JSON") from exc
+    if not isinstance(legacy_payload, dict) or (
+        legacy_payload.get("dataset_id") != ROUTING_CANARY_LEGACY_DATASET_ID
+    ):
+        raise ReleaseError(f"{where} legacy routing dataset identity is invalid")
+
+    packs: list[dict[str, str]] = []
+    for member, payload in pack_payloads.items():
+        if not isinstance(payload, dict) or not isinstance(payload.get("namespace"), str):
+            raise ReleaseError(f"{where} routing canary {member} has no namespace")
+        packs.append(
+            {
+                "namespace": payload["namespace"],
+                "raw_sha256": actual_hashes[member],
+            }
+        )
+    packs.sort(key=lambda item: item["namespace"])
+    suite_sha256 = _stable_hash(
+        {
+            "contract": "routing-quality-suite/v1",
+            "legacy_dataset_id": ROUTING_CANARY_LEGACY_DATASET_ID,
+            "legacy_dataset_sha256": legacy_hash,
+            "packs": packs,
+        }
+    )
+    if suite_sha256 != ROUTING_CANARY_SUITE_SHA256:
+        raise ReleaseError(
+            f"{where} routing canaries do not reconstruct the approved suite"
+        )
+    return {
+        "members": expected_members,
+        "sha256": actual_hashes,
+        "suite_sha256": suite_sha256,
+    }
+
+
+def _unique_archive_member(names: Sequence[str], member: str, *, where: str) -> str:
+    matches = [name for name in names if _member_matches(name, member)]
+    if len(matches) != 1:
+        raise ReleaseError(
+            f"{where} must contain exactly one {member}; found {matches}"
+        )
+    return matches[0]
+
+
 def _validate_archive_members(names: list[str], *, archive: str) -> None:
     forbidden = [
         name
@@ -173,6 +441,7 @@ def _validate_archive_members(names: list[str], *, archive: str) -> None:
     ]
     if missing_tokenizer:
         raise ReleaseError(f"{archive} is missing bundled tokenizer files: {missing_tokenizer}")
+    _validate_routing_canary_inventory(names, where=archive)
 
 
 def _metadata_version(payload: bytes) -> str:
@@ -209,6 +478,38 @@ def validate_distribution(dist: Path) -> dict[str, object]:
     with zipfile.ZipFile(wheel) as archive:
         wheel_names = archive.namelist()
         _validate_archive_members(wheel_names, archive="wheel")
+        wheel_authority = _validate_routing_authority_bytes(
+            archive.read(
+                _unique_archive_member(
+                    wheel_names,
+                    ROUTING_CONFIDENCE_ARTIFACT_MEMBER,
+                    where="wheel",
+                )
+            ),
+            {
+                member: archive.read(
+                    _unique_archive_member(wheel_names, member, where="wheel")
+                )
+                for member in ACTIVE_ROUTING_RECEIPT_MODULES.values()
+            },
+            where="wheel",
+        )
+        wheel_canaries = _validate_routing_canary_bytes(
+            {
+                member: archive.read(
+                    _unique_archive_member(wheel_names, member, where="wheel")
+                )
+                for member in ROUTING_CANARY_MEMBERS
+            },
+            archive.read(
+                _unique_archive_member(
+                    wheel_names,
+                    ROUTING_CANARY_LEGACY_MEMBER,
+                    where="wheel",
+                )
+            ),
+            where="wheel",
+        )
         metadata = [name for name in wheel_names if name.endswith(".dist-info/METADATA")]
         entries = [name for name in wheel_names if name.endswith(".dist-info/entry_points.txt")]
         if len(metadata) != 1:
@@ -223,6 +524,45 @@ def validate_distribution(dist: Path) -> dict[str, object]:
     with tarfile.open(sdist, "r:gz") as archive:
         sdist_names = archive.getnames()
         _validate_archive_members(sdist_names, archive="sdist")
+        sdist_payloads: dict[str, bytes] = {}
+        required_payloads = (
+            *ROUTING_CANARY_MEMBERS,
+            ROUTING_CANARY_LEGACY_MEMBER,
+            ROUTING_CONFIDENCE_ARTIFACT_MEMBER,
+            *ACTIVE_ROUTING_RECEIPT_MODULES.values(),
+            ACTIVE_ROUTING_RUNNER_RECEIPT[1],
+        )
+        for member in required_payloads:
+            archive_name = _unique_archive_member(
+                sdist_names,
+                member,
+                where="sdist",
+            )
+            extracted_member = archive.extractfile(archive_name)
+            if extracted_member is None:
+                raise ReleaseError(f"sdist member {archive_name} could not be read")
+            sdist_payloads[member] = extracted_member.read()
+        sdist_authority = _validate_routing_authority_bytes(
+            sdist_payloads[ROUTING_CONFIDENCE_ARTIFACT_MEMBER],
+            {
+                member: sdist_payloads[member]
+                for member in ACTIVE_ROUTING_RECEIPT_MODULES.values()
+            },
+            where="sdist",
+        )
+        sdist_runner_receipt = _validate_routing_runner_receipt(
+            sdist_payloads[ROUTING_CONFIDENCE_ARTIFACT_MEMBER],
+            sdist_payloads[ACTIVE_ROUTING_RUNNER_RECEIPT[1]],
+            where="sdist",
+        )
+        sdist_canaries = _validate_routing_canary_bytes(
+            {
+                member: sdist_payloads[member]
+                for member in ROUTING_CANARY_MEMBERS
+            },
+            sdist_payloads[ROUTING_CANARY_LEGACY_MEMBER],
+            where="sdist",
+        )
         missing_sdist_members = [
             member
             for member in REQUIRED_SDIST_MEMBERS
@@ -246,8 +586,17 @@ def validate_distribution(dist: Path) -> dict[str, object]:
 
     if wheel_version != sdist_version:
         raise ReleaseError("wheel and sdist metadata versions do not match")
+    if wheel_canaries != sdist_canaries:
+        raise ReleaseError("wheel and sdist routing canary receipts do not match")
+    if wheel_authority != sdist_authority:
+        raise ReleaseError("wheel and sdist routing authority receipts do not match")
     return {
         "version": wheel_version,
+        "routing_canaries": wheel_canaries,
+        "routing_authority": {
+            **wheel_authority,
+            **sdist_runner_receipt,
+        },
         "wheel": {
             "name": wheel.name,
             "files": len(wheel_names),
@@ -296,6 +645,39 @@ def validate_source(root: Path = ROOT) -> dict[str, object]:
     if "src/buoy_search/_version.py" not in ignored:
         raise ReleaseError("generated _version.py must remain ignored")
 
+    canary_directory = root / "src/buoy_search/data/routing_canaries"
+    try:
+        canary_entries = sorted(canary_directory.iterdir())
+    except OSError as exc:
+        raise ReleaseError("source routing canary directory is unavailable") from exc
+    source_names = [
+        f"buoy_search/data/routing_canaries/{path.name}" for path in canary_entries
+    ]
+    _validate_routing_canary_inventory(source_names, where="source")
+    if any(not path.is_file() or path.is_symlink() for path in canary_entries):
+        raise ReleaseError("source routing canaries must be regular files")
+    source_canaries = _validate_routing_canary_bytes(
+        {
+            f"buoy_search/data/routing_canaries/{path.name}": path.read_bytes()
+            for path in canary_entries
+        },
+        (root / f"src/{ROUTING_CANARY_LEGACY_MEMBER}").read_bytes(),
+        where="source",
+    )
+    source_authority = _validate_routing_authority_bytes(
+        (root / f"src/{ROUTING_CONFIDENCE_ARTIFACT_MEMBER}").read_bytes(),
+        {
+            member: (root / f"src/{member}").read_bytes()
+            for member in ACTIVE_ROUTING_RECEIPT_MODULES.values()
+        },
+        where="source",
+    )
+    source_runner_receipt = _validate_routing_runner_receipt(
+        (root / f"src/{ROUTING_CONFIDENCE_ARTIFACT_MEMBER}").read_bytes(),
+        (root / ACTIVE_ROUTING_RUNNER_RECEIPT[1]).read_bytes(),
+        where="source",
+    )
+
     lock = _load_toml(root / "uv.lock")
     roots = [package for package in lock.get("package", []) if package.get("name") == "buoy-search"]
     if len(roots) != 1:
@@ -337,6 +719,11 @@ def validate_source(root: Path = ROOT) -> dict[str, object]:
         "published_history_through": "0.5.1",
         "staged_release": None,
         "publication_paused": True,
+        "routing_canaries": source_canaries,
+        "routing_authority": {
+            **source_authority,
+            **source_runner_receipt,
+        },
         "workflows_read_only": list(READ_ONLY_WORKFLOWS),
     }
 

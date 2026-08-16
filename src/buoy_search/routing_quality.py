@@ -16,7 +16,7 @@ import json
 import math
 from pathlib import Path
 import re
-from typing import Mapping, Sequence
+from typing import Mapping, Sequence, cast
 
 from buoy_search.catalog import (
     MAX_ROUTING_EXAMPLE_CHARACTERS,
@@ -46,8 +46,43 @@ DEFAULT_ROUTING_CALIBRATION = (
 ROUTING_CANARY_SCHEMA_VERSION = 1
 ROUTING_QUALITY_RUN_SCHEMA_VERSION = 1
 ROUTING_CALIBRATION_SCHEMA_VERSION = 1
+ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION = 2
 ROUTING_QUALITY_EVALUATOR_VERSION = "1"
 ROUTING_CALIBRATION_ID = "automatic-routing-confidence-v2"
+ROUTING_COLLECT_CALIBRATION_REVISION = "collect-unassessed-v1"
+ROUTING_ACTIVE_CALIBRATION_REVISION = "active-16357c62-e559a8aa-v1"
+
+ROUTING_ACTIVE_SCORE_FLOOR = -10.167728424072266
+ROUTING_ACTIVE_MARGIN_FLOOR = 1.0735645294189453
+ROUTING_ACTIVE_CANARY_SUITE_SHA256 = (
+    "0e648b1222298b443439aa8b85527048b54f51b7ef2518956d43cd6bee2981e5"
+)
+ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256 = (
+    "e559a8aac5a4f7fb808f137b1c6a3710b6cd5b6764fc84f7f06120e33307ef7c"
+)
+ROUTING_ACTIVE_CALIBRATION_CASE_COUNT = 6
+ROUTING_ACTIVE_CALIBRATION_CASE_IDS_SHA256 = (
+    "23a863f53b44ec741185bf27f903824931dd9d84bd08e907c8f2b94e1f70ce1f"
+)
+ROUTING_ACTIVE_CERTIFICATION_CASE_COUNT = 59
+ROUTING_ACTIVE_CERTIFICATION_CASE_IDS_SHA256 = (
+    "536a6417f0882ac073d7f4cedda30c05594b5ae9447a998e62d264677ca69149"
+)
+ROUTING_ACTIVE_QUALITY_VERDICT_SHA256 = (
+    "cb26318f93e61ed7874bfe4db5139f2f3eb2bdc52d1d3908c278ce9e2f8aca4d"
+)
+ROUTING_ACTIVATION_AUTHORIZATION_REPORT_SHA256 = (
+    "d9369f82d47d17fd0a7388246348c258d97b12f956ca9796e3afaa5442255a9d"
+)
+ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_COMMIT = (
+    "16357c629a96e4b309592917ad479a163cec3047"
+)
+ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_TREE = (
+    "c002897fc3224faae9c8670f785e906884100890"
+)
+ROUTING_COLLECT_ARTIFACT_SHA256 = (
+    "23fb14c49263933a2adb2299a9c04089888fb2ec734b790d9eadda2df295cbed"
+)
 
 ROUTING_SHORTLIST_LIMIT = 12
 ROUTING_MAX_EXAMPLES = MAX_ROUTING_EXAMPLES
@@ -105,6 +140,19 @@ _CALIBRATION_FIELDS = {
     "bindings",
     "certification",
 }
+_ACTIVE_CALIBRATION_FIELDS = {
+    "schema_version",
+    "calibration_id",
+    "calibration_revision",
+    "mode",
+    "owner_approved",
+    "score_floor",
+    "margin_floor",
+    "bindings",
+    "calibration",
+    "certification",
+    "receipts",
+}
 _CALIBRATION_BINDING_FIELDS = {
     "routing_model",
     "routing_model_revision",
@@ -121,8 +169,35 @@ _CALIBRATION_BINDING_FIELDS = {
     "catalog_projection_sha256",
 }
 _COLLECT_CERTIFICATION_FIELDS = {"passed", "case_count", "verdict_sha256"}
+_ACTIVE_CALIBRATION_RECEIPT_FIELDS = {
+    "case_count",
+    "case_ids_sha256",
+    "incorrect_high_confidence_singletons",
+}
+_ACTIVE_CERTIFICATION_FIELDS = {
+    "passed",
+    "case_count",
+    "case_ids_sha256",
+    "verdict_sha256",
+}
+_ACTIVATION_RECEIPT_FIELDS = {
+    "authorization_report_sha256",
+    "authorization_source_commit",
+    "authorization_source_tree",
+    "certified_dormant_report_sha256",
+    "certified_dormant_source_commit",
+    "certified_dormant_source_tree",
+    "certified_dormant_working_tree_clean",
+    "evaluator_runner_sha256",
+    "evaluator_scorer_sha256",
+    "routing_module_sha256",
+    "cli_module_sha256",
+    "evidence_module_sha256",
+    "collect_artifact_sha256",
+}
 _SAFE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
+_GIT_OBJECT_ID_RE = re.compile(r"[0-9a-f]{40}\Z")
 
 
 @dataclass(frozen=True)
@@ -275,6 +350,30 @@ class RoutingConfidenceBindings:
 
 
 @dataclass(frozen=True)
+class RoutingCalibrationReceipt:
+    case_count: int
+    case_ids_sha256: str
+    incorrect_high_confidence_singletons: int
+
+
+@dataclass(frozen=True)
+class RoutingActivationReceipts:
+    authorization_report_sha256: str
+    authorization_source_commit: str
+    authorization_source_tree: str
+    certified_dormant_report_sha256: str
+    certified_dormant_source_commit: str
+    certified_dormant_source_tree: str
+    certified_dormant_working_tree_clean: bool
+    evaluator_runner_sha256: str
+    evaluator_scorer_sha256: str
+    routing_module_sha256: str
+    cli_module_sha256: str
+    evidence_module_sha256: str
+    collect_artifact_sha256: str
+
+
+@dataclass(frozen=True)
 class RoutingConfidenceCalibration:
     schema_version: int
     calibration_id: str
@@ -284,9 +383,12 @@ class RoutingConfidenceCalibration:
     score_floor: float | None
     margin_floor: float | None
     bindings: RoutingConfidenceBindings
+    calibration: RoutingCalibrationReceipt | None
     certification_passed: bool
     certification_case_count: int
+    certification_case_ids_sha256: str | None
     certification_verdict_sha256: str | None
+    receipts: RoutingActivationReceipts | None
 
 
 @dataclass(frozen=True)
@@ -1413,44 +1515,48 @@ def gate_routing_quality(
 def load_routing_confidence_calibration(
     path: Path | None = None,
 ) -> RoutingConfidenceCalibration:
-    """Load the initial collect-only artifact; arbitrary activation fails closed."""
+    """Load exactly one supported collect or packaged active artifact."""
 
     selected = path or DEFAULT_ROUTING_CALIBRATION
-    raw = selected.read_bytes()
+    try:
+        raw = selected.read_bytes()
+    except OSError:
+        raise ValueError(
+            "Routing confidence calibration artifact is unavailable."
+        ) from None
     payload = _required_mapping(
         _load_strict_json(raw, where="routing confidence calibration"),
         where="routing confidence calibration",
     )
-    _require_exact_fields(
-        payload, _CALIBRATION_FIELDS, where="routing confidence calibration"
-    )
-    if payload.get("schema_version") != ROUTING_CALIBRATION_SCHEMA_VERSION:
+    schema_version = payload.get("schema_version")
+    if type(schema_version) is not int:
         raise ValueError("Routing confidence calibration schema is incompatible.")
-    calibration_id = _required_string(
-        payload, "calibration_id", where="routing confidence calibration"
-    )
-    if calibration_id != ROUTING_CALIBRATION_ID:
-        raise ValueError("Routing confidence calibration ID is incompatible.")
-    revision = _safe_id(
-        payload.get("calibration_revision"),
-        where="routing confidence calibration revision",
-    )
-    if payload.get("mode") != "collect":
-        raise ValueError("Only collect-mode routing confidence calibration is authorized.")
-    if payload.get("owner_approved") is not False:
-        raise ValueError("Collect-mode routing confidence calibration cannot be approved.")
-    if payload.get("score_floor") is not None or payload.get("margin_floor") is not None:
-        raise ValueError("Collect-mode routing confidence calibration has no thresholds.")
+    if schema_version == ROUTING_CALIBRATION_SCHEMA_VERSION:
+        calibration = _parse_collect_routing_confidence_calibration(payload)
+    elif schema_version == ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION:
+        if selected.resolve() != DEFAULT_ROUTING_CALIBRATION.resolve():
+            raise ValueError(
+                "Active routing confidence is authorized only from the installed "
+                "package artifact."
+            )
+        calibration = _parse_active_routing_confidence_calibration(payload)
+    else:
+        raise ValueError("Routing confidence calibration schema is incompatible.")
+    validate_routing_confidence_calibration(calibration)
+    return calibration
 
-    bindings_payload = _required_mapping(
-        payload.get("bindings"), where="routing confidence calibration bindings"
-    )
-    _require_exact_fields(
-        bindings_payload,
-        _CALIBRATION_BINDING_FIELDS,
-        where="routing confidence calibration bindings",
-    )
-    expected_constants: dict[str, object] = {
+
+def validate_routing_confidence_calibration(
+    calibration: RoutingConfidenceCalibration,
+) -> None:
+    """Reject constructed or mutated confidence objects outside exact authority."""
+
+    if type(calibration) is not RoutingConfidenceCalibration:
+        raise ValueError("Routing confidence calibration object is invalid.")
+    bindings = calibration.bindings
+    if type(bindings) is not RoutingConfidenceBindings:
+        raise ValueError("Routing confidence calibration bindings object is invalid.")
+    expected_bindings: dict[str, object] = {
         "routing_model": ROUTING_MODEL,
         "routing_model_revision": ROUTING_MODEL_REVISION,
         "routing_reranker_model": CROSS_ENCODER_MODEL,
@@ -1463,17 +1569,143 @@ def load_routing_confidence_calibration(
         "score_field": ROUTING_CONFIDENCE_SCORE_FIELD,
         "margin_field": ROUTING_CONFIDENCE_MARGIN_FIELD,
     }
-    for field, expected in expected_constants.items():
-        if bindings_payload.get(field) != expected:
-            raise ValueError(
-                f"Routing confidence calibration binding {field!r} is incompatible."
-            )
-    for field in ("canary_suite_sha256", "catalog_projection_sha256"):
-        if bindings_payload.get(field) is not None:
-            _sha256(
-                bindings_payload.get(field),
-                where=f"routing confidence calibration {field}",
-            )
+    _require_exact_frozen_attributes(
+        bindings,
+        expected_bindings,
+        where="routing confidence calibration binding",
+    )
+
+    if _is_exact_frozen_value(
+        calibration.schema_version, ROUTING_CALIBRATION_SCHEMA_VERSION
+    ):
+        _require_exact_frozen_attributes(
+            calibration,
+            {
+                "schema_version": ROUTING_CALIBRATION_SCHEMA_VERSION,
+                "calibration_id": ROUTING_CALIBRATION_ID,
+                "calibration_revision": ROUTING_COLLECT_CALIBRATION_REVISION,
+                "mode": "collect",
+                "owner_approved": False,
+                "score_floor": None,
+                "margin_floor": None,
+                "calibration": None,
+                "certification_passed": False,
+                "certification_case_count": 0,
+                "certification_case_ids_sha256": None,
+                "certification_verdict_sha256": None,
+                "receipts": None,
+            },
+            where="collect-mode routing confidence calibration",
+        )
+        _require_exact_frozen_attributes(
+            bindings,
+            {
+                "canary_suite_sha256": None,
+                "catalog_projection_sha256": None,
+            },
+            where="collect-mode routing confidence calibration binding",
+        )
+        return
+
+    if not _is_exact_frozen_value(
+        calibration.schema_version, ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION
+    ):
+        raise ValueError("Routing confidence calibration schema is incompatible.")
+    _require_exact_frozen_attributes(
+        calibration,
+        {
+            "schema_version": ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION,
+            "calibration_id": ROUTING_CALIBRATION_ID,
+            "calibration_revision": ROUTING_ACTIVE_CALIBRATION_REVISION,
+            "mode": "active",
+            "owner_approved": True,
+            "score_floor": ROUTING_ACTIVE_SCORE_FLOOR,
+            "margin_floor": ROUTING_ACTIVE_MARGIN_FLOOR,
+            "certification_passed": True,
+            "certification_case_count": ROUTING_ACTIVE_CERTIFICATION_CASE_COUNT,
+            "certification_case_ids_sha256": (
+                ROUTING_ACTIVE_CERTIFICATION_CASE_IDS_SHA256
+            ),
+            "certification_verdict_sha256": ROUTING_ACTIVE_QUALITY_VERDICT_SHA256,
+        },
+        where="active routing confidence calibration",
+    )
+    _require_exact_frozen_attributes(
+        bindings,
+        {
+            "canary_suite_sha256": ROUTING_ACTIVE_CANARY_SUITE_SHA256,
+            "catalog_projection_sha256": (
+                ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256
+            ),
+        },
+        where="active routing confidence calibration binding",
+    )
+    if not math.isfinite(calibration.score_floor) or not math.isfinite(
+        calibration.margin_floor
+    ):
+        raise ValueError("Active routing confidence thresholds must be finite.")
+    if calibration.margin_floor < 0.0:
+        raise ValueError("Active routing confidence margin must not be negative.")
+
+    receipt = calibration.calibration
+    if type(receipt) is not RoutingCalibrationReceipt:
+        raise ValueError("Active routing threshold calibration receipt is invalid.")
+    _require_exact_frozen_attributes(
+        receipt,
+        {
+            "case_count": ROUTING_ACTIVE_CALIBRATION_CASE_COUNT,
+            "case_ids_sha256": ROUTING_ACTIVE_CALIBRATION_CASE_IDS_SHA256,
+            "incorrect_high_confidence_singletons": 0,
+        },
+        where="active routing threshold calibration receipt",
+    )
+    _validate_activation_receipts(calibration.receipts)
+
+
+def validate_routing_confidence_catalog(
+    calibration: RoutingConfidenceCalibration,
+    eligible_cards: Sequence[object],
+) -> str:
+    """Bind active thresholds to the exact eligible-card semantic projection."""
+
+    validate_routing_confidence_calibration(calibration)
+    projection = routing_catalog_projection_sha256(eligible_cards)
+    if (
+        calibration.mode == "active"
+        and projection != calibration.bindings.catalog_projection_sha256
+    ):
+        raise ValueError(
+            "Live routing catalog projection does not match the active confidence artifact."
+        )
+    return projection
+
+
+def _parse_collect_routing_confidence_calibration(
+    payload: Mapping[str, object],
+) -> RoutingConfidenceCalibration:
+    _require_exact_fields(
+        payload, _CALIBRATION_FIELDS, where="routing confidence calibration"
+    )
+    if not _is_exact_frozen_value(
+        payload.get("calibration_id"), ROUTING_CALIBRATION_ID
+    ):
+        raise ValueError("Routing confidence calibration ID is incompatible.")
+    revision = _safe_id(
+        payload.get("calibration_revision"),
+        where="routing confidence calibration revision",
+    )
+    if revision != ROUTING_COLLECT_CALIBRATION_REVISION:
+        raise ValueError("Collect-mode routing confidence revision is incompatible.")
+    if payload.get("mode") != "collect":
+        raise ValueError("Schema-v1 routing confidence calibration must be collect mode.")
+    if payload.get("owner_approved") is not False:
+        raise ValueError("Collect-mode routing confidence calibration cannot be approved.")
+    if payload.get("score_floor") is not None or payload.get("margin_floor") is not None:
+        raise ValueError("Collect-mode routing confidence calibration has no thresholds.")
+
+    bindings_payload = _parse_routing_confidence_bindings_payload(
+        payload.get("bindings"), active=False
+    )
 
     certification = _required_mapping(
         payload.get("certification"), where="routing confidence certification"
@@ -1493,38 +1725,332 @@ def load_routing_confidence_calibration(
     if certification.get("verdict_sha256") is not None:
         raise ValueError("Collect-mode routing confidence certification has no verdict.")
 
-    bindings = RoutingConfidenceBindings(
-        routing_model=str(bindings_payload["routing_model"]),
-        routing_model_revision=str(bindings_payload["routing_model_revision"]),
-        routing_reranker_model=str(bindings_payload["routing_reranker_model"]),
-        routing_reranker_revision=str(
-            bindings_payload["routing_reranker_revision"]
-        ),
-        schema_contract=str(bindings_payload["schema_contract"]),
-        projection=str(bindings_payload["projection"]),
-        shortlist_limit=int(bindings_payload["shortlist_limit"]),
-        max_examples=int(bindings_payload["max_examples"]),
-        feature_contract=str(bindings_payload["feature_contract"]),
-        score_field=str(bindings_payload["score_field"]),
-        margin_field=str(bindings_payload["margin_field"]),
-        canary_suite_sha256=bindings_payload["canary_suite_sha256"],  # type: ignore[arg-type]
-        catalog_projection_sha256=bindings_payload[
-            "catalog_projection_sha256"
-        ],  # type: ignore[arg-type]
-    )
     return RoutingConfidenceCalibration(
         schema_version=ROUTING_CALIBRATION_SCHEMA_VERSION,
-        calibration_id=calibration_id,
+        calibration_id=ROUTING_CALIBRATION_ID,
         calibration_revision=revision,
         mode="collect",
         owner_approved=False,
         score_floor=None,
         margin_floor=None,
-        bindings=bindings,
+        bindings=_routing_confidence_bindings(bindings_payload),
+        calibration=None,
         certification_passed=False,
         certification_case_count=0,
+        certification_case_ids_sha256=None,
         certification_verdict_sha256=None,
+        receipts=None,
     )
+
+
+def _parse_active_routing_confidence_calibration(
+    payload: Mapping[str, object],
+) -> RoutingConfidenceCalibration:
+    _require_exact_fields(
+        payload, _ACTIVE_CALIBRATION_FIELDS, where="routing confidence calibration"
+    )
+    if not _is_exact_frozen_value(
+        payload.get("calibration_id"), ROUTING_CALIBRATION_ID
+    ):
+        raise ValueError("Routing confidence calibration ID is incompatible.")
+    revision = _safe_id(
+        payload.get("calibration_revision"),
+        where="routing confidence calibration revision",
+    )
+    if payload.get("mode") != "active":
+        raise ValueError("Schema-v2 routing confidence calibration must be active mode.")
+    if payload.get("owner_approved") is not True:
+        raise ValueError("Active routing confidence calibration requires owner approval.")
+    raw_score_floor = payload.get("score_floor")
+    raw_margin_floor = payload.get("margin_floor")
+    if type(raw_score_floor) is not float or type(raw_margin_floor) is not float:
+        raise ValueError("Active routing confidence thresholds must be JSON numbers.")
+    score_floor = _finite(raw_score_floor, where="routing confidence score floor")
+    margin_floor = _finite(raw_margin_floor, where="routing confidence margin floor")
+    bindings_payload = _parse_routing_confidence_bindings_payload(
+        payload.get("bindings"), active=True
+    )
+
+    calibration_payload = _required_mapping(
+        payload.get("calibration"), where="routing threshold calibration receipt"
+    )
+    _require_exact_fields(
+        calibration_payload,
+        _ACTIVE_CALIBRATION_RECEIPT_FIELDS,
+        where="routing threshold calibration receipt",
+    )
+    calibration_receipt = RoutingCalibrationReceipt(
+        case_count=_positive_int(
+            calibration_payload.get("case_count"),
+            where="routing threshold calibration case_count",
+        ),
+        case_ids_sha256=_sha256(
+            calibration_payload.get("case_ids_sha256"),
+            where="routing threshold calibration case_ids_sha256",
+        ),
+        incorrect_high_confidence_singletons=_nonnegative_int(
+            calibration_payload.get("incorrect_high_confidence_singletons"),
+            where=(
+                "routing threshold calibration "
+                "incorrect_high_confidence_singletons"
+            ),
+        ),
+    )
+
+    certification = _required_mapping(
+        payload.get("certification"), where="routing confidence certification"
+    )
+    _require_exact_fields(
+        certification,
+        _ACTIVE_CERTIFICATION_FIELDS,
+        where="routing confidence certification",
+    )
+    if certification.get("passed") is not True:
+        raise ValueError("Active routing confidence certification must pass.")
+    certification_case_count = _positive_int(
+        certification.get("case_count"),
+        where="routing confidence certification case_count",
+    )
+    certification_case_ids_sha256 = _sha256(
+        certification.get("case_ids_sha256"),
+        where="routing confidence certification case_ids_sha256",
+    )
+    certification_verdict_sha256 = _sha256(
+        certification.get("verdict_sha256"),
+        where="routing confidence certification verdict_sha256",
+    )
+    receipts = _parse_activation_receipts(payload.get("receipts"))
+    calibration = RoutingConfidenceCalibration(
+        schema_version=ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION,
+        calibration_id=ROUTING_CALIBRATION_ID,
+        calibration_revision=revision,
+        mode="active",
+        owner_approved=True,
+        score_floor=score_floor,
+        margin_floor=margin_floor,
+        bindings=_routing_confidence_bindings(bindings_payload),
+        calibration=calibration_receipt,
+        certification_passed=True,
+        certification_case_count=certification_case_count,
+        certification_case_ids_sha256=certification_case_ids_sha256,
+        certification_verdict_sha256=certification_verdict_sha256,
+        receipts=receipts,
+    )
+    validate_routing_confidence_calibration(calibration)
+    return calibration
+
+
+def _parse_routing_confidence_bindings_payload(
+    value: object,
+    *,
+    active: bool,
+) -> Mapping[str, object]:
+    bindings = _required_mapping(
+        value, where="routing confidence calibration bindings"
+    )
+    _require_exact_fields(
+        bindings,
+        _CALIBRATION_BINDING_FIELDS,
+        where="routing confidence calibration bindings",
+    )
+    expected: dict[str, object] = {
+        "routing_model": ROUTING_MODEL,
+        "routing_model_revision": ROUTING_MODEL_REVISION,
+        "routing_reranker_model": CROSS_ENCODER_MODEL,
+        "routing_reranker_revision": CROSS_ENCODER_REVISION,
+        "schema_contract": ROUTING_SCHEMA_CONTRACT,
+        "projection": ROUTING_PROJECTION_CONTRACT,
+        "shortlist_limit": ROUTING_SHORTLIST_LIMIT,
+        "max_examples": ROUTING_MAX_EXAMPLES,
+        "feature_contract": ROUTING_CONFIDENCE_FEATURE_CONTRACT,
+        "score_field": ROUTING_CONFIDENCE_SCORE_FIELD,
+        "margin_field": ROUTING_CONFIDENCE_MARGIN_FIELD,
+        "canary_suite_sha256": (
+            ROUTING_ACTIVE_CANARY_SUITE_SHA256 if active else None
+        ),
+        "catalog_projection_sha256": (
+            ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256 if active else None
+        ),
+    }
+    for field, expected_value in expected.items():
+        if not _is_exact_frozen_value(bindings.get(field), expected_value):
+            raise ValueError(
+                f"Routing confidence calibration binding {field!r} is incompatible."
+            )
+    return bindings
+
+
+def _routing_confidence_bindings(
+    payload: Mapping[str, object],
+) -> RoutingConfidenceBindings:
+    return RoutingConfidenceBindings(
+        routing_model=cast(str, payload["routing_model"]),
+        routing_model_revision=cast(str, payload["routing_model_revision"]),
+        routing_reranker_model=cast(str, payload["routing_reranker_model"]),
+        routing_reranker_revision=cast(
+            str, payload["routing_reranker_revision"]
+        ),
+        schema_contract=cast(str, payload["schema_contract"]),
+        projection=cast(str, payload["projection"]),
+        shortlist_limit=cast(int, payload["shortlist_limit"]),
+        max_examples=cast(int, payload["max_examples"]),
+        feature_contract=cast(str, payload["feature_contract"]),
+        score_field=cast(str, payload["score_field"]),
+        margin_field=cast(str, payload["margin_field"]),
+        canary_suite_sha256=cast(str | None, payload["canary_suite_sha256"]),
+        catalog_projection_sha256=cast(
+            str | None, payload["catalog_projection_sha256"]
+        ),
+    )
+
+
+def _parse_activation_receipts(value: object) -> RoutingActivationReceipts:
+    payload = _required_mapping(value, where="routing activation receipts")
+    _require_exact_fields(
+        payload, _ACTIVATION_RECEIPT_FIELDS, where="routing activation receipts"
+    )
+    if payload.get("certified_dormant_working_tree_clean") is not True:
+        raise ValueError("Certified dormant routing source must be clean.")
+    receipts = RoutingActivationReceipts(
+        authorization_report_sha256=_receipt_sha256(
+            payload.get("authorization_report_sha256"),
+            where="routing activation authorization_report_sha256",
+        ),
+        authorization_source_commit=_git_object_id(
+            payload.get("authorization_source_commit"),
+            where="routing activation authorization_source_commit",
+        ),
+        authorization_source_tree=_git_object_id(
+            payload.get("authorization_source_tree"),
+            where="routing activation authorization_source_tree",
+        ),
+        certified_dormant_report_sha256=_receipt_sha256(
+            payload.get("certified_dormant_report_sha256"),
+            where="routing activation certified_dormant_report_sha256",
+        ),
+        certified_dormant_source_commit=_git_object_id(
+            payload.get("certified_dormant_source_commit"),
+            where="routing activation certified_dormant_source_commit",
+        ),
+        certified_dormant_source_tree=_git_object_id(
+            payload.get("certified_dormant_source_tree"),
+            where="routing activation certified_dormant_source_tree",
+        ),
+        certified_dormant_working_tree_clean=True,
+        evaluator_runner_sha256=_receipt_sha256(
+            payload.get("evaluator_runner_sha256"),
+            where="routing activation evaluator_runner_sha256",
+        ),
+        evaluator_scorer_sha256=_receipt_sha256(
+            payload.get("evaluator_scorer_sha256"),
+            where="routing activation evaluator_scorer_sha256",
+        ),
+        routing_module_sha256=_receipt_sha256(
+            payload.get("routing_module_sha256"),
+            where="routing activation routing_module_sha256",
+        ),
+        cli_module_sha256=_receipt_sha256(
+            payload.get("cli_module_sha256"),
+            where="routing activation cli_module_sha256",
+        ),
+        evidence_module_sha256=_receipt_sha256(
+            payload.get("evidence_module_sha256"),
+            where="routing activation evidence_module_sha256",
+        ),
+        collect_artifact_sha256=_receipt_sha256(
+            payload.get("collect_artifact_sha256"),
+            where="routing activation collect_artifact_sha256",
+        ),
+    )
+    _validate_activation_receipts(receipts)
+    return receipts
+
+
+def _validate_activation_receipts(
+    receipts: RoutingActivationReceipts | None,
+) -> None:
+    if type(receipts) is not RoutingActivationReceipts:
+        raise ValueError("Active routing confidence has no activation receipts.")
+    for field in (
+        "authorization_report_sha256",
+        "certified_dormant_report_sha256",
+        "evaluator_runner_sha256",
+        "evaluator_scorer_sha256",
+        "routing_module_sha256",
+        "cli_module_sha256",
+        "evidence_module_sha256",
+        "collect_artifact_sha256",
+    ):
+        _receipt_sha256(
+            getattr(receipts, field), where=f"routing activation {field}"
+        )
+    for field in (
+        "authorization_source_commit",
+        "authorization_source_tree",
+        "certified_dormant_source_commit",
+        "certified_dormant_source_tree",
+    ):
+        _git_object_id(
+            getattr(receipts, field), where=f"routing activation {field}"
+        )
+    _require_exact_frozen_attributes(
+        receipts,
+        {
+            "authorization_report_sha256": (
+                ROUTING_ACTIVATION_AUTHORIZATION_REPORT_SHA256
+            ),
+            "authorization_source_commit": (
+                ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_COMMIT
+            ),
+            "authorization_source_tree": ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_TREE,
+            "certified_dormant_working_tree_clean": True,
+            "collect_artifact_sha256": ROUTING_COLLECT_ARTIFACT_SHA256,
+        },
+        where="routing activation authorization receipt",
+    )
+    if (
+        receipts.certified_dormant_report_sha256
+        == receipts.authorization_report_sha256
+        or receipts.certified_dormant_source_commit
+        == receipts.authorization_source_commit
+        or receipts.certified_dormant_source_tree
+        == receipts.authorization_source_tree
+    ):
+        raise ValueError("Routing activation dormant receipts are placeholders.")
+    module_dir = Path(__file__).resolve().parent
+    expected_module_hashes = {
+        "evaluator_scorer_sha256": _file_sha256(module_dir / "routing_quality.py"),
+        "routing_module_sha256": _file_sha256(module_dir / "routing.py"),
+        "cli_module_sha256": _file_sha256(module_dir / "cli.py"),
+        "evidence_module_sha256": _file_sha256(module_dir / "evidence.py"),
+    }
+    for field, expected in expected_module_hashes.items():
+        if not _is_exact_frozen_value(getattr(receipts, field), expected):
+            raise ValueError(
+                f"Routing activation source receipt {field!r} is incompatible."
+            )
+
+
+def _receipt_sha256(value: object, *, where: str) -> str:
+    digest = _sha256(value, where=where)
+    if len(set(digest)) == 1:
+        raise ValueError(f"{where} must not be a placeholder digest.")
+    return digest
+
+
+def _git_object_id(value: object, *, where: str) -> str:
+    if type(value) is not str or _GIT_OBJECT_ID_RE.fullmatch(value) is None:
+        raise ValueError(f"{where} must be a full lowercase Git object ID.")
+    if len(set(value)) == 1:
+        raise ValueError(f"{where} must not be a placeholder Git object ID.")
+    return value
+
+
+def _file_sha256(path: Path) -> str:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        raise ValueError("Routing activation source receipt cannot be verified.") from None
 
 
 def _parse_canary_case(
@@ -1778,6 +2304,21 @@ def _required_mapping(value: object, *, where: str) -> Mapping[str, object]:
     return value
 
 
+def _is_exact_frozen_value(value: object, expected: object) -> bool:
+    return type(value) is type(expected) and value == expected
+
+
+def _require_exact_frozen_attributes(
+    value: object,
+    expected: Mapping[str, object],
+    *,
+    where: str,
+) -> None:
+    for field, expected_value in expected.items():
+        if not _is_exact_frozen_value(getattr(value, field), expected_value):
+            raise ValueError(f"{where} {field!r} is incompatible.")
+
+
 def _require_exact_fields(
     value: Mapping[str, object], expected: set[str], *, where: str
 ) -> None:
@@ -1806,7 +2347,7 @@ def _safe_id(value: object, *, where: str) -> str:
 
 
 def _sha256(value: object, *, where: str) -> str:
-    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
+    if type(value) is not str or _SHA256_RE.fullmatch(value) is None:
         raise ValueError(f"{where} must be a lowercase SHA-256 digest.")
     return value
 
@@ -1814,6 +2355,12 @@ def _sha256(value: object, *, where: str) -> str:
 def _positive_int(value: object, *, where: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"{where} must be a positive integer.")
+    return value
+
+
+def _nonnegative_int(value: object, *, where: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{where} must be a non-negative integer.")
     return value
 
 

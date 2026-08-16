@@ -38,6 +38,13 @@ from buoy_search.retriever import (
     MultiNamespaceRetrievalPlan,
     MultiNamespaceRetrievalResult,
 )
+from buoy_search.routing_quality import (
+    ROUTING_CALIBRATION_ID,
+    ROUTING_COLLECT_CALIBRATION_REVISION,
+    ROUTING_CONFIDENCE_FEATURE_CONTRACT,
+    RoutingConfidenceCalibration,
+    validate_routing_confidence_catalog,
+)
 
 DEFAULT_ROUTE_TOP_K = 3
 MAX_ROUTE_TOP_K = 3
@@ -45,9 +52,8 @@ SEMANTIC_CONFIDENCE_FLOOR = 0.65
 SEMANTIC_MARGIN_FLOOR = 0.05
 ROUTING_SHORTLIST_LIMIT = 12
 ROUTING_PROTOTYPE_STRATEGY = "title_alias_then_bounded_prototype_rerank"
-ROUTING_CONFIDENCE_ARTIFACT_ID = "automatic-routing-confidence-v2"
-ROUTING_CONFIDENCE_COLLECT_REVISION = "collect-unassessed-v1"
-ROUTING_CONFIDENCE_FEATURE_CONTRACT = "max_prototype_score_and_margin_v1"
+ROUTING_CONFIDENCE_ARTIFACT_ID = ROUTING_CALIBRATION_ID
+ROUTING_CONFIDENCE_COLLECT_REVISION = ROUTING_COLLECT_CALIBRATION_REVISION
 
 if RRF_K != 60:  # Keep routing fusion tied to Buoy's established retrieval contract.
     raise RuntimeError(f"automatic routing requires RRF_K=60, found {RRF_K}")
@@ -145,10 +151,22 @@ class RoutingSelection:
     confidence_margin_floor: float | None = None
     confidence_calibration_id: str | None = None
     confidence_calibration_revision: str | None = None
+    confidence_mode: str | None = None
+    confidence_owner_approved: bool | None = None
+    confidence_feature_contract: str | None = None
+    confidence_canary_suite_sha256: str | None = None
+    confidence_catalog_projection_sha256: str | None = None
+    confidence_certification_verdict_sha256: str | None = None
+    confidence_source_report_sha256: str | None = None
+    confidence_source_commit: str | None = None
+    confidence_source_tree: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
-            "active": self.strategy != ROUTING_PROTOTYPE_STRATEGY,
+            "active": (
+                self.strategy != ROUTING_PROTOTYPE_STRATEGY
+                or self.confidence_mode == "active"
+            ),
             "strategy": self.strategy,
             "catalog_namespace": self.catalog_namespace,
             "region": self.region,
@@ -190,11 +208,25 @@ class RoutingSelection:
                     "confidence_calibration_id": self.confidence_calibration_id,
                     "confidence_calibration_revision": self.confidence_calibration_revision,
                     "confidence_artifact": {
-                        "id": ROUTING_CONFIDENCE_ARTIFACT_ID,
-                        "revision": ROUTING_CONFIDENCE_COLLECT_REVISION,
-                        "mode": "collect",
-                        "owner_approved": False,
-                        "feature_contract": ROUTING_CONFIDENCE_FEATURE_CONTRACT,
+                        "id": self.confidence_calibration_id,
+                        "revision": self.confidence_calibration_revision,
+                        "mode": self.confidence_mode,
+                        "owner_approved": self.confidence_owner_approved,
+                        "feature_contract": self.confidence_feature_contract,
+                        "canary_suite_sha256": (
+                            self.confidence_canary_suite_sha256
+                        ),
+                        "catalog_projection_sha256": (
+                            self.confidence_catalog_projection_sha256
+                        ),
+                        "certification_verdict_sha256": (
+                            self.confidence_certification_verdict_sha256
+                        ),
+                        "source_report_sha256": (
+                            self.confidence_source_report_sha256
+                        ),
+                        "source_commit": self.confidence_source_commit,
+                        "source_tree": self.confidence_source_tree,
                     },
                 }
             )
@@ -619,6 +651,7 @@ def prototype_route(
     query: str,
     cards: Sequence[NamespaceCard],
     *,
+    calibration: RoutingConfidenceCalibration,
     embedder: RoutingEmbedder,
     reranker_loader: Callable[[], CrossEncoderReranker],
     route_top_k: int,
@@ -630,13 +663,7 @@ def prototype_route(
     remote_counts: dict[str, int] | None = None,
     read_metrics: dict[str, object] | None = None,
 ) -> RoutingSelection:
-    """Exercise the inactive bounded-prototype candidate route.
-
-    This entry point is deliberately collect-only: descriptor-free cases retain
-    the first three candidates and cannot manufacture a confident singleton.
-    A future production activation must accept one fully validated packaged
-    calibration object rather than loose threshold arguments.
-    """
+    """Select a bounded prototype route under one validated artifact object."""
 
     if route_top_k != DEFAULT_ROUTE_TOP_K:
         raise AutomaticRoutingError(
@@ -645,6 +672,12 @@ def prototype_route(
     if not cards:
         raise AutomaticRoutingError("automatic routing requires at least one eligible card")
     _validate_prototype_cards(cards)
+    try:
+        validate_routing_confidence_catalog(calibration, cards)
+    except ValueError:
+        raise AutomaticRoutingError(
+            "routing confidence artifact does not match the eligible catalog"
+        ) from None
     named = named_route(query, cards)
     if len(named) > MAX_ROUTE_TOP_K:
         raise AutomaticRoutingError(
@@ -703,9 +736,21 @@ def prototype_route(
         reranker_margin = (
             top_score - scored[1].reranker_score if len(scored) > 1 else None
         )
-        high_confidence = False
-        initial_fanout = len(selected_names)
-        selection_reason = "ambiguous_prototype"
+        high_confidence = bool(
+            calibration.mode == "active"
+            and calibration.score_floor is not None
+            and calibration.margin_floor is not None
+            and top_score >= calibration.score_floor
+            and reranker_margin is not None
+            and math.isfinite(reranker_margin)
+            and reranker_margin >= calibration.margin_floor
+        )
+        initial_fanout = 1 if high_confidence else len(selected_names)
+        selection_reason = (
+            "high_confidence_prototype"
+            if high_confidence
+            else "ambiguous_prototype"
+        )
 
     if not selected_names:
         raise AutomaticRoutingError("automatic routing produced an empty selected route")
@@ -777,10 +822,37 @@ def prototype_route(
         semantic_margin=semantic_margin,
         strategy=ROUTING_PROTOTYPE_STRATEGY,
         reranker_margin=reranker_margin,
-        confidence_score_floor=None,
-        confidence_margin_floor=None,
-        confidence_calibration_id=ROUTING_CONFIDENCE_ARTIFACT_ID,
-        confidence_calibration_revision=ROUTING_CONFIDENCE_COLLECT_REVISION,
+        confidence_score_floor=calibration.score_floor,
+        confidence_margin_floor=calibration.margin_floor,
+        confidence_calibration_id=calibration.calibration_id,
+        confidence_calibration_revision=calibration.calibration_revision,
+        confidence_mode=calibration.mode,
+        confidence_owner_approved=calibration.owner_approved,
+        confidence_feature_contract=calibration.bindings.feature_contract,
+        confidence_canary_suite_sha256=(
+            calibration.bindings.canary_suite_sha256
+        ),
+        confidence_catalog_projection_sha256=(
+            calibration.bindings.catalog_projection_sha256
+        ),
+        confidence_certification_verdict_sha256=(
+            calibration.certification_verdict_sha256
+        ),
+        confidence_source_report_sha256=(
+            calibration.receipts.certified_dormant_report_sha256
+            if calibration.receipts is not None
+            else None
+        ),
+        confidence_source_commit=(
+            calibration.receipts.certified_dormant_source_commit
+            if calibration.receipts is not None
+            else None
+        ),
+        confidence_source_tree=(
+            calibration.receipts.certified_dormant_source_tree
+            if calibration.receipts is not None
+            else None
+        ),
     )
 
 

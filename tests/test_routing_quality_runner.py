@@ -34,6 +34,9 @@ from buoy_search.routing_quality import (
     RoutingQualityDataset,
 )
 from scripts import evaluate_routing_quality as runner
+from tests.routing_confidence_fixtures import (
+    load_collect_routing_confidence_fixture,
+)
 
 
 ALPHA = "site-alpha-example-v1"
@@ -269,6 +272,11 @@ class RoutingQualityCollectorTests(unittest.TestCase):
                     "working_tree_clean": True,
                 },
             ),
+            patch.object(
+                runner,
+                "load_routing_confidence_calibration",
+                return_value=load_collect_routing_confidence_fixture(),
+            ),
         ):
             report = runner.collect_live_run(
                 dataset,
@@ -352,6 +360,11 @@ class RoutingQualityCollectorTests(unittest.TestCase):
                     "tree": "2" * 40,
                     "working_tree_clean": True,
                 },
+            ),
+            patch.object(
+                runner,
+                "load_routing_confidence_calibration",
+                return_value=load_collect_routing_confidence_fixture(),
             ),
         ):
             report = runner.collect_live_run(

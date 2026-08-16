@@ -102,20 +102,33 @@ easy to confuse with a neighboring corpus, and one contrast query that should
 route elsewhere. The complete route-only suite is replayed against the current
 eligible catalog so a new card cannot silently steal an existing route.
 
-The unreleased scalable-routing foundation also understands an additive
+The unreleased scalable-routing reader understands an additive
 `routing_examples` card field containing at most eight reviewed questions the
 corpus can answer. These examples are separate from aliases and tags and never
-trigger exact-name routing. A candidate router takes an exact in-memory vector
-shortlist of at most twelve cards from the already-read catalog, then compares
-their base text and examples with the pinned local MiniLM model. It still
-queries at most three content namespaces and adds no provider query per card.
+trigger exact-name routing. The bounded prototype route takes an exact in-
+memory vector shortlist of at most twelve cards from the already-read catalog,
+then compares their base text and examples with the pinned local MiniLM model.
+It still queries at most three content namespaces and adds no provider query
+per card.
 
-This candidate is intentionally inactive until its canaries are approved and
-its confidence thresholds pass a locked calibration/certification run. The
-live catalog remains schema v1 and the current cosine router remains production
-authority. A later reader-first migration may add examples only after the new
-reader is deployed; ordinary apply cannot invent capability examples from a
-URL or source name and preserves reviewed manual examples.
+Activation is staged through one installed package artifact. The clean dormant
+checkpoint keeps schema-v1 `mode=collect`, so ordinary automatic retrieval
+continues to use the legacy hybrid selector while the exact source and 65-case
+suite are recollected and independently audited. Only that exact report may
+authorize the artifact-only schema-v2 `mode=active` checkpoint that is the
+intended final state of this Unreleased source package. Until certification is
+recorded, the dormant checkpoint remains collect-only. In active mode, exact
+title and alias matches remain authoritative; descriptor-free routing selects
+one corpus only when both the approved finite score and margin floors pass, and
+otherwise selects at most three. A malformed artifact, source-receipt mismatch,
+or eligible-card projection drift stops before content access instead of
+falling back.
+
+The installed artifact, not a command-line option, environment variable, or
+catalog mutation, determines which selector is authorized. Even the final
+active task tree is not integration, publication, or deployment. Ordinary apply
+cannot invent capability examples from a URL or source name and preserves
+reviewed manual examples.
 
 ## Explicit override
 
@@ -355,9 +368,9 @@ This operation preserves every base and non-prototype card field and must affect
 exactly the target's deterministic row ID. Repeating an already-stored canonical
 set is a zero-model, zero-write success. Later ordinary applies preserve reviewed
 examples on both manual and generated cards. Neither command reads or writes a
-content namespace, changes enablement, or activates prototype routing; production
-automatic retrieval continues to use the legacy base-vector route until a
-separate activation release passes.
+content namespace, changes enablement, or changes the packaged routing
+authority. Collect mode uses the legacy hybrid route; only the separately
+certified active artifact authorizes bounded prototype routing.
 
 ## Evaluation
 
@@ -368,11 +381,19 @@ buoy evals --namespace site-example-docs-v1 --dry-run
 buoy evals --namespace site-example-docs-v1 --live
 ```
 
-The automatic-routing release gate is a separate governed 50-query basket:
-20 named-source questions, 15 descriptor-free/confusable questions, 10
-multi-corpus questions, and 5 no-answer questions. Its checked-in labels remain
-marked candidate until a human approves them against current indexed content.
-Provider-backed scoring is read-only and compares automatic results with an
-exhaustive search of all four eligible logical corpora; the disabled duplicate
-Dagster namespace is covered by a card but never earns route or retrieval
-credit.
+The bounded-routing quality gate projects the approved 50-query retrieval
+basket and adds five owner-approved route-only canaries for each of RentPTR,
+Salesforce, and WhiteboxGeo. The exact 65-case suite reserves six cases for
+threshold calibration and locks the other 59 for certification. The three
+packaged canary files are evaluation ground truth only; ordinary routing never
+reads their question text. Adding or changing an eligible corpus requires a
+new reviewed pack and a complete-suite replay so a new card cannot silently
+steal an existing route.
+
+Provider-backed route scoring is read-only: it reads namespace inventory and
+the routing catalog, performs one local route embedding and one bounded local
+reranker call per case, and performs no content query or provider write. The
+separate 50-case end-to-end retrieval evaluation still compares automatic
+results with exhaustive search of all four eligible logical corpora; the
+disabled duplicate Dagster namespace is covered by a card but never earns
+route or retrieval credit.

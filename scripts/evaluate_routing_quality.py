@@ -42,6 +42,7 @@ from buoy_search.cross_encoder import (
     load_cross_encoder_reranker,
 )
 from buoy_search.multi_corpus_evals import DEFAULT_MULTI_CORPUS_EVAL_DATASET
+from buoy_search.plan_artifacts import stable_hash
 from buoy_search.remote_catalog import (
     REMOTE_CATALOG_NAMESPACE,
     CompatibilityContract,
@@ -312,7 +313,9 @@ def collect_live_run(
     activation = _activation_verdict(
         dataset=dataset,
         confidence_artifact=confidence_artifact,
-        quality_passed=quality_verdict.passed,
+        threshold_calibration=threshold_calibration,
+        certification=certification,
+        quality_verdict=quality_verdict.to_dict(),
         catalog_projection_sha256=catalog_projection_sha256,
         calls=calls,
         code=code,
@@ -526,7 +529,9 @@ def _activation_verdict(
     *,
     dataset: RoutingQualityDataset,
     confidence_artifact: RoutingConfidenceCalibration,
-    quality_passed: bool,
+    threshold_calibration: RoutingThresholdCalibration,
+    certification: RoutingQualityDataset,
+    quality_verdict: Mapping[str, object],
     catalog_projection_sha256: str,
     calls: Mapping[str, object],
     code: Mapping[str, object],
@@ -537,9 +542,44 @@ def _activation_verdict(
         if not pack.human_approved or pack.review_status != "approved"
     )
     bindings = confidence_artifact.bindings
+    active_authority = bool(
+        confidence_artifact.mode == "active"
+        and confidence_artifact.owner_approved is True
+    )
     artifact_bound = bool(
         bindings.canary_suite_sha256 == dataset.suite_sha256
         and bindings.catalog_projection_sha256 == catalog_projection_sha256
+    )
+    calibration_receipt = confidence_artifact.calibration
+    calibration_bound = bool(
+        confidence_artifact.score_floor == threshold_calibration.score_floor
+        and confidence_artifact.margin_floor == threshold_calibration.margin_floor
+        and calibration_receipt is not None
+        and calibration_receipt.case_count
+        == threshold_calibration.calibration_case_count
+        and calibration_receipt.case_ids_sha256
+        == threshold_calibration.calibration_case_ids_sha256
+        and calibration_receipt.incorrect_high_confidence_singletons
+        == threshold_calibration.incorrect_high_confidence_singletons
+    )
+    certification_ids_sha256 = stable_hash(
+        [case.id for case in certification.cases]
+    )
+    quality_verdict_sha256 = _canonical_sha256(quality_verdict)
+    certification_bound = bool(
+        confidence_artifact.certification_passed is True
+        and confidence_artifact.certification_case_count == len(certification.cases)
+        and confidence_artifact.certification_case_ids_sha256
+        == certification_ids_sha256
+        and confidence_artifact.certification_verdict_sha256
+        == quality_verdict_sha256
+    )
+    receipts = confidence_artifact.receipts
+    evaluator_receipts_bound = bool(
+        receipts is not None
+        and receipts.evaluator_runner_sha256 == _file_sha256(Path(__file__))
+        and receipts.evaluator_scorer_sha256
+        == _file_sha256(Path(str(routing_quality_module.__file__)))
     )
     provider = calls["provider"]
     if not isinstance(provider, Mapping):
@@ -552,8 +592,8 @@ def _activation_verdict(
     )
     checks: dict[str, dict[str, object]] = {
         "route_quality_gates": {
-            "passed": quality_passed,
-            "observed": quality_passed,
+            "passed": quality_verdict.get("passed") is True,
+            "observed": quality_verdict.get("passed"),
             "required": True,
         },
         "canary_packs_owner_approved": {
@@ -579,6 +619,79 @@ def _activation_verdict(
             "required": {
                 "canary_suite_sha256": dataset.suite_sha256,
                 "catalog_projection_sha256": catalog_projection_sha256,
+            },
+        },
+        "confidence_threshold_calibration_receipt": {
+            "passed": not active_authority or calibration_bound,
+            "observed": {
+                "score_floor": confidence_artifact.score_floor,
+                "margin_floor": confidence_artifact.margin_floor,
+                "case_count": (
+                    calibration_receipt.case_count
+                    if calibration_receipt is not None
+                    else None
+                ),
+                "case_ids_sha256": (
+                    calibration_receipt.case_ids_sha256
+                    if calibration_receipt is not None
+                    else None
+                ),
+                "incorrect_high_confidence_singletons": (
+                    calibration_receipt.incorrect_high_confidence_singletons
+                    if calibration_receipt is not None
+                    else None
+                ),
+            },
+            "required": {
+                "score_floor": threshold_calibration.score_floor,
+                "margin_floor": threshold_calibration.margin_floor,
+                "case_count": threshold_calibration.calibration_case_count,
+                "case_ids_sha256": (
+                    threshold_calibration.calibration_case_ids_sha256
+                ),
+                "incorrect_high_confidence_singletons": (
+                    threshold_calibration.incorrect_high_confidence_singletons
+                ),
+            },
+        },
+        "confidence_certification_receipt": {
+            "passed": not active_authority or certification_bound,
+            "observed": {
+                "passed": confidence_artifact.certification_passed,
+                "case_count": confidence_artifact.certification_case_count,
+                "case_ids_sha256": (
+                    confidence_artifact.certification_case_ids_sha256
+                ),
+                "verdict_sha256": (
+                    confidence_artifact.certification_verdict_sha256
+                ),
+            },
+            "required": {
+                "passed": True,
+                "case_count": len(certification.cases),
+                "case_ids_sha256": certification_ids_sha256,
+                "verdict_sha256": quality_verdict_sha256,
+            },
+        },
+        "confidence_evaluator_source_receipts": {
+            "passed": not active_authority or evaluator_receipts_bound,
+            "observed": {
+                "runner_sha256": (
+                    receipts.evaluator_runner_sha256
+                    if receipts is not None
+                    else None
+                ),
+                "scorer_sha256": (
+                    receipts.evaluator_scorer_sha256
+                    if receipts is not None
+                    else None
+                ),
+            },
+            "required": {
+                "runner_sha256": _file_sha256(Path(__file__)),
+                "scorer_sha256": _file_sha256(
+                    Path(str(routing_quality_module.__file__))
+                ),
             },
         },
         "clean_source_checkout": {
@@ -652,6 +765,7 @@ def _provenance(
     collector_invocation: Sequence[str],
     code: Mapping[str, object],
 ) -> dict[str, object]:
+    package_dir = Path(str(routing_quality_module.__file__)).resolve().parent
     return {
         "origin": LIVE_COLLECTOR_PROVENANCE_MARKER,
         "collector_produced": True,
@@ -704,6 +818,9 @@ def _provenance(
                 Path(str(routing_quality_module.__file__))
             ),
             "artifact_sha256": _file_sha256(DEFAULT_ROUTING_CALIBRATION),
+            "routing_module_sha256": _file_sha256(package_dir / "routing.py"),
+            "cli_module_sha256": _file_sha256(package_dir / "cli.py"),
+            "evidence_module_sha256": _file_sha256(package_dir / "evidence.py"),
         },
     }
 
@@ -711,7 +828,7 @@ def _provenance(
 def _confidence_artifact_dict(
     value: RoutingConfidenceCalibration,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "schema_version": value.schema_version,
         "calibration_id": value.calibration_id,
         "calibration_revision": value.calibration_revision,
@@ -739,9 +856,47 @@ def _confidence_artifact_dict(
         "certification": {
             "passed": value.certification_passed,
             "case_count": value.certification_case_count,
+            "case_ids_sha256": value.certification_case_ids_sha256,
             "verdict_sha256": value.certification_verdict_sha256,
         },
     }
+    if value.calibration is not None:
+        payload["calibration"] = {
+            "case_count": value.calibration.case_count,
+            "case_ids_sha256": value.calibration.case_ids_sha256,
+            "incorrect_high_confidence_singletons": (
+                value.calibration.incorrect_high_confidence_singletons
+            ),
+        }
+    if value.receipts is not None:
+        payload["receipts"] = {
+            "authorization_report_sha256": (
+                value.receipts.authorization_report_sha256
+            ),
+            "authorization_source_commit": (
+                value.receipts.authorization_source_commit
+            ),
+            "authorization_source_tree": value.receipts.authorization_source_tree,
+            "certified_dormant_report_sha256": (
+                value.receipts.certified_dormant_report_sha256
+            ),
+            "certified_dormant_source_commit": (
+                value.receipts.certified_dormant_source_commit
+            ),
+            "certified_dormant_source_tree": (
+                value.receipts.certified_dormant_source_tree
+            ),
+            "certified_dormant_working_tree_clean": (
+                value.receipts.certified_dormant_working_tree_clean
+            ),
+            "evaluator_runner_sha256": value.receipts.evaluator_runner_sha256,
+            "evaluator_scorer_sha256": value.receipts.evaluator_scorer_sha256,
+            "routing_module_sha256": value.receipts.routing_module_sha256,
+            "cli_module_sha256": value.receipts.cli_module_sha256,
+            "evidence_module_sha256": value.receipts.evidence_module_sha256,
+            "collect_artifact_sha256": value.receipts.collect_artifact_sha256,
+        }
+    return payload
 
 
 def _candidate_observation_dict(
@@ -865,6 +1020,17 @@ def _git_code_identity() -> dict[str, object]:
 
 def _file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _canonical_sha256(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _elapsed_ms(started: float) -> float:

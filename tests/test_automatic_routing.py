@@ -3,9 +3,11 @@ from __future__ import annotations
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import replace
 from io import StringIO
+import hashlib
 import json
 import math
 import os
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -34,6 +36,27 @@ from buoy_search.routing import (
     prototype_route_scores,
     semantic_route,
 )
+from buoy_search import routing_quality as routing_quality_module
+from buoy_search.routing_quality import (
+    ROUTING_ACTIVE_CALIBRATION_CASE_COUNT,
+    ROUTING_ACTIVE_CALIBRATION_CASE_IDS_SHA256,
+    ROUTING_ACTIVE_CALIBRATION_REVISION,
+    ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION,
+    ROUTING_ACTIVE_CANARY_SUITE_SHA256,
+    ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
+    ROUTING_ACTIVE_CERTIFICATION_CASE_COUNT,
+    ROUTING_ACTIVE_CERTIFICATION_CASE_IDS_SHA256,
+    ROUTING_ACTIVE_MARGIN_FLOOR,
+    ROUTING_ACTIVE_QUALITY_VERDICT_SHA256,
+    ROUTING_ACTIVE_SCORE_FLOOR,
+    ROUTING_ACTIVATION_AUTHORIZATION_REPORT_SHA256,
+    ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_COMMIT,
+    ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_TREE,
+    ROUTING_COLLECT_ARTIFACT_SHA256,
+    RoutingActivationReceipts,
+    RoutingCalibrationReceipt,
+)
+from tests.routing_confidence_fixtures import load_collect_routing_confidence_fixture
 
 
 def unit_vector(index: int = 0) -> list[float]:
@@ -47,6 +70,61 @@ def cosine_vector(score: float) -> list[float]:
     vector[0] = score
     vector[1] = math.sqrt(1.0 - score * score)
     return vector
+
+
+def active_routing_calibration():  # noqa: ANN201 - focused fixture helper.
+    collect = load_collect_routing_confidence_fixture()
+    module_dir = Path(routing_quality_module.__file__).resolve().parent
+
+    def file_hash(name: str) -> str:
+        return hashlib.sha256((module_dir / name).read_bytes()).hexdigest()
+
+    return replace(
+        collect,
+        schema_version=ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION,
+        calibration_revision=ROUTING_ACTIVE_CALIBRATION_REVISION,
+        mode="active",
+        owner_approved=True,
+        score_floor=ROUTING_ACTIVE_SCORE_FLOOR,
+        margin_floor=ROUTING_ACTIVE_MARGIN_FLOOR,
+        bindings=replace(
+            collect.bindings,
+            canary_suite_sha256=ROUTING_ACTIVE_CANARY_SUITE_SHA256,
+            catalog_projection_sha256=(
+                ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256
+            ),
+        ),
+        calibration=RoutingCalibrationReceipt(
+            case_count=ROUTING_ACTIVE_CALIBRATION_CASE_COUNT,
+            case_ids_sha256=ROUTING_ACTIVE_CALIBRATION_CASE_IDS_SHA256,
+            incorrect_high_confidence_singletons=0,
+        ),
+        certification_passed=True,
+        certification_case_count=ROUTING_ACTIVE_CERTIFICATION_CASE_COUNT,
+        certification_case_ids_sha256=(
+            ROUTING_ACTIVE_CERTIFICATION_CASE_IDS_SHA256
+        ),
+        certification_verdict_sha256=ROUTING_ACTIVE_QUALITY_VERDICT_SHA256,
+        receipts=RoutingActivationReceipts(
+            authorization_report_sha256=(
+                ROUTING_ACTIVATION_AUTHORIZATION_REPORT_SHA256
+            ),
+            authorization_source_commit=(
+                ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_COMMIT
+            ),
+            authorization_source_tree=ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_TREE,
+            certified_dormant_report_sha256="ab" * 32,
+            certified_dormant_source_commit="bc" * 20,
+            certified_dormant_source_tree="cd" * 20,
+            certified_dormant_working_tree_clean=True,
+            evaluator_runner_sha256="de" * 32,
+            evaluator_scorer_sha256=file_hash("routing_quality.py"),
+            routing_module_sha256=file_hash("routing.py"),
+            cli_module_sha256=file_hash("cli.py"),
+            evidence_module_sha256=file_hash("evidence.py"),
+            collect_artifact_sha256=ROUTING_COLLECT_ARTIFACT_SHA256,
+        ),
+    )
 
 
 class FixedEmbedder:
@@ -289,6 +367,7 @@ class RoutingAlgorithmTests(unittest.TestCase):
         collect = prototype_route(
             "How can I inspect schema metadata?",
             cards,
+            calibration=load_collect_routing_confidence_fixture(),
             embedder=embedder,
             reranker_loader=lambda: reranker,
             route_top_k=3,
@@ -312,6 +391,151 @@ class RoutingAlgorithmTests(unittest.TestCase):
         self.assertEqual(
             collect.to_dict()["confidence_artifact"]["mode"], "collect"
         )
+
+    def test_active_prototype_route_applies_both_inclusive_floors(self) -> None:
+        cards = [make_card("alpha"), make_card("beta"), make_card("gamma")]
+        calibration = active_routing_calibration()
+        cases = (
+            (
+                "exact score floor",
+                [
+                    ROUTING_ACTIVE_SCORE_FLOOR,
+                    ROUTING_ACTIVE_SCORE_FLOOR
+                    - ROUTING_ACTIVE_MARGIN_FLOOR
+                    - 0.5,
+                    ROUTING_ACTIVE_SCORE_FLOOR - 3.0,
+                ],
+                True,
+            ),
+            (
+                "exact margin floor",
+                [0.0, -ROUTING_ACTIVE_MARGIN_FLOOR, -3.0],
+                True,
+            ),
+            (
+                "score below floor",
+                [
+                    ROUTING_ACTIVE_SCORE_FLOOR - 0.000001,
+                    ROUTING_ACTIVE_SCORE_FLOOR - 2.0,
+                    ROUTING_ACTIVE_SCORE_FLOOR - 3.0,
+                ],
+                False,
+            ),
+            (
+                "margin below floor",
+                [0.0, -ROUTING_ACTIVE_MARGIN_FLOOR + 0.000001, -3.0],
+                False,
+            ),
+        )
+        for label, scores, expected_confident in cases:
+            with self.subTest(label=label), patch(
+                "buoy_search.routing.validate_routing_confidence_catalog",
+                return_value=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
+            ):
+                selection = prototype_route(
+                    "descriptor-free routing question",
+                    cards,
+                    calibration=calibration,
+                    embedder=FixedEmbedder(),
+                    reranker_loader=lambda scores=scores: FixedReranker(scores),
+                    route_top_k=3,
+                )
+
+            self.assertEqual(selection.high_confidence, expected_confident)
+            self.assertEqual(
+                selection.selection_reason,
+                (
+                    "high_confidence_prototype"
+                    if expected_confident
+                    else "ambiguous_prototype"
+                ),
+            )
+            self.assertEqual(selection.initial_fanout, 1 if expected_confident else 3)
+            self.assertEqual(len(selection.selected_cards), 3)
+
+    def test_active_single_eligible_card_has_no_confidence_margin(self) -> None:
+        reranker = FixedReranker([0.0])
+        with patch(
+            "buoy_search.routing.validate_routing_confidence_catalog",
+            return_value=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
+        ):
+            selection = prototype_route(
+                "descriptor-free routing question",
+                [make_card("only")],
+                calibration=active_routing_calibration(),
+                embedder=FixedEmbedder(),
+                reranker_loader=lambda: reranker,
+                route_top_k=3,
+            )
+
+        self.assertFalse(selection.high_confidence)
+        self.assertIsNone(selection.reranker_margin)
+        self.assertEqual(selection.selection_reason, "ambiguous_prototype")
+        self.assertEqual(selection.initial_fanout, 1)
+
+    def test_active_prototype_output_is_truthful_and_content_free(self) -> None:
+        cards = [make_card("alpha"), make_card("beta"), make_card("gamma")]
+        with patch(
+            "buoy_search.routing.validate_routing_confidence_catalog",
+            return_value=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
+        ):
+            selection = prototype_route(
+                "descriptor-free routing question",
+                cards,
+                calibration=active_routing_calibration(),
+                embedder=FixedEmbedder(),
+                reranker_loader=lambda: FixedReranker([0.0, -2.0, -3.0]),
+                route_top_k=3,
+            )
+
+        payload = selection.to_dict()
+        self.assertTrue(payload["active"])
+        self.assertEqual(payload["selection_reason"], "high_confidence_prototype")
+        self.assertEqual(payload["confidence_score_floor"], ROUTING_ACTIVE_SCORE_FLOOR)
+        self.assertEqual(payload["confidence_margin_floor"], ROUTING_ACTIVE_MARGIN_FLOOR)
+        self.assertEqual(payload["confidence_artifact"]["mode"], "active")
+        self.assertTrue(payload["confidence_artifact"]["owner_approved"])
+        serialized = json.dumps(payload)
+        self.assertNotIn("routing_examples", serialized)
+        self.assertNotIn("routing_prototype_vector", serialized)
+
+    def test_invalid_active_calibration_stops_before_model_work(self) -> None:
+        embedder = FixedEmbedder()
+        invalid = replace(
+            active_routing_calibration(),
+            score_floor=ROUTING_ACTIVE_SCORE_FLOOR + 0.1,
+        )
+
+        with self.assertRaisesRegex(AutomaticRoutingError, "confidence artifact"):
+            prototype_route(
+                "descriptor-free routing question",
+                [make_card("alpha")],
+                calibration=invalid,
+                embedder=embedder,
+                reranker_loader=lambda: (_ for _ in ()).throw(
+                    AssertionError("reranker loaded")
+                ),
+                route_top_k=3,
+            )
+
+        self.assertEqual(embedder.calls, [])
+
+    def test_active_catalog_projection_drift_stops_before_model_work(self) -> None:
+        embedder = FixedEmbedder()
+
+        with self.assertRaisesRegex(AutomaticRoutingError, "eligible catalog"):
+            prototype_route(
+                "descriptor-free routing question",
+                [make_card("alpha")],
+                calibration=active_routing_calibration(),
+                embedder=embedder,
+                reranker_loader=lambda: (_ for _ in ()).throw(
+                    AssertionError("reranker loaded")
+                ),
+                route_top_k=3,
+            )
+
+        self.assertEqual(embedder.calls, [])
 
     def test_prototype_shortlist_is_exact_and_bounded_to_twelve(self) -> None:
         cards = [make_card(f"card-{index:02d}") for index in range(13)]
@@ -472,6 +696,7 @@ class RoutingAlgorithmTests(unittest.TestCase):
                 make_card("dagster", title="Dagster"),
                 make_card("other", title="Other"),
             ],
+            calibration=load_collect_routing_confidence_fixture(),
             embedder=embedder,
             reranker_loader=lambda: FailingReranker(),
             route_top_k=3,
@@ -482,16 +707,22 @@ class RoutingAlgorithmTests(unittest.TestCase):
         self.assertEqual(selection.selected_cards[0].namespace, "dagster")
 
     def test_named_prototype_route_does_not_construct_reranker(self) -> None:
-        selection = prototype_route(
-            "How does Dagster model assets?",
-            [make_card("dagster", title="Dagster"), make_card("other")],
-            embedder=FixedEmbedder(),
-            reranker_loader=lambda: (_ for _ in ()).throw(
-                AssertionError("named route constructed reranker")
-            ),
-            route_top_k=3,
-        )
+        with patch(
+            "buoy_search.routing.validate_routing_confidence_catalog",
+            return_value=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
+        ):
+            selection = prototype_route(
+                "How does Dagster model assets?",
+                [make_card("dagster", title="Dagster"), make_card("other")],
+                calibration=active_routing_calibration(),
+                embedder=FixedEmbedder(),
+                reranker_loader=lambda: (_ for _ in ()).throw(
+                    AssertionError("named route constructed reranker")
+                ),
+                route_top_k=3,
+            )
         self.assertEqual(selection.selection_reason, "unique_title_or_alias")
+        self.assertTrue(selection.to_dict()["active"])
 
     def test_prototype_reranker_failure_is_redacted(self) -> None:
         secret = "routing-prototype-secret"
@@ -520,6 +751,7 @@ class RoutingAlgorithmTests(unittest.TestCase):
             prototype_route(
                 "descriptor-free query",
                 [make_card("one")],
+                calibration=load_collect_routing_confidence_fixture(),
                 embedder=FixedEmbedder(),
                 reranker_loader=lambda: (_ for _ in ()).throw(
                     RuntimeError(f"Bearer {secret}")
@@ -557,6 +789,7 @@ class RoutingAlgorithmTests(unittest.TestCase):
         selection = prototype_route(
             "query",
             cards,
+            calibration=load_collect_routing_confidence_fixture(),
             embedder=FixedEmbedder(),
             reranker_loader=lambda: FixedReranker([2.0, 2.0, 2.0]),
             route_top_k=3,
@@ -606,6 +839,9 @@ class AutomaticRoutingCliTests(unittest.TestCase):
             "buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY", return_value=object()
         ), patch(
             "buoy_search.cli.read_remote_catalog", return_value=catalog_snapshot
+        ), patch(
+            "buoy_search.cli.ROUTING_CONFIDENCE_FACTORY",
+            return_value=load_collect_routing_confidence_fixture(),
         ), patch(
             "buoy_search.cli.ROUTING_EMBEDDER_FACTORY", return_value=FixedEmbedder()
         ):
@@ -672,6 +908,9 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         ), patch(
             "buoy_search.cli.read_remote_catalog", return_value=catalog_snapshot
         ), patch(
+            "buoy_search.cli.ROUTING_CONFIDENCE_FACTORY",
+            return_value=load_collect_routing_confidence_fixture(),
+        ), patch(
             "buoy_search.cli.ROUTING_EMBEDDER_FACTORY", return_value=FixedEmbedder()
         ), patch(
             "buoy_search.cli.MultiNamespaceRetriever.from_configs",
@@ -730,6 +969,9 @@ class AutomaticRoutingCliTests(unittest.TestCase):
             "buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY", return_value=object()
         ), patch(
             "buoy_search.cli.read_remote_catalog", return_value=catalog_snapshot
+        ), patch(
+            "buoy_search.cli.ROUTING_CONFIDENCE_FACTORY",
+            return_value=load_collect_routing_confidence_fixture(),
         ), patch(
             "buoy_search.cli.ROUTING_EMBEDDER_FACTORY", return_value=FixedEmbedder()
         ), patch(
@@ -848,6 +1090,9 @@ class AutomaticRoutingCliTests(unittest.TestCase):
             "buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY", return_value=object()
         ), patch(
             "buoy_search.cli.read_remote_catalog", return_value=catalog_snapshot
+        ), patch(
+            "buoy_search.cli.ROUTING_CONFIDENCE_FACTORY",
+            return_value=load_collect_routing_confidence_fixture(),
         ), patch(
             "buoy_search.cli.ROUTING_EMBEDDER_FACTORY", return_value=FixedEmbedder()
         ):
