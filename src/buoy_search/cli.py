@@ -86,7 +86,6 @@ from buoy_search.remote_catalog import (
     RemoteCatalogError,
     create_client as create_remote_catalog_client,
     read_remote_catalog,
-    require_complete_routing_coverage,
     require_eligible,
 )
 from buoy_search.retriever import (
@@ -117,7 +116,6 @@ from buoy_search.routing import (
 )
 from buoy_search.routing_quality import (
     load_routing_confidence_calibration,
-    validate_routing_confidence_catalog,
 )
 
 
@@ -1443,7 +1441,7 @@ def _run_apply(args: argparse.Namespace) -> int:
         cleanup_binding = binding
 
     def cleanup_committed_apply() -> list[str]:
-        """Consume an applied plan after content/state commit, including partial success."""
+        """Consume a plan only after content, state, and catalog all succeed."""
 
         if cleanup_binding is None:
             return [
@@ -1472,13 +1470,17 @@ def _run_apply(args: argparse.Namespace) -> int:
         )
     except CatalogRegistrationPartialSuccess as exc:
         progress.finish()
-        cleanup_warnings = cleanup_committed_apply()
-        for warning in cleanup_warnings:
-            print(f"Warning: {warning}", file=sys.stderr)
+        # The reviewed routing-passage bank lives in the verified plan. Keep
+        # that exact authority when post-content registration fails instead of
+        # deleting the only source-independent repair input.
+        partial_summary = {
+            **exc.summary,
+            "plan_retained_for_catalog_repair": True,
+        }
         if args.json:
-            _print_json(exc.summary)
+            _print_json(partial_summary)
         else:
-            print_apply_text(exc.summary)
+            print_apply_text(partial_summary)
             print(str(exc), file=sys.stderr)
         return 2
     except (RuntimeError, AppliedStateError, OSError, ValueError) as exc:
@@ -1578,13 +1580,7 @@ def _run_retrieve(args: argparse.Namespace) -> int:
             region=base_config.region,
             compatibility=compatibility,
         )
-        snapshot = require_complete_routing_coverage(snapshot)
         snapshot = require_eligible(snapshot)
-        if routing_confidence.mode == "active":
-            validate_routing_confidence_catalog(
-                routing_confidence,
-                snapshot.eligible_cards,
-            )
         try:
             with suppress_model_progress_bars():
                 route_embedder = ROUTING_EMBEDDER_FACTORY()
@@ -1998,6 +1994,11 @@ def print_apply_text(payload: dict[str, object], *, stream: TextIO | None = None
         f"generated={payload['embeddings_generated']}"
     )
     emit(
+        "  routing passages: "
+        f"reviewed={payload.get('routing_prototypes_reviewed', 0)}; "
+        f"strategy={payload.get('routing_prototype_strategy', 'none')}"
+    )
+    emit(
         f"  stale_rows: current={payload['stale_rows']}; "
         f"already_retained={payload['retained_stale_rows']}; "
         f"deleted={payload['rows_deleted']}"
@@ -2014,6 +2015,7 @@ def print_apply_text(payload: dict[str, object], *, stream: TextIO | None = None
             f"elapsed={timing['elapsed_seconds']:.1f}s; "
             f"embedding={timing['embedding_seconds']:.1f}s; "
             f"write={timing['write_seconds']:.1f}s; "
+            f"routing_registration={timing.get('catalog_registration_seconds', 0.0):.1f}s; "
             f"embedding_batch_size={timing['embedding_batch_size']}; "
             f"write_batch_size={timing['write_batch_size']}; "
             f"precision={timing['embedding_precision']}; "
@@ -2031,8 +2033,15 @@ def print_apply_text(payload: dict[str, object], *, stream: TextIO | None = None
                 f"{payload.get('catalog_mutation_status')} in {payload.get('catalog_namespace')}; "
                 f"enabled={payload.get('catalog_enabled_state')}"
             )
+            emit(
+                "  automatic retrieval: "
+                f"ready={payload.get('automatic_retrieval_ready')}; "
+                f"status={payload.get('automatic_routing_status')}"
+            )
         elif payload.get("partial_success"):
             emit("  routing catalog: registration failed after content/state commit")
+            if payload.get("plan_retained_for_catalog_repair"):
+                emit("  routing catalog: reviewed plan retained for repair")
             if payload.get("catalog_repair_command"):
                 emit(f"  routing catalog repair: {payload['catalog_repair_command']}")
         else:

@@ -15,7 +15,12 @@ from buoy_search.cli import OneLineProgress, build_parser, main, print_eval_text
 from buoy_search.crawler import CrawlExecution, CrawlOptions, parse_github_repo_url
 from buoy_search.chunker import process_corpus
 from buoy_search.github_repo import GitHubRepoAcquisition, GitHubRepoMetadata, GitTreeEntry
-from buoy_search.plan_artifacts import build_plan_artifacts, verify_plan_artifacts, write_plan_artifacts
+from buoy_search.plan_artifacts import (
+    PLAN_SCHEMA_VERSION,
+    build_plan_artifacts,
+    verify_plan_artifacts,
+    write_plan_artifacts,
+)
 
 
 def file_snapshot(path: Path) -> tuple[int, int, int, int, bytes]:
@@ -1251,7 +1256,7 @@ class CliTests(unittest.TestCase):
         crawl_mock.assert_called_once()
         process_mock.assert_called_once()
 
-    def test_plan_command_text_output_succeeds_without_schema_v2_state_path(self) -> None:
+    def test_plan_command_text_output_succeeds_without_state_path(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
@@ -1279,7 +1284,7 @@ class CliTests(unittest.TestCase):
 
         plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
         self.assertEqual(result, 0)
-        self.assertEqual(plan["schema_version"], 2)
+        self.assertEqual(plan["schema_version"], PLAN_SCHEMA_VERSION)
         self.assertNotIn("state_path", plan)
         self.assertIn(f"  plan_path: {out_dir / 'plan.json'}", stdout.getvalue())
         self.assertNotIn("state_path:", stdout.getvalue())

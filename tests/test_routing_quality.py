@@ -26,11 +26,15 @@ from buoy_search.routing_quality import (
     ROUTING_ACTIVE_MARGIN_FLOOR,
     ROUTING_ACTIVE_QUALITY_VERDICT_SHA256,
     ROUTING_ACTIVE_SCORE_FLOOR,
+    ROUTING_ACTIVE_ANCHOR_NAMESPACES,
+    ROUTING_ANCHORED_CALIBRATION_REVISION,
+    ROUTING_ANCHORED_CALIBRATION_SCHEMA_VERSION,
     ROUTING_ACTIVATION_AUTHORIZATION_REPORT_SHA256,
     ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_COMMIT,
     ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_TREE,
     ROUTING_CALIBRATION_ID,
     ROUTING_CALIBRATION_SCHEMA_VERSION,
+    ROUTING_CATALOG_POLICY,
     ROUTING_COLLECT_ARTIFACT_SHA256,
     ROUTING_CONFIDENCE_FEATURE_CONTRACT,
     ROUTING_CONFIDENCE_MARGIN_FIELD,
@@ -41,6 +45,7 @@ from buoy_search.routing_quality import (
     ROUTING_SCHEMA_CONTRACT,
     ROUTING_SHORTLIST_LIMIT,
     RoutingCaseObservation,
+    RoutingConfidenceCatalogState,
     RoutingCorpusObservation,
     RoutingQualityDataset,
     RoutingQualityMetrics,
@@ -56,10 +61,12 @@ from buoy_search.routing_quality import (
     routing_catalog_projection_sha256,
     routing_example_passage,
     routing_prototype_hash,
+    routing_source_passage,
     score_routing_quality,
     score_route_selection_quality,
     validate_canary_catalog_contract,
     validate_routing_confidence_calibration,
+    validate_routing_confidence_catalog,
 )
 from buoy_search.multi_corpus_evals import load_multi_corpus_eval_dataset
 from tests.routing_confidence_fixtures import (
@@ -144,6 +151,7 @@ def make_card(
     updated_at: str = "2026-08-15T00:00:00+00:00",
     ranking_pool: int = 20,
     prototype_vector_hash: str | None = None,
+    passages: tuple[str, ...] = (),
 ) -> SimpleNamespace:
     return SimpleNamespace(
         namespace=namespace,
@@ -153,6 +161,7 @@ def make_card(
         aliases=[],
         tags=["knowledge"],
         routing_examples=list(examples),
+        routing_passages=list(passages),
         semantic_hash=f"semantic-{namespace}",
         vector_hash=f"vector-{namespace}",
         routing_prototype_hash=f"prototype-{namespace}-{len(examples)}",
@@ -292,6 +301,22 @@ def active_calibration_payload() -> dict[str, object]:
             "collect_artifact_sha256": ROUTING_COLLECT_ARTIFACT_SHA256,
         },
     }
+
+
+def anchored_calibration_payload() -> dict[str, object]:
+    payload = active_calibration_payload()
+    payload["schema_version"] = ROUTING_ANCHORED_CALIBRATION_SCHEMA_VERSION
+    payload["calibration_revision"] = ROUTING_ANCHORED_CALIBRATION_REVISION
+    payload["bindings"].update(
+        {
+            "certified_namespaces": list(ROUTING_ACTIVE_ANCHOR_NAMESPACES),
+            "certified_catalog_projection_sha256": (
+                ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256
+            ),
+            "catalog_policy": ROUTING_CATALOG_POLICY,
+        }
+    )
+    return payload
 
 
 def certification_inputs(
@@ -555,6 +580,67 @@ class RoutingCatalogProjectionTests(unittest.TestCase):
         )
         self.assertEqual(len(routing_prototype_hash(passage)), 64)
 
+    def test_source_passages_bind_projection_without_changing_empty_legacy_bytes(
+        self,
+    ) -> None:
+        legacy = make_card(ALPHA_NAMESPACE)
+        without_field = SimpleNamespace(**vars(legacy))
+        del without_field.routing_passages
+        generated = make_card(
+            ALPHA_NAMESPACE,
+            passages=(
+                "Section: Reconciliation\n"
+                "Orbital inventory is reconciled after the warehouse load.",
+            ),
+        )
+
+        self.assertEqual(
+            routing_catalog_projection_sha256([legacy]),
+            routing_catalog_projection_sha256([without_field]),
+        )
+        self.assertNotEqual(
+            routing_catalog_projection_sha256([legacy]),
+            routing_catalog_projection_sha256([generated]),
+        )
+        source = routing_source_passage(
+            title=generated.title,
+            summary=generated.summary,
+            passage=generated.routing_passages[0],
+        )
+        self.assertEqual(len(routing_prototype_hash(source)), 64)
+
+    def test_individual_evidence_vector_hash_binds_shortlist_authority(self) -> None:
+        original = make_card(ALPHA_NAMESPACE)
+        original.routing_evidence_vectors = [1.0]
+        original.routing_evidence_vectors_hash = "a" * 64
+        changed = SimpleNamespace(**vars(original))
+        changed.routing_evidence_vectors_hash = "b" * 64
+
+        self.assertNotEqual(
+            routing_catalog_projection_sha256([original]),
+            routing_catalog_projection_sha256([changed]),
+        )
+
+        stale = SimpleNamespace(**vars(original))
+        stale.routing_evidence_vectors = []
+        with self.assertRaisesRegex(ValueError, "hash without vectors"):
+            routing_catalog_projection_sha256([stale])
+
+    def test_source_passage_projection_rejects_malformed_or_over_budget_cards(
+        self,
+    ) -> None:
+        malformed = make_card(ALPHA_NAMESPACE, passages=(" padded ",))
+        with self.assertRaisesRegex(ValueError, "routing_passages"):
+            routing_catalog_projection_sha256([malformed])
+
+        over_budget = make_card(
+            ALPHA_NAMESPACE,
+            examples=tuple(f"Manual {index}" for index in range(8)),
+            passages=("Section: Extra\nGenerated evidence.",),
+        )
+        with self.assertRaisesRegex(ValueError, "more than 8"):
+            routing_catalog_projection_sha256([over_budget])
+
     def test_catalog_contract_requires_approved_coverage_and_exact_disjointness(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             directory = Path(temp_dir)
@@ -611,6 +697,27 @@ class RoutingThresholdCalibrationTests(unittest.TestCase):
         self.assertEqual(first.calibration_case_count, 2)
         self.assertEqual(first.correct_high_confidence_singletons, 2)
         self.assertEqual(first.incorrect_high_confidence_singletons, 0)
+
+    def test_source_passage_winners_are_valid_quality_observations(self) -> None:
+        observations = perfect_observations(self.dataset)
+        case = self.dataset.cases[0]
+        observation = observations[case.id]
+        first = observation.corpus_scores[0]
+        observations[case.id] = replace(
+            observation,
+            corpus_scores=(
+                replace(
+                    first,
+                    winning_prototype_kind="source",
+                    winning_prototype_index=0,
+                ),
+                *observation.corpus_scores[1:],
+            ),
+        )
+
+        metrics = score_routing_quality(self.dataset, observations)
+
+        self.assertIn(case.id, metrics.cases_by_id)
 
     def test_unsafe_top_case_is_excluded_by_next_breakpoint_margin(self) -> None:
         observations = perfect_observations(self.dataset)
@@ -934,6 +1041,14 @@ class RoutingConfidenceCalibrationLoaderTests(unittest.TestCase):
         ):
             return load_routing_confidence_calibration()
 
+    def load_anchored_calibration(self):  # noqa: ANN201 - focused test helper.
+        temporary, path = self.write_payload(anchored_calibration_payload())
+        self.addCleanup(temporary.cleanup)
+        with patch.object(
+            routing_quality_module, "DEFAULT_ROUTING_CALIBRATION", path
+        ):
+            return load_routing_confidence_calibration()
+
     def test_default_path_and_exact_collect_artifact_are_inactive(self) -> None:
         self.assertEqual(
             DEFAULT_ROUTING_CALIBRATION.name,
@@ -1025,6 +1140,84 @@ class RoutingConfidenceCalibrationLoaderTests(unittest.TestCase):
         )
         self.assertIsNotNone(calibration.calibration)
         self.assertIsNotNone(calibration.receipts)
+
+    def test_schema_v3_artifact_carries_the_exact_certified_anchor(self) -> None:
+        calibration = self.load_anchored_calibration()
+
+        self.assertEqual(
+            calibration.schema_version,
+            ROUTING_ANCHORED_CALIBRATION_SCHEMA_VERSION,
+        )
+        self.assertEqual(
+            calibration.bindings.certified_namespaces,
+            tuple(ROUTING_ACTIVE_ANCHOR_NAMESPACES),
+        )
+        self.assertEqual(
+            calibration.bindings.certified_catalog_projection_sha256,
+            ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
+        )
+        self.assertEqual(calibration.bindings.catalog_policy, ROUTING_CATALOG_POLICY)
+
+    def test_schema_v3_classifies_exact_anchor_and_every_valid_drift(self) -> None:
+        calibration = self.load_anchored_calibration()
+        anchor_cards = [
+            SimpleNamespace(namespace=namespace)
+            for namespace in ROUTING_ACTIVE_ANCHOR_NAMESPACES
+        ]
+        with patch.object(
+            routing_quality_module,
+            "routing_catalog_projection_sha256",
+            return_value=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
+        ):
+            exact = validate_routing_confidence_catalog(calibration, anchor_cards)
+
+        self.assertIsInstance(exact, RoutingConfidenceCatalogState)
+        self.assertEqual(exact.mode, "certified")
+        self.assertEqual(exact.provisional_namespaces, ())
+
+        drift_cases = {
+            "added": [*anchor_cards, SimpleNamespace(namespace="site-new-example-v1")],
+            "missing": anchor_cards[:-1],
+            "changed projection": anchor_cards,
+        }
+        for label, cards in drift_cases.items():
+            with self.subTest(label=label), patch.object(
+                routing_quality_module,
+                "routing_catalog_projection_sha256",
+                return_value="11" * 32,
+            ):
+                state = validate_routing_confidence_catalog(calibration, cards)
+
+            self.assertEqual(state.mode, "provisional")
+            self.assertEqual(
+                state.provisional_namespaces,
+                tuple(sorted(card.namespace for card in cards)),
+            )
+
+    def test_schema_v2_retains_strict_whole_catalog_drift_failure(self) -> None:
+        calibration = self.load_active_calibration()
+        with patch.object(
+            routing_quality_module,
+            "routing_catalog_projection_sha256",
+            return_value="11" * 32,
+        ), self.assertRaisesRegex(ValueError, "does not match"):
+            validate_routing_confidence_catalog(
+                calibration,
+                [SimpleNamespace(namespace="site-new-example-v1")],
+            )
+
+    def test_schema_v3_rejects_mutated_anchor_authority(self) -> None:
+        payload = anchored_calibration_payload()
+        payload["bindings"]["certified_namespaces"] = [
+            *ROUTING_ACTIVE_ANCHOR_NAMESPACES,
+            "site-new-example-v1",
+        ]
+        temporary, path = self.write_payload(payload)
+        self.addCleanup(temporary.cleanup)
+        with patch.object(
+            routing_quality_module, "DEFAULT_ROUTING_CALIBRATION", path
+        ), self.assertRaisesRegex(ValueError, "certified_namespaces"):
+            load_routing_confidence_calibration()
 
     def test_explicit_collect_authority_is_independent_of_default_active_phase(
         self,

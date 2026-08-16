@@ -1,4 +1,4 @@
-"""Race-safe local lifecycle cleanup for fully verified schema-v2 plans."""
+"""Race-safe local lifecycle cleanup for fully verified schema-v3 plans."""
 
 from __future__ import annotations
 
@@ -117,7 +117,7 @@ def _directory_identity(path: Path) -> tuple[int, int] | None:
 
 
 def _verified_plan_identity(plan_dir: Path) -> _VerifiedPlanIdentity | None:
-    """Fully verify a schema-v2 plan and bind it to its no-follow directory."""
+    """Fully verify a schema-v3 plan and bind it to its no-follow directory."""
 
     before = _directory_identity(plan_dir)
     if before is None:

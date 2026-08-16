@@ -120,9 +120,19 @@ class PlanningServiceTests(unittest.TestCase):
             )
 
             self.assertEqual(result.summary["namespace"], "docs-explicit-v1")
+            self.assertEqual(result.summary["routing_prototypes"]["count"], 1)
+            self.assertEqual(len(result.summary["routing_prototype_review"]), 1)
+            self.assertIn(
+                "Shared planning service content.",
+                result.summary["routing_prototype_review"][0]["passage_text"],
+            )
             self.assertEqual({path.name for path in out_dir.iterdir()}, {"plan.json", "delta.duckdb"})
             verified = verify_plan_artifacts(out_dir / "plan.json")
             self.assertEqual(verified.plan["namespace"], "docs-explicit-v1")
+            self.assertEqual(
+                verified.routing_prototypes,
+                result.artifacts.routing_prototypes,
+            )
             self.assertEqual(events[-1].stage, "complete")
 
     def test_progress_stage_and_message_are_sanitized_and_bounded(self) -> None:
