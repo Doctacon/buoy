@@ -192,14 +192,22 @@ V1 excludes arbitrary user SQL, Buoy-configured joins, multiple input relations 
 
 ## Plan artifacts
 
-A successful schema-v2 plan directory contains exactly:
+A successful schema-v3 plan directory contains exactly:
 
 ```text
 plan.json
 delta.duckdb
 ```
 
-`plan.json` is bounded metadata: source and namespace identity, options, diff counts, the applied-state baseline hash, delta counts, and artifact identity. `delta.duckdb` contains only exact changed/new/reactivated rows and stale identities. Unchanged content and source staging are not retained. Legacy schema-v1 directories remain inert: current discovery ignores them, explicit apply rejects them, and Buoy does not automatically delete them.
+`plan.json` is bounded metadata: source and namespace identity, options, diff
+counts, the applied-state baseline hash, routing-passage counts, delta counts,
+and artifact identity. `delta.duckdb` contains exact
+changed/new/reactivated rows, stale identities, and at most eight representative
+routing passages selected deterministically from the complete desired corpus.
+Those passages are real source excerpts with provenance, not LLM-generated
+questions. The rest of unchanged content and all source staging are not
+retained. Older plan schemas remain inert: current discovery ignores them,
+explicit apply rejects them, and Buoy does not automatically delete them.
 
 Interactive `plan` and `crawl` commands show one-line stderr progress. `--json`, non-TTY stderr, and `--no-progress` suppress it.
 
@@ -246,14 +254,14 @@ uv run buoy apply --dry-run
 
 By default, apply selects the newest plan under `artifacts/site-crawls/`. Use `--plan <path>` when multiple plans exist. Plain apply requires an interactive stdin; scripts must choose `--dry-run` or `--approve`, and piped input cannot confirm.
 
-Preflight fully verifies the schema-v2 metadata and delta, row identities,
-embedding-text hashes, artifact integrity, and exact applied-state baseline. If
-applied state changed after planning, apply fails with replanning guidance
-before credentials, models, provider calls, or writes. Its text identifies the
-selected plan path and source, artifact hash, namespace and region, verified
-embedding model and precision, first-apply state,
-upsert/embedding/unchanged/stale counts, and an explicit `retain N` or `delete
-N` stale-row intent.
+Preflight fully verifies the schema-v3 metadata and delta, row identities,
+embedding-text hashes, routing-passage text and provenance, artifact integrity,
+and exact applied-state baseline. If applied state changed after planning,
+apply fails with replanning guidance before credentials, models, provider
+calls, or writes. Its text identifies the selected plan path and source,
+artifact hash, namespace and region, verified embedding model and precision,
+first-apply state, routing-passage count, upsert/embedding/unchanged/stale
+counts, and an explicit `retain N` or `delete N` stale-row intent.
 
 Use `--region REGION` to override `TURBOPUFFER_REGION` and bind that region into
 the retrieval handoff and approved apply receipt.
@@ -290,9 +298,9 @@ Approved apply acquires a fail-fast lock for the target namespace before
 credential lookup or remote work, reverifies the plan and exact baseline under
 that lock, overlaps one local content-embedding batch with one ordered remote
 upsert, performs only explicitly requested exact-ID stale deletion, and commits
-local applied state only after content work succeeds. It then creates or
-refreshes exactly that namespace's card in `buoy-routing-catalog-v1`. It does
-not alter any other content namespace.
+local applied state only after content work succeeds. It then attempts to
+create or refresh exactly that namespace's card in
+`buoy-routing-catalog-v1`. It does not alter any other content namespace.
 
 The card records source, embedding, ranking, lineage, and a pinned routing
 projection. When a manual card already exists, approved apply preserves its
@@ -304,10 +312,24 @@ remote catalog, loading the route model, or making a provider request.
 Catalog registration occurs after content and local state are durable. If it
 fails, the command exits with explicit `partial_success`: indexed content and
 local applied state remain committed and are not rolled back, while the summary
-includes a reviewed catalog repair command. Do not assume automatic retrieval
-can see the new corpus. Inspect the failure, then use the emitted catalog
-operation or create a fresh plan and repeat the reviewed apply. Buoy has no
-automatic background retry or pending reconciliation daemon.
+includes a reviewed catalog repair command. The exact remote catalog schema v3
+is a one-time reader-first prerequisite: provision a missing catalog or migrate
+an existing v1/v2 catalog separately before applying schema-v3 plans. Ordinary
+apply, including a first apply, never creates or migrates the catalog schema.
+If the catalog is absent or not exact v3, apply performs no schema or card
+write, reports post-content partial success, and retains the exact plan for the
+emitted `catalog repair-apply --inspect-current` command. Do not use ordinary
+`apply` to replay that baseline-stale plan. Complete the prerequisite or resolve
+the catalog read failure, then run the emitted inspection. It reacquires the
+namespace lock, revalidates the retained plan against the committed plan/apply
+IDs, strongly reads exact-v3 catalog state, and prints a follow-up bound to
+either observed card absence or its exact revision. Inspection loads no model,
+writes nothing, and retains the plan. Review and run that bound command to
+repair. Only after successful card verification may it clean the plan; cleanup
+failure warns and retains the artifact without changing registration success.
+When apply already observed exact-v3 card state before a later failure, its
+original partial-success output may contain the bound repair command directly.
+Buoy has no automatic background retry or pending reconciliation daemon.
 
 It never runs concurrent embeddings or concurrent writes. Interactive runs show confirmed batches/rows on one stderr line; the final summary separates elapsed, embedding, and write time, whose stage totals may exceed wall time because they overlap. Tune the two independent batch controls only after measuring the workload:
 
@@ -339,13 +361,13 @@ It stores current row identity/status plus compact apply summaries, not full sna
 
 A same-namespace approved apply fails fast if another apply holds its lock. Different namespaces have independent ledgers and may apply concurrently. State is local to this machine; it is not a shared service.
 
-Preflighted and content-failed plans remain available. Once content and local
-state commit, apply removes the consumed plan directory even when the later
-routing-card registration reports partial success: the old plan is no longer
-valid against the committed baseline. The partial-success receipt retains the
-repair command and exact identities needed for diagnosis. A newly written
-verified plan removes older sibling plans for the same namespace. Copy a plan
-elsewhere before approval if it must be retained for audit.
+Preflighted and failed plans remain available. Apply removes its exact plan
+directory only after content, local state, and routing-card registration all
+succeed. A post-content catalog partial retains that plan as the bounded
+authority for the emitted repair command, even though its applied-state
+baseline is no longer valid for ordinary `apply`. A newly written verified
+plan removes older fully verified sibling plans for the same namespace. Copy a
+plan elsewhere before approval if it must be retained for long-term audit.
 
 Remote upserts and exact-ID deletes are deterministic. If remote content work
 succeeds but the local state commit fails, retain the unchanged baseline-bound
@@ -386,17 +408,31 @@ contract; see `buoy catalog upsert --help`. It also previews unless
 write, delete, enable, disable, or otherwise mutate the target content
 namespace. Disabled cards remain catalog coverage but are not eligible for
 automatic routes; stale cards are reported and never deleted automatically.
+The system-owned routing-passage bank cannot be set, cleared, or replaced by
+generic `catalog upsert`; an existing bank is preserved. Only approved apply,
+retained-plan repair, or a separately governed migration/backfill may change
+those passages.
 
-Schema-v2 and reviewed-example maintenance use narrower revision-bound
+Schema migrations and reviewed-example maintenance use narrower revision-bound
 operators. Deploy the compatible v1/v2 reader first, preview
 `buoy catalog migrate-routing-v2 --json`, and approve only with that preview's
-exact snapshot and projection hashes. Then preview
+exact snapshot and projection hashes. Deploy the v3-capable reader before
+previewing and approving `buoy catalog migrate-routing-v3 --json`. Provisioning
+a missing catalog is likewise a separately reviewed reader-first operation;
+ordinary apply never substitutes for either prerequisite. Then preview
 `buoy catalog set-routing-examples NAMESPACE --routing-example QUESTION --json`
 and approve only with its exact card revision. See
 [`retrieval.md`](retrieval.md#reader-first-schema-and-reviewed-examples) for the
 full review sequence and safety accounting. These catalog-only operations do
 not write indexed content or activate candidate routing, and normal future
 applies preserve the reviewed questions.
+
+Schema-v3 routing cards contain bounded, verbatim-derived source excerpts in
+their routing-passage fields. Buoy redacts those passages and their vectors from
+normal catalog and routing output, but a principal authorized to query raw
+provider rows in the catalog namespace can read the excerpts. Treat catalog
+credentials and raw-row read access as source-content access, not as
+metadata-only access.
 
 ## Stale rows
 

@@ -28,9 +28,11 @@ If this skill is installed globally by symlink, resolve the symlink target to fi
 
 Do not print, persist, or copy the key. `TURBOPUFFER_REGION`,
 `BUOY_EMBEDDING_MODEL`, and `BUOY_EMBEDDING_PRECISION` remain optional
-non-secret environment overrides. Retrieval and evals require exactly one
-explicit CLI `--namespace`; `TURBOPUFFER_NAMESPACE` is not routing authority.
-Apply uses the namespace and precision recorded in its reviewed plan.
+non-secret environment overrides. Retrieval accepts either no namespace for
+automatic catalog routing or one to three repeated CLI `--namespace` values for
+a deterministic bypass. Evals require one explicit namespace.
+`TURBOPUFFER_NAMESPACE` is not routing authority. Apply uses the namespace and
+precision recorded in its reviewed plan.
 
 ## Compact applied state
 
@@ -51,6 +53,14 @@ Existing projects with only `.turbo-search` use that root in place with a warnin
 
 - Do **not** persist API keys, Proton Pass output, tokens, private vault names, private item titles, or share IDs to disk.
 - Do **not** run live turbopuffer writes, namespace deletion, namespace replacement, or live evals unless the user explicitly approves that action in the current conversation.
+- Before a live schema-v3 apply, verify that the fixed remote routing catalog
+  already exists at exact schema v3. Provisioning a missing catalog and
+  migrating v1/v2 are separately reviewed reader-first operations; ordinary
+  apply, including first apply, never performs them.
+- Routing cards persist bounded source excerpts. Normal Buoy output redacts
+  them, but credentials able to query raw catalog provider rows can read them;
+  treat catalog access as source-content access rather than metadata-only
+  access.
 - Default crawl/plan/apply-preflight commands to dry-run with respect to turbopuffer; crawling a public source may still use the network.
 - Use open-source/local components where practical:
   - local embeddings: `BAAI/bge-small-en-v1.5`
@@ -68,10 +78,25 @@ The polished workflow is Terraform-like:
 1. `buoy plan`: turbopuffer-local preview. It may fetch the public source, then extracts Markdown, chunks, compares with local applied state, and writes review artifacts. It does not read turbopuffer credentials, load embeddings, create namespaces, or call turbopuffer. Interactive text-mode runs show default one-line stderr progress; use `--no-progress` to disable it. Versioned docs sites stop before page crawling by default with `--docs-version-policy warn`; use `latest`, `stable-latest`, `latest-nightly`, or `all` to make the policy explicit.
 2. `buoy apply --dry-run`: prompt-free local preflight. Re-read the saved plan, verify artifacts, recompute the local diff, and report what would happen. No credentials, embeddings, or turbopuffer calls.
 3. Plain interactive `buoy apply`: display that complete preflight and prompt `Apply this plan? [y/N]`; only exact `y`/`yes` enters the approved path. Enter, no, arbitrary input, EOF, or prompt failure cancels without writes. Plain non-interactive apply is rejected.
-4. `buoy apply --approve`: prompt-free automation path. Require `TURBOPUFFER_API_KEY` in the environment, embed/upsert only new or changed chunks using the plan-recorded precision, and update local applied state after success. Float16 is opt-in at plan time and requires CUDA or Apple MPS.
+4. `buoy apply --approve`: prompt-free automation path. Require `TURBOPUFFER_API_KEY` in the environment, embed/upsert only new or changed chunks using the plan-recorded precision, update local applied state after content success, and register the routing card only against an existing exact-v3 catalog. Float16 is opt-in at plan time and requires CUDA or Apple MPS.
 5. `--delete-stale`: extra delete guardrail. Stale rows are retained by default; live stale deletion requires interactive confirmation or both `--approve` and `--delete-stale`.
 
-Plan artifacts are Markdown/JSON-first: `plan.json`, `summary.json`, `manifest.json`, `chunks.jsonl`, and `pages/*.md`. Pending, failed, and preflight plans remain for review/retry; successful approved apply removes its exact plan directory, and a new verified plan removes older same-namespace sibling plans. Copy artifacts elsewhere before approved apply when long-term audit/source retention is needed. Local applied state lives under `.buoy/state/.../state.duckdb` and is gitignored.
+Successful schema-v3 plan output contains exactly `plan.json` and
+`delta.duckdb`; source staging is removed. Review `routing_prototype_review` in
+`plan --json` and the bounded `routing_prototypes` table in the delta. Pending,
+failed, and preflight plans remain. A post-content catalog partial also retains
+the exact plan. When missing, old, or unreadable catalog state prevented a safe
+card binding, run its emitted `catalog repair-apply --inspect-current` only
+after prerequisite recovery. Inspection reacquires the namespace lock,
+revalidates the committed plan/apply authority, strongly reads exact-v3 state,
+and emits an absence- or revision-bound repair command. It loads no model,
+writes nothing, and retains the plan. Review and run the bound command; do not
+replay ordinary `apply` after the state baseline changes. Only a fully
+successful content, state, and card registration removes its exact plan
+directory. A new verified plan removes older fully verified same-namespace
+siblings. Copy artifacts elsewhere before approved apply when long-term audit
+retention is needed. Local applied state lives under
+`.buoy/state/.../state.duckdb` and is gitignored.
 
 See [Scrapling site workflow](references/scrapling-site-workflow.md) for commands and design notes.
 
@@ -94,7 +119,10 @@ This command must report `dry_run: true` and `turbopuffer_api_calls: false`.
 
 Only proceed if the user explicitly asks for a live generic site apply.
 
-1. Run `buoy plan` first and inspect `summary.json`, `plan.json`, `manifest.json`, `chunks.jsonl`, and generated `pages/*.md`. Use `--include-path` / `--exclude-path` before apply when the crawl contains duplicate or unwanted paths such as `/llms-full.txt`.
+1. Run `buoy plan` first and inspect `plan.json`, `delta.duckdb`, and the
+   `routing_prototype_review` in JSON output. Use `--include-path` /
+   `--exclude-path` before apply when the crawl contains duplicate or unwanted
+   paths such as `/llms-full.txt`.
 2. Run apply preflight without approval:
 
 ```bash
@@ -103,7 +131,10 @@ uv run buoy apply --dry-run
 
 `apply` defaults to the newest `artifacts/site-crawls/**/plan.json` and the namespace recorded in that plan. Use `--json --dry-run` for scripted preflight or `--approve` for separately authorized automation; plain apply requires an interactive stdin. Use `--plan` or `--namespace` only when overriding those defaults.
 
-3. Confirm the namespace, rows to upsert, embeddings to generate, stale row counts, and whether stale deletion is desired. Default: retain stale rows; never delete namespaces here.
+3. Confirm the namespace, rows to upsert, embeddings to generate, routing
+   passages, stale row counts, and whether stale deletion is desired. Verify the
+   fixed catalog exists at exact remote schema v3. Default: retain stale rows;
+   never delete namespaces here.
 4. When the repository `.env` is the approved credential source, load it only in the command subshell; the CLI reads the resulting process environment and never prints or stores the key:
 
 ```bash

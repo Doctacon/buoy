@@ -30,14 +30,16 @@ ranking contracts, write counts, retrieval commands, and routing-card
 registration status. Kite may consume that receipt; Buoy does not import Kite
 or write Kite evidence, ontology, policy, or job state.
 
-Buoy's automatic router is deliberately small: it reads live namespace IDs and
-schema-v1 cards from `buoy-routing-catalog-v1`, rejects incomplete coverage,
-and chooses no more than three compatible enabled cards. A caller that already
-has policy-approved targets can repeat explicit `--namespace` and bypass those
-inventory, catalog, and routing-model reads.
+Buoy's automatic router is deliberately small: it reads exact schema-v1, v2,
+or v3 cards from `buoy-routing-catalog-v1` and chooses no more than three
+compatible enabled cards. Missing cards for unrelated live namespaces are
+diagnostics, not a global availability stop. A caller that already has
+policy-approved targets can repeat explicit `--namespace` and bypass inventory,
+catalog, and routing-model reads.
 
-Existing schema-v2 plans, content namespaces, and local applied-state databases
-remain valid.
+Existing content namespaces and local applied-state databases remain valid.
+Current local planning and apply accept only schema-v3/delta-v2 artifacts;
+historical schema-v1/v2 plans are preserved but inert.
 
 ## Legacy control-plane state
 
@@ -45,6 +47,25 @@ The existing `buoy-routing-catalog-v1` namespace is reused as Buoy's routing
 authority. Buoy reads it for automatic retrieval and writes one reviewed card
 through approved apply or an approved `catalog` mutation. Those operations
 never mutate the card's target content namespace.
+
+Schema-v3 plan registration requires that catalog to exist at exact remote
+schema v3. Deploy compatible readers first, then provision a missing catalog or
+migrate v1/v2 through separately reviewed operations. Ordinary apply never
+creates or migrates it. If the prerequisite is absent after content and local
+state commit, apply returns partial success, makes no catalog schema/card write,
+and retains the exact plan for its emitted
+`catalog repair-apply --inspect-current` command. After prerequisite recovery,
+that read-only command revalidates committed authority under the namespace lock,
+strongly reads exact-v3 state, and emits an absence- or revision-bound repair.
+The same fallback applies when catalog state could not be read safely. Inspection
+writes nothing and retains the plan; only after successful bound repair may
+exact plan cleanup run.
+
+Schema-v3 cards carry bounded, verbatim-derived source excerpts. Buoy redacts
+them from normal output, but Kite or any other principal with credentials that
+can query raw catalog provider rows can read them. The catalog credential and
+ACL boundary must therefore be governed as source-content access rather than
+metadata-only access.
 
 The feature does not delete or repurpose:
 

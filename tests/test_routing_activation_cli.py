@@ -26,6 +26,7 @@ from tests.test_automatic_routing import (
     FixedEmbedder,
     FixedReranker,
     active_routing_calibration,
+    anchored_routing_calibration,
     make_card,
     run_cli,
     snapshot,
@@ -142,10 +143,6 @@ class RoutingActivationCliTests(unittest.TestCase):
             ),
             patch("buoy_search.cli.read_remote_catalog", return_value=snapshot(cards)),
             patch(
-                "buoy_search.cli.validate_routing_confidence_catalog",
-                return_value=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
-            ),
-            patch(
                 "buoy_search.routing.validate_routing_confidence_catalog",
                 return_value=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
             ),
@@ -201,10 +198,6 @@ class RoutingActivationCliTests(unittest.TestCase):
                 return_value=object(),
             ),
             patch("buoy_search.cli.read_remote_catalog", return_value=snapshot(cards)),
-            patch(
-                "buoy_search.cli.validate_routing_confidence_catalog",
-                return_value=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
-            ),
             patch(
                 "buoy_search.routing.validate_routing_confidence_catalog",
                 return_value=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
@@ -262,10 +255,6 @@ class RoutingActivationCliTests(unittest.TestCase):
             ),
             patch("buoy_search.cli.read_remote_catalog", return_value=snapshot(cards)),
             patch(
-                "buoy_search.cli.validate_routing_confidence_catalog",
-                return_value=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
-            ),
-            patch(
                 "buoy_search.routing.validate_routing_confidence_catalog",
                 return_value=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
             ),
@@ -310,10 +299,6 @@ class RoutingActivationCliTests(unittest.TestCase):
             ),
             patch("buoy_search.cli.read_remote_catalog", return_value=snapshot(cards)),
             patch(
-                "buoy_search.cli.validate_routing_confidence_catalog",
-                return_value=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
-            ),
-            patch(
                 "buoy_search.routing.validate_routing_confidence_catalog",
                 return_value=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
             ),
@@ -355,10 +340,6 @@ class RoutingActivationCliTests(unittest.TestCase):
             ),
             patch("buoy_search.cli.read_remote_catalog", return_value=snapshot(cards)),
             patch(
-                "buoy_search.cli.validate_routing_confidence_catalog",
-                return_value=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
-            ),
-            patch(
                 "buoy_search.cli.ROUTING_EMBEDDER_FACTORY",
                 side_effect=RuntimeError(f"Bearer {secret}"),
             ),
@@ -378,21 +359,27 @@ class RoutingActivationCliTests(unittest.TestCase):
         self.assertNotIn(secret, stderr)
         self.assertNotIn("Bearer", stderr)
 
-    def test_active_catalog_drift_fails_before_models_or_content(self) -> None:
+    def test_active_catalog_drift_routes_provisionally_without_content(self) -> None:
         cards = [make_card("one"), make_card("two")]
-        forbidden = AssertionError("model or content path was reached")
+        forbidden = AssertionError("content path was reached")
         with (
             patch(
                 "buoy_search.cli.ROUTING_CONFIDENCE_FACTORY",
-                return_value=active_routing_calibration(),
+                return_value=anchored_routing_calibration(),
             ),
             patch(
                 "buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY",
                 return_value=object(),
             ),
             patch("buoy_search.cli.read_remote_catalog", return_value=snapshot(cards)),
-            patch("buoy_search.cli.ROUTING_EMBEDDER_FACTORY", side_effect=forbidden),
-            patch("buoy_search.cli.ROUTING_RERANKER_FACTORY", side_effect=forbidden),
+            patch(
+                "buoy_search.cli.ROUTING_EMBEDDER_FACTORY",
+                return_value=FixedEmbedder(),
+            ),
+            patch(
+                "buoy_search.cli.ROUTING_RERANKER_FACTORY",
+                return_value=FixedReranker([10.0, 0.0]),
+            ),
             patch(
                 "buoy_search.cli.MultiNamespaceRetriever.from_configs",
                 side_effect=forbidden,
@@ -403,8 +390,12 @@ class RoutingActivationCliTests(unittest.TestCase):
                 env={"TURBOPUFFER_API_KEY": self.API_KEY},
             )
 
-        self.assertEqual((result, stdout), (2, ""))
-        self.assertIn("does not match the active confidence artifact", stderr)
+        self.assertEqual((result, stderr), (0, ""))
+        routing = json.loads(stdout)["routing"]
+        self.assertEqual(routing["routing_confidence_mode"], "provisional")
+        self.assertFalse(routing["confidence_threshold_applied"])
+        self.assertFalse(routing["high_confidence"])
+        self.assertEqual(routing["initial_fanout"], 2)
 
     def test_explained_text_exposes_active_authority_without_private_inputs(self) -> None:
         class Output:

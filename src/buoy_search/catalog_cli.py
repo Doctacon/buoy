@@ -6,28 +6,34 @@ import argparse
 from dataclasses import asdict, replace
 import json
 import os
+from pathlib import Path
 import re
 import sys
 
+from buoy_search.applied_state import acquire_namespace_apply_lock
 from buoy_search.catalog import (
     CardFields,
     CatalogError,
     MAX_ROUTING_EXAMPLES,
     NamespaceCard,
+    ROUTING_PASSAGE_FIELDS,
     ROUTING_PROTOTYPE_FIELD_ORDER,
     canonical_text,
     card_revision,
     card_to_dict,
+    bounded_routing_passages,
     normalize_routing_examples,
     prepare_card,
     utc_now,
 )
-from buoy_search.config import DEFAULT_REGION, RuntimeConfigError, load_config
+from buoy_search.config import DEFAULT_REGION, RuntimeConfig, RuntimeConfigError, load_config
 from buoy_search.remote_catalog import (
     REMOTE_CATALOG_NAMESPACE,
     REMOTE_CATALOG_SCHEMA_V2_ADDITIONS,
+    REMOTE_CATALOG_SCHEMA_V3_ADDITIONS,
     REMOTE_SCHEMA_V1,
     REMOTE_SCHEMA_V2,
+    REMOTE_SCHEMA_V3,
     CompatibilityContract,
     MutationMetrics,
     MutationResult,
@@ -37,6 +43,7 @@ from buoy_search.remote_catalog import (
     create_client,
     create_remote_cards,
     migrate_remote_catalog_schema_v2,
+    migrate_remote_catalog_schema_v3,
     read_remote_catalog,
     remote_card_id,
     remote_catalog_projection_sha256,
@@ -109,6 +116,29 @@ def configure_catalog_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     parser.set_defaults(func=_run_upsert)
 
     parser = commands.add_parser(
+        "repair-apply",
+        help="repair one failed post-apply card from its retained verified plan",
+    )
+    parser.add_argument("--plan", required=True, type=Path)
+    parser.add_argument("--namespace", required=True)
+    parser.add_argument("--state-root", type=Path, default=Path(".buoy"))
+    parser.add_argument("--apply-id", required=True)
+    repair_precondition = parser.add_mutually_exclusive_group(required=True)
+    repair_precondition.add_argument("--expected-card-revision", default=None)
+    repair_precondition.add_argument("--expect-absent", action="store_true")
+    repair_precondition.add_argument(
+        "--inspect-current",
+        action="store_true",
+        help=(
+            "strong-read exact-v3 state and emit a revision/absence-bound "
+            "follow-up without writing"
+        ),
+    )
+    parser.add_argument("--approve", action="store_true")
+    _add_common(parser)
+    parser.set_defaults(func=_run_repair_apply)
+
+    parser = commands.add_parser(
         "migrate-routing-v2",
         help="preview or approve the reader-first routing schema migration",
     )
@@ -117,6 +147,16 @@ def configure_catalog_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     parser.add_argument("--approve", action="store_true")
     _add_common(parser)
     parser.set_defaults(func=_run_migrate_routing_v2)
+
+    parser = commands.add_parser(
+        "migrate-routing-v3",
+        help="preview or approve the reader-first routing-passage schema migration",
+    )
+    parser.add_argument("--expected-snapshot-revision", default=None)
+    parser.add_argument("--expected-projection-sha256", default=None)
+    parser.add_argument("--approve", action="store_true")
+    _add_common(parser)
+    parser.set_defaults(func=_run_migrate_routing_v3)
 
     parser = commands.add_parser(
         "set-routing-examples",
@@ -295,6 +335,7 @@ def _full_card_payload(card: NamespaceCard) -> dict[str, object]:
         card,
         include_vector=True,
         include_routing_examples=True,
+        include_routing_passages=True,
     )
 
 
@@ -312,9 +353,14 @@ def _card_identities(snapshot: RemoteCatalogSnapshot) -> list[dict[str, str]]:
 def _require_exact_migration_result(
     before: RemoteCatalogSnapshot,
     after: RemoteCatalogSnapshot,
+    *,
+    expected_schema_version: int = REMOTE_SCHEMA_V2,
 ) -> None:
-    if after.catalog_schema_version != REMOTE_SCHEMA_V2:
-        raise _CatalogOperatorError("schema migration verification did not observe exact schema v2")
+    if after.catalog_schema_version != expected_schema_version:
+        raise _CatalogOperatorError(
+            "schema migration verification did not observe exact schema "
+            f"v{expected_schema_version}"
+        )
     if before.live_namespace_ids != after.live_namespace_ids:
         raise _CatalogOperatorError("schema migration verification observed inventory drift")
     if before.counts != after.counts:
@@ -333,6 +379,10 @@ def _card_fields_with_examples(
     card: NamespaceCard,
     examples: list[str],
 ) -> CardFields:
+    routing_passages = bounded_routing_passages(
+        routing_examples=examples,
+        routing_passages=card.routing_passages,
+    )
     return CardFields(
         namespace=card.namespace,
         enabled=card.enabled,
@@ -355,6 +405,7 @@ def _card_fields_with_examples(
         last_plan_id=card.last_plan_id,
         last_apply_id=card.last_apply_id,
         routing_examples=list(examples),
+        routing_passages=routing_passages,
     )
 
 
@@ -368,6 +419,7 @@ def _require_bounded_example_candidate(
     allowed = {
         "updated_at",
         "card_revision",
+        *ROUTING_PASSAGE_FIELDS,
         *ROUTING_PROTOTYPE_FIELD_ORDER,
     }
     if any(
@@ -422,8 +474,10 @@ def _require_exact_example_result(
     after: RemoteCatalogSnapshot,
     intended: NamespaceCard,
 ) -> NamespaceCard:
-    if after.catalog_schema_version != REMOTE_SCHEMA_V2:
-        raise _CatalogOperatorError("routing-example verification did not observe exact schema v2")
+    if after.catalog_schema_version != before.catalog_schema_version:
+        raise _CatalogOperatorError(
+            "routing-example verification observed catalog schema drift"
+        )
     if before.live_namespace_ids != after.live_namespace_ids:
         raise _CatalogOperatorError("routing-example verification observed inventory drift")
     if before.counts != after.counts:
@@ -683,7 +737,7 @@ def _card_status(snapshot: RemoteCatalogSnapshot, card: NamespaceCard) -> str:
 
 def _listed_card(snapshot: RemoteCatalogSnapshot, card: NamespaceCard) -> dict[str, object]:
     return {
-        **card_to_dict(card),
+        **card_to_dict(card, include_routing_passages=False),
         "catalog_status": _card_status(snapshot, card),
         "target_status": (
             "live" if card.namespace in snapshot.live_namespace_ids else "stale"
@@ -738,7 +792,11 @@ def _run_show(args: argparse.Namespace) -> int:
         "namespace": card.namespace,
         "target_status": "live" if card.namespace in snapshot.live_namespace_ids else "stale",
         "catalog_status": _card_status(snapshot, card),
-        "card": card_to_dict(card, include_vector=args.include_vector),
+        "card": card_to_dict(
+            card,
+            include_vector=args.include_vector,
+            include_routing_passages=False,
+        ),
     }
     _emit(payload, json_output=args.json, text_lines=[
         f"Remote namespace card: {card.namespace}",
@@ -758,6 +816,11 @@ def _run_upsert(args: argparse.Namespace) -> int:
         if args.namespace not in snapshot.live_namespace_ids:
             raise RemoteCatalogError(f"target namespace {args.namespace!r} is not live in region {region!r}")
         existing = next((item for item in snapshot.cards if item.namespace == args.namespace), None)
+        # Source-derived passages are apply-owned. A generic manual upsert may
+        # rebuild their projection when editable card metadata changes, but it
+        # must preserve the exact passage bank (and fail rather than evicting a
+        # passage when reviewed examples exhaust the shared evidence budget).
+        routing_passages = list(existing.routing_passages) if existing else []
         fields = CardFields(
             namespace=args.namespace,
             enabled=False if args.disabled else (existing.enabled if existing else True),
@@ -780,6 +843,7 @@ def _run_upsert(args: argparse.Namespace) -> int:
             last_plan_id=existing.last_plan_id if existing else None,
             last_apply_id=existing.last_apply_id if existing else None,
             routing_examples=list(args.routing_example),
+            routing_passages=routing_passages,
         )
         if (
             args.approve
@@ -789,6 +853,15 @@ def _run_upsert(args: argparse.Namespace) -> int:
             raise RemoteCatalogError(
                 "routing_examples approval requires the explicit reader-first "
                 "remote catalog schema-v2 migration; no schema-v1 write occurred"
+            )
+        if (
+            args.approve
+            and fields.routing_passages
+            and snapshot.catalog_schema_version != REMOTE_SCHEMA_V3
+        ):
+            raise RemoteCatalogError(
+                "routing_passages approval requires the explicit reader-first "
+                "remote catalog schema-v3 migration; no schema-v1/v2 write occurred"
             )
         card = prepare_card(fields, existing=existing)
         if args.approve:
@@ -834,12 +907,227 @@ def _run_upsert(args: argparse.Namespace) -> int:
             else "updated"
         ),
         "affected_ids": list(result.affected_ids) if result else [],
-        "card": card_to_dict(card),
+        "card": card_to_dict(card, include_routing_passages=False),
     }
     _emit(payload, json_output=args.json, text_lines=[
         f"{payload['mutation_status'].title()} remote namespace card {card.namespace!r}.",
         "No write occurred; pass --approve to commit this exact card." if not args.approve else "Approved catalog-only write completed.",
     ])
+    return 0
+
+
+def _run_repair_apply(args: argparse.Namespace) -> int:
+    """Rebuild one card from retained, state-bound plan authority."""
+
+    from buoy_search.apply import (
+        ApplyPlanError,
+        _CatalogRegistrationAttemptError,
+        inspect_apply_catalog_repair,
+        load_verified_catalog_repair_plan,
+        register_apply_catalog_card,
+    )
+    from buoy_search.plan_cleanup import cleanup_applied_plan_directory
+
+    region = _resolved_region(args)
+    try:
+        namespace = _operator_namespace(args.namespace)
+        expected_revision = (
+            _approval_sha256(
+                args.expected_card_revision,
+                option="--expected-card-revision",
+            )
+            if args.expected_card_revision is not None
+            else None
+        )
+        if args.inspect_current and args.approve:
+            raise ValueError("--inspect-current cannot be combined with --approve")
+
+        # This local-only pass supplies the lock identity. The plan and its
+        # committed state are both revalidated after the lock is held.
+        preliminary = load_verified_catalog_repair_plan(
+            plan_path=args.plan,
+            namespace=namespace,
+            state_root=args.state_root,
+            apply_id=args.apply_id,
+        )
+        with acquire_namespace_apply_lock(
+            site_id=str(preliminary.plan["site_id"]),
+            namespace=namespace,
+            state_root=preliminary.state_root,
+        ):
+            verified = load_verified_catalog_repair_plan(
+                plan_path=args.plan,
+                namespace=namespace,
+                state_root=args.state_root,
+                apply_id=args.apply_id,
+            )
+            if (
+                verified.plan["site_id"] != preliminary.plan["site_id"]
+                or verified.plan["plan_id"] != preliminary.plan["plan_id"]
+                or verified.plan["artifact_hash"]
+                != preliminary.plan["artifact_hash"]
+                or verified.plan_directory_device
+                != preliminary.plan_directory_device
+                or verified.plan_directory_inode
+                != preliminary.plan_directory_inode
+            ):
+                raise ApplyPlanError(
+                    "Retained plan changed before catalog repair acquired its lock."
+                )
+            config = RuntimeConfig(
+                namespace=namespace,
+                region=region,
+                embedding_model=str(verified.plan["embedding_model"]),
+                embedding_precision=str(
+                    verified.plan.get("embedding_precision", "float32")
+                ),
+            )
+
+            if args.inspect_current:
+                inspection = inspect_apply_catalog_repair(
+                    verified,
+                    config=config,
+                    namespace=namespace,
+                    apply_id=args.apply_id,
+                    api_key=_credentials(),
+                )
+                payload = {
+                    "command": "catalog repair-apply",
+                    "approved": False,
+                    "inspection": True,
+                    "namespace": namespace,
+                    "region": region,
+                    "plan_id": verified.plan["plan_id"],
+                    "apply_id": args.apply_id,
+                    "routing_passage_count": len(verified.routing_prototypes),
+                    "turbopuffer_api_calls": True,
+                    "routing_model_loaded": False,
+                    "catalog_card_write_attempted": False,
+                    "mutation_status": "inspection",
+                    "plan_retained": True,
+                    **inspection,
+                }
+                _emit(
+                    payload,
+                    json_output=args.json,
+                    text_lines=[
+                        f"Inspected current routing state for {namespace!r}.",
+                        "No model or write occurred; the verified plan was retained.",
+                        f"Run: {inspection['catalog_repair_command']}",
+                    ],
+                )
+                return 0
+
+            if not args.approve:
+                payload = {
+                    "command": "catalog repair-apply",
+                    "approved": False,
+                    "inspection": False,
+                    "namespace": namespace,
+                    "region": region,
+                    "plan_id": verified.plan["plan_id"],
+                    "apply_id": args.apply_id,
+                    "routing_passage_count": len(verified.routing_prototypes),
+                    "precondition": (
+                        {"card_revision": expected_revision}
+                        if expected_revision is not None
+                        else {"card_absent": True}
+                    ),
+                    "turbopuffer_api_calls": False,
+                    "routing_model_loaded": False,
+                    "mutation_status": "preview",
+                }
+                _emit(
+                    payload,
+                    json_output=args.json,
+                    text_lines=[
+                        f"Verified retained repair authority for {namespace!r}.",
+                        "No provider or model call occurred; rerun with --approve.",
+                    ],
+                )
+                return 0
+
+            try:
+                registration = register_apply_catalog_card(
+                    verified,
+                    config=config,
+                    namespace=namespace,
+                    apply_id=args.apply_id,
+                    api_key=_credentials(),
+                    expected_card_revision=expected_revision,
+                    expect_absent=bool(args.expect_absent),
+                )
+            except _CatalogRegistrationAttemptError as exc:
+                payload = {
+                    "command": "catalog repair-apply",
+                    "approved": True,
+                    "namespace": namespace,
+                    "region": region,
+                    "plan_id": verified.plan["plan_id"],
+                    "apply_id": args.apply_id,
+                    "mutation_status": "failed",
+                    "catalog_registered": False,
+                    "automatic_retrieval_ready": False,
+                    "catalog_card_write_attempted": exc.card_write_attempted,
+                    "turbopuffer_api_calls": exc.api_calls_occurred,
+                    "plan_retained_for_catalog_repair": True,
+                    "catalog_error": str(exc),
+                    "catalog_repair_command": exc.repair_command,
+                }
+                if args.json:
+                    print(json.dumps(payload, indent=2, sort_keys=True))
+                else:
+                    print(str(exc), file=sys.stderr)
+                    print(
+                        "The verified plan remains available for repair.",
+                        file=sys.stderr,
+                    )
+                    print(
+                        f"Repair with: {exc.repair_command}",
+                        file=sys.stderr,
+                    )
+                return 2
+
+            cleanup_warnings = cleanup_applied_plan_directory(
+                verified.plan_path,
+                state_root=verified.state_root,
+                expected_plan_id=str(verified.plan["plan_id"]),
+                expected_artifact_hash=str(verified.plan["artifact_hash"]),
+                expected_namespace=namespace,
+                expected_directory_device=verified.plan_directory_device,
+                expected_directory_inode=verified.plan_directory_inode,
+            )
+    except (
+        ApplyPlanError,
+        RemoteCatalogError,
+        CatalogError,
+        RuntimeConfigError,
+        RuntimeError,
+        OSError,
+        ValueError,
+    ) as exc:
+        return _remote_failure(exc)
+
+    payload = {
+        "command": "catalog repair-apply",
+        "approved": True,
+        "namespace": namespace,
+        "region": region,
+        "plan_id": verified.plan["plan_id"],
+        "apply_id": args.apply_id,
+        "mutation_status": registration["catalog_mutation_status"],
+        "plan_retained": verified.plan_path.exists(),
+        "cleanup_warnings": cleanup_warnings,
+        **registration,
+    }
+    _emit(
+        payload,
+        json_output=args.json,
+        text_lines=[
+            f"Repaired routing card for {namespace!r} from the retained plan.",
+            *[f"Warning: {warning}" for warning in cleanup_warnings],
+        ],
+    )
     return 0
 
 
@@ -1068,6 +1356,234 @@ def _run_migrate_routing_v2(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_migrate_routing_v3(args: argparse.Namespace) -> int:
+    """Preview or approve the exact schema-v2 to schema-v3 migration."""
+
+    region = _resolved_region(args)
+    snapshot: RemoteCatalogSnapshot | None = None
+    strong_read_calls: int | None = 0
+    model_inferences: int | None = 0
+    try:
+        expected_snapshot: str | None = None
+        expected_projection: str | None = None
+        if args.approve:
+            expected_snapshot = _approval_sha256(
+                args.expected_snapshot_revision,
+                option="--expected-snapshot-revision",
+            )
+            expected_projection = _approval_sha256(
+                args.expected_projection_sha256,
+                option="--expected-projection-sha256",
+            )
+
+        compatibility = _compatibility(region)
+        client = REMOTE_CATALOG_CLIENT_FACTORY(
+            api_key=_credentials(),
+            region=region,
+        )
+        strong_read_calls = None
+        snapshot = read_remote_catalog(
+            client,
+            region=region,
+            compatibility=compatibility,
+        )
+        strong_read_calls = 1
+        if snapshot.catalog_schema_version == REMOTE_SCHEMA_V1:
+            raise _CatalogOperatorError(
+                "migrate-routing-v3 requires exact schema v2 first; preview and "
+                "approve migrate-routing-v2 before this migration"
+            )
+        observed_projection = remote_catalog_projection_sha256(snapshot)
+        observed_schema_fingerprint = remote_catalog_schema_fingerprint(
+            snapshot.catalog_schema_version
+        )
+        mutation: MutationResult | None = None
+        final = snapshot
+        mutation_status = "preview"
+
+        if args.approve:
+            if snapshot.snapshot_revision != expected_snapshot:
+                raise _CatalogOperatorError(
+                    "catalog snapshot drifted from --expected-snapshot-revision; regenerate the preview"
+                )
+            if observed_projection != expected_projection:
+                raise _CatalogOperatorError(
+                    "catalog projection drifted from --expected-projection-sha256; regenerate the preview"
+                )
+            if snapshot.catalog_schema_version == REMOTE_SCHEMA_V3:
+                mutation_status = "already_v3"
+            elif snapshot.catalog_schema_version == REMOTE_SCHEMA_V2:
+                resource = remote_catalog_resource(client)
+                try:
+                    mutation = migrate_remote_catalog_schema_v3(resource)
+                    _require_exact_schema_mutation(mutation)
+                except Exception:
+                    return _attempted_mutation_failure(
+                        args=args,
+                        command="catalog migrate-routing-v3",
+                        operation="Routing passage catalog schema migration",
+                        region=region,
+                        snapshot=snapshot,
+                        reads=(snapshot.metrics,),
+                        mutation=mutation,
+                        write_kind="schema",
+                        strong_read_calls=1,
+                        model_inferences=0,
+                        failure=(
+                            "The schema-v3 write did not return a valid, verified response."
+                        ),
+                        details={
+                            "observed_snapshot_revision": snapshot.snapshot_revision,
+                            "observed_projection_sha256": observed_projection,
+                        },
+                    )
+                verification_reads = (snapshot.metrics,)
+                try:
+                    final = read_remote_catalog(
+                        client,
+                        region=region,
+                        compatibility=compatibility,
+                    )
+                    strong_read_calls += 1
+                    verification_reads = (snapshot.metrics, final.metrics)
+                    _require_exact_migration_result(
+                        snapshot,
+                        final,
+                        expected_schema_version=REMOTE_SCHEMA_V3,
+                    )
+                except Exception:
+                    return _attempted_mutation_failure(
+                        args=args,
+                        command="catalog migrate-routing-v3",
+                        operation="Routing passage catalog schema migration",
+                        region=region,
+                        snapshot=snapshot,
+                        reads=verification_reads,
+                        mutation=mutation,
+                        write_kind="schema",
+                        strong_read_calls=2,
+                        model_inferences=0,
+                        failure=(
+                            "The post-write catalog could not be proven as the exact "
+                            "unchanged v3 projection."
+                        ),
+                        details={
+                            "observed_snapshot_revision": snapshot.snapshot_revision,
+                            "observed_projection_sha256": observed_projection,
+                        },
+                    )
+                mutation_status = "migrated"
+            else:
+                raise _CatalogOperatorError(
+                    "catalog schema is not an exact supported version"
+                )
+
+        final_projection = remote_catalog_projection_sha256(final)
+        performed_schema_writes = (
+            mutation.metrics.write_requests if mutation is not None else 0
+        )
+        reads = (
+            (snapshot.metrics, final.metrics)
+            if strong_read_calls == 2
+            else (snapshot.metrics,)
+        )
+    except (
+        RemoteCatalogError,
+        CatalogError,
+        RuntimeConfigError,
+        RuntimeError,
+        OSError,
+    ) as exc:
+        return _operator_failure(
+            exc,
+            args=args,
+            command="catalog migrate-routing-v3",
+            operation="routing-passage schema migration",
+            region=region,
+            snapshot=snapshot,
+            strong_read_calls=strong_read_calls,
+            model_inferences=model_inferences,
+        )
+
+    payload = {
+        **_base_payload(
+            "catalog migrate-routing-v3",
+            region,
+            final,
+            reads=reads,
+            mutations=(mutation,) if mutation is not None else (),
+        ),
+        "approved": args.approve,
+        "mutation_status": mutation_status,
+        "verification_complete": args.approve,
+        "observed_snapshot_revision": snapshot.snapshot_revision,
+        "expected_snapshot_revision": snapshot.snapshot_revision,
+        "observed_projection_sha256": observed_projection,
+        "expected_projection_sha256": observed_projection,
+        "final_projection_sha256": final_projection,
+        "schema": {
+            "observed_version": snapshot.catalog_schema_version,
+            "target_version": REMOTE_SCHEMA_V3,
+            "final_version": final.catalog_schema_version,
+            "observed_fingerprint_sha256": observed_schema_fingerprint,
+            "final_fingerprint_sha256": remote_catalog_schema_fingerprint(
+                final.catalog_schema_version
+            ),
+            "additions": REMOTE_CATALOG_SCHEMA_V3_ADDITIONS,
+        },
+        "card_identities": _card_identities(snapshot),
+        "old_reader_warning": (
+            "Exact schema-v1/v2 readers fail closed after this additive migration; "
+            "deploy the v1/v2/v3-compatible reader first."
+        ),
+        "operation_budget": _operation_accounting(
+            strong_read_calls=2,
+            schema_writes=1,
+        ),
+        "operations_performed": _operation_accounting(
+            strong_read_calls=strong_read_calls,
+            schema_writes=performed_schema_writes,
+        ),
+        "affected_ids": list(mutation.affected_ids) if mutation else [],
+    }
+    _emit(
+        payload,
+        json_output=args.json,
+        text_lines=[
+            f"Routing catalog schema v3: {mutation_status}.",
+            f"  catalog: {REMOTE_CATALOG_NAMESPACE} ({region})",
+            f"  observed schema: v{snapshot.catalog_schema_version}; target: v{REMOTE_SCHEMA_V3}",
+            f"  schema fingerprint: {observed_schema_fingerprint}",
+            f"  snapshot revision: {snapshot.snapshot_revision}",
+            f"  projection sha256: {observed_projection}",
+            "  exact schema additions:",
+            *[
+                f"    {name}: "
+                + json.dumps(config, sort_keys=True, separators=(",", ":"))
+                for name, config in REMOTE_CATALOG_SCHEMA_V3_ADDITIONS.items()
+            ],
+            "  operations: strong_reads="
+            f"{strong_read_calls}; model_inferences=0",
+            "  writes: schema="
+            f"{performed_schema_writes}; cards=0; content=0; deletes=0",
+            payload["old_reader_warning"],
+            *(
+                [
+                    "No write occurred. Review the bindings, then rerun with "
+                    "--expected-snapshot-revision and --expected-projection-sha256 --approve."
+                ]
+                if not args.approve
+                else [
+                    "No write occurred; the catalog was already exact schema v3."
+                    if mutation_status == "already_v3"
+                    else "Approved catalog-only schema-v3 write completed and verified."
+                ]
+            ),
+        ],
+    )
+    return 0
+
+
 def _run_set_routing_examples(args: argparse.Namespace) -> int:
     region = _resolved_region(args)
     snapshot: RemoteCatalogSnapshot | None = None
@@ -1095,9 +1611,12 @@ def _run_set_routing_examples(args: argparse.Namespace) -> int:
             compatibility=compatibility,
         )
         strong_read_calls = 1
-        if snapshot.catalog_schema_version != REMOTE_SCHEMA_V2:
+        if snapshot.catalog_schema_version not in {
+            REMOTE_SCHEMA_V2,
+            REMOTE_SCHEMA_V3,
+        }:
             raise _CatalogOperatorError(
-                "set-routing-examples requires an exact schema-v2 catalog; "
+                "set-routing-examples requires an exact schema-v2 or schema-v3 catalog; "
                 "preview and approve migrate-routing-v2 first"
             )
         current = next(
@@ -1146,7 +1665,7 @@ def _run_set_routing_examples(args: argparse.Namespace) -> int:
                         intended,
                         expected_revision=current.card_revision,
                         region=region,
-                        schema_version=REMOTE_SCHEMA_V2,
+                        schema_version=snapshot.catalog_schema_version,
                     )
                     _require_exact_example_mutation(mutation, intended)
                 except Exception:
@@ -1267,7 +1786,10 @@ def _run_set_routing_examples(args: argparse.Namespace) -> int:
             intended.routing_prototype_vector_hash
         ),
         "legacy_projection_preserved": True,
-        "card": card_to_dict(verified if verified is not None else intended),
+        "card": card_to_dict(
+            verified if verified is not None else intended,
+            include_routing_passages=False,
+        ),
         "operation_budget": _operation_accounting(
             strong_read_calls=2,
             model_inferences=1,
@@ -1364,7 +1886,7 @@ def _run_toggle(args: argparse.Namespace) -> int:
         "approved": args.approve,
         "mutation_status": ("updated" if changed else "unchanged") if args.approve else "preview",
         "affected_ids": affected_ids,
-        "card": card_to_dict(card),
+        "card": card_to_dict(card, include_routing_passages=False),
     }
     desired = "enabled" if args.requested_enabled else "disabled"
     _emit(payload, json_output=args.json, text_lines=[

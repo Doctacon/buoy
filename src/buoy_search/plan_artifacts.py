@@ -16,6 +16,7 @@ import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import stat
+import unicodedata
 from typing import Any, Iterable, Mapping
 from urllib.parse import parse_qsl, quote, unquote, urlsplit
 
@@ -42,10 +43,15 @@ from buoy_search.chunker import (
     sha256_text,
 )
 
-PLAN_SCHEMA_VERSION = 2
-DELTA_SCHEMA_VERSION = 1
+PLAN_SCHEMA_VERSION = 3
+DELTA_SCHEMA_VERSION = 2
 MAX_PLAN_JSON_BYTES = 131_072
 DEFAULT_PLAN_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
+ROUTING_PROTOTYPE_STRATEGY = "diverse-content-passages-v1"
+MAX_ROUTING_PROTOTYPES = 8
+MAX_ROUTING_PROTOTYPE_CHARACTERS = 512
+_MAX_ROUTING_TITLE_CHARACTERS = 120
+_MAX_ROUTING_SECTION_CHARACTERS = 120
 VOLATILE_FRONTMATTER_KEYS = {"crawl_timestamp"}
 _HEX_SHA256 = re.compile(r"[0-9a-f]{64}")
 _PLAN_ID = re.compile(r"plan_[0-9a-f]{16}")
@@ -179,7 +185,7 @@ class ManifestDocument:
 
 @dataclass(frozen=True)
 class PlanDocument:
-    """Exact schema-v2 metadata persisted as ``plan.json``."""
+    """Exact schema-v3 metadata persisted as ``plan.json``."""
 
     schema_version: int
     command: str
@@ -196,6 +202,7 @@ class PlanDocument:
     embedding_precision: str
     applied_state: JsonObject
     delta: JsonObject
+    routing_prototypes: JsonObject
     diff: JsonObject
     originating_job_id: str | None = None
 
@@ -209,6 +216,7 @@ class PlanArtifacts:
     diff: object = field(repr=False)
     upsert_rows: tuple[JsonObject, ...] = field(repr=False)
     stale_rows: tuple[JsonObject, ...] = field(repr=False)
+    routing_prototypes: tuple[JsonObject, ...] = field(repr=False)
 
     def plan_dict(self) -> JsonObject:
         payload = dataclass_to_json_object(self.plan)
@@ -223,7 +231,7 @@ class PlanArtifacts:
 
     @property
     def chunks_jsonl(self) -> str:
-        """Return ephemeral desired rows; schema-v2 writers never persist this."""
+        """Return ephemeral desired rows; schema-v3 writers never persist this."""
 
         return "".join(
             stable_json_dumps(dataclass_to_json_object(chunk)) + "\n"
@@ -238,6 +246,7 @@ class VerifiedDeltaPlan:
     plan: JsonObject
     upsert_rows: tuple[JsonObject, ...]
     stale_rows: tuple[JsonObject, ...]
+    routing_prototypes: tuple[JsonObject, ...]
 
 
 def site_id_for_url(base_url: str) -> str:
@@ -245,7 +254,7 @@ def site_id_for_url(base_url: str) -> str:
 
 
 def state_path_for_site(site_id: str, namespace: str, *, state_root: Path = Path(".buoy")) -> str:
-    """Retained helper for applied-state callers; schema-v2 plans do not persist it."""
+    """Retained helper for applied-state callers; schema-v3 plans do not persist it."""
 
     return str(Path(state_root) / "state" / site_id / namespace / "state.duckdb")
 
@@ -301,7 +310,7 @@ def build_plan_artifacts(
     source_summary: Mapping[str, object] | None = None,
     originating_job_id: str | None = None,
 ) -> PlanArtifacts:
-    """Build exact schema-v2 metadata and changed-only logical delta."""
+    """Build exact schema-v3 metadata and changed-only content delta."""
 
     del out_dir, state_root
     if embedding_precision not in EMBEDDING_PRECISIONS:
@@ -409,7 +418,13 @@ def build_plan_artifacts(
             stale_records, key=lambda item: (item[1].canonical_url, item[1].row_id)
         )
     )
-    logical_hash = delta_logical_hash(upsert_rows, stale_rows)
+    routing_prototypes = select_routing_prototypes(chunks)
+    routing_descriptor = {
+        "strategy": ROUTING_PROTOTYPE_STRATEGY,
+        "count": len(routing_prototypes),
+        "logical_hash": routing_prototypes_logical_hash(routing_prototypes),
+    }
+    logical_hash = delta_logical_hash(upsert_rows, stale_rows, routing_prototypes)
     delta = {
         "filename": "delta.duckdb",
         "schema_version": DELTA_SCHEMA_VERSION,
@@ -432,6 +447,7 @@ def build_plan_artifacts(
         "embedding_precision": embedding_precision,
         "applied_state": baseline,
         "delta": delta,
+        "routing_prototypes": routing_descriptor,
         "diff": diff_value,
     }
     artifact_hash = stable_hash(identity)
@@ -451,15 +467,19 @@ def build_plan_artifacts(
         embedding_precision=embedding_precision,
         applied_state=baseline,
         delta=delta,
+        routing_prototypes=routing_descriptor,
         diff=diff_value,
         originating_job_id=originating_job_id,
     )
     payload = stable_json_dumps(
-        PlanArtifacts(plan, manifest, diff, upsert_rows, stale_rows).plan_dict(), indent=2
+        PlanArtifacts(
+            plan, manifest, diff, upsert_rows, stale_rows, routing_prototypes
+        ).plan_dict(),
+        indent=2,
     ) + "\n"
     if len(payload.encode("utf-8")) > MAX_PLAN_JSON_BYTES:
         raise ValueError(f"plan.json must contain at most {MAX_PLAN_JSON_BYTES} UTF-8 bytes")
-    return PlanArtifacts(plan, manifest, diff, upsert_rows, stale_rows)
+    return PlanArtifacts(plan, manifest, diff, upsert_rows, stale_rows, routing_prototypes)
 
 
 def build_page_records(indexing_plan: IndexingPlan) -> list[PageManifestRecord]:
@@ -537,6 +557,139 @@ def embedding_text_for_chunk(chunk: ChunkManifestRecord | Mapping[str, object]) 
         content,
     ]
     return "\n\n".join(part for part in context if part.strip())
+
+
+def routing_passage_text_for_chunk(
+    chunk: ChunkManifestRecord | Mapping[str, object],
+) -> str:
+    """Return one bounded, source-derived routing passage with stable context."""
+
+    title = chunk.title if isinstance(chunk, ChunkManifestRecord) else str(chunk.get("title", ""))
+    section = (
+        chunk.section_path
+        if isinstance(chunk, ChunkManifestRecord)
+        else str(chunk.get("section_path", ""))
+    )
+    source_path = (
+        chunk.page_content_path
+        if isinstance(chunk, ChunkManifestRecord)
+        else str(chunk.get("source_path", chunk.get("page_content_path", "")))
+    )
+    content = chunk.content if isinstance(chunk, ChunkManifestRecord) else str(chunk.get("content", ""))
+    title = _bounded_routing_component(title, _MAX_ROUTING_TITLE_CHARACTERS)
+    source_path = _bounded_routing_component(
+        source_path, _MAX_ROUTING_TITLE_CHARACTERS
+    )
+    section = _bounded_routing_component(section, _MAX_ROUTING_SECTION_CHARACTERS)
+    excerpt = _normalized_routing_excerpt(content)
+    if not excerpt or not (title or source_path):
+        return ""
+    header = f"Title: {title}" if title else f"Source: {source_path}"
+    if section:
+        header += f"\nSection: {section}"
+    prefix = f"{header}\n\nSource excerpt:\n"
+    remaining = MAX_ROUTING_PROTOTYPE_CHARACTERS - len(prefix)
+    if remaining < 1:
+        return ""
+    excerpt = excerpt[:remaining].rstrip()
+    return f"{prefix}{excerpt}" if excerpt else ""
+
+
+def select_routing_prototypes(
+    chunks: Iterable[ChunkManifestRecord],
+) -> tuple[JsonObject, ...]:
+    """Select a deterministic diverse passage bank from the complete manifest."""
+
+    candidates: list[tuple[int, JsonObject, frozenset[str]]] = []
+    seen_passage_keys: set[str] = set()
+    seen_source_rows: set[tuple[str, str, str, str]] = set()
+    for source_order, chunk in enumerate(chunks):
+        source_row = (
+            chunk.site_id,
+            chunk.canonical_url,
+            chunk.section_path,
+            chunk.chunk_hash,
+        )
+        # Duplicate chunk rows differ only by their storage disambiguator. The
+        # prototype schema deliberately carries the canonical ordinal-0 row ID,
+        # so title/display variants of that same source row cannot become
+        # independent routing authority.
+        if chunk.duplicate_ordinal != 0 or source_row in seen_source_rows:
+            continue
+        seen_source_rows.add(source_row)
+        passage_text = routing_passage_text_for_chunk(chunk)
+        if not passage_text:
+            continue
+        passage_hash = sha256_text(passage_text)
+        passage_key = _canonical_routing_text(passage_text)
+        if not passage_key or passage_key in seen_passage_keys:
+            continue
+        seen_passage_keys.add(passage_key)
+        row: JsonObject = {
+            "row_id": chunk.row_id,
+            "canonical_url": chunk.canonical_url,
+            "source_path": chunk.page_content_path,
+            "section_path": chunk.section_path,
+            "chunk_hash": chunk.chunk_hash,
+            "passage_text": passage_text,
+            "passage_hash": passage_hash,
+        }
+        candidates.append((source_order, row, _routing_tokens(passage_text)))
+
+    selected: list[tuple[int, JsonObject, frozenset[str]]] = []
+    selected_urls: set[str] = set()
+    while candidates and len(selected) < MAX_ROUTING_PROTOTYPES:
+        distinct_documents = [
+            candidate
+            for candidate in candidates
+            if str(candidate[1]["canonical_url"]) not in selected_urls
+        ]
+        pool = distinct_documents or candidates
+        chosen = min(
+            pool,
+            key=lambda candidate: (
+                _maximum_token_overlap(candidate[2], selected),
+                candidate[0],
+            ),
+        )
+        selected.append(chosen)
+        selected_urls.add(str(chosen[1]["canonical_url"]))
+        candidates.remove(chosen)
+
+    return tuple(
+        {"ordinal": ordinal, **row}
+        for ordinal, (_source_order, row, _tokens) in enumerate(selected)
+    )
+
+
+def _bounded_routing_component(value: str, maximum: int) -> str:
+    return " ".join(value.split())[:maximum].rstrip()
+
+
+def _normalized_routing_excerpt(value: str) -> str:
+    return " ".join(value.split())
+
+
+def _routing_tokens(value: str) -> frozenset[str]:
+    return frozenset(_canonical_routing_text(value).split())
+
+
+def _canonical_routing_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value).casefold()
+    normalized = re.sub(r"[\W_]+", " ", normalized, flags=re.UNICODE)
+    return " ".join(normalized.split())
+
+
+def _maximum_token_overlap(
+    tokens: frozenset[str],
+    selected: Iterable[tuple[int, JsonObject, frozenset[str]]],
+) -> float:
+    overlaps = [
+        len(tokens & prior_tokens) / len(tokens | prior_tokens)
+        for _source_order, _row, prior_tokens in selected
+        if tokens or prior_tokens
+    ]
+    return max(overlaps, default=0.0)
 
 
 def embedding_hash(text: str, precision: str) -> str:
@@ -722,20 +875,38 @@ def build_delta_stale(category: str, record: object) -> JsonObject:
 
 
 def delta_logical_hash(
-    upsert_rows: Iterable[Mapping[str, object]], stale_rows: Iterable[Mapping[str, object]]
+    upsert_rows: Iterable[Mapping[str, object]],
+    stale_rows: Iterable[Mapping[str, object]],
+    routing_prototypes: Iterable[Mapping[str, object]] = (),
 ) -> str:
     return stable_hash(
         {
             "schema_version": DELTA_SCHEMA_VERSION,
             "upsert_rows": [normalize_json_object(dict(row)) for row in upsert_rows],
             "stale_rows": [normalize_json_object(dict(row)) for row in stale_rows],
+            "routing_prototypes": [
+                normalize_json_object(dict(row)) for row in routing_prototypes
+            ],
+        }
+    )
+
+
+def routing_prototypes_logical_hash(
+    routing_prototypes: Iterable[Mapping[str, object]],
+) -> str:
+    return stable_hash(
+        {
+            "strategy": ROUTING_PROTOTYPE_STRATEGY,
+            "routing_prototypes": [
+                normalize_json_object(dict(row)) for row in routing_prototypes
+            ],
         }
     )
 
 
 def normalize_diff(value: Mapping[str, object]) -> JsonObject:
     if set(value) != set(_DIFF_FIELDS):
-        raise ValueError("diff summary fields do not match schema v2")
+        raise ValueError("diff summary fields do not match schema v3")
     result: JsonObject = {}
     for key in _DIFF_FIELDS:
         item = value[key]
@@ -749,7 +920,7 @@ def normalize_diff(value: Mapping[str, object]) -> JsonObject:
 
 
 def write_plan_artifacts(artifacts: PlanArtifacts, out_dir: Path) -> None:
-    """Atomically write only schema-v2 ``plan.json`` and ``delta.duckdb``."""
+    """Atomically write only schema-v3 ``plan.json`` and ``delta.duckdb``."""
 
     plan = artifacts.plan_dict()
     validate_plan_document(plan)
@@ -758,12 +929,21 @@ def write_plan_artifacts(artifacts: PlanArtifacts, out_dir: Path) -> None:
         raise ValueError("delta upsert rows are not in canonical sort order")
     if artifacts.stale_rows != tuple(sorted(artifacts.stale_rows, key=_stale_sort_key)):
         raise ValueError("delta stale rows are not in canonical sort order")
-    if delta_logical_hash(artifacts.upsert_rows, artifacts.stale_rows) != plan["delta"]["logical_hash"]:
+    if delta_logical_hash(
+        artifacts.upsert_rows, artifacts.stale_rows, artifacts.routing_prototypes
+    ) != plan["delta"]["logical_hash"]:
         raise ValueError("delta logical hash does not match before persistence")
     for row in artifacts.upsert_rows:
         _validate_upsert_row(plan, row)
     for row in artifacts.stale_rows:
         _validate_stale_row(plan, row)
+    _validate_routing_prototype_rows(
+        plan, artifacts.routing_prototypes, upsert_rows=artifacts.upsert_rows
+    )
+    if routing_prototypes_logical_hash(artifacts.routing_prototypes) != plan[
+        "routing_prototypes"
+    ]["logical_hash"]:
+        raise ValueError("routing prototype logical hash does not match before persistence")
     if stable_hash(artifact_identity(plan)) != plan["artifact_hash"]:
         raise ValueError("plan artifact hash does not match before persistence")
 
@@ -850,6 +1030,25 @@ def write_plan_artifacts(artifacts: PlanArtifacts, out_dir: Path) -> None:
                         for ordinal, row in enumerate(artifacts.stale_rows)
                     ],
                 )
+            if artifacts.routing_prototypes:
+                connection.executemany(
+                    """
+                    INSERT INTO routing_prototypes VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            row["ordinal"],
+                            row["row_id"],
+                            row["canonical_url"],
+                            row["source_path"],
+                            row["section_path"],
+                            row["chunk_hash"],
+                            row["passage_text"],
+                            row["passage_hash"],
+                        )
+                        for row in artifacts.routing_prototypes
+                    ],
+                )
             connection.execute("CHECKPOINT")
         os.replace(delta_tmp, delta_path)
         payload = stable_json_dumps(artifacts.plan_dict(), indent=2) + "\n"
@@ -867,7 +1066,7 @@ def _create_delta_schema(connection: duckdb.DuckDBPyConnection) -> None:
     connection.execute(
         """
         CREATE TABLE delta_metadata (
-          schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+          schema_version INTEGER NOT NULL CHECK (schema_version = 2),
           plan_id VARCHAR PRIMARY KEY,
           site_id VARCHAR NOT NULL,
           namespace VARCHAR NOT NULL,
@@ -911,6 +1110,16 @@ def _create_delta_schema(connection: duckdb.DuckDBPyConnection) -> None:
           prior_applied_at VARCHAR NOT NULL,
           prior_status VARCHAR NOT NULL CHECK (prior_status IN ('active','retained_stale')),
           reason VARCHAR NOT NULL CHECK (reason IN ('not_in_desired_source','retained_stale_not_in_desired_source'))
+        );
+        CREATE TABLE routing_prototypes (
+          ordinal UBIGINT PRIMARY KEY,
+          row_id VARCHAR NOT NULL UNIQUE,
+          canonical_url VARCHAR NOT NULL,
+          source_path VARCHAR NOT NULL,
+          section_path VARCHAR NOT NULL,
+          chunk_hash VARCHAR NOT NULL,
+          passage_text VARCHAR NOT NULL,
+          passage_hash VARCHAR NOT NULL UNIQUE
         )
         """
     )
@@ -923,7 +1132,7 @@ def verify_plan_artifacts(
     upsert_window: tuple[int, int] | None = None,
     stale_window: tuple[int, int] | None = None,
 ) -> VerifiedDeltaPlan:
-    """Fully verify one schema-v2 plan, optionally materializing bounded windows."""
+    """Fully verify one schema-v3 plan, optionally materializing bounded windows."""
 
     if materialize and (upsert_window is not None or stale_window is not None):
         raise ValueError("bounded windows require materialize=False")
@@ -968,8 +1177,21 @@ def verify_plan_artifacts(
             ).fetchone()
             if overlap is not None:
                 raise ValueError("delta row identity cannot be both upsert and stale")
+            prototype_stale_overlap = connection.execute(
+                """
+                SELECT 1
+                FROM routing_prototypes p JOIN stale_rows s USING (row_id)
+                LIMIT 1
+                """
+            ).fetchone()
+            if prototype_stale_overlap is not None:
+                raise ValueError("routing prototype cannot reference a stale row")
             logical_digest = hashlib.sha256()
-            logical_digest.update(b'{"schema_version":1,"stale_rows":[')
+            logical_digest.update(b'{"routing_prototypes":[')
+            routing_prototypes = _verify_routing_prototype_stream(
+                connection, plan=plan, digest=logical_digest
+            )
+            logical_digest.update(b'],"schema_version":2,"stale_rows":[')
             stale_materialized, stale_count, retained_count = _verify_stale_stream(
                 connection, materialize=materialize, digest=logical_digest
             )
@@ -982,10 +1204,18 @@ def verify_plan_artifacts(
             if logical != delta["logical_hash"]:
                 raise ValueError("delta logical hash does not match")
             _validate_delta_rows_stream(connection, plan)
+            _validate_routing_prototype_source_links(connection, routing_prototypes)
             if upsert_count != delta["upsert_count"]:
                 raise ValueError("delta upsert count does not match")
             if stale_count != delta["stale_count"] or retained_count != delta["retained_stale_count"]:
                 raise ValueError("delta stale counts do not match")
+            routing_descriptor = plan["routing_prototypes"]
+            if len(routing_prototypes) != routing_descriptor["count"]:
+                raise ValueError("routing prototype count does not match")
+            if routing_prototypes_logical_hash(routing_prototypes) != routing_descriptor[
+                "logical_hash"
+            ]:
+                raise ValueError("routing prototype logical hash does not match")
             if not materialize:
                 upsert_materialized = _read_upsert_window(connection, upsert_window)
                 stale_materialized = _read_stale_window(connection, stale_window)
@@ -1000,7 +1230,12 @@ def verify_plan_artifacts(
         raise ValueError("plan artifact hash does not match")
     if plan["plan_id"] != f"plan_{artifact_hash[:16]}":
         raise ValueError("plan ID does not match artifact hash")
-    return VerifiedDeltaPlan(plan, tuple(upsert_materialized), tuple(stale_materialized))
+    return VerifiedDeltaPlan(
+        plan,
+        tuple(upsert_materialized),
+        tuple(stale_materialized),
+        tuple(routing_prototypes),
+    )
 
 
 def _sensitive_key(key: str) -> bool:
@@ -1380,6 +1615,7 @@ def artifact_identity(plan: Mapping[str, object]) -> JsonObject:
         "embedding_precision": plan["embedding_precision"],
         "applied_state": plan["applied_state"],
         "delta": plan["delta"],
+        "routing_prototypes": plan["routing_prototypes"],
         "diff": plan["diff"],
     }
 
@@ -1397,6 +1633,7 @@ def _validate_delta_schema(connection: duckdb.DuckDBPyConnection) -> None:
     }
     expected_relations = {
         ("main", "delta_metadata", "BASE TABLE"),
+        ("main", "routing_prototypes", "BASE TABLE"),
         ("main", "upsert_rows", "BASE TABLE"),
         ("main", "stale_rows", "BASE TABLE"),
     }
@@ -1438,6 +1675,12 @@ def _validate_delta_schema(connection: duckdb.DuckDBPyConnection) -> None:
             ("embedding_text_hash", "VARCHAR"), ("prior_plan_id", "VARCHAR"),
             ("prior_applied_at", "VARCHAR"), ("prior_status", "VARCHAR"), ("reason", "VARCHAR"),
         ],
+        "routing_prototypes": [
+            ("ordinal", "UBIGINT"), ("row_id", "VARCHAR"),
+            ("canonical_url", "VARCHAR"), ("source_path", "VARCHAR"),
+            ("section_path", "VARCHAR"), ("chunk_hash", "VARCHAR"),
+            ("passage_text", "VARCHAR"), ("passage_hash", "VARCHAR"),
+        ],
     }
     for table, expected in expected_columns.items():
         table_info = connection.execute(f"PRAGMA table_info('{table}')").fetchall()
@@ -1455,7 +1698,7 @@ def _validate_delta_schema(connection: duckdb.DuckDBPyConnection) -> None:
         ).fetchall()
     }
     expected_constraints = {
-        ("delta_metadata", "CHECK", "CHECK((schema_version = 1))"),
+        ("delta_metadata", "CHECK", "CHECK((schema_version = 2))"),
         ("delta_metadata", "PRIMARY KEY", "PRIMARY KEY(plan_id)"),
         ("upsert_rows", "PRIMARY KEY", "PRIMARY KEY(ordinal)"),
         ("upsert_rows", "UNIQUE", "UNIQUE(row_id)"),
@@ -1465,6 +1708,9 @@ def _validate_delta_schema(connection: duckdb.DuckDBPyConnection) -> None:
         ("stale_rows", "CHECK", "CHECK((category IN ('stale', 'retained_stale')))"),
         ("stale_rows", "CHECK", "CHECK((prior_status IN ('active', 'retained_stale')))"),
         ("stale_rows", "CHECK", "CHECK((reason IN ('not_in_desired_source', 'retained_stale_not_in_desired_source')))"),
+        ("routing_prototypes", "PRIMARY KEY", "PRIMARY KEY(ordinal)"),
+        ("routing_prototypes", "UNIQUE", "UNIQUE(row_id)"),
+        ("routing_prototypes", "UNIQUE", "UNIQUE(passage_hash)"),
     }
     if constraints != expected_constraints:
         raise ValueError("delta database constraints do not match schema")
@@ -1507,6 +1753,41 @@ def _stale_from_sql(row: tuple[object, ...]) -> JsonObject:
         "embedding_text_hash": str(row[6]), "prior_plan_id": str(row[7]),
         "prior_applied_at": str(row[8]), "prior_status": str(row[9]), "reason": str(row[10]),
     }
+
+
+def _routing_prototype_from_sql(row: tuple[object, ...]) -> JsonObject:
+    return {
+        "ordinal": int(row[0]),
+        "row_id": str(row[1]),
+        "canonical_url": str(row[2]),
+        "source_path": str(row[3]),
+        "section_path": str(row[4]),
+        "chunk_hash": str(row[5]),
+        "passage_text": str(row[6]),
+        "passage_hash": str(row[7]),
+    }
+
+
+def _verify_routing_prototype_stream(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    plan: Mapping[str, object],
+    digest: Any,
+) -> list[JsonObject]:
+    cursor = connection.execute("SELECT * FROM routing_prototypes ORDER BY ordinal")
+    values: list[JsonObject] = []
+    while (raw := cursor.fetchone()) is not None:
+        row = _routing_prototype_from_sql(tuple(raw))
+        if row["ordinal"] != len(values):
+            raise ValueError("routing prototype ordinals are not contiguous")
+        if len(values) >= MAX_ROUTING_PROTOTYPES:
+            raise ValueError("routing prototype count exceeds the safe limit")
+        _validate_routing_prototype_row(plan, row, expected_ordinal=len(values))
+        if values:
+            digest.update(b",")
+        digest.update(stable_json_dumps(row).encode("utf-8"))
+        values.append(row)
+    return values
 
 
 def _verify_upsert_stream(
@@ -1741,6 +2022,174 @@ def _validate_safe_metadata(
         raise ValueError("delta row source metadata URL contradicts canonical URL")
     if "title" in metadata and metadata["title"] != row_title:
         raise ValueError("delta row source metadata title contradicts row title")
+
+
+def _validate_routing_prototype_rows(
+    plan: Mapping[str, object],
+    rows: Iterable[Mapping[str, object]],
+    *,
+    upsert_rows: Iterable[Mapping[str, object]] = (),
+) -> None:
+    values = list(rows)
+    if len(values) > MAX_ROUTING_PROTOTYPES:
+        raise ValueError("routing prototype count exceeds the safe limit")
+    if len(values) != plan["routing_prototypes"]["count"]:
+        raise ValueError("routing prototype count does not match plan")
+    row_ids: set[str] = set()
+    passage_hashes: set[str] = set()
+    for ordinal, row in enumerate(values):
+        _validate_routing_prototype_row(plan, row, expected_ordinal=ordinal)
+        row_id = str(row["row_id"])
+        passage_hash = str(row["passage_hash"])
+        if row_id in row_ids or passage_hash in passage_hashes:
+            raise ValueError("routing prototypes must reference distinct rows and passages")
+        row_ids.add(row_id)
+        passage_hashes.add(passage_hash)
+    _validate_routing_prototype_upsert_links(values, upsert_rows)
+
+
+def _validate_routing_prototype_row(
+    plan: Mapping[str, object],
+    row: Mapping[str, object],
+    *,
+    expected_ordinal: int,
+) -> None:
+    required = {
+        "ordinal", "row_id", "canonical_url", "source_path", "section_path",
+        "chunk_hash", "passage_text", "passage_hash",
+    }
+    if set(row) != required:
+        raise ValueError("routing prototype fields do not match schema")
+    if type(row["ordinal"]) is not int or row["ordinal"] != expected_ordinal:
+        raise ValueError("routing prototype ordinals are not contiguous")
+    for field in (
+        "row_id", "canonical_url", "source_path", "chunk_hash", "passage_text",
+        "passage_hash",
+    ):
+        if not isinstance(row[field], str) or not row[field]:
+            raise ValueError(f"routing prototype {field} must be a non-empty string")
+    if not isinstance(row["section_path"], str):
+        raise ValueError("routing prototype section_path must be a string")
+    expected_row_id = generic_site_row_id(
+        site_id=str(plan["site_id"]),
+        canonical_url=str(row["canonical_url"]),
+        section_path=str(row["section_path"]),
+        chunk_hash=str(row["chunk_hash"]),
+    )
+    if (
+        _ROW_ID.fullmatch(str(row["row_id"])) is None
+        or row["row_id"] != expected_row_id
+    ):
+        raise ValueError("routing prototype source row ID is invalid")
+    if _HEX_SHA256.fullmatch(str(row["chunk_hash"])) is None:
+        raise ValueError("routing prototype chunk hash is invalid")
+    if _HEX_SHA256.fullmatch(str(row["passage_hash"])) is None:
+        raise ValueError("routing prototype passage hash is invalid")
+    passage_text = str(row["passage_text"])
+    if len(passage_text) > MAX_ROUTING_PROTOTYPE_CHARACTERS:
+        raise ValueError("routing prototype passage exceeds the safe character limit")
+    if sha256_text(passage_text) != row["passage_hash"]:
+        raise ValueError("routing prototype passage hash does not match")
+    _validate_routing_passage_format(
+        passage_text, str(row["section_path"]), str(row["source_path"])
+    )
+    _validate_safe_row_uri(
+        str(row["canonical_url"]), source_kind=str(plan["source"]["kind"])
+    )
+    _validate_row_url_authority(
+        plan["source"], str(row["canonical_url"]), metadata=None
+    )
+    _validate_relative_source_path(str(row["source_path"]))
+
+
+def _validate_routing_passage_format(
+    passage_text: str,
+    section_path: str,
+    source_path: str,
+) -> None:
+    marker = "\n\nSource excerpt:\n"
+    if passage_text.count(marker) != 1:
+        raise ValueError("routing prototype passage format is invalid")
+    header, excerpt = passage_text.split(marker, 1)
+    header_lines = header.splitlines()
+    if not header_lines:
+        raise ValueError("routing prototype passage context is invalid")
+    if header_lines[0].startswith("Title: "):
+        context = header_lines[0].removeprefix("Title: ")
+        if not context or context != _bounded_routing_component(
+            context, _MAX_ROUTING_TITLE_CHARACTERS
+        ):
+            raise ValueError("routing prototype passage title is invalid")
+        expected_context = f"Title: {context}"
+    else:
+        expected_source = _bounded_routing_component(
+            source_path, _MAX_ROUTING_TITLE_CHARACTERS
+        )
+        if not expected_source or header_lines[0] != f"Source: {expected_source}":
+            raise ValueError("routing prototype passage source context is invalid")
+        expected_context = f"Source: {expected_source}"
+    expected_section = _bounded_routing_component(
+        section_path, _MAX_ROUTING_SECTION_CHARACTERS
+    )
+    expected_headers = [expected_context]
+    if expected_section:
+        expected_headers.append(f"Section: {expected_section}")
+    if header_lines != expected_headers:
+        raise ValueError("routing prototype passage section is invalid")
+    if not excerpt or excerpt != _normalized_routing_excerpt(excerpt):
+        raise ValueError("routing prototype source excerpt is invalid")
+
+
+def _validate_routing_prototype_upsert_links(
+    prototypes: Iterable[Mapping[str, object]],
+    upsert_rows: Iterable[Mapping[str, object]],
+) -> None:
+    upserts = {str(row["row_id"]): row for row in upsert_rows}
+    for prototype in prototypes:
+        upsert = upserts.get(str(prototype["row_id"]))
+        if upsert is None:
+            continue
+        expected_provenance = (
+            upsert["canonical_url"], upsert["source_path"], upsert["section_path"],
+            upsert["chunk_hash"],
+        )
+        observed_provenance = (
+            prototype["canonical_url"], prototype["source_path"],
+            prototype["section_path"], prototype["chunk_hash"],
+        )
+        if observed_provenance != expected_provenance:
+            raise ValueError("routing prototype provenance contradicts its source row")
+        expected_passage = routing_passage_text_for_chunk(upsert)
+        if prototype["passage_text"] != expected_passage:
+            raise ValueError("routing prototype passage contradicts its source row")
+
+
+def _validate_routing_prototype_source_links(
+    connection: duckdb.DuckDBPyConnection,
+    prototypes: Iterable[Mapping[str, object]],
+) -> None:
+    values = tuple(prototypes)
+    if not values:
+        return
+    row_ids = tuple(sorted({str(row["row_id"]) for row in values}))
+    if len(row_ids) > MAX_ROUTING_PROTOTYPES:
+        raise ValueError("routing prototype source-link query exceeds the safe limit")
+    placeholders = ", ".join("?" for _row_id in row_ids)
+    cursor = connection.execute(
+        f"""
+        SELECT * FROM upsert_rows
+        WHERE row_id IN ({placeholders})
+        ORDER BY ordinal
+        LIMIT {MAX_ROUTING_PROTOTYPES}
+        """,
+        list(row_ids),
+    )
+    upserts: list[JsonObject] = []
+    while (raw := cursor.fetchone()) is not None:
+        upserts.append(_upsert_from_sql(tuple(raw)))
+        if len(upserts) > len(row_ids):
+            raise ValueError("routing prototype source-link query returned duplicate rows")
+    _validate_routing_prototype_upsert_links(values, upserts)
 
 
 def _validate_upsert_row(plan: Mapping[str, object], row: Mapping[str, object]) -> None:

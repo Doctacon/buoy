@@ -19,6 +19,10 @@ from buoy_search.catalog import (
     CatalogError,
     NamespaceCard,
     ROUTING_DIMENSIONS,
+    ROUTING_EVIDENCE_VECTOR_FIELD,
+    ROUTING_EVIDENCE_VECTOR_HASH_FIELD,
+    ROUTING_PASSAGE_FIELD,
+    ROUTING_PASSAGE_FIELDS,
     ROUTING_PROTOTYPE_FIELD_ORDER,
     ROUTING_PROTOTYPE_FIELDS,
     card_revision,
@@ -26,7 +30,7 @@ from buoy_search.catalog import (
     catalog_revision,
     parse_card,
 )
-from buoy_search.plan_artifacts import stable_hash
+from buoy_search.plan_artifacts import PLAN_SCHEMA_VERSION, stable_hash
 
 REMOTE_CATALOG_NAMESPACE = "buoy-routing-catalog-v1"
 NAMESPACE_PAGE_SIZE = 1000
@@ -36,7 +40,11 @@ DISTANCE_METRIC = "cosine_distance"
 STRONG_CONSISTENCY = {"level": "strong"}
 REMOTE_SCHEMA_V1 = 1
 REMOTE_SCHEMA_V2 = 2
-REMOTE_CARD_ATTRIBUTES_V2 = tuple(field.name for field in fields(NamespaceCard))
+REMOTE_SCHEMA_V3 = 3
+REMOTE_CARD_ATTRIBUTES_V3 = tuple(field.name for field in fields(NamespaceCard))
+REMOTE_CARD_ATTRIBUTES_V2 = tuple(
+    name for name in REMOTE_CARD_ATTRIBUTES_V3 if name not in ROUTING_PASSAGE_FIELDS
+)
 REMOTE_CARD_ATTRIBUTES = tuple(
     name for name in REMOTE_CARD_ATTRIBUTES_V2 if name not in ROUTING_PROTOTYPE_FIELDS
 )
@@ -97,11 +105,25 @@ REMOTE_CATALOG_SCHEMA_V2: dict[str, dict[str, object]] = {
     "routing_prototype_vector": _schema("[]float", filterable=False),
     "routing_prototype_vector_hash": _schema("string", filterable=False),
 }
+REMOTE_CATALOG_SCHEMA_V3: dict[str, dict[str, object]] = {
+    **REMOTE_CATALOG_SCHEMA_V2,
+    ROUTING_PASSAGE_FIELD: _schema("[]string", filterable=False),
+    ROUTING_EVIDENCE_VECTOR_FIELD: _schema("[]float", filterable=False),
+    ROUTING_EVIDENCE_VECTOR_HASH_FIELD: _schema("string", filterable=False),
+}
 REMOTE_CATALOG_SCHEMA_V2_ADDITIONS: dict[str, dict[str, object]] = {
     name: REMOTE_CATALOG_SCHEMA_V2[name]
     for name in ROUTING_PROTOTYPE_FIELD_ORDER
 }
 REMOTE_CATALOG_SCHEMA_V1 = REMOTE_CATALOG_SCHEMA
+REMOTE_CATALOG_SCHEMA_V3_ADDITIONS: dict[str, dict[str, object]] = {
+    name: REMOTE_CATALOG_SCHEMA_V3[name]
+    for name in (
+        ROUTING_PASSAGE_FIELD,
+        ROUTING_EVIDENCE_VECTOR_FIELD,
+        ROUTING_EVIDENCE_VECTOR_HASH_FIELD,
+    )
+}
 
 _SCHEMA_KEYS = {
     "type",
@@ -118,6 +140,10 @@ _SCHEMA_KEYS = {
 
 class RemoteCatalogError(CatalogError):
     """Remote catalog contract, API, or concurrency failure."""
+
+
+class RemoteCatalogMissingError(RemoteCatalogError):
+    """The reserved routing catalog namespace does not exist."""
 
 
 class NamespaceResource(Protocol):
@@ -140,7 +166,7 @@ class CompatibilityContract:
     embedding_model: str
     embedding_precision: str
     vector_dimensions: int = ROUTING_DIMENSIONS
-    plan_schema_version: int = 2
+    plan_schema_version: int = PLAN_SCHEMA_VERSION
 
 
 @dataclass(frozen=True)
@@ -251,18 +277,21 @@ def _remote_schema(schema_version: int) -> dict[str, dict[str, object]]:
         return REMOTE_CATALOG_SCHEMA
     if schema_version == REMOTE_SCHEMA_V2:
         return REMOTE_CATALOG_SCHEMA_V2
+    if schema_version == REMOTE_SCHEMA_V3:
+        return REMOTE_CATALOG_SCHEMA_V3
     raise RemoteCatalogError(
-        f"remote catalog schema version must be {REMOTE_SCHEMA_V1} or {REMOTE_SCHEMA_V2}"
+        "remote catalog schema version must be "
+        f"{REMOTE_SCHEMA_V1}, {REMOTE_SCHEMA_V2}, or {REMOTE_SCHEMA_V3}"
     )
 
 
 def _remote_card_attributes(schema_version: int) -> tuple[str, ...]:
     _remote_schema(schema_version)
-    return (
-        REMOTE_CARD_ATTRIBUTES
-        if schema_version == REMOTE_SCHEMA_V1
-        else REMOTE_CARD_ATTRIBUTES_V2
-    )
+    if schema_version == REMOTE_SCHEMA_V1:
+        return REMOTE_CARD_ATTRIBUTES
+    if schema_version == REMOTE_SCHEMA_V2:
+        return REMOTE_CARD_ATTRIBUTES_V2
+    return REMOTE_CARD_ATTRIBUTES_V3
 
 
 def remote_catalog_schema_fingerprint(schema_version: int) -> str:
@@ -303,6 +332,7 @@ def remote_catalog_projection_sha256(snapshot: RemoteCatalogSnapshot) -> str:
                         card,
                         include_vector=True,
                         include_routing_examples=False,
+                        include_routing_passages=False,
                     ),
                 }
                 for card in cards
@@ -322,10 +352,20 @@ def card_to_remote_row(
             "routing_examples requires the explicit reader-first remote catalog "
             "schema-v2 migration; schema-v1 writes cannot add it incidentally"
         )
+    if schema_version in {REMOTE_SCHEMA_V1, REMOTE_SCHEMA_V2} and (
+        parsed.routing_passages
+        or parsed.routing_evidence_vectors
+        or parsed.routing_evidence_vectors_hash
+    ):
+        raise RemoteCatalogError(
+            "routing passage evidence requires the explicit reader-first remote catalog "
+            "schema-v3 migration; schema-v1/v2 writes cannot add it incidentally"
+        )
     payload = card_to_dict(
         parsed,
         include_vector=True,
-        include_routing_examples=schema_version == REMOTE_SCHEMA_V2,
+        include_routing_examples=schema_version >= REMOTE_SCHEMA_V2,
+        include_routing_passages=schema_version == REMOTE_SCHEMA_V3,
     )
     _remote_schema(schema_version)
     return {"id": remote_card_id(parsed.namespace), **payload}
@@ -348,7 +388,7 @@ def card_from_remote_row(
     payload.setdefault("last_plan_id", None)
     payload.setdefault("last_apply_id", None)
     reconstruct_prototype = False
-    if schema_version == REMOTE_SCHEMA_V2:
+    if schema_version in {REMOTE_SCHEMA_V2, REMOTE_SCHEMA_V3}:
         # A row predating the additive bundle has provider-null state for all
         # four attributes. Reconstruct that complete legacy projection, but
         # reject partial backfills because no mixed authority is safe.
@@ -369,6 +409,19 @@ def card_from_remote_row(
                     "routing_prototype_vector_hash": payload.get("vector_hash"),
                 }
             )
+    if schema_version == REMOTE_SCHEMA_V3:
+        # A schema-only v2-to-v3 migration leaves this system-owned bundle null
+        # on every pre-existing row. Empty normalization deliberately retains
+        # the exact schema-v2 card and prototype revision bytes. Catalog parsing
+        # permits that pair only when no source passages require an exact bank.
+        if payload.get(ROUTING_PASSAGE_FIELD) is None:
+            payload[ROUTING_PASSAGE_FIELD] = []
+        if (
+            payload.get(ROUTING_EVIDENCE_VECTOR_FIELD) is None
+            and payload.get(ROUTING_EVIDENCE_VECTOR_HASH_FIELD) is None
+        ):
+            payload[ROUTING_EVIDENCE_VECTOR_FIELD] = []
+            payload[ROUTING_EVIDENCE_VECTOR_HASH_FIELD] = ""
     expected_attributes = set(_remote_card_attributes(schema_version))
     if set(payload) != expected_attributes:
         unknown = sorted(set(payload) - expected_attributes)
@@ -485,9 +538,15 @@ def validate_remote_schema(metadata: object) -> dict[str, dict[str, object]]:
     implicit_id = schema.pop("id", None)
     if implicit_id != {"type": "string", "filterable": True}:
         raise RemoteCatalogError("remote catalog implicit id schema must be filterable string")
-    if schema not in (REMOTE_CATALOG_SCHEMA, REMOTE_CATALOG_SCHEMA_V2):
+    if schema not in (
+        REMOTE_CATALOG_SCHEMA,
+        REMOTE_CATALOG_SCHEMA_V2,
+        REMOTE_CATALOG_SCHEMA_V3,
+    ):
         expected = (
-            REMOTE_CATALOG_SCHEMA_V2
+            REMOTE_CATALOG_SCHEMA_V3
+            if set(schema) & ROUTING_PASSAGE_FIELDS
+            else REMOTE_CATALOG_SCHEMA_V2
             if "routing_examples" in schema
             else REMOTE_CATALOG_SCHEMA
         )
@@ -513,14 +572,18 @@ def read_remote_catalog(
 ) -> RemoteCatalogSnapshot:
     first_ids, first_pages = _list_namespaces(client)
     if REMOTE_CATALOG_NAMESPACE not in first_ids:
-        raise RemoteCatalogError(
+        raise RemoteCatalogMissingError(
             f"remote catalog namespace {REMOTE_CATALOG_NAMESPACE!r} does not exist in region {region!r}"
         )
     resource = remote_catalog_resource(client)
     metadata = _call("metadata read", lambda: resource.metadata())
     schema = validate_remote_schema(metadata)
     schema_version = (
-        REMOTE_SCHEMA_V2 if schema == REMOTE_CATALOG_SCHEMA_V2 else REMOTE_SCHEMA_V1
+        REMOTE_SCHEMA_V3
+        if schema == REMOTE_CATALOG_SCHEMA_V3
+        else REMOTE_SCHEMA_V2
+        if schema == REMOTE_CATALOG_SCHEMA_V2
+        else REMOTE_SCHEMA_V1
     )
     first_cards, first_card_pages, first_billing = _read_card_pass(
         resource, region=region, schema_version=schema_version
@@ -679,6 +742,33 @@ def migrate_remote_catalog_schema_v2(
         lambda: resource.write(
             distance_metric=DISTANCE_METRIC,
             schema=REMOTE_CATALOG_SCHEMA_V2,
+        ),
+    )
+    _validate_schema_only_write_result(response)
+    return MutationResult(
+        changed=True,
+        card=None,
+        rows_affected=0,
+        affected_ids=(),
+        metrics=MutationMetrics(
+            write_requests=1,
+            verification_query_requests=0,
+            billing=_response_billing(response),
+        ),
+    )
+
+
+@_sanitized_remote_operation("schema-v3 migration processing")
+def migrate_remote_catalog_schema_v3(
+    resource: NamespaceResource,
+) -> MutationResult:
+    """Add the system-owned passage/vector/hash bundle in one schema-only write."""
+
+    response = _call(
+        "schema-v3 migration write",
+        lambda: resource.write(
+            distance_metric=DISTANCE_METRIC,
+            schema=REMOTE_CATALOG_SCHEMA_V3,
         ),
     )
     _validate_schema_only_write_result(response)
@@ -1043,7 +1133,7 @@ def _compatible(card: NamespaceCard, compatibility: CompatibilityContract) -> bo
         and card.embedding_model == compatibility.embedding_model
         and card.embedding_precision == compatibility.embedding_precision
         and card.vector_dimensions == compatibility.vector_dimensions
-        and card.plan_schema_version in {1, compatibility.plan_schema_version}
+        and card.plan_schema_version in {1, 2, compatibility.plan_schema_version}
     )
 
 

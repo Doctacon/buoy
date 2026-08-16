@@ -8,6 +8,12 @@ as GitHub Release assets rather than to PyPI.
 
 ### Added
 
+- Added schema-v3/delta-v2 plans with deterministic bounded source-derived
+  routing passages, exact `plan.json` plus `delta.duckdb` output, remote catalog
+  schema v3 support, and retained-plan `catalog repair-apply` inspection plus
+  absence/revision-bound repair.
+- Added the preview-first, reader-first `catalog migrate-routing-v3` operator.
+
 - Added the staged activation contract for bounded prototype routing. Routing
   cards may carry up to eight reviewed example questions, and the router can
   rerank an exact local top-twelve card shortlist with the pinned MiniLM model
@@ -42,6 +48,22 @@ as GitHub Release assets rather than to PyPI.
 
 ### Changed
 
+- Schema-v3 registration now requires an existing exact-v3 remote catalog.
+  First and ordinary apply never provision or migrate it; when the prerequisite
+  is absent or catalog state cannot be safely read after content/state commit,
+  apply reports nonzero partial success, performs no catalog schema/card write,
+  and retains the plan. Its read-only `repair-apply --inspect-current` recovery
+  establishes a safe card binding before any approved repair.
+- Generic `catalog upsert` can no longer set or clear system-owned routing
+  passages and preserves an existing passage bank. Approved apply,
+  retained-plan repair, and separately governed migration/backfill remain the
+  passage-mutation authorities.
+- Local plan compatibility is a forward-only schema-v3/delta-v2 cutover;
+  schema-v1/v2 plans remain preserved but inert. Plan cleanup now occurs only
+  after content, state, and catalog registration all succeed.
+- Valid certified-catalog drift now routes provisionally across the best three
+  compatible cards, while exact title/alias anchors retain singleton authority.
+
 - Ordinary apply registration now preserves operator-reviewed routing examples
   on both manual and generated cards while continuing to refresh verified
   source, retrieval, plan, and apply-lineage fields.
@@ -60,6 +82,13 @@ as GitHub Release assets rather than to PyPI.
   ranking, per-corpus coverage promotion, evidence behavior, JSON, and provider
   calls are unchanged; partial-failure and `assessment_failed` warnings remain
   visible.
+
+### Security
+
+- Schema-v3 routing cards persist bounded, verbatim-derived source excerpts.
+  Buoy redacts passages and vectors from normal output, but credentials allowed
+  to query raw catalog provider rows can read the excerpts; catalog read access
+  must be scoped as source-content access.
 
 ## [0.5.1] - 2026-08-13
 

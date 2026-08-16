@@ -9,14 +9,17 @@ import unittest
 from unittest.mock import patch
 
 from buoy_search.catalog import (
+    MAX_ROUTING_EVIDENCE,
     MAX_ROUTING_EXAMPLES,
     ROUTING_DIMENSIONS,
     ROUTING_MODEL,
     ROUTING_MODEL_REVISION,
+    ROUTING_PASSAGE_PROJECTION,
     ROUTING_PROJECTION,
     CardFields,
     CatalogError,
     NamespaceCard,
+    bounded_routing_passages,
     canonicalize_float32_vector,
     canonical_text,
     card_passage_text,
@@ -32,10 +35,11 @@ from buoy_search.catalog import (
     prepare_prospective_card,
     routing_example_passage_text,
     routing_prototype_hash_for_fields,
+    routing_source_passage_text,
     semantic_hash_for_fields,
     vector_hash,
 )
-from buoy_search.plan_artifacts import stable_hash, stable_json_dumps
+from buoy_search.plan_artifacts import PLAN_SCHEMA_VERSION, stable_hash, stable_json_dumps
 
 
 UNIT_VECTOR = [1.0] + [0.0] * (ROUTING_DIMENSIONS - 1)
@@ -148,7 +152,18 @@ class CatalogProjectionTests(unittest.TestCase):
             legacy.card_revision,
             "fc5239d6b296c29dbd8f070fbb8a703fdc4775bcfe61a35ca53ad5a2c69326d8",
         )
+        self.assertNotIn("routing_passages", legacy_payload)
         self.assertEqual(parse_card(legacy_payload), legacy)
+
+        explicit_v3 = card_to_dict(
+            legacy,
+            include_vector=True,
+            include_routing_examples=True,
+            include_routing_passages=True,
+        )
+        self.assertEqual(explicit_v3["routing_passages"], [])
+        self.assertEqual(parse_card(explicit_v3), legacy)
+        self.assertEqual(card_revision(parse_card(explicit_v3)), legacy.card_revision)
 
     def test_routing_examples_project_as_normalized_mean_and_round_trip(self) -> None:
         second_unit = [0.0, 1.0] + [0.0] * (ROUTING_DIMENSIONS - 2)
@@ -234,6 +249,270 @@ class CatalogProjectionTests(unittest.TestCase):
         provider_vector[0] = math.nextafter(provider_vector[0], math.inf)
         provider_decimal["routing_prototype_vector"] = provider_vector
         self.assertEqual(parse_card(provider_decimal), card)
+
+    def test_source_passages_use_distinct_projection_and_plan_order(self) -> None:
+        second_unit = [0.0, 1.0] + [0.0] * (ROUTING_DIMENSIONS - 2)
+        third_unit = [0.0, 0.0, 1.0] + [0.0] * (ROUTING_DIMENSIONS - 3)
+        example = "How do I configure request retries?"
+        passages = ["Retry policy defaults and backoff.", "Client timeout settings."]
+        embedder = SequenceEmbedder([UNIT_VECTOR, second_unit, third_unit])
+
+        card = prepare_card(
+            fields(routing_examples=[example], routing_passages=passages[:1]),
+            embedder=embedder,
+            now="2026-07-15T12:00:00+00:00",
+        )
+
+        self.assertEqual(
+            embedder.calls,
+            [[
+                card_passage_text(
+                    title="Example",
+                    summary="Example source.",
+                    aliases=["example docs", "example project"],
+                    tags=["docs", "python"],
+                ),
+                routing_example_passage_text(
+                    title="Example",
+                    summary="Example source.",
+                    example=example,
+                ),
+                routing_source_passage_text(
+                    title="Example",
+                    summary="Example source.",
+                    passage=passages[0],
+                ),
+            ]],
+        )
+        expected_coordinate = 1 / math.sqrt(3)
+        expected_prototype = canonicalize_float32_vector(
+            [expected_coordinate, expected_coordinate, expected_coordinate]
+            + [0.0] * (ROUTING_DIMENSIONS - 3),
+            namespace=card.namespace,
+            field="routing_prototype_vector",
+        )
+        self.assertEqual(card.vector, UNIT_VECTOR)
+        self.assertEqual(card.routing_prototype_vector, expected_prototype)
+        self.assertEqual(card.routing_passages, passages[:1])
+        self.assertEqual(
+            card.routing_evidence_vectors,
+            [*second_unit, *third_unit],
+        )
+        self.assertEqual(
+            card.routing_evidence_vectors_hash,
+            vector_hash([*second_unit, *third_unit]),
+        )
+        self.assertEqual(
+            card.routing_prototype_hash,
+            routing_prototype_hash_for_fields(
+                title=card.title,
+                summary=card.summary,
+                aliases=card.aliases,
+                tags=card.tags,
+                routing_examples=[example],
+                routing_passages=passages[:1],
+            ),
+        )
+        self.assertEqual(
+            ROUTING_PASSAGE_PROJECTION,
+            "separate_prototype_vector_normalized_mean_v2",
+        )
+        payload = card_to_dict(card, include_vector=True)
+        self.assertEqual(payload["routing_passages"], passages[:1])
+        self.assertEqual(parse_card(payload), card)
+        public_payload = card_to_dict(card)
+        self.assertNotIn("routing_evidence_vectors", public_payload)
+        self.assertEqual(
+            public_payload["routing_evidence_vectors_hash"],
+            card.routing_evidence_vectors_hash,
+        )
+
+        reused = prepare_card(
+            fields(
+                routing_examples=[example],
+                routing_passages=passages[:1],
+                region="gcp-us-east4",
+            ),
+            existing=card,
+            embedder=FailingEmbedder(),
+        )
+        self.assertEqual(reused.routing_evidence_vectors, card.routing_evidence_vectors)
+        self.assertEqual(
+            reused.routing_evidence_vectors_hash,
+            card.routing_evidence_vectors_hash,
+        )
+
+    def test_empty_passages_preserve_exact_schema_v2_projection_bytes(self) -> None:
+        example = "How do I configure request retries?"
+        legacy = prepare_card(
+            fields(routing_examples=[example], routing_passages=[]),
+            embedder=FixedEmbedder(),
+            now="2026-07-15T12:00:00+00:00",
+        )
+        legacy_payload = card_to_dict(legacy, include_vector=True)
+        self.assertEqual(len(legacy_payload), 33)
+        self.assertNotIn("routing_passages", legacy_payload)
+        self.assertEqual(legacy.routing_evidence_vectors, [])
+        self.assertEqual(legacy.routing_evidence_vectors_hash, "")
+        self.assertEqual(
+            legacy.card_revision,
+            "ae1e3e1cb4a8d691436ad68e79bbd62b313097f5dfddd4f28ce6fdae151d8906",
+        )
+        self.assertEqual(parse_card(legacy_payload), legacy)
+
+        card = prepare_card(
+            fields(
+                plan_schema_version=PLAN_SCHEMA_VERSION,
+                routing_examples=[example],
+                routing_passages=[],
+            ),
+            existing=legacy,
+            embedder=FixedEmbedder(),
+            now="2026-07-15T12:00:00+00:00",
+        )
+        payload = card_to_dict(card, include_vector=True)
+        self.assertEqual(len(payload), 36)
+        self.assertEqual(payload["routing_passages"], [])
+        self.assertEqual(len(card.routing_evidence_vectors), ROUTING_DIMENSIONS)
+        self.assertEqual(
+            card.routing_evidence_vectors_hash,
+            vector_hash(card.routing_evidence_vectors),
+        )
+        self.assertEqual(
+            card.routing_prototype_hash,
+            "21533c3a353ac762702dcdc45b0e2bb23a52fb77ab60ffd4209a437d7a153f7b",
+        )
+        self.assertEqual(
+            card.routing_prototype_vector,
+            legacy.routing_prototype_vector,
+        )
+        example_bank_drift = json.loads(json.dumps(payload))
+        example_bank_drift["routing_evidence_vectors"] = [
+            0.0,
+            1.0,
+            *([0.0] * (ROUTING_DIMENSIONS - 2)),
+        ]
+        example_bank_drift["routing_evidence_vectors_hash"] = vector_hash(
+            example_bank_drift["routing_evidence_vectors"]
+        )
+        with self.assertRaisesRegex(
+            CatalogError,
+            "inconsistent with routing_evidence_vectors",
+        ):
+            parse_card(example_bank_drift)
+        missing_example_bank = json.loads(json.dumps(payload))
+        missing_example_bank["routing_evidence_vectors"] = []
+        missing_example_bank["routing_evidence_vectors_hash"] = ""
+        with self.assertRaisesRegex(
+            CatalogError,
+            "plan-schema-3 routing evidence requires routing_evidence_vectors",
+        ):
+            parse_card(missing_example_bank)
+        explicit_v3 = card_to_dict(
+            legacy,
+            include_vector=True,
+            include_routing_passages=True,
+        )
+        self.assertEqual(explicit_v3["routing_passages"], [])
+        self.assertEqual(explicit_v3["routing_evidence_vectors"], [])
+        self.assertEqual(explicit_v3["routing_evidence_vectors_hash"], "")
+        self.assertEqual(parse_card(explicit_v3), legacy)
+
+    def test_v3_evidence_bank_is_exact_float32_hashed_and_mean_bound(self) -> None:
+        card = prepare_card(
+            fields(
+                plan_schema_version=PLAN_SCHEMA_VERSION,
+                routing_examples=["How do I configure retries?"],
+                routing_passages=["Retry policy defaults and backoff."],
+            ),
+            embedder=FixedEmbedder(),
+            now="2026-07-15T12:00:00+00:00",
+        )
+        payload = card_to_dict(card, include_vector=True)
+        self.assertEqual(
+            len(card.routing_evidence_vectors),
+            2 * ROUTING_DIMENSIONS,
+        )
+
+        same_bucket = json.loads(json.dumps(payload))
+        same_bucket["routing_evidence_vectors"][0] = math.nextafter(1.0, math.inf)
+        self.assertEqual(parse_card(same_bucket), card)
+
+        second_unit = [0.0, 1.0] + [0.0] * (ROUTING_DIMENSIONS - 2)
+        stale_hash = json.loads(json.dumps(payload))
+        stale_hash["routing_evidence_vectors"][:ROUTING_DIMENSIONS] = second_unit
+        with self.assertRaisesRegex(
+            CatalogError,
+            "routing_evidence_vectors_hash is stale or invalid",
+        ):
+            parse_card(stale_hash)
+
+        inconsistent_mean = json.loads(json.dumps(stale_hash))
+        inconsistent_mean["routing_evidence_vectors_hash"] = vector_hash(
+            inconsistent_mean["routing_evidence_vectors"]
+        )
+        with self.assertRaisesRegex(
+            CatalogError,
+            "inconsistent with routing_evidence_vectors",
+        ):
+            parse_card(inconsistent_mean)
+
+        missing_bank = json.loads(json.dumps(payload))
+        missing_bank["routing_evidence_vectors"] = []
+        missing_bank["routing_evidence_vectors_hash"] = ""
+        with self.assertRaisesRegex(
+            CatalogError,
+            "non-empty routing_passages requires routing_evidence_vectors",
+        ):
+            parse_card(missing_bank)
+
+        wrong_length = json.loads(json.dumps(payload))
+        wrong_length["routing_evidence_vectors"].pop()
+        wrong_length["routing_evidence_vectors_hash"] = vector_hash(
+            wrong_length["routing_evidence_vectors"]
+        )
+        with self.assertRaisesRegex(CatalogError, "exactly 768 numbers"):
+            parse_card(wrong_length)
+
+        for missing_field in (
+            "routing_passages",
+            "routing_evidence_vectors",
+            "routing_evidence_vectors_hash",
+        ):
+            with self.subTest(missing_field=missing_field):
+                partial = json.loads(json.dumps(payload))
+                partial.pop(missing_field)
+                with self.assertRaisesRegex(CatalogError, "missing"):
+                    parse_card(partial)
+
+    def test_v3_upgrade_canonicalizes_retained_base_before_mean(self) -> None:
+        coordinate = 1 / math.sqrt(2)
+        raw_base = [coordinate, coordinate] + [0.0] * (ROUTING_DIMENSIONS - 2)
+        legacy = prepare_card(
+            fields(routing_examples=[]),
+            embedder=SequenceEmbedder([raw_base]),
+            now="2026-07-15T12:00:00+00:00",
+        )
+        evidence = [0.0, 0.0, 1.0] + [0.0] * (ROUTING_DIMENSIONS - 3)
+
+        upgraded = prepare_card(
+            fields(
+                plan_schema_version=PLAN_SCHEMA_VERSION,
+                routing_examples=["How do I configure retries?"],
+            ),
+            existing=legacy,
+            embedder=SequenceEmbedder([raw_base, evidence]),
+            now="2026-07-15T12:00:01+00:00",
+        )
+
+        self.assertEqual(
+            upgraded.vector,
+            canonicalize_float32_vector(raw_base, namespace=legacy.namespace),
+        )
+        self.assertEqual(
+            parse_card(card_to_dict(upgraded, include_vector=True)),
+            upgraded,
+        )
 
     def test_precanonical_prototype_row_fails_closed_until_hash_and_revision_repair(self) -> None:
         card = prepare_card(
@@ -323,6 +602,74 @@ class CatalogProjectionTests(unittest.TestCase):
             with self.subTest(message=message), self.assertRaisesRegex(CatalogError, message):
                 prepare_card(
                     fields(routing_examples=value),  # type: ignore[arg-type]
+                    embedder=FailingEmbedder(),
+                )
+
+    def test_examples_take_slots_before_plan_ordered_source_passages(self) -> None:
+        examples = ["Question B", "Question A"]
+        passages = [f"Source passage {index}" for index in range(7, 0, -1)]
+        bounded = bounded_routing_passages(
+            routing_examples=examples,
+            routing_passages=passages,
+        )
+        self.assertEqual(MAX_ROUTING_EVIDENCE, 8)
+        self.assertEqual(bounded, passages[:6])
+
+        card = prepare_card(
+            fields(routing_examples=examples, routing_passages=bounded),
+            embedder=FixedEmbedder(),
+        )
+        self.assertEqual(card.routing_examples, ["Question A", "Question B"])
+        self.assertEqual(card.routing_passages, passages[:6])
+        self.assertEqual(
+            len(card.routing_examples) + len(card.routing_passages),
+            MAX_ROUTING_EVIDENCE,
+        )
+
+        overlapping = ["question a!!!", *passages]
+        self.assertEqual(
+            bounded_routing_passages(
+                routing_examples=examples,
+                routing_passages=overlapping,
+            ),
+            passages[:6],
+        )
+        with self.assertRaisesRegex(CatalogError, "same normalized evidence"):
+            prepare_card(
+                fields(
+                    routing_examples=["Question A"],
+                    routing_passages=["question a!!!"],
+                ),
+                embedder=FailingEmbedder(),
+            )
+
+        valid = prepare_card(
+            fields(
+                plan_schema_version=PLAN_SCHEMA_VERSION,
+                routing_examples=["Question A"],
+                routing_passages=["Source passage"],
+            ),
+            embedder=FixedEmbedder(),
+        )
+        malformed = card_to_dict(valid, include_vector=True)
+        malformed["routing_passages"] = ["question a!!!"]
+        with self.assertRaisesRegex(CatalogError, "same normalized evidence"):
+            parse_card(malformed)
+
+        for value, message in (
+            (passages, "at most 8 combined"),
+            (["Source passage"] * 2, "duplicate normalized"),
+            (["p" * 513], "at most 512 characters"),
+            ("not-an-array", "must be an array"),
+        ):
+            with self.subTest(message=message), self.assertRaisesRegex(
+                CatalogError, message
+            ):
+                prepare_card(
+                    fields(
+                        routing_examples=examples,
+                        routing_passages=value,
+                    ),  # type: ignore[arg-type]
                     embedder=FailingEmbedder(),
                 )
 
@@ -555,6 +902,35 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
         self.assertEqual((merged.last_plan_id, merged.last_apply_id), ("plan-new", "apply-new"))
         self.assertEqual(merged.created_at, existing.created_at)
 
+    def test_manual_merge_accepts_complete_v3_example_bank_upgrade(self) -> None:
+        example = "How do I configure retries?"
+        existing = make_card(
+            plan_schema_version=2,
+            routing_examples=[example],
+            last_plan_id="plan-old",
+            last_apply_id="apply-old",
+        )
+        incoming = make_card(
+            plan_schema_version=PLAN_SCHEMA_VERSION,
+            routing_examples=[example],
+            semantic_origin="generated",
+            last_plan_id="plan-new",
+            last_apply_id="apply-new",
+        )
+
+        merged = merge_system_card(existing, incoming)
+
+        self.assertEqual(merged.semantic_origin, "manual")
+        self.assertEqual(merged.routing_examples, [example])
+        self.assertEqual(
+            len(merged.routing_evidence_vectors),
+            ROUTING_DIMENSIONS,
+        )
+        self.assertEqual(
+            merged.routing_evidence_vectors_hash,
+            incoming.routing_evidence_vectors_hash,
+        )
+
     def test_generated_merge_preserves_concurrent_disable(self) -> None:
         current = make_card(
             enabled=False,
@@ -585,7 +961,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
         repo = generated_semantics(
             base_url="https://github.com/Doctacon/buoy",
             site_id="repo-site",
-            plan_schema_version=2,
+            plan_schema_version=PLAN_SCHEMA_VERSION,
             source_metadata=[{"source_kind": "github_repo", "repo_full_name": "Doctacon/buoy"}],
         )
         self.assertEqual(repo.source_kind, "github_repo")
@@ -593,10 +969,11 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
         self.assertEqual(repo.aliases, ["buoy"])
         self.assertEqual(repo.tags, ["github", "repository"])
         self.assertEqual(repo.routing_examples, [])
+        self.assertEqual(repo.routing_passages, [])
         legacy_repo = generated_semantics(
             base_url="https://github.com/Doctacon/buoy",
             site_id="repo-site",
-            plan_schema_version=2,
+            plan_schema_version=PLAN_SCHEMA_VERSION,
             source_metadata=[],
         )
         self.assertEqual(legacy_repo.title, "Doctacon/buoy")
@@ -604,7 +981,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
         website = generated_semantics(
             base_url="https://Docs.Example.com/path",
             site_id="site",
-            plan_schema_version=2,
+            plan_schema_version=PLAN_SCHEMA_VERSION,
             source_metadata=[],
         )
         self.assertEqual((website.source_kind, website.title, website.tags), ("website", "docs.example.com", ["website"]))
@@ -612,7 +989,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
         database = generated_semantics(
             base_url="duckdb://gong-calls",
             site_id="duckdb-gong-calls",
-            plan_schema_version=2,
+            plan_schema_version=PLAN_SCHEMA_VERSION,
             source_metadata=[
                 {
                     "source_kind": "duckdb_relation",
@@ -650,7 +1027,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
                 generated = generated_semantics(
                     base_url=f"{backend}://gong-calls",
                     site_id=f"{backend}-gong-calls",
-                    plan_schema_version=2,
+                    plan_schema_version=PLAN_SCHEMA_VERSION,
                     source_metadata=[
                         {
                             "source_kind": raw_kind,
@@ -674,7 +1051,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
             document = generated_semantics(
                 base_url=base_url,
                 site_id="stable-site-id",
-                plan_schema_version=2,
+                plan_schema_version=PLAN_SCHEMA_VERSION,
                 source_metadata=[{"source_kind": raw_kind, filename_key: filename}],
             )
             self.assertEqual(document.source_kind, "document")
@@ -685,7 +1062,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
         legacy = generated_semantics(
             base_url="file://opaque-source-id",
             site_id="stable-site-id",
-            plan_schema_version=2,
+            plan_schema_version=PLAN_SCHEMA_VERSION,
             source_metadata=[],
         )
         self.assertEqual(legacy.title, "stable-site-id")
@@ -769,7 +1146,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
                 generated_semantics(
                     base_url="duckdb://gong-calls",
                     site_id="duckdb-gong-calls",
-                    plan_schema_version=2,
+                    plan_schema_version=PLAN_SCHEMA_VERSION,
                     source_metadata=source_metadata,
                 )
 
@@ -783,7 +1160,7 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
                 generated_semantics(
                     base_url=f"{backend}://gong-calls",
                     site_id=f"{backend}-gong-calls",
-                    plan_schema_version=2,
+                    plan_schema_version=PLAN_SCHEMA_VERSION,
                     source_metadata=[{"source_kind": wrong_kind}],
                 )
 
@@ -842,7 +1219,11 @@ class CatalogMergeAndGeneratedSemanticsTests(unittest.TestCase):
         ]
         for values, message in cases:
             with self.subTest(values=values), self.assertRaisesRegex(CatalogError, message):
-                generated_semantics(site_id="site", plan_schema_version=2, **values)
+                generated_semantics(
+                    site_id="site",
+                    plan_schema_version=PLAN_SCHEMA_VERSION,
+                    **values,
+                )
         with self.assertRaisesRegex(CatalogError, "plan_schema_version must equal"):
             generated_semantics(base_url="https://example.com", site_id="site", plan_schema_version=1, source_metadata=[])
         with self.assertRaisesRegex(CatalogError, "plan_schema_version must be a JSON integer"):
