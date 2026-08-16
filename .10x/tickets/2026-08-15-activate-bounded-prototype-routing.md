@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-15
 Updated: 2026-08-15
 Decision: .10x/decisions/buoy-activates-certified-bounded-prototype-routing.md
@@ -165,3 +165,18 @@ claims of this task branch.
   source/distribution/installed-package checks pass. Independent final review,
   exact post-commit build, push, and PR handoff remain; no integration,
   publication, deployment, or provider mutation has occurred.
+- 2026-08-15: The reviewed active checkpoint was committed as
+  `e85b62ed8e27565e1ca371e113ffba77ffb3dd3c`, tree
+  `b19d7c336fd695730db3e084eaba81dd55f86e69`, with exactly the approved
+  four-path artifact-phase delta. Its exact 69-file wheel and 140-file source
+  distribution passed receipt and inventory validation at SHA-256
+  `346c623edb3dfccd8ec1fa9cb7e006d60326d3df3e8efbd95c68e7fdecbc559e`
+  and `800e8c7b5523b48906605742d8cd127ded0fce1631aa5fae78d47be5044d17f0`.
+  The installed-wheel authority smoke passed with source checkout bytes
+  excluded from imports.
+- 2026-08-15: Draft PR #114 opened from the exact reviewed branch into
+  unchanged `develop` at `94b06ac58c86e96ddd012aae0a4a019dcc548cef`.
+  Fresh CI run `31925850905` passed Python 3.11, Python 3.13, and distribution
+  build jobs on active commit `e85b62e`. The task implementation and handoff
+  are complete; integration, publication, deployment, release, and every
+  provider mutation remain outside this ticket.
