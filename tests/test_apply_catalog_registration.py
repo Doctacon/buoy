@@ -1222,7 +1222,12 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
                 apply_module,
                 "read_remote_catalog",
                 return_value=snapshot,
-            ):
+            ), patch(
+                "buoy_search.catalog.load_routing_embedder",
+                side_effect=AssertionError(
+                    "catalog resource failure loaded the routing model"
+                ),
+            ) as model:
                 with self.assertRaises(
                     apply_module._CatalogRegistrationAttemptError
                 ) as raised:
@@ -1243,6 +1248,7 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
         self.assertNotIn("operator routing policy", raised.exception.repair_command)
         self.assertIn("--approve", raised.exception.repair_command)
         self.assertEqual(client.namespace_calls, [REMOTE_CATALOG_NAMESPACE])
+        model.assert_not_called()
 
     def test_catalog_failure_after_state_commit_is_truthful_partial_success(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

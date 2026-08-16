@@ -1014,6 +1014,25 @@ def register_apply_catalog_card(
                 existing.card_revision if existing is not None else None
             ),
         )
+        precondition_matches = (
+            (expect_absent and existing is None)
+            or (
+                expected_card_revision is not None
+                and existing is not None
+                and existing.card_revision == expected_card_revision
+            )
+            or (not expect_absent and expected_card_revision is None)
+        )
+        # A matching precondition means this invocation will need the fixed
+        # catalog namespace for its create/update. Acquire that provider
+        # resource before loading the pinned local routing model so an
+        # unavailable catalog fails quickly and through the redacted remote
+        # boundary. Drift/idempotence checks deliberately skip acquisition:
+        # they may prove that no write is needed and must not add a provider
+        # call.
+        resource = (
+            remote_catalog_resource(client) if precondition_matches else None
+        )
         card = generated_card_for_apply(
             verified,
             namespace=namespace,
@@ -1029,15 +1048,6 @@ def register_apply_catalog_card(
             and existing.routing_evidence_vectors == card.routing_evidence_vectors
             and existing.routing_evidence_vectors_hash
             == card.routing_evidence_vectors_hash
-        )
-        precondition_matches = (
-            (expect_absent and existing is None)
-            or (
-                expected_card_revision is not None
-                and existing is not None
-                and existing.card_revision == expected_card_revision
-            )
-            or (not expect_absent and expected_card_revision is None)
         )
         if not precondition_matches:
             # A conditional create/update may have committed before its response
@@ -1062,7 +1072,7 @@ def register_apply_catalog_card(
                     "match its retained plan/apply authority"
                 )
         else:
-            resource = remote_catalog_resource(client)
+            assert resource is not None
             card_write_attempted = True
             mutation = (
                 create_remote_cards(
