@@ -78,6 +78,7 @@ from buoy_search.plan_diff import PlanDiffError
 from buoy_search.planning_service import PlanProgress, PlanningRequest, PlanningService
 from buoy_search.model_progress import suppress_model_progress_bars
 from buoy_search.catalog import CatalogError, load_routing_embedder
+from buoy_search.cross_encoder import load_cross_encoder_reranker
 from buoy_search.catalog_cli import configure_catalog_parser
 from buoy_search.remote_catalog import (
     REMOTE_CATALOG_NAMESPACE,
@@ -112,11 +113,18 @@ from buoy_search.routing import (
     RoutedRetrievalPlan,
     RoutedRetrievalResult,
     hybrid_route,
+    prototype_route,
+)
+from buoy_search.routing_quality import (
+    load_routing_confidence_calibration,
+    validate_routing_confidence_catalog,
 )
 
 
 REMOTE_CATALOG_CLIENT_FACTORY = create_remote_catalog_client
 ROUTING_EMBEDDER_FACTORY = load_routing_embedder
+ROUTING_RERANKER_FACTORY = load_cross_encoder_reranker
+ROUTING_CONFIDENCE_FACTORY = load_routing_confidence_calibration
 
 
 def automatic_evidence_plan(calibration: EvidenceCalibration) -> dict[str, object]:
@@ -1537,6 +1545,14 @@ def _run_retrieve(args: argparse.Namespace) -> int:
             print_retrieval_text(result, explain=args.explain)
         return 0
 
+    try:
+        routing_confidence = ROUTING_CONFIDENCE_FACTORY()
+    except (OSError, ValueError):
+        print(
+            "Automatic routing failed: routing confidence artifact is invalid.",
+            file=sys.stderr,
+        )
+        return 2
     api_key = os.environ.get("TURBOPUFFER_API_KEY")
     if not api_key:
         print("TURBOPUFFER_API_KEY must be set for automatic routing.", file=sys.stderr)
@@ -1564,29 +1580,37 @@ def _run_retrieve(args: argparse.Namespace) -> int:
         )
         snapshot = require_complete_routing_coverage(snapshot)
         snapshot = require_eligible(snapshot)
-        with suppress_model_progress_bars():
-            route_embedder = ROUTING_EMBEDDER_FACTORY()
+        if routing_confidence.mode == "active":
+            validate_routing_confidence_catalog(
+                routing_confidence,
+                snapshot.eligible_cards,
+            )
+        try:
+            with suppress_model_progress_bars():
+                route_embedder = ROUTING_EMBEDDER_FACTORY()
+        except Exception:
+            raise AutomaticRoutingError(
+                "routing query embedder loading failed"
+            ) from None
         exclusion_ids = {
             "missing_card": list(snapshot.missing_card_ids),
             "stale_target": list(snapshot.stale_target_ids),
             "disabled": list(snapshot.disabled_ids),
             "incompatible": list(snapshot.incompatible_ids),
         }
-        routing = hybrid_route(
-            query,
-            snapshot.eligible_cards,
-            embedder=route_embedder,
-            route_top_k=DEFAULT_ROUTE_TOP_K,
-            catalog_namespace=REMOTE_CATALOG_NAMESPACE,
-            region=base_config.region,
-            snapshot_revision=snapshot.snapshot_revision,
-            exclusion_counts={
+        route_kwargs: dict[str, object] = {
+            "embedder": route_embedder,
+            "route_top_k": DEFAULT_ROUTE_TOP_K,
+            "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
+            "region": base_config.region,
+            "snapshot_revision": snapshot.snapshot_revision,
+            "exclusion_counts": {
                 key: len(values) for key, values in exclusion_ids.items() if values
             },
-            exclusion_ids={
+            "exclusion_ids": {
                 key: values for key, values in exclusion_ids.items() if values
             },
-            remote_counts={
+            "remote_counts": {
                 "listed_total": snapshot.counts.listed_total,
                 "control_plane_count": snapshot.counts.control_plane_count,
                 "content_live_count": snapshot.counts.content_live_count,
@@ -1597,14 +1621,34 @@ def _run_retrieve(args: argparse.Namespace) -> int:
                 "incompatible_count": snapshot.counts.incompatible_count,
                 "eligible_count": snapshot.counts.eligible_count,
             },
-            read_metrics={
+            "read_metrics": {
                 "namespace_list_pages": snapshot.metrics.namespace_list_pages,
                 "metadata_requests": snapshot.metrics.metadata_requests,
                 "card_query_pages": snapshot.metrics.card_query_pages,
                 "billing": list(snapshot.metrics.billing),
             },
-        )
-    except (RemoteCatalogError, CatalogError, AutomaticRoutingError, RuntimeError) as exc:
+        }
+        if routing_confidence.mode == "active":
+            routing = prototype_route(
+                query,
+                snapshot.eligible_cards,
+                calibration=routing_confidence,
+                reranker_loader=ROUTING_RERANKER_FACTORY,
+                **route_kwargs,
+            )
+        else:
+            routing = hybrid_route(
+                query,
+                snapshot.eligible_cards,
+                **route_kwargs,
+            )
+    except (
+        RemoteCatalogError,
+        CatalogError,
+        AutomaticRoutingError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
         print(f"Automatic routing failed: {exc}", file=sys.stderr)
         return 2
 
@@ -2075,8 +2119,25 @@ def print_retrieval_text(
                     f"reason={routing.get('selection_reason')}; "
                     f"initial_fanout={routing.get('initial_fanout')}; "
                     f"high_confidence={routing.get('high_confidence')}; "
-                    f"margin={routing.get('semantic_margin')}"
+                    f"margin={routing.get('reranker_margin', routing.get('semantic_margin'))}"
                 )
+                authority = routing.get("confidence_artifact")
+                if isinstance(authority, dict) and authority.get("mode") == "active":
+                    print(
+                        "  route authority: "
+                        f"strategy={routing.get('strategy')}; "
+                        f"artifact={authority.get('id')}@{authority.get('revision')}; "
+                        f"score_floor={routing.get('confidence_score_floor')}; "
+                        f"margin_floor={routing.get('confidence_margin_floor')}"
+                    )
+                    print(
+                        "  route binding: "
+                        f"suite={authority.get('canary_suite_sha256')}; "
+                        f"catalog={authority.get('catalog_projection_sha256')}; "
+                        f"source_report={authority.get('source_report_sha256')}; "
+                        f"source={authority.get('source_commit')}/"
+                        f"{authority.get('source_tree')}"
+                    )
                 print("  provider work: routing catalog was read; content was not queried")
                 evidence = payload.get("evidence")
                 if isinstance(evidence, dict):
@@ -2163,6 +2224,20 @@ def print_retrieval_text(
             f"Retrieved {len(hits)} chunks across {payload.get('namespaces', [])} "
             f"using {payload.get('fusion')}:"
         )
+        routing = payload.get("routing")
+        if isinstance(routing, dict):
+            authority = routing.get("confidence_artifact")
+            if isinstance(authority, dict) and authority.get("mode") == "active":
+                print(
+                    "  route authority: "
+                    f"strategy={routing.get('strategy')}; "
+                    f"artifact={authority.get('id')}@{authority.get('revision')}; "
+                    f"suite={authority.get('canary_suite_sha256')}; "
+                    f"catalog={authority.get('catalog_projection_sha256')}; "
+                    f"source_report={authority.get('source_report_sha256')}; "
+                    f"source={authority.get('source_commit')}/"
+                    f"{authority.get('source_tree')}"
+                )
         reranker = payload.get("reranker") or payload.get("reranking")
         if isinstance(reranker, dict):
             print(

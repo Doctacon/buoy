@@ -102,6 +102,11 @@ ROUTE_CONTEXT = EvidenceRouteContext(
     semantic_score=0.81,
     semantic_margin=0.11,
 )
+PROTOTYPE_ROUTE_CONTEXT = EvidenceRouteContext(
+    selection_reason="high_confidence_prototype",
+    semantic_score=9.5,
+    semantic_margin=2.0,
+)
 
 
 class RetrievalEvidenceOrchestrationTests(unittest.TestCase):
@@ -199,6 +204,42 @@ class RetrievalEvidenceOrchestrationTests(unittest.TestCase):
         self.assertTrue(
             result.evidence["widening_triggered_by_weak_evidence"]
         )
+
+    def test_weak_prototype_singleton_widens_to_bounded_fallbacks(self) -> None:
+        calls: list[str] = []
+        reranker = OrdinalReranker()
+        assessor = RecordingAssessor(
+            "active",
+            [
+                Decision("no_relevant_evidence", True),
+                Decision("supported", False),
+            ],
+        )
+        result = self.make_retriever(
+            [
+                Namespace("one", ["a1", "a2"], calls),
+                Namespace("two", ["b1", "b2"], calls),
+                Namespace("three", ["c1", "c2"], calls),
+            ],
+            reranker=reranker,
+        ).retrieve(
+            "query",
+            [RetrievalOptions(top_k=2)] * 3,
+            initial_fanout=1,
+            evidence_assessor=assessor,
+            evidence_route_context=PROTOTYPE_ROUTE_CONTEXT,
+        )
+
+        self.assertCountEqual(calls, ["one", "two", "three"])
+        self.assertEqual(result.fallback.reason, "weak_top1")
+        self.assertEqual(result.fallback.added_namespaces, ("namespace-1", "namespace-2"))
+        self.assertEqual(len(assessor.calls), 2)
+        self.assertEqual(
+            assessor.calls[0]["route_context"].selection_reason,
+            "high_confidence_prototype",
+        )
+        self.assertEqual(len(reranker.calls), 1)
+        self.assertTrue(result.evidence["widening_triggered_by_weak_evidence"])
 
     def test_final_weak_complete_active_result_abstains(self) -> None:
         calls: list[str] = []

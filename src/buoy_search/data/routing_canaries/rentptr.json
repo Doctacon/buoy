@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "corpus_id": "rentptr",
+  "namespace": "site-rentptr-com-v1",
+  "review_status": "approved",
+  "human_approved": true,
+  "route_contract_revision": "bounded_card_prototypes_v1",
+  "canaries_disjoint_from_routing_examples": true,
+  "cases": [
+    {
+      "id": "rentptr-named",
+      "role": "named_self",
+      "split": "gate",
+      "question": "What is PTR, and which industries and infrastructure work does Premier Truck Rental support?",
+      "expected_namespaces": ["site-rentptr-com-v1"],
+      "confusable_with": []
+    },
+    {
+      "id": "rentptr-capability-calibration",
+      "role": "capability_self",
+      "split": "calibration",
+      "question": "How should a contractor decide whether changing project demand favors renting specialized work trucks instead of buying them?",
+      "expected_namespaces": ["site-rentptr-com-v1"],
+      "confusable_with": []
+    },
+    {
+      "id": "rentptr-capability-gate",
+      "role": "capability_self",
+      "split": "gate",
+      "question": "Which rental fleet service includes GPS location reports, driver-behavior alerts, and route-efficiency metrics?",
+      "expected_namespaces": ["site-rentptr-com-v1"],
+      "confusable_with": []
+    },
+    {
+      "id": "rentptr-confusable",
+      "role": "confusable_self",
+      "split": "gate",
+      "question": "Where can infrastructure fleet managers track rented work trucks and monitor driver behavior across jobsites?",
+      "expected_namespaces": ["site-rentptr-com-v1"],
+      "confusable_with": ["whiteboxgeo"]
+    },
+    {
+      "id": "rentptr-contrast",
+      "role": "contrast_other",
+      "split": "calibration",
+      "question": "Which documentation on developer.salesforce.com explains how OAuth identifies an external client app before it connects to a platform organization?",
+      "expected_namespaces": ["site-developer-salesforce-com-v1"],
+      "confusable_with": ["rentptr"]
+    }
+  ]
+}

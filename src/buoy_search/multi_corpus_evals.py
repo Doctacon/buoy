@@ -155,6 +155,8 @@ _EVIDENCE_ROUTE_REASONS = {
     "multiple_named_corpora",
     "high_confidence_semantic",
     "ambiguous_semantic",
+    "high_confidence_prototype",
+    "ambiguous_prototype",
 }
 _SAFE_EVIDENCE_ID_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}\Z")
 _ROUTE_RUN_FIELDS = {"namespaces", "initial_high_confidence_namespace"}
