@@ -17,6 +17,7 @@ from buoy_search.catalog import (
     CardFields,
     CatalogError,
     NamespaceCard,
+    canonicalize_float32_vector,
     canonical_text,
     card_passage_text,
     card_revision,
@@ -177,16 +178,21 @@ class CatalogProjectionTests(unittest.TestCase):
             ]],
         )
         expected_coordinate = 1 / math.sqrt(2)
-        self.assertEqual(card.vector, UNIT_VECTOR)
-        self.assertAlmostEqual(
-            card.routing_prototype_vector[0], expected_coordinate
+        expected_prototype = canonicalize_float32_vector(
+            [expected_coordinate, expected_coordinate]
+            + [0.0] * (ROUTING_DIMENSIONS - 2),
+            namespace=card.namespace,
+            field="routing_prototype_vector",
         )
-        self.assertAlmostEqual(
-            card.routing_prototype_vector[1], expected_coordinate
+        self.assertEqual(card.vector, UNIT_VECTOR)
+        self.assertEqual(card.routing_prototype_vector, expected_prototype)
+        self.assertNotEqual(
+            card.routing_prototype_vector[:2],
+            [expected_coordinate, expected_coordinate],
         )
         self.assertEqual(
-            card.routing_prototype_vector[2:],
-            [0.0] * (ROUTING_DIMENSIONS - 2),
+            card.routing_prototype_vector_hash,
+            vector_hash(expected_prototype),
         )
         self.assertEqual(card.routing_examples, [example])
         self.assertEqual(
@@ -222,6 +228,39 @@ class CatalogProjectionTests(unittest.TestCase):
         self.assertNotIn("vector", public_payload)
         self.assertNotIn("routing_prototype_vector", public_payload)
         self.assertEqual(public_payload["routing_examples"], [example])
+
+        provider_decimal = card_to_dict(card, include_vector=True)
+        provider_vector = list(provider_decimal["routing_prototype_vector"])
+        provider_vector[0] = math.nextafter(provider_vector[0], math.inf)
+        provider_decimal["routing_prototype_vector"] = provider_vector
+        self.assertEqual(parse_card(provider_decimal), card)
+
+    def test_precanonical_prototype_row_fails_closed_until_hash_and_revision_repair(self) -> None:
+        card = prepare_card(
+            fields(routing_examples=["How do I configure request retries?"]),
+            embedder=FixedEmbedder(),
+            now="2026-07-15T12:00:00+00:00",
+        )
+        provider_vector = list(card.routing_prototype_vector)
+        provider_vector[0] = math.nextafter(provider_vector[0], math.inf)
+        stale = replace(
+            card,
+            routing_prototype_vector=provider_vector,
+            routing_prototype_vector_hash=vector_hash(provider_vector),
+            card_revision="pending",
+        )
+        stale = replace(stale, card_revision=card_revision(stale))
+
+        with self.assertRaisesRegex(
+            CatalogError,
+            "routing_prototype_vector_hash is stale or invalid",
+        ):
+            parse_card(card_to_dict(stale, include_vector=True))
+
+        repaired = card_to_dict(stale, include_vector=True)
+        repaired["routing_prototype_vector_hash"] = card.routing_prototype_vector_hash
+        repaired["card_revision"] = card.card_revision
+        self.assertEqual(parse_card(repaired), card)
 
     def test_example_only_edit_reuses_base_projection_but_recomputes_prototype(self) -> None:
         original = make_card()
