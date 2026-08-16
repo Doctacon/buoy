@@ -1,11 +1,11 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "calibration_id": "automatic-routing-confidence-v2",
-  "calibration_revision": "collect-unassessed-v1",
-  "mode": "collect",
-  "owner_approved": false,
-  "score_floor": null,
-  "margin_floor": null,
+  "calibration_revision": "active-16357c62-e559a8aa-v1",
+  "mode": "active",
+  "owner_approved": true,
+  "score_floor": -10.167728424072266,
+  "margin_floor": 1.0735645294189453,
   "bindings": {
     "routing_model": "BAAI/bge-small-en-v1.5",
     "routing_model_revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
@@ -18,12 +18,33 @@
     "feature_contract": "max_prototype_score_and_margin_v1",
     "score_field": "reranker_score",
     "margin_field": "reranker_margin",
-    "canary_suite_sha256": null,
-    "catalog_projection_sha256": null
+    "canary_suite_sha256": "0e648b1222298b443439aa8b85527048b54f51b7ef2518956d43cd6bee2981e5",
+    "catalog_projection_sha256": "e559a8aac5a4f7fb808f137b1c6a3710b6cd5b6764fc84f7f06120e33307ef7c"
+  },
+  "calibration": {
+    "case_count": 6,
+    "case_ids_sha256": "23a863f53b44ec741185bf27f903824931dd9d84bd08e907c8f2b94e1f70ce1f",
+    "incorrect_high_confidence_singletons": 0
   },
   "certification": {
-    "passed": false,
-    "case_count": 0,
-    "verdict_sha256": null
+    "passed": true,
+    "case_count": 59,
+    "case_ids_sha256": "536a6417f0882ac073d7f4cedda30c05594b5ae9447a998e62d264677ca69149",
+    "verdict_sha256": "cb26318f93e61ed7874bfe4db5139f2f3eb2bdc52d1d3908c278ce9e2f8aca4d"
+  },
+  "receipts": {
+    "authorization_report_sha256": "d9369f82d47d17fd0a7388246348c258d97b12f956ca9796e3afaa5442255a9d",
+    "authorization_source_commit": "16357c629a96e4b309592917ad479a163cec3047",
+    "authorization_source_tree": "c002897fc3224faae9c8670f785e906884100890",
+    "certified_dormant_report_sha256": "6b02379f20147d004ff03cd2d90cdb6bd820e8f008be42d218578981f6db5977",
+    "certified_dormant_source_commit": "d171cd887f615158a196dbeef8fa93830818ea64",
+    "certified_dormant_source_tree": "184c7cd83ad5d93591d05bb1d286d07941c360b1",
+    "certified_dormant_working_tree_clean": true,
+    "evaluator_runner_sha256": "6f179cb93ef85754e05e86bf8f300f1d430aefa34cccbf3ae7e23feb618402cc",
+    "evaluator_scorer_sha256": "be8792b94698f8775760988583eb912a187da666a03f6a0ae234b4d26d014079",
+    "routing_module_sha256": "340f7f804923dad9a9fb0c563507b3cdb807260e7713dbeffe881138921198c5",
+    "cli_module_sha256": "27fef95c69a82fe733863b193e44bbe9821383a49e02321a1bfda184b1ea9dff",
+    "evidence_module_sha256": "78b792098ee0c49bedc7c135dffc33f4096f7d92222bc437f5d8438f1e015c7b",
+    "collect_artifact_sha256": "23fb14c49263933a2adb2299a9c04089888fb2ec734b790d9eadda2df295cbed"
   }
 }

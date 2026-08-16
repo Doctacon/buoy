@@ -151,3 +151,17 @@ claims of this task branch.
   suites passed on both supported Python versions; the independent dormant
   audit found no P1/P2 blocker. The clean dormant commit and its exact read-only
   65-case report remain the next gates; activation has not occurred.
+- 2026-08-15: The first artifact-phase simulation exposed three test-only
+  packaged-default assumptions. The artifact was restored to the exact
+  collect bytes; an independently reviewed three-file fixture repair was
+  committed at `d171cd887f615158a196dbeef8fa93830818ea64`, fully revalidated,
+  and recollected from that exact clean commit.
+- 2026-08-15: The superseding read-only report at SHA-256
+  `6b02379f20147d004ff03cd2d90cdb6bd820e8f008be42d218578981f6db5977`
+  independently reproduced the frozen 65-case result, call accounting,
+  privacy boundary, and source receipts. The exact active artifact at SHA-256
+  `3412bdb20f928de226e159344cac04ec52587da4134d6c079e9fc53a6aa75d9d`
+  is now present on the task branch. Focused and full dual-Python suites plus
+  source/distribution/installed-package checks pass. Independent final review,
+  exact post-commit build, push, and PR handoff remain; no integration,
+  publication, deployment, or provider mutation has occurred.
