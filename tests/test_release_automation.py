@@ -16,6 +16,7 @@ import yaml
 
 from buoy_search import routing_quality as routing_quality_module
 from scripts import release_automation
+from tests.routing_confidence_fixtures import collect_routing_confidence_bytes
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -426,10 +427,7 @@ class ReleaseAutomationTests(unittest.TestCase):
         )
 
     def test_collect_authority_requires_exact_governed_raw_bytes(self) -> None:
-        artifact = (
-            ROOT
-            / "src/buoy_search/data/automatic_routing_confidence_calibration.json"
-        ).read_bytes()
+        artifact = collect_routing_confidence_bytes()
         modules = routing_module_bytes()
 
         receipt = release_automation._validate_routing_authority_bytes(

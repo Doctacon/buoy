@@ -59,5 +59,13 @@ def load_collect_routing_confidence_fixture() -> RoutingConfidenceCalibration:
 
     with tempfile.TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "collect-calibration.json"
-        path.write_text(json.dumps(collect_calibration_payload()), encoding="utf-8")
+        path.write_bytes(collect_routing_confidence_bytes())
         return load_routing_confidence_calibration(path)
+
+
+def collect_routing_confidence_bytes() -> bytes:
+    """Return the exact governed schema-v1 bytes independent of package phase."""
+
+    return (json.dumps(collect_calibration_payload(), indent=2) + "\n").encode(
+        "utf-8"
+    )
