@@ -38,13 +38,18 @@ class DuckDBRelationTests(unittest.TestCase):
             for path in (first, second):
                 create_database(path, ["CREATE TABLE docs(document_id VARCHAR, content VARCHAR)"])
 
-            first_source = duckdb_relation_source(first, relation="main.docs", source_id="gong-calls")
-            second_source = duckdb_relation_source(second, relation="main.docs", source_id="gong-calls")
+            with patch("buoy_search.local_paths.Path.home", return_value=Path(tmp)):
+                first_source = duckdb_relation_source(first, relation="main.docs", source_id="gong-calls")
+                second_source = duckdb_relation_source(second, relation="main.docs", source_id="gong-calls")
 
             self.assertEqual(first_source.base_url, "duckdb://gong-calls")
             self.assertEqual(first_source.site_id, "duckdb-gong-calls")
             self.assertEqual(first_source.namespace_candidate, "duckdb-gong-calls-v1")
-            self.assertEqual(first_source.default_out_dir, Path("artifacts/site-crawls/duckdb-gong-calls"))
+            with patch("buoy_search.local_paths.Path.home", return_value=Path(tmp)):
+                self.assertEqual(
+                    first_source.default_out_dir,
+                    Path(tmp) / ".buoy/artifacts/site-crawls/duckdb-gong-calls",
+                )
             self.assertEqual(first_source.document_url("call/1 ?"), "duckdb://gong-calls/call%2F1%20%3F")
             self.assertEqual(
                 stable_page_filename(first_source, "call/1 ?"),
@@ -53,16 +58,19 @@ class DuckDBRelationTests(unittest.TestCase):
             self.assertEqual(validate_base_url(first_source.base_url), first_source.base_url)
             self.assertEqual(namespace_candidate(first_source.base_url), "duckdb-gong-calls-v1")
             self.assertEqual(source_id_for_url(first_source.base_url), "duckdb-gong-calls")
-            self.assertEqual(default_out_dir(first_source.base_url), first_source.default_out_dir)
+            with patch("buoy_search.local_paths.Path.home", return_value=Path(tmp)):
+                self.assertEqual(default_out_dir(first_source.base_url), first_source.default_out_dir)
 
             for invalid in ("Gong-calls", "gong_calls", "gong--calls", "-gong", "gong-"):
                 with self.subTest(source_id=invalid):
                     with self.assertRaisesRegex(ValueError, "source-id must match"):
-                        duckdb_relation_source(first, relation="docs", source_id=invalid)
+                        with patch("buoy_search.local_paths.Path.home", return_value=Path(tmp)):
+                            duckdb_relation_source(first, relation="docs", source_id=invalid)
             for invalid in ("docs;drop", "a.b.c.d", "main.bad-name", "main..docs"):
                 with self.subTest(relation=invalid):
                     with self.assertRaises(ValueError):
-                        duckdb_relation_source(first, relation=invalid, source_id="gong-calls")
+                        with patch("buoy_search.local_paths.Path.home", return_value=Path(tmp)):
+                            duckdb_relation_source(first, relation=invalid, source_id="gong-calls")
 
     def test_scan_result_preserves_rows_scanned_constructor_compatibility(self) -> None:
         result = DuckDBScanResult(

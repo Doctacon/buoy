@@ -1,9 +1,17 @@
 Status: active
 Created: 2026-07-22
-Updated: 2026-08-13
-Amended-By: .10x/specs/automatic-multi-corpus-retrieval.md
+Updated: 2026-08-17
+Amended-By: .10x/specs/automatic-multi-corpus-retrieval.md, .10x/specs/user-global-buoy-home-defaults.md
 
 # Database Document Relation Indexing
+
+## User-global output amendment
+
+The later user-global-home specification changes only the implicit output
+prefix and plan-leaf separation: crawl output defaults to
+`~/.buoy/artifacts/site-crawls/<backend>-<slug>`, while plan output defaults to
+the sibling `<backend>-<slug>-plan`. Explicit `--out-dir` behavior and every
+source, document, row, namespace, and remote identity remain unchanged.
 
 ## Bounded-retrieval amendment
 

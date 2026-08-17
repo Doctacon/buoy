@@ -42,6 +42,7 @@ from buoy_search.chunker import (
     DEFAULT_TARGET_TOKENS,
 )
 from buoy_search.database_relation import DatabaseRelationError
+from buoy_search.local_paths import prepare_default_buoy_home
 from buoy_search.plan_artifacts import (
     DEFAULT_PLAN_EMBEDDING_MODEL,
     PlanArtifacts,
@@ -195,6 +196,10 @@ class PlanningService:
                 else DEFAULT_CRAWL_MAX_CHUNKS
             )
         out_dir = request.out_dir or default_plan_out_dir(source, base_url)
+        prepare_default_buoy_home(
+            out_dir,
+            require_resolved_home=request.out_dir is None,
+        )
 
         emit_progress(progress_callback, "plan: preparing", f"plan: preparing {base_url}")
         options = CrawlOptions(
@@ -445,9 +450,11 @@ def crawl_source_with_plan(source: object, options: CrawlOptions) -> CrawlExecut
 
 
 def default_plan_out_dir(source: object, base_url: str) -> Path:
-    if getattr(source, "kind", None) in _DATABASE_KINDS:
-        return Path(getattr(source, "default_out_dir"))
-    crawl_dir = default_out_dir(base_url)
+    crawl_dir = (
+        Path(getattr(source, "default_out_dir"))
+        if getattr(source, "kind", None) in _DATABASE_KINDS
+        else default_out_dir(base_url)
+    )
     return crawl_dir.with_name(f"{crawl_dir.name}-plan")
 
 

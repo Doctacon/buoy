@@ -4,6 +4,8 @@ from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from io import StringIO
 import json
 import os
+from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -233,6 +235,7 @@ class CatalogCliTests(unittest.TestCase):
         self.assertIn("--inspect-current", stdout)
         self.assertIn("--expected-card-revision", stdout)
         self.assertIn("--expect-absent", stdout)
+        self.assertIn("user-global ~/.buoy", stdout)
 
         result, stdout, stderr = run_cli(
             [
@@ -273,6 +276,41 @@ class CatalogCliTests(unittest.TestCase):
         result, stdout, stderr = run_cli([*upsert_args(), "--ranking-pool", "0"])
         self.assertEqual((result, stdout), (2, ""))
         self.assertIn("must be greater than zero", stderr)
+
+    def test_repair_apply_defaults_to_global_state_before_remote_work(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            home.mkdir()
+            observed: dict[str, Path] = {}
+
+            def stop_after_state_resolution(**kwargs):  # noqa: ANN003 - patched call contract.
+                observed["state_root"] = kwargs["state_root"]
+                raise ValueError("stop after state-root resolution")
+
+            with patch("buoy_search.local_paths.Path.home", return_value=home), patch(
+                "buoy_search.apply.load_verified_catalog_repair_plan",
+                side_effect=stop_after_state_resolution,
+            ):
+                result, stdout, stderr = run_cli(
+                    [
+                        "catalog",
+                        "repair-apply",
+                        "--plan",
+                        "retained/plan.json",
+                        "--namespace",
+                        "site-example-v1",
+                        "--apply-id",
+                        "apply-id",
+                        "--expect-absent",
+                        "--json",
+                    ],
+                    env={},
+                )
+
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout, "")
+        self.assertEqual(observed["state_root"], home / ".buoy")
+        self.assertIn("stop after state-root resolution", stderr)
 
     def test_routing_v2_operators_report_invalid_config_before_remote_access(self) -> None:
         invalid_precision = "SECRET-INVALID-PRECISION"

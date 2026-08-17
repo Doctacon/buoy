@@ -48,6 +48,20 @@ as GitHub Release assets rather than to PyPI.
 
 ### Changed
 
+- Implicit Buoy-owned local storage is now user-global instead of
+  current-directory-relative: applied state lives under `~/.buoy/state/`, and
+  default crawl/plan artifacts live under
+  `~/.buoy/artifacts/site-crawls/`. An `apply` without `--plan` proceeds only
+  when exactly one supported pending plan exists there. Existing project-local
+  `.buoy`, `.turbo-search`, and `artifacts/site-crawls` paths remain available
+  through explicit options but are not implicitly discovered, migrated,
+  backfilled, or deleted; explicitly selected plans retain their normal
+  verified success-only cleanup lifecycle. Default plans now use a distinct `-plan` directory
+  leaf for every source kind, including database relations. Package-manager
+  and model caches remain outside this Buoy home. The active routing receipt
+  keeps the exact CLI module bytes pinned, so its legacy default-path option
+  descriptions remain temporarily stale pending a separate routing
+  recertification; the runtime behavior and documentation use the new paths.
 - Remote catalog reads now normalize empty routing-prototype float arrays at
   the same float32 boundary as base vectors, accepting harmless provider
   decimal round trips while retaining stale adjacent-bucket rejection.

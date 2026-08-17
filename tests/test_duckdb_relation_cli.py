@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import duckdb
 
@@ -212,9 +213,11 @@ class DuckDBRelationCliTests(unittest.TestCase):
         self.assertEqual(stdout, "")
         self.assertIn("--source-id is required", stderr)
 
-    def test_default_plan_output_uses_stable_source_identity_without_plan_suffix(self) -> None:
+    def test_default_plan_output_uses_global_home_and_distinct_plan_suffix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            home = root / "home"
+            home.mkdir()
             database = root / "docs.duckdb"
             with duckdb.connect(str(database)) as connection:
                 connection.execute("CREATE TABLE docs(document_id VARCHAR, content VARCHAR)")
@@ -222,29 +225,30 @@ class DuckDBRelationCliTests(unittest.TestCase):
             old_cwd = Path.cwd()
             try:
                 os.chdir(root)
-                result, stdout, stderr = self.run_cli(
-                    [
-                        "plan",
-                        str(database),
-                        "--relation",
-                        "docs",
-                        "--source-id",
-                        "stable-docs",
-                        "--state-root",
-                        str(root / "state"),
-                        "--no-progress",
-                        "--json",
-                    ]
-                )
+                with patch("buoy_search.local_paths.Path.home", return_value=home):
+                    result, stdout, stderr = self.run_cli(
+                        [
+                            "plan",
+                            str(database),
+                            "--relation",
+                            "docs",
+                            "--source-id",
+                            "stable-docs",
+                            "--state-root",
+                            str(root / "state"),
+                            "--no-progress",
+                            "--json",
+                        ]
+                    )
             finally:
                 os.chdir(old_cwd)
 
             self.assertEqual(result, 0, stderr)
             payload = json.loads(stdout)
-            expected = Path("artifacts/site-crawls/duckdb-stable-docs")
+            expected = home / ".buoy/artifacts/site-crawls/duckdb-stable-docs-plan"
             self.assertEqual(payload["out_dir"], str(expected))
-            self.assertTrue((root / expected / "plan.json").is_file())
-            self.assertFalse((root / "artifacts/site-crawls/duckdb-stable-docs-plan").exists())
+            self.assertTrue((expected / "plan.json").is_file())
+            self.assertFalse((root / "artifacts").exists())
 
 
 if __name__ == "__main__":

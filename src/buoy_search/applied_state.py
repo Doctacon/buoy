@@ -17,16 +17,11 @@ from typing import Iterator, Literal
 import duckdb
 import portalocker
 
+from buoy_search.local_paths import LocalPathError, default_state_root, prepare_default_buoy_home
 from buoy_search.source_url import validate_base_url
 
 APPLIED_STATE_SCHEMA_VERSION = 1
 DUCKDB_STATE_SCHEMA_VERSION = 1
-DEFAULT_STATE_ROOT = Path(".buoy")
-LEGACY_STATE_ROOT = Path(".turbo-search")
-LEGACY_STATE_ROOT_WARNING = (
-    "Warning: using legacy state root .turbo-search in place; pass --state-root explicitly "
-    "to choose a root. No state was migrated."
-)
 ROW_STATUS_ACTIVE = "active"
 ROW_STATUS_RETAINED_STALE = "retained_stale"
 ROW_STATUS_DELETED = "deleted"
@@ -40,21 +35,14 @@ class AppliedStateError(ValueError):
 
 
 def resolve_state_root(explicit_state_root: Path | None) -> tuple[Path, str | None]:
-    """Resolve Buoy's implicit state root without moving or copying state."""
+    """Resolve Buoy's state root without inspecting or migrating project state."""
 
     if explicit_state_root is not None:
         return Path(explicit_state_root), None
-
-    current_exists = DEFAULT_STATE_ROOT.exists()
-    legacy_exists = LEGACY_STATE_ROOT.exists()
-    if current_exists and legacy_exists:
-        raise AppliedStateError(
-            "both implicit state roots exist: .buoy and .turbo-search; "
-            "pass --state-root explicitly to choose one"
-        )
-    if legacy_exists:
-        return LEGACY_STATE_ROOT, LEGACY_STATE_ROOT_WARNING
-    return DEFAULT_STATE_ROOT, None
+    try:
+        return default_state_root(), None
+    except LocalPathError as exc:
+        raise AppliedStateError(str(exc)) from exc
 
 
 @dataclass(frozen=True)
@@ -117,13 +105,14 @@ def applied_state_paths(
     *,
     site_id: str,
     namespace: str,
-    state_root: Path = DEFAULT_STATE_ROOT,
+    state_root: Path | None = None,
 ) -> AppliedStatePaths:
     """Return local DuckDB paths for one state ledger."""
 
     safe_site_id = safe_state_component(site_id, label="site_id")
     safe_namespace = safe_state_component(namespace, label="namespace")
-    state_dir = Path(state_root) / "state" / safe_site_id / safe_namespace
+    root = default_state_root() if state_root is None else Path(state_root)
+    state_dir = root / "state" / safe_site_id / safe_namespace
     return AppliedStatePaths(
         state_dir=state_dir,
         database_path=state_dir / "state.duckdb",
@@ -136,11 +125,15 @@ def acquire_namespace_apply_lock(
     *,
     site_id: str,
     namespace: str,
-    state_root: Path = DEFAULT_STATE_ROOT,
+    state_root: Path | None = None,
 ) -> Iterator[None]:
     """Fail fast when an approved apply already owns this namespace."""
 
     paths = applied_state_paths(site_id=site_id, namespace=namespace, state_root=state_root)
+    prepare_default_buoy_home(
+        paths.state_dir,
+        require_resolved_home=state_root is None,
+    )
     paths.state_dir.mkdir(parents=True, exist_ok=True)
     try:
         with portalocker.Lock(
@@ -161,7 +154,7 @@ def load_applied_state(
     site_id: str,
     namespace: str,
     base_url: str,
-    state_root: Path = DEFAULT_STATE_ROOT,
+    state_root: Path | None = None,
 ) -> AppliedState:
     """Load current DuckDB state or return a first-apply empty state."""
 
@@ -235,7 +228,7 @@ def load_applied_state(
 def save_applied_state(
     state: AppliedState,
     *,
-    state_root: Path = DEFAULT_STATE_ROOT,
+    state_root: Path | None = None,
     apply_run: ApplyRunSummary | None = None,
 ) -> AppliedStatePaths:
     """Atomically replace current rows and optionally append one apply summary.
@@ -257,6 +250,10 @@ def save_applied_state(
         _validate_apply_run(apply_run, state=state)
 
     paths = applied_state_paths(site_id=state.site_id, namespace=state.namespace, state_root=state_root)
+    prepare_default_buoy_home(
+        paths.state_dir,
+        require_resolved_home=state_root is None,
+    )
     paths.state_dir.mkdir(parents=True, exist_ok=True)
     try:
         with duckdb.connect(str(paths.database_path)) as connection:
@@ -332,7 +329,7 @@ def load_apply_run_summaries(
     *,
     site_id: str,
     namespace: str,
-    state_root: Path = DEFAULT_STATE_ROOT,
+    state_root: Path | None = None,
 ) -> list[ApplyRunSummary]:
     """Return retained compact apply summaries oldest first."""
 

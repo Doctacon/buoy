@@ -1,9 +1,28 @@
 Status: active
 Created: 2026-07-12
-Updated: 2026-08-16
-Amended-By: .10x/specs/automatic-routing-after-apply.md
+Updated: 2026-08-17
+Amended-By: .10x/specs/automatic-routing-after-apply.md, .10x/specs/user-global-buoy-home-defaults.md
 
 # Plan Artifact Lifecycle Cleanup
+
+## User-global managed-root amendment
+
+The user-global-home specification adds one narrow exception to the historical
+whole-state-root deletion guard: an exact verified plan strictly below the
+canonical `~/.buoy/artifacts/site-crawls/` root retains this specification's
+success-only cleanup lifecycle. The application-home root,
+`~/.buoy/state/**`, every other home subtree, noncanonical state-root targets,
+and malformed/replaced/symlinked artifacts remain protected.
+
+The cleanup threat boundary matches the existing portable implementation:
+no-follow descriptor binding, exact plan-directory identity, a private random
+quarantine name, re-verification, and only a platform-reported symlink-safe
+recursive remover. This covers cooperative concurrent Buoy activity plus
+ancestor, symlink, and whole-plan replacement before final removal begins. It
+does not claim a portable compare-and-unlink guarantee against an actively
+malicious same-UID process that discovers and mutates child names inside the
+private random quarantine after final binding; such a process already has
+direct authority to mutate this user's files.
 
 ## Purpose and scope
 

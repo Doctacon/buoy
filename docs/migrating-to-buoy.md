@@ -66,16 +66,58 @@ passages. Normal Buoy output redacts them and their vectors, but credentials
 authorized to query raw catalog provider rows can read the excerpts. Treat
 catalog read access as source-content access during rollout.
 
-## Existing state
+## User-global local defaults
 
-Buoy continues to use:
+An installed `buoy` command now uses one implicit home no matter which working
+directory invokes it:
+
+```text
+~/.buoy/state/<source-id>/<namespace>/state.duckdb
+~/.buoy/artifacts/site-crawls/
+```
+
+The first path holds applied-state databases. The second holds default crawl
+output and pending plan directories. An `apply` without `--plan` searches only
+that user-global artifact root and proceeds only when exactly one supported
+pending plan exists; zero or multiple candidates require an explicit
+`--plan`.
+
+This default change is prospective. Buoy does not implicitly discover, copy,
+move, merge, backfill, archive, or delete a noncanonical current-directory
+`.buoy`, `.turbo-search`, or `artifacts/site-crawls`. Supported existing state
+and plans remain available through explicit paths:
+
+```bash
+buoy apply \
+  --plan /path/to/project/artifacts/site-crawls/example-plan/plan.json \
+  --state-root /path/to/project/.buoy \
+  --dry-run
+```
+
+Use the same explicit old state root when creating the next plan if its
+incremental baseline must continue. Without it, the new user-global ledger is
+absent and planning uses normal first-apply semantics; Buoy does not reconstruct
+that baseline from remote rows. Explicit selection opts the old assets into
+their normal lifecycle: state writes use the selected root, and a fully
+successful apply may consume its exact verified plan directory.
+
+The Buoy home covers Buoy-owned state and crawl/plan artifacts. It does not
+relocate `uv` tool/download caches or Hugging Face and Sentence Transformers
+model caches.
+
+## Existing project-local state and artifacts
+
+The old project-local state layout was:
 
 ```text
 .buoy/state/<source-id>/<namespace>/state.duckdb
 ```
 
-Existing `.turbo-search` state remains available through the established
-in-place fallback. Obsolete JSON state is ignored and left unchanged.
+Existing `.buoy` and `.turbo-search` DuckDB state remains in place and usable
+with explicit `--state-root`. It is byte-inert unless explicitly selected;
+selected state receives the requested normal writes. There is no longer an
+implicit current-directory or `.turbo-search` fallback. Obsolete JSON state is
+ignored and left unchanged.
 
 The split leaves these legacy artifacts untouched:
 
