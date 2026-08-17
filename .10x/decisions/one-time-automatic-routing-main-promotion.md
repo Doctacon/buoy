@@ -1,8 +1,23 @@
-Status: accepted
+Status: superseded
 Created: 2026-08-16
 Updated: 2026-08-16
 
 # One-Time Automatic-Routing Main Promotion
+
+## 2026-08-16 disposition
+
+The exact one-time authority was consumed by same-repository `develop -> main`
+PR #124 and merge-commit result
+`R = 4d1efc458fd13b270bf84984ffeb550d5b24fd04`. `R` has ordered parents
+`[0db802ec1a895f289c7600b19c80603986839873,
+4dad7237baf69989b67270a4afb60d3c0444edfc]` and preserves exact develop tree
+`a62ac8b774ca66aa4a8ae369daccbe38e0606531`. All required premerge and
+post-main checks passed, publication stayed paused, and the hosted protection,
+ruleset, tag, and GitHub Release inventories remained unchanged.
+
+This decision is retained as historical context only. It grants no current or
+recurring main merge, release, publication, provider, migration, deployment,
+protection, direct-push, or force-push authority and MUST NOT be reused.
 
 ## Context
 

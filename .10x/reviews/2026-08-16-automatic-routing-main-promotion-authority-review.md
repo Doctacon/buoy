@@ -2,7 +2,7 @@ Status: pass
 Created: 2026-08-16
 Updated: 2026-08-16
 Target: work/authorize-automatic-routing-main-promotion pre-review candidate
-Ticket: .10x/tickets/2026-08-16-promote-automatic-routing-to-main-once.md
+Ticket: .10x/tickets/done/2026-08-16-promote-automatic-routing-to-main-once.md
 Evidence: .10x/evidence/2026-08-16-automatic-routing-main-promotion.md
 Verdict: pass
 
@@ -21,7 +21,8 @@ The exact three-record pre-review candidate has these blob identities:
 
 - `.10x/decisions/one-time-automatic-routing-main-promotion.md`:
   `00ab16d489d4676147dcf3cf644eeee96129958c`;
-- `.10x/tickets/2026-08-16-promote-automatic-routing-to-main-once.md`:
+- the then-active promotion ticket, now moved to
+  `.10x/tickets/done/2026-08-16-promote-automatic-routing-to-main-once.md`:
   `a110cffc3a8c8258d9bbd6e79648f601a06c976a`;
 - `.10x/evidence/2026-08-16-automatic-routing-main-promotion.md`:
   `8eb3a942dfb6038bf6922ff8dbfd8555495589ba`.
@@ -67,13 +68,14 @@ PASS for adding this review as the sole fourth record, committing the exact
 four-record candidate, pushing the task branch, and handing it off through an
 ordinary pull request to `develop`.
 
-This verdict does not claim hosted CI, authority integration, a bound final
-`D`, release PR creation, any of the seven release checks, release review,
-main integration, post-main validation, provider or migration activity, or
-publication. Each remains a future behavioral gate owned by the ticket.
+At review time, this verdict did not claim hosted CI, authority integration, a
+bound final `D`, release PR creation, any of the seven release checks, release
+review, main integration, post-main validation, provider or migration
+activity, or publication. Each remained a later behavioral gate owned by the
+ticket and is assessed separately in the final release review.
 
 ## Final candidate condition
 
-The final branch may differ from the reviewed three-record candidate only by
-this authority-review record. Any other path or pre-review blob drift requires
-independent rereview.
+The authority branch was permitted to differ from the reviewed three-record
+candidate only by this authority-review record. Any other path or pre-review
+blob drift would have required independent rereview.

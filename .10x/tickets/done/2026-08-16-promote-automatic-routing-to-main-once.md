@@ -1,9 +1,10 @@
-Status: active
+Status: done
 Created: 2026-08-16
 Updated: 2026-08-16
 Decision: .10x/decisions/one-time-automatic-routing-main-promotion.md
 Evidence: .10x/evidence/2026-08-16-automatic-routing-main-promotion.md
 Authority-Review: .10x/reviews/2026-08-16-automatic-routing-main-promotion-authority-review.md
+Review: .10x/reviews/2026-08-16-automatic-routing-main-promotion-review.md
 
 # Promote Automatic Routing to Main Once
 
@@ -149,3 +150,35 @@ change is permitted.
   isolated authority worktree was created. No PR, main merge, protection,
   publication, provider, migration, content, credential, tag, or Release
   operation occurred.
+- 2026-08-16: The exact four-record authority head
+  `43a59bf77a5e4f4a281c9799522b9bfb10dd56bb` passed independent authority
+  review and PR #123 hosted CI. PR #123 squash-integrated as exact release
+  head `D = 4dad7237baf69989b67270a4afb60d3c0444edfc`, with sole parent
+  `4abb931e9a6bd15040287e84dc68bf502e0fea9e` and tree
+  `a62ac8b774ca66aa4a8ae369daccbe38e0606531`.
+- 2026-08-16: Independent release review passed exact PR #124 at base
+  `M = 0db802ec1a895f289c7600b19c80603986839873`, head `D`, and prospective
+  result `cedc0deb8940d87a9d7b9381f753d93e20c64733`. All seven required
+  candidate jobs passed and hosted discussions were empty. The dedicated
+  release session used merge-commit integration only.
+- 2026-08-16: PR #124 merged as exact
+  `R = 4d1efc458fd13b270bf84984ffeb550d5b24fd04`, with ordered parents `[M,D]`
+  and exact `D` tree. Post-main CI and `Release / Publication paused` passed;
+  refs, ancestry, empty `D..R` content diff, and unchanged hosted inventories
+  were independently verified. The exception is consumed.
+
+## Closure mapping
+
+- Exact authority integration, PR #124 scope and check identities, candidate
+  and merge topology, post-main checks, hosted inventories, and zero-effect
+  boundaries are recorded in
+  `.10x/evidence/2026-08-16-automatic-routing-main-promotion.md`.
+- Independent premerge GO and post-merge PASS are recorded in
+  `.10x/reviews/2026-08-16-automatic-routing-main-promotion-review.md`.
+- Every acceptance criterion passed. The governing decision is superseded and
+  consumed, publication remains paused, and no record in this closed task
+  authorizes another main merge.
+
+## Blockers
+
+None.
