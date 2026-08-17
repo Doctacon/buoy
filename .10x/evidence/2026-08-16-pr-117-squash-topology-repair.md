@@ -81,23 +81,58 @@ Local candidate validation passed under isolated CPython 3.13.0:
 - `git diff --check` and empty staged diff.
 
 A separate full local suite is unnecessary because source, tests, tooling,
-dependencies, lock, and workflow bytes remain exact `D0`. Exact-head hosted PR
-CI remains required and is not yet claimed. Independent governance review
-passed for commit/push/ordinary-PR handoff; the final thirteen-path allowlist
-adds only that review record and these ticket/evidence links.
+dependencies, lock, and workflow bytes remain exact `D0`. At this pre-
+integration validation point, exact-head hosted PR CI remained required and
+unclaimed. Independent governance review passed for
+commit/push/ordinary-PR handoff; the final thirteen-path allowlist added only
+that review record and these ticket/evidence links.
+
+## Recorded Phase 1 integration checkpoint
+
+Ordinary PR #119 carried exact reviewed head
+`fcccda7adb35178902a894ae2a7ba2000702e857`. Hosted CI run `31992210742`
+completed successfully at that head:
+
+- Python 3.11 job `95277638964`: success;
+- Python 3.13 job `95277638907`: success;
+- Build distributions job `95277896981`: success.
+
+Squash integration produced exact develop commit
+`034e01c3bb8bfa5726f57bdd5c17c74b7d55dc9f`, whose sole parent is
+`fc867bebb541f06f116502798a08640df375a3dc` and whose tree is
+`660581caadb070b4ca24f8474f1696bb476c52ec`.
+
+That tree retains the four exact `M` blobs above. It also retains the complete
+empty-prototype reader fix from `D0` at these exact blobs: evidence
+`eacd3f82e62b1816a6d3dc45f6ac55fb96de82b1`, review
+`17b837f84dfe22ed2f8531a4f0f93db652af0e9a`, specification
+`2354a30a3065f86915ff2f09e1767ae2ba81b888`, done ticket
+`b09893c67c5238378ddaa23a370edbeef51dc260`, `CHANGELOG.md`
+`f8b945c78275b885352d58ae24cdc2a364091696`, remote reader
+`27d663ea63edfd01ba82f55c3e5943c71678749c`, and remote-reader tests
+`78f3094cedc4f2f19e5e139cd83f5ec8cdefabfa`.
+
+The accepted decision, active repair specification, passing governance review,
+behavioral branch-flow exception, active bridge ticket, and this evidence are
+integrated. Phase 1 is complete. This record remains `provisional` because no
+bridge commit, bridge PR, bridge CI, bridge review, bridge integration, or main
+promotion has occurred.
 
 ## Pending evidence
 
 Before this record can become `recorded` completion evidence, it must add the
-integrated prerequisite develop identity, freshly bound `D`, exact bridge and
-integration commits/parents/trees, zero-content PR and exact-head hosted CI,
-independent review, post-integration ancestry/tree checks, unchanged hosted and
-external state, closure mapping, and consumed disposition required by the
-specification. Missing pending evidence blocks bridge integration or closure.
+freshly bound post-closure `D`, exact bridge and integration
+commits/parents/trees, zero-content PR and exact-head hosted CI, independent
+bridge review, post-integration ancestry/tree checks, unchanged hosted and
+external state, final closure mapping, and consumed disposition required by
+the specification. Missing pending evidence blocks bridge integration or
+closure.
 
 ## External effects so far
 
-Local inspection and content preparation made no ancestry commit, bridge PR,
-long-lived-branch merge, direct/force push, protection change, tag, Release,
-package publication, provider request/write, catalog migration, content-index
-mutation, model inference, or credential read/change.
+Phase 1 created its task branch and PR #119, ran hosted CI, and squash-integrated
+the reviewed governance/content tree into `develop` as the exact commit above.
+It made no ancestry bridge commit, bridge PR, direct/force push, protection
+change, main merge, tag, Release, package publication, provider request/write,
+catalog migration, content-index mutation, model inference, or credential
+read/change.

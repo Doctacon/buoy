@@ -1,7 +1,7 @@
 Status: active
 Created: 2026-08-16
 Updated: 2026-08-16
-Depends-On: .10x/tickets/2026-08-16-govern-pr-117-squash-topology-repair.md
+Depends-On: .10x/tickets/done/2026-08-16-govern-pr-117-squash-topology-repair.md
 Decision: .10x/decisions/one-time-pr-117-squash-topology-repair.md
 Specification: .10x/specs/one-time-pr-117-squash-topology-repair.md
 Evidence: .10x/evidence/2026-08-16-pr-117-squash-topology-repair.md

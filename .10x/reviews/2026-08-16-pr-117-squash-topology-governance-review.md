@@ -2,7 +2,7 @@ Status: pass
 Created: 2026-08-16
 Updated: 2026-08-16
 Target: work/govern-pr-117-squash-topology-repair
-Ticket: .10x/tickets/2026-08-16-govern-pr-117-squash-topology-repair.md
+Ticket: .10x/tickets/done/2026-08-16-govern-pr-117-squash-topology-repair.md
 Evidence: .10x/evidence/2026-08-16-pr-117-squash-topology-repair.md
 
 # PR #117 Squash-Topology Governance Review
@@ -33,8 +33,9 @@ identities:
   `d104c797827a22214cbb411283ac593a126f3e8f`;
 - `.10x/tickets/2026-08-16-bridge-pr-117-squash-topology-once.md`:
   `5aecdb53b278c6c8492c4119541c91fc60e0fc50`;
-- `.10x/tickets/2026-08-16-govern-pr-117-squash-topology-repair.md`:
-  `c9175edd89d6e3fe85c1b72d51138ecc0b03a0cc`;
+- governance ticket, now closed at
+  `.10x/tickets/done/2026-08-16-govern-pr-117-squash-topology-repair.md`:
+  reviewed Phase 1 blob `c9175edd89d6e3fe85c1b72d51138ecc0b03a0cc`;
 - `.10x/tickets/done/2026-08-16-rewrite-readme-for-newcomers.md`:
   `c15c6932f230e02670bb3fd78882818e04f4b40f`;
 - `AGENTS.md`: `c58e599bad8ebe2e858c07d2199ea70af85b47aa`;
