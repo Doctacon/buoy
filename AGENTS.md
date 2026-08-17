@@ -29,4 +29,4 @@ Before handing a task to integration:
 3. commit only the bounded change on the `work/*` branch;
 4. report the branch, commit, validation, compatibility risks, and external-side-effect risks.
 
-If `develop` advances before merge, incorporate the new target state and re-run required validation. GitHub branch protection is the mechanical merge boundary; these instructions are behavioral guidance.
+If `develop` advances before merge, incorporate the new target state and re-run required validation. Hosted branch protection is absent by owner choice and must not be changed. Pull requests, exact-head CI, independent review, and required merge methods are behavioral stop gates enforced by integration and release sessions; absent mechanical blocking grants no push or merge authority.
