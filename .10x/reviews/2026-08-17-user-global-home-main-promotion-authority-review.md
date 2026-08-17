@@ -2,9 +2,10 @@ Status: pass
 Created: 2026-08-17
 Updated: 2026-08-17
 Target: work/authorize-user-global-home-main-and-tool-replacement pre-review candidate
-Ticket: .10x/tickets/2026-08-17-promote-user-global-home-defaults-and-replace-tool-once.md
+Ticket: .10x/tickets/done/2026-08-17-promote-user-global-home-defaults-and-replace-tool-once.md
 Evidence: .10x/evidence/2026-08-17-user-global-home-main-promotion-and-tool-replacement.md
 Decision: .10x/decisions/one-time-user-global-home-main-promotion-and-tool-replacement.md
+Review: .10x/reviews/2026-08-17-user-global-home-main-promotion-and-tool-replacement-review.md
 Verdict: pass
 
 # User-Global-Home Main-Promotion Authority Review
@@ -96,3 +97,12 @@ creating or merging the release PR, replacing the tool, publication, or any
 excluded effect; every later phase remains conditional on the executable
 ticket's exact gates. Any pre-review blob or path drift beyond this review
 would require independent rereview.
+
+## Time scope and closure backlink
+
+This review's verdict remains scoped to the exact pre-PR authority candidate
+and the then-future conditional gates described above. It is not retroactively
+expanded into a review of PR #130, PR #131, the main merge, or the installation.
+Their actual identities, effects, caveat, and final PASS are recorded by the
+linked evidence and final execution review. Those later facts consume the
+authority; they do not make this earlier verdict reusable.
