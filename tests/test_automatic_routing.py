@@ -18,6 +18,7 @@ from buoy_search.catalog import (
     CardFields,
     NamespaceCard,
     prepare_card,
+    routing_source_passage_text,
     vector_hash,
 )
 from buoy_search.cli import main
@@ -49,12 +50,17 @@ from buoy_search.routing_quality import (
     ROUTING_ACTIVE_MARGIN_FLOOR,
     ROUTING_ACTIVE_QUALITY_VERDICT_SHA256,
     ROUTING_ACTIVE_SCORE_FLOOR,
+    ROUTING_ACTIVE_ANCHOR_NAMESPACES,
+    ROUTING_ANCHORED_CALIBRATION_REVISION,
+    ROUTING_ANCHORED_CALIBRATION_SCHEMA_VERSION,
     ROUTING_ACTIVATION_AUTHORIZATION_REPORT_SHA256,
     ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_COMMIT,
     ROUTING_ACTIVATION_AUTHORIZATION_SOURCE_TREE,
     ROUTING_COLLECT_ARTIFACT_SHA256,
+    ROUTING_CATALOG_POLICY,
     RoutingActivationReceipts,
     RoutingCalibrationReceipt,
+    RoutingConfidenceCatalogState,
 )
 from tests.routing_confidence_fixtures import load_collect_routing_confidence_fixture
 
@@ -127,6 +133,23 @@ def active_routing_calibration():  # noqa: ANN201 - focused fixture helper.
     )
 
 
+def anchored_routing_calibration():  # noqa: ANN201 - focused fixture helper.
+    active = active_routing_calibration()
+    return replace(
+        active,
+        schema_version=ROUTING_ANCHORED_CALIBRATION_SCHEMA_VERSION,
+        calibration_revision=ROUTING_ANCHORED_CALIBRATION_REVISION,
+        bindings=replace(
+            active.bindings,
+            certified_namespaces=tuple(ROUTING_ACTIVE_ANCHOR_NAMESPACES),
+            certified_catalog_projection_sha256=(
+                ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256
+            ),
+            catalog_policy=ROUTING_CATALOG_POLICY,
+        ),
+    )
+
+
 class FixedEmbedder:
     def __init__(self, vector: list[float] | None = None) -> None:
         self.vector = list(vector or unit_vector())
@@ -135,6 +158,21 @@ class FixedEmbedder:
     def encode(self, texts):  # noqa: ANN001 - protocol test double.
         self.calls.append(list(texts))
         return [list(self.vector) for _ in texts]
+
+
+class SequenceEmbedder:
+    def __init__(self, vectors: list[list[float]]) -> None:
+        self.vectors = [list(vector) for vector in vectors]
+        self.calls: list[list[str]] = []
+
+    def encode(self, texts):  # noqa: ANN001 - protocol test double.
+        values = list(texts)
+        self.calls.append(values)
+        if len(values) != len(self.vectors):
+            raise AssertionError(
+                f"expected {len(self.vectors)} passages, received {len(values)}"
+            )
+        return [list(vector) for vector in self.vectors]
 
 
 class FixedReranker:
@@ -162,6 +200,8 @@ def make_card(
     enabled: bool = True,
     embedding_precision: str = "float32",
     routing_examples: list[str] | None = None,
+    routing_passages: list[str] | None = None,
+    passage_vectors: list[list[float]] | None = None,
 ) -> NamespaceCard:
     return prepare_card(
         CardFields(
@@ -184,8 +224,13 @@ def make_card(
             ranking_pool=20,
             ranking_aggregation="max",
             routing_examples=list(routing_examples or []),
+            routing_passages=list(routing_passages or []),
         ),
-        embedder=FixedEmbedder(vector),
+        embedder=(
+            SequenceEmbedder(passage_vectors)
+            if passage_vectors is not None
+            else FixedEmbedder(vector)
+        ),
         now="2026-08-13T12:00:00+00:00",
     )
 
@@ -391,6 +436,80 @@ class RoutingAlgorithmTests(unittest.TestCase):
         self.assertEqual(
             collect.to_dict()["confidence_artifact"]["mode"], "collect"
         )
+        self.assertEqual(collect.to_dict()["routing_confidence_mode"], "provisional")
+        self.assertFalse(collect.to_dict()["confidence_threshold_applied"])
+        self.assertEqual(collect.to_dict()["provisional_namespace_count"], 2)
+
+    def test_source_passage_participates_in_reranking_without_leaking_content(
+        self,
+    ) -> None:
+        source_passage = (
+            "Section: Schema inspection\n"
+            "Use the namespace schema endpoint to inspect attribute types."
+        )
+        cards = [
+            make_card(
+                "alpha",
+                vector=cosine_vector(0.9),
+                routing_passages=[source_passage],
+            ),
+            make_card("beta", vector=cosine_vector(0.8)),
+        ]
+        reranker = FixedReranker([-5.0, 8.0, 7.0])
+
+        selection = prototype_route(
+            "How can I inspect schema metadata?",
+            cards,
+            calibration=load_collect_routing_confidence_fixture(),
+            embedder=FixedEmbedder(),
+            reranker_loader=lambda: reranker,
+            route_top_k=3,
+        )
+
+        self.assertEqual(
+            reranker.calls[0][1][1],
+            routing_source_passage_text(
+                title=cards[0].title,
+                summary=cards[0].summary,
+                passage=source_passage,
+            ),
+        )
+        self.assertEqual(selection.entries[0].winning_prototype_kind, "source")
+        self.assertEqual(selection.entries[0].winning_prototype_index, 0)
+        self.assertNotIn("namespace schema endpoint", json.dumps(selection.to_dict()))
+
+    def test_source_passage_budget_and_projection_fail_before_model_work(self) -> None:
+        valid = make_card(
+            "alpha",
+            routing_examples=[f"Manual example {index}" for index in range(8)],
+        )
+        over_budget = replace(
+            valid,
+            routing_passages=["Section: Extra\nGenerated evidence."],
+        )
+        embedder = FixedEmbedder()
+        with self.assertRaisesRegex(AutomaticRoutingError, "at most 8"):
+            prototype_route_scores(
+                "question",
+                [over_budget],
+                embedder=embedder,
+                reranker=FixedReranker([]),
+            )
+        self.assertEqual(embedder.calls, [])
+
+        passage_card = make_card(
+            "alpha",
+            routing_passages=["Section: API\nGenerated evidence."],
+        )
+        stale = replace(passage_card, routing_prototype_hash="0" * 64)
+        with self.assertRaisesRegex(AutomaticRoutingError, "projection is stale"):
+            prototype_route_scores(
+                "question",
+                [stale],
+                embedder=embedder,
+                reranker=FixedReranker([]),
+            )
+        self.assertEqual(embedder.calls, [])
 
     def test_active_prototype_route_applies_both_inclusive_floors(self) -> None:
         cards = [make_card("alpha"), make_card("beta"), make_card("gamma")]
@@ -499,6 +618,65 @@ class RoutingAlgorithmTests(unittest.TestCase):
         self.assertNotIn("routing_examples", serialized)
         self.assertNotIn("routing_prototype_vector", serialized)
 
+    def test_provisional_descriptor_free_route_forces_top_three(self) -> None:
+        cards = [make_card("alpha"), make_card("beta"), make_card("gamma")]
+        state = RoutingConfidenceCatalogState(
+            mode="provisional",
+            catalog_projection_sha256="11" * 32,
+            anchor_projection_sha256=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
+            anchor_namespaces=tuple(ROUTING_ACTIVE_ANCHOR_NAMESPACES),
+            provisional_namespaces=tuple(card.namespace for card in cards),
+        )
+        with patch(
+            "buoy_search.routing.validate_routing_confidence_catalog",
+            return_value=state,
+        ):
+            selection = prototype_route(
+                "descriptor-free routing question",
+                cards,
+                calibration=anchored_routing_calibration(),
+                embedder=FixedEmbedder(),
+                reranker_loader=lambda: FixedReranker([100.0, 0.0, -1.0]),
+                route_top_k=3,
+            )
+
+        payload = selection.to_dict()
+        self.assertFalse(selection.high_confidence)
+        self.assertEqual(selection.initial_fanout, 3)
+        self.assertEqual(selection.selection_reason, "ambiguous_prototype")
+        self.assertEqual(payload["routing_confidence_mode"], "provisional")
+        self.assertFalse(payload["confidence_threshold_applied"])
+        self.assertEqual(payload["provisional_namespace_count"], 3)
+
+    def test_certified_descriptor_free_route_retains_singleton_thresholds(self) -> None:
+        cards = [make_card("alpha"), make_card("beta"), make_card("gamma")]
+        state = RoutingConfidenceCatalogState(
+            mode="certified",
+            catalog_projection_sha256=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
+            anchor_projection_sha256=ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256,
+            anchor_namespaces=tuple(ROUTING_ACTIVE_ANCHOR_NAMESPACES),
+            provisional_namespaces=(),
+        )
+        with patch(
+            "buoy_search.routing.validate_routing_confidence_catalog",
+            return_value=state,
+        ):
+            selection = prototype_route(
+                "descriptor-free routing question",
+                cards,
+                calibration=anchored_routing_calibration(),
+                embedder=FixedEmbedder(),
+                reranker_loader=lambda: FixedReranker([0.0, -2.0, -3.0]),
+                route_top_k=3,
+            )
+
+        payload = selection.to_dict()
+        self.assertTrue(selection.high_confidence)
+        self.assertEqual(selection.initial_fanout, 1)
+        self.assertEqual(payload["routing_confidence_mode"], "certified")
+        self.assertTrue(payload["confidence_threshold_applied"])
+        self.assertEqual(payload["provisional_namespace_count"], 0)
+
     def test_invalid_active_calibration_stops_before_model_work(self) -> None:
         embedder = FixedEmbedder()
         invalid = replace(
@@ -550,6 +728,93 @@ class RoutingAlgorithmTests(unittest.TestCase):
         self.assertNotIn("card-12", {item.card.namespace for item in scores})
         self.assertEqual(len(reranker.calls[0][1]), 12)
 
+    def test_each_evidence_vector_can_nominate_a_card_before_top_twelve(self) -> None:
+        query_vector = unit_vector(0)
+        passages = [f"Distinct routing topic {index}" for index in range(8)]
+        target = make_card(
+            "zz-diverse-target",
+            routing_passages=passages,
+            passage_vectors=[
+                unit_vector(1),
+                query_vector,
+                *(unit_vector(index) for index in range(2, 9)),
+            ],
+        )
+        competitors = [
+            make_card(f"card-{index:02d}", vector=cosine_vector(0.4))
+            for index in range(12)
+        ]
+        self.assertLess(target.routing_prototype_vector[0], 0.4)
+        reranker = FixedReranker([0.0] * 20)
+
+        scores = prototype_route_scores(
+            "descriptor-free niche question",
+            [*competitors, target],
+            embedder=FixedEmbedder(query_vector),
+            reranker=reranker,
+        )
+
+        self.assertEqual(len(scores), 12)
+        self.assertEqual(len({item.card.namespace for item in scores}), 12)
+        routed_target = next(
+            item for item in scores if item.card.namespace == target.namespace
+        )
+        self.assertEqual(routed_target.shortlist_rank, 1)
+        self.assertEqual(len(reranker.calls[0][1]), 20)
+
+    def test_source_passage_requires_an_exact_evidence_vector_bank(self) -> None:
+        card = make_card(
+            "source-backed",
+            routing_passages=["Source-grounded niche capability"],
+        )
+        missing = replace(
+            card,
+            routing_evidence_vectors=[],
+            routing_evidence_vectors_hash="",
+        )
+        truncated_vectors = card.routing_evidence_vectors[:-1]
+        truncated = replace(
+            card,
+            routing_evidence_vectors=truncated_vectors,
+            routing_evidence_vectors_hash=vector_hash(truncated_vectors),
+        )
+        stale = replace(card, routing_evidence_vectors_hash="0" * 64)
+        inconsistent_vectors = unit_vector(1)
+        inconsistent = replace(
+            card,
+            routing_evidence_vectors=inconsistent_vectors,
+            routing_evidence_vectors_hash=vector_hash(inconsistent_vectors),
+        )
+        example_only_v3 = replace(
+            make_card(
+                "example-backed-v3",
+                routing_examples=["Reviewed capability question"],
+            ),
+            plan_schema_version=3,
+            routing_evidence_vectors=[],
+            routing_evidence_vectors_hash="",
+        )
+
+        for broken, diagnostic in (
+            (missing, "no evidence vector bank"),
+            (truncated, "invalid dimensions"),
+            (stale, "vector bank is stale"),
+            (inconsistent, "vector projection is stale"),
+            (example_only_v3, "non-base evidence has no evidence vector bank"),
+        ):
+            embedder = FixedEmbedder()
+            with self.subTest(diagnostic=diagnostic), self.assertRaisesRegex(
+                AutomaticRoutingError,
+                diagnostic,
+            ):
+                prototype_route_scores(
+                    "descriptor-free niche question",
+                    [broken],
+                    embedder=embedder,
+                    reranker=FixedReranker([]),
+                )
+            self.assertEqual(embedder.calls, [])
+
     def test_prototype_stage_one_is_isolated_from_legacy_base_vectors(self) -> None:
         first_axis = unit_vector(0)
         second_axis = unit_vector(1)
@@ -567,11 +832,15 @@ class RoutingAlgorithmTests(unittest.TestCase):
             base_first,
             routing_prototype_vector=second_axis,
             routing_prototype_vector_hash=vector_hash(second_axis),
+            routing_evidence_vectors=[],
+            routing_evidence_vectors_hash="",
         )
         prototype_first = replace(
             prototype_first,
             routing_prototype_vector=first_axis,
             routing_prototype_vector_hash=vector_hash(first_axis),
+            routing_evidence_vectors=[],
+            routing_evidence_vectors_hash="",
         )
         cards = [base_first, prototype_first]
 
@@ -1034,7 +1303,7 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         self.assertNotIn(secret, stderr)
         self.assertNotIn("Bearer", stderr)
 
-    def test_missing_or_incompatible_live_card_fails_before_route_model(self) -> None:
+    def test_missing_or_incompatible_live_cards_are_reported_without_hiding_valid_cards(self) -> None:
         cards = [
             make_card("eligible"),
             make_card("incompatible", embedding_precision="float16"),
@@ -1045,16 +1314,26 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         ), patch(
             "buoy_search.cli.read_remote_catalog", return_value=catalog_snapshot
         ), patch(
-            "buoy_search.cli.ROUTING_EMBEDDER_FACTORY",
-            side_effect=AssertionError("route model loaded"),
+            "buoy_search.cli.ROUTING_CONFIDENCE_FACTORY",
+            return_value=load_collect_routing_confidence_fixture(),
+        ), patch(
+            "buoy_search.cli.ROUTING_EMBEDDER_FACTORY", return_value=FixedEmbedder()
         ):
             result, stdout, stderr = run_cli(
                 ["retrieve", "query", "--plan", "--json"],
                 env={"TURBOPUFFER_API_KEY": self.API_KEY},
             )
-        self.assertEqual((result, stdout), (2, ""))
-        self.assertIn("missing cards", stderr)
-        self.assertIn("incompatible cards", stderr)
+        payload = json.loads(stdout)
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertEqual(payload["namespaces"], ["eligible"])
+        self.assertEqual(
+            payload["routing"]["exclusion_counts"],
+            {"incompatible": 1, "missing_card": 1},
+        )
+        self.assertEqual(
+            payload["routing"]["exclusion_ids"],
+            {"incompatible": ["incompatible"], "missing_card": ["missing"]},
+        )
 
     def test_invalid_evidence_artifact_fails_before_provider_work(self) -> None:
         with patch(

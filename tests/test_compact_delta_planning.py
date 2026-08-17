@@ -22,6 +22,7 @@ from buoy_search.plan_artifacts import (
     build_plan_artifacts,
     delta_logical_hash,
     generic_site_row_id,
+    routing_prototypes_logical_hash,
     stable_hash,
     verify_plan_artifacts,
     write_plan_artifacts,
@@ -101,6 +102,9 @@ class CompactDeltaPlanningTests(unittest.TestCase):
         with duckdb.connect(str(out / "delta.duckdb")) as connection:
             raw_upserts = connection.execute("SELECT * FROM upsert_rows ORDER BY ordinal").fetchall()
             raw_stale = connection.execute("SELECT * FROM stale_rows ORDER BY ordinal").fetchall()
+            raw_prototypes = connection.execute(
+                "SELECT * FROM routing_prototypes ORDER BY ordinal"
+            ).fetchall()
             upserts = [
                 {
                     "action": row[1], "row_id": row[2], "row_id_candidate": row[3],
@@ -122,7 +126,16 @@ class CompactDeltaPlanningTests(unittest.TestCase):
                 }
                 for row in raw_stale
             ]
-            logical_hash = delta_logical_hash(upserts, stale)
+            prototypes = [
+                {
+                    "ordinal": row[0], "row_id": row[1], "canonical_url": row[2],
+                    "source_path": row[3], "section_path": row[4],
+                    "chunk_hash": row[5], "passage_text": row[6],
+                    "passage_hash": row[7],
+                }
+                for row in raw_prototypes
+            ]
+            logical_hash = delta_logical_hash(upserts, stale, prototypes)
             stale_count = sum(row["category"] == "stale" for row in stale)
             retained_count = sum(row["category"] == "retained_stale" for row in stale)
             plan["delta"].update({
@@ -130,6 +143,10 @@ class CompactDeltaPlanningTests(unittest.TestCase):
                 "upsert_count": len(upserts),
                 "stale_count": stale_count,
                 "retained_stale_count": retained_count,
+            })
+            plan["routing_prototypes"].update({
+                "count": len(prototypes),
+                "logical_hash": routing_prototypes_logical_hash(prototypes),
             })
             if sync_diff:
                 plan["diff"].update({
@@ -167,7 +184,7 @@ class CompactDeltaPlanningTests(unittest.TestCase):
         }
         self.assertEqual(
             delta_logical_hash([upsert], [stale]),
-            "63be0bcd5baa1f70a8af47dcb7cea715156cdbc00db1a60f632200a7d1a5419b",
+            "2d256bed35dbfe64aca3f2fb3b53fad78a2c8255eb0b3ebc17db7c98827bef61",
         )
         renamed = {**upsert, "tags": upsert["tags_json"]}
         del renamed["tags_json"]
@@ -242,10 +259,20 @@ class CompactDeltaPlanningTests(unittest.TestCase):
                 updated_at="2026-07-24T00:00:00+00:00",
             )
             reactivated = self.build(root / "reactivated", state=retained_state, state_present=True)
+            out = root / "unchanged-out"
+            write_plan_artifacts(unchanged, out)
+            unchanged_verified = verify_plan_artifacts(out / "plan.json")
 
         self.assertEqual(unchanged.upsert_rows, ())
         self.assertEqual(unchanged.stale_rows, ())
         self.assertEqual(unchanged.plan.delta["upsert_count"], 0)
+        self.assertEqual(len(unchanged.routing_prototypes), 1)
+        self.assertEqual(
+            unchanged.routing_prototypes[0]["row_id"], chunk.row_id
+        )
+        self.assertEqual(
+            unchanged_verified.routing_prototypes, unchanged.routing_prototypes
+        )
         self.assertEqual(reactivated.upsert_rows[0]["action"], "reactivate_retained_stale")
         self.assertEqual(reactivated.upsert_rows[0]["row_id"], chunk.row_id)
 
@@ -307,12 +334,16 @@ class CompactDeltaPlanningTests(unittest.TestCase):
                 plan = self.build(root / "second", base_url=uri, metadata=metadata,
                                   source_summary=summary, state=state, state_present=True)
                 self.assertEqual(plan.upsert_rows, ())
+                self.assertEqual(len(plan.routing_prototypes), 1)
                 self.assertEqual(plan.plan.source["kind"], kind)
                 self.assertTrue(plan.plan.source["attributes"] or kind == "website")
                 out = root / "out"
                 write_plan_artifacts(plan, out)
                 verified = verify_plan_artifacts(out / "plan.json")
                 self.assertEqual(verified.upsert_rows, ())
+                self.assertEqual(
+                    verified.routing_prototypes, plan.routing_prototypes
+                )
                 self.assertEqual(verified.plan["source"]["kind"], kind)
 
     def test_resigned_foreign_canonical_urls_are_rejected_for_every_source_variant(self) -> None:
@@ -519,6 +550,45 @@ class CompactDeltaPlanningTests(unittest.TestCase):
                     connection.execute(object_sql)
                 with self.assertRaisesRegex(ValueError, "tables/views|macros/functions"):
                     verify_plan_artifacts(out / "plan.json")
+
+    def test_routing_prototype_tamper_order_reference_and_bound_fail_early(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out = root / "tamper"
+            write_plan_artifacts(self.build(root / "tamper-build"), out)
+            with duckdb.connect(str(out / "delta.duckdb")) as connection:
+                connection.execute(
+                    "UPDATE routing_prototypes SET passage_text = passage_text || ' changed'"
+                )
+            with self.assertRaisesRegex(ValueError, "passage hash|logical hash"):
+                verify_plan_artifacts(out / "plan.json")
+
+            out = root / "order"
+            write_plan_artifacts(self.build(root / "order-build"), out)
+            with duckdb.connect(str(out / "delta.duckdb")) as connection:
+                connection.execute("UPDATE routing_prototypes SET ordinal = 1")
+            with self.assertRaisesRegex(ValueError, "ordinals are not contiguous"):
+                verify_plan_artifacts(out / "plan.json")
+
+            out = root / "reference"
+            write_plan_artifacts(self.build(root / "reference-build"), out)
+            with duckdb.connect(str(out / "delta.duckdb")) as connection:
+                connection.execute(
+                    "UPDATE routing_prototypes SET row_id = ?",
+                    [f"ts_{'f' * 32}"],
+                )
+            self.resign(out)
+            with self.assertRaisesRegex(ValueError, "source row ID"):
+                verify_plan_artifacts(out / "plan.json")
+
+            out = root / "bound"
+            write_plan_artifacts(self.build(root / "bound-build"), out)
+            plan_path = out / "plan.json"
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan["routing_prototypes"]["count"] = 9
+            plan_path.write_text(json.dumps(plan, sort_keys=True), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "invalid routing prototype count"):
+                verify_plan_artifacts(plan_path)
 
     def test_credential_bearing_source_uri_is_rejected_before_persistence_and_on_verify(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1015,8 +1085,8 @@ class CompactDeltaPlanningTests(unittest.TestCase):
         self.assertNotEqual(first.plan.created_at, "")
         self.assertEqual(second.plan.originating_job_id, f"planjob_{'b' * 32}")
         self.assertNotIn("originating_job_id", first.plan_dict())
-        self.assertEqual(PLAN_SCHEMA_VERSION, 2)
-        self.assertEqual(DELTA_SCHEMA_VERSION, 1)
+        self.assertEqual(PLAN_SCHEMA_VERSION, 3)
+        self.assertEqual(DELTA_SCHEMA_VERSION, 2)
 
 
 if __name__ == "__main__":

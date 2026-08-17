@@ -18,11 +18,15 @@ from buoy_search.catalog import (
     CatalogError,
     NamespaceCard,
     RoutingEmbedder,
+    canonicalize_float32_vector,
+    canonicalize_routing_evidence_vectors,
     canonical_text,
     card_passage_text,
-    routing_example_passage_text,
     normalize_routing_examples,
+    normalize_routing_passages,
+    routing_example_passage_text,
     routing_prototype_hash_for_fields,
+    routing_source_passage_text,
     validate_vector,
     vector_hash,
 )
@@ -42,6 +46,7 @@ from buoy_search.routing_quality import (
     ROUTING_CALIBRATION_ID,
     ROUTING_COLLECT_CALIBRATION_REVISION,
     ROUTING_CONFIDENCE_FEATURE_CONTRACT,
+    RoutingConfidenceCatalogState,
     RoutingConfidenceCalibration,
     validate_routing_confidence_catalog,
 )
@@ -160,6 +165,9 @@ class RoutingSelection:
     confidence_source_report_sha256: str | None = None
     confidence_source_commit: str | None = None
     confidence_source_tree: str | None = None
+    routing_confidence_mode: str | None = None
+    confidence_threshold_applied: bool | None = None
+    provisional_namespace_count: int = 0
 
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -207,6 +215,9 @@ class RoutingSelection:
                     "confidence_margin_floor": self.confidence_margin_floor,
                     "confidence_calibration_id": self.confidence_calibration_id,
                     "confidence_calibration_revision": self.confidence_calibration_revision,
+                    "routing_confidence_mode": self.routing_confidence_mode,
+                    "confidence_threshold_applied": self.confidence_threshold_applied,
+                    "provisional_namespace_count": self.provisional_namespace_count,
                     "confidence_artifact": {
                         "id": self.confidence_calibration_id,
                         "revision": self.confidence_calibration_revision,
@@ -417,12 +428,17 @@ def _semantic_route_by_vector(
     query_vector = _validated_query_vector(encoded[0])
     ranked: list[tuple[NamespaceCard, float]] = []
     for card in cards:
-        card_vector = (
-            card.routing_prototype_vector if prototype else card.vector
+        card_vectors = (
+            _prototype_stage_one_vectors(card)
+            if prototype
+            else (card.vector,)
         )
-        score = sum(
-            left * right
-            for left, right in zip(query_vector, card_vector, strict=True)
+        score = max(
+            sum(
+                left * right
+                for left, right in zip(query_vector, card_vector, strict=True)
+            )
+            for card_vector in card_vectors
         )
         if not math.isfinite(score):
             raise AutomaticRoutingError(
@@ -527,6 +543,29 @@ def _rerank_prototype_shortlist(
                     ),
                 )
             )
+        for source_index, source_passage in enumerate(
+            _routing_source_passages(card)
+        ):
+            passage = routing_source_passage_text(
+                title=card.title,
+                summary=card.summary,
+                passage=source_passage,
+            )
+            passages.append(passage)
+            prototype_keys.append(
+                (
+                    card_index,
+                    "source",
+                    source_index,
+                    stable_hash(
+                        {
+                            "contract": ROUTING_PROTOTYPE_CONTRACT,
+                            "kind": "source",
+                            "passage": passage,
+                        }
+                    ),
+                )
+            )
     if len(passages) > ROUTING_SHORTLIST_LIMIT * (MAX_ROUTING_EXAMPLES + 1):
         raise AutomaticRoutingError("routing prototype passage count exceeds the governed limit")
     try:
@@ -599,9 +638,11 @@ def _validate_prototype_cards(cards: Sequence[NamespaceCard]) -> None:
     if len(namespaces) != len(set(namespaces)):
         raise AutomaticRoutingError("routing candidate cards contain duplicate namespaces")
     for card in cards:
-        if len(card.routing_examples) > MAX_ROUTING_EXAMPLES:
+        source_passages = _routing_source_passages(card)
+        if len(card.routing_examples) + len(source_passages) > MAX_ROUTING_EXAMPLES:
             raise AutomaticRoutingError(
-                f"routing cards may contain at most {MAX_ROUTING_EXAMPLES} examples"
+                f"routing cards may contain at most {MAX_ROUTING_EXAMPLES} "
+                "non-base passages"
             )
         try:
             normalized = normalize_routing_examples(card.routing_examples)
@@ -613,6 +654,10 @@ def _validate_prototype_cards(cards: Sequence[NamespaceCard]) -> None:
             raise AutomaticRoutingError(
                 "routing candidate card examples are not canonical"
             )
+        evidence_vectors = _routing_evidence_vectors(
+            card,
+            source_passages=source_passages,
+        )
         try:
             prototype_vector = validate_vector(
                 card.routing_prototype_vector,
@@ -625,6 +670,7 @@ def _validate_prototype_cards(cards: Sequence[NamespaceCard]) -> None:
                 aliases=card.aliases,
                 tags=card.tags,
                 routing_examples=card.routing_examples,
+                routing_passages=source_passages,
             )
         except CatalogError:
             raise AutomaticRoutingError(
@@ -637,7 +683,20 @@ def _validate_prototype_cards(cards: Sequence[NamespaceCard]) -> None:
             raise AutomaticRoutingError(
                 "routing candidate card prototype projection is stale"
             )
-        if not card.routing_examples and (
+        if evidence_vectors:
+            expected_prototype_vector = _normalized_prototype_mean(
+                card,
+                evidence_vectors,
+            )
+            if (
+                prototype_vector != expected_prototype_vector
+                or card.routing_prototype_vector_hash
+                != vector_hash(expected_prototype_vector)
+            ):
+                raise AutomaticRoutingError(
+                    "routing candidate card evidence vector projection is stale"
+                )
+        if not card.routing_examples and not source_passages and (
             card.routing_prototype_hash != card.semantic_hash
             or prototype_vector != card.vector
             or card.routing_prototype_vector_hash != card.vector_hash
@@ -645,6 +704,133 @@ def _validate_prototype_cards(cards: Sequence[NamespaceCard]) -> None:
             raise AutomaticRoutingError(
                 "empty routing prototype does not equal its base projection"
             )
+
+
+def _routing_source_passages(card: NamespaceCard) -> tuple[str, ...]:
+    """Return one validated, ordered source-passage bank from any card version."""
+
+    raw = getattr(card, "routing_passages", ())
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes, bytearray)):
+        raise AutomaticRoutingError("routing candidate card source passages are invalid")
+    try:
+        passages = normalize_routing_passages(raw)
+    except CatalogError:
+        raise AutomaticRoutingError(
+            "routing candidate card source passages are invalid"
+        ) from None
+    if passages != list(raw):
+        raise AutomaticRoutingError(
+            "routing candidate card source passages are not canonical"
+        )
+    example_keys = {canonical_text(value) for value in card.routing_examples}
+    if example_keys & {canonical_text(value) for value in passages}:
+        raise AutomaticRoutingError(
+            "routing candidate card examples and source passages overlap"
+        )
+    return tuple(passages)
+
+
+def _routing_evidence_vectors(
+    card: NamespaceCard,
+    *,
+    source_passages: Sequence[str],
+) -> tuple[tuple[float, ...], ...]:
+    """Validate and split one flattened non-base routing vector bank.
+
+    Schema-v1/v2 cards have no bank and retain their aggregate prototype-vector
+    behavior. A source-passage card is schema-v3 authority and may never fall
+    back to that lossy centroid, because doing so could hide the very passage
+    that made the namespace relevant.
+    """
+
+    raw = getattr(card, "routing_evidence_vectors", [])
+    raw_hash = getattr(card, "routing_evidence_vectors_hash", "")
+    if not isinstance(raw, list):
+        raise AutomaticRoutingError(
+            "routing candidate card evidence vector bank is invalid"
+        )
+    expected_count = len(card.routing_examples) + len(source_passages)
+    if not raw:
+        if raw_hash != "":
+            raise AutomaticRoutingError(
+                "routing candidate card evidence vector bank is stale"
+            )
+        if source_passages:
+            raise AutomaticRoutingError(
+                "routing candidate card source passages have no evidence vector bank"
+            )
+        if card.routing_examples and card.plan_schema_version not in {1, 2}:
+            raise AutomaticRoutingError(
+                "routing candidate card non-base evidence has no evidence vector bank"
+            )
+        return ()
+    if expected_count == 0 or len(raw) != expected_count * ROUTING_DIMENSIONS:
+        raise AutomaticRoutingError(
+            "routing candidate card evidence vector bank has invalid dimensions"
+        )
+    try:
+        flattened = canonicalize_routing_evidence_vectors(
+            raw,
+            namespace=card.namespace,
+            evidence_count=expected_count,
+        )
+    except CatalogError:
+        raise AutomaticRoutingError(
+            "routing candidate card evidence vector bank is invalid"
+        ) from None
+    if raw_hash != vector_hash(flattened):
+        raise AutomaticRoutingError(
+            "routing candidate card evidence vector bank is stale"
+        )
+    return tuple(
+        tuple(
+            flattened[offset : offset + ROUTING_DIMENSIONS]
+        )
+        for offset in range(0, len(flattened), ROUTING_DIMENSIONS)
+    )
+
+
+def _prototype_stage_one_vectors(
+    card: NamespaceCard,
+) -> tuple[Sequence[float], ...]:
+    """Return per-passage shortlist vectors, or the exact legacy centroid."""
+
+    source_passages = _routing_source_passages(card)
+    evidence_vectors = _routing_evidence_vectors(
+        card,
+        source_passages=source_passages,
+    )
+    if evidence_vectors:
+        return (card.vector, *evidence_vectors)
+    return (card.routing_prototype_vector,)
+
+
+def _normalized_prototype_mean(
+    card: NamespaceCard,
+    evidence_vectors: Sequence[Sequence[float]],
+) -> list[float]:
+    """Reconstruct the stored float32 centroid from its exact passage bank."""
+
+    vectors = (card.vector, *evidence_vectors)
+    mean = [
+        sum(float(vector[index]) for vector in vectors) / len(vectors)
+        for index in range(ROUTING_DIMENSIONS)
+    ]
+    norm = math.sqrt(sum(value * value for value in mean))
+    if norm == 0.0 or not math.isfinite(norm):
+        raise AutomaticRoutingError(
+            "routing candidate card evidence vector projection is invalid"
+        )
+    try:
+        return canonicalize_float32_vector(
+            [value / norm for value in mean],
+            namespace=card.namespace,
+            field="routing_prototype_vector",
+        )
+    except CatalogError:
+        raise AutomaticRoutingError(
+            "routing candidate card evidence vector projection is invalid"
+        ) from None
 
 
 def prototype_route(
@@ -673,11 +859,25 @@ def prototype_route(
         raise AutomaticRoutingError("automatic routing requires at least one eligible card")
     _validate_prototype_cards(cards)
     try:
-        validate_routing_confidence_catalog(calibration, cards)
+        catalog_state = validate_routing_confidence_catalog(calibration, cards)
     except ValueError:
         raise AutomaticRoutingError(
             "routing confidence artifact does not match the eligible catalog"
         ) from None
+    if isinstance(catalog_state, RoutingConfidenceCatalogState):
+        if catalog_state.mode not in {"certified", "provisional"}:
+            raise AutomaticRoutingError(
+                "routing confidence artifact returned an invalid catalog state"
+            )
+        routing_confidence_mode = catalog_state.mode
+        provisional_namespace_count = len(catalog_state.provisional_namespaces)
+    else:
+        # Compatibility for injected callers that still return the former
+        # projection digest while schema-v3 authority rolls out.
+        routing_confidence_mode = (
+            "certified" if calibration.mode == "active" else "provisional"
+        )
+        provisional_namespace_count = 0
     named = named_route(query, cards)
     if len(named) > MAX_ROUTE_TOP_K:
         raise AutomaticRoutingError(
@@ -736,8 +936,12 @@ def prototype_route(
         reranker_margin = (
             top_score - scored[1].reranker_score if len(scored) > 1 else None
         )
-        high_confidence = bool(
+        confidence_threshold_applied = bool(
             calibration.mode == "active"
+            and routing_confidence_mode == "certified"
+        )
+        high_confidence = bool(
+            confidence_threshold_applied
             and calibration.score_floor is not None
             and calibration.margin_floor is not None
             and top_score >= calibration.score_floor
@@ -751,6 +955,9 @@ def prototype_route(
             if high_confidence
             else "ambiguous_prototype"
         )
+
+    if named:
+        confidence_threshold_applied = False
 
     if not selected_names:
         raise AutomaticRoutingError("automatic routing produced an empty selected route")
@@ -853,6 +1060,9 @@ def prototype_route(
             if calibration.receipts is not None
             else None
         ),
+        routing_confidence_mode=routing_confidence_mode,
+        confidence_threshold_applied=confidence_threshold_applied,
+        provisional_namespace_count=provisional_namespace_count,
     )
 
 

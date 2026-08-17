@@ -17,6 +17,7 @@ from buoy_search.catalog import (
     prepare_card,
     vector_hash,
 )
+from buoy_search.plan_artifacts import PLAN_SCHEMA_VERSION
 from buoy_search.remote_catalog import (
     CARD_PAGE_SIZE,
     DISTANCE_METRIC,
@@ -25,22 +26,28 @@ from buoy_search.remote_catalog import (
     REMOTE_CARD_ATTRIBUTES,
     REMOTE_CARD_ATTRIBUTES_V1,
     REMOTE_CARD_ATTRIBUTES_V2,
+    REMOTE_CARD_ATTRIBUTES_V3,
     REMOTE_CATALOG_NAMESPACE,
     REMOTE_CATALOG_SCHEMA,
     REMOTE_CATALOG_SCHEMA_V1,
     REMOTE_CATALOG_SCHEMA_V2,
     REMOTE_CATALOG_SCHEMA_V2_ADDITIONS,
+    REMOTE_CATALOG_SCHEMA_V3,
+    REMOTE_CATALOG_SCHEMA_V3_ADDITIONS,
     REMOTE_SCHEMA_V1,
     REMOTE_SCHEMA_V2,
+    REMOTE_SCHEMA_V3,
     CatalogCounts,
     CompatibilityContract,
     RemoteCatalogError,
+    RemoteCatalogMissingError,
     card_from_remote_row,
     card_to_remote_row,
     classify_remote_catalog,
     create_client,
     create_remote_cards,
     migrate_remote_catalog_schema_v2,
+    migrate_remote_catalog_schema_v3,
     normalize_remote_schema,
     read_remote_catalog,
     require_complete_routing_coverage,
@@ -159,6 +166,12 @@ EXPECTED_REMOTE_SCHEMA_V2: dict[str, object] = {
         "filterable": False,
     },
 }
+EXPECTED_REMOTE_SCHEMA_V3: dict[str, object] = {
+    **EXPECTED_REMOTE_SCHEMA_V2,
+    "routing_passages": {"type": "[]string", "filterable": False},
+    "routing_evidence_vectors": {"type": "[]float", "filterable": False},
+    "routing_evidence_vectors_hash": {"type": "string", "filterable": False},
+}
 
 
 def metadata_schema(
@@ -167,11 +180,11 @@ def metadata_schema(
     schema_version: int = REMOTE_SCHEMA_V1,
 ) -> dict[str, object]:
     schema: dict[str, object] = {"id": {"type": "string"}}
-    expected = (
-        EXPECTED_REMOTE_SCHEMA
-        if schema_version == REMOTE_SCHEMA_V1
-        else EXPECTED_REMOTE_SCHEMA_V2
-    )
+    expected = {
+        REMOTE_SCHEMA_V1: EXPECTED_REMOTE_SCHEMA,
+        REMOTE_SCHEMA_V2: EXPECTED_REMOTE_SCHEMA_V2,
+        REMOTE_SCHEMA_V3: EXPECTED_REMOTE_SCHEMA_V3,
+    }[schema_version]
     schema.update(copy.deepcopy(expected))
     for config in schema.values():
         if isinstance(config, dict) and config.get("filterable") is True:
@@ -222,7 +235,9 @@ class QueryResource:
             else getattr(metadata_value, "schema", None)
         )
         self.schema_version = (
-            REMOTE_SCHEMA_V2
+            REMOTE_SCHEMA_V3
+            if isinstance(schema, dict) and "routing_passages" in schema
+            else REMOTE_SCHEMA_V2
             if isinstance(schema, dict) and "routing_examples" in schema
             else REMOTE_SCHEMA_V1
         )
@@ -392,17 +407,26 @@ class RemoteSchemaAndCardTests(unittest.TestCase):
             with self.subTest(message=message), self.assertRaisesRegex(RemoteCatalogError, message):
                 validate_remote_schema(payload)
 
-    def test_schema_v2_is_exact_and_v1_aliases_remain_legacy(self) -> None:
+    def test_schema_v2_v3_are_exact_and_v1_aliases_remain_legacy(self) -> None:
         self.assertIs(REMOTE_CATALOG_SCHEMA_V1, REMOTE_CATALOG_SCHEMA)
         self.assertEqual(REMOTE_CARD_ATTRIBUTES_V1, REMOTE_CARD_ATTRIBUTES)
         self.assertEqual(len(REMOTE_CATALOG_SCHEMA_V2), 33)
         self.assertEqual(len(REMOTE_CARD_ATTRIBUTES_V2), 33)
         self.assertEqual(REMOTE_CATALOG_SCHEMA_V2, EXPECTED_REMOTE_SCHEMA_V2)
+        self.assertEqual(len(REMOTE_CATALOG_SCHEMA_V3), 36)
+        self.assertEqual(len(REMOTE_CARD_ATTRIBUTES_V3), 36)
+        self.assertEqual(REMOTE_CATALOG_SCHEMA_V3, EXPECTED_REMOTE_SCHEMA_V3)
         self.assertEqual(
             validate_remote_schema(
                 metadata_schema(schema_version=REMOTE_SCHEMA_V2, ann_true=True)
             ),
             REMOTE_CATALOG_SCHEMA_V2,
+        )
+        self.assertEqual(
+            validate_remote_schema(
+                metadata_schema(schema_version=REMOTE_SCHEMA_V3, ann_true=True)
+            ),
+            REMOTE_CATALOG_SCHEMA_V3,
         )
 
         hybrid = metadata_schema(schema_version=REMOTE_SCHEMA_V2)
@@ -417,6 +441,11 @@ class RemoteSchemaAndCardTests(unittest.TestCase):
         with self.assertRaisesRegex(RemoteCatalogError, "changed"):
             validate_remote_schema(indexed_prototype)
 
+        indexed_passages = metadata_schema(schema_version=REMOTE_SCHEMA_V3)
+        indexed_passages["schema"]["routing_passages"]["filterable"] = True  # type: ignore[index]
+        with self.assertRaisesRegex(RemoteCatalogError, "changed"):
+            validate_remote_schema(indexed_passages)
+
     def test_migration_bindings_are_exact_and_projection_is_schema_stable(self) -> None:
         self.assertEqual(
             REMOTE_CATALOG_SCHEMA_V2_ADDITIONS,
@@ -430,9 +459,27 @@ class RemoteSchemaAndCardTests(unittest.TestCase):
                 },
             },
         )
+        self.assertEqual(
+            REMOTE_CATALOG_SCHEMA_V3_ADDITIONS,
+            {
+                "routing_passages": {"type": "[]string", "filterable": False},
+                "routing_evidence_vectors": {
+                    "type": "[]float",
+                    "filterable": False,
+                },
+                "routing_evidence_vectors_hash": {
+                    "type": "string",
+                    "filterable": False,
+                },
+            },
+        )
         self.assertNotEqual(
             remote_catalog_schema_fingerprint(REMOTE_SCHEMA_V1),
             remote_catalog_schema_fingerprint(REMOTE_SCHEMA_V2),
+        )
+        self.assertNotEqual(
+            remote_catalog_schema_fingerprint(REMOTE_SCHEMA_V2),
+            remote_catalog_schema_fingerprint(REMOTE_SCHEMA_V3),
         )
         cards = [make_card("site-a-v1"), make_card("site-b-v1", enabled=False)]
         compatibility = CompatibilityContract(REGION, MODEL, "float32")
@@ -447,9 +494,14 @@ class RemoteSchemaAndCardTests(unittest.TestCase):
             catalog_schema_version=REMOTE_SCHEMA_V1,
         )
         v2 = replace(v1, catalog_schema_version=REMOTE_SCHEMA_V2)
+        v3 = replace(v1, catalog_schema_version=REMOTE_SCHEMA_V3)
         self.assertEqual(
             remote_catalog_projection_sha256(v1),
             remote_catalog_projection_sha256(v2),
+        )
+        self.assertEqual(
+            remote_catalog_projection_sha256(v2),
+            remote_catalog_projection_sha256(v3),
         )
         changed_inventory = classify_remote_catalog(
             live_namespace_ids=(REMOTE_CATALOG_NAMESPACE, "site-a-v1"),
@@ -650,6 +702,34 @@ class RemoteSchemaAndCardTests(unittest.TestCase):
                 schema_version=REMOTE_SCHEMA_V2,
             )
 
+    def test_provider_evidence_decimal_is_float32_canonical_and_hash_bound(self) -> None:
+        card = make_card(
+            "site-evidence-float-v1",
+            routing_passages=["Retry policy defaults and backoff."],
+        )
+        row = card_to_remote_row(card, schema_version=REMOTE_SCHEMA_V3)
+        row["routing_evidence_vectors"][0] = 1.00000001
+        self.assertEqual(
+            card_from_remote_row(
+                ProviderRow(row),
+                region=REGION,
+                schema_version=REMOTE_SCHEMA_V3,
+            ),
+            card,
+        )
+
+        adjacent = card_to_remote_row(card, schema_version=REMOTE_SCHEMA_V3)
+        adjacent["routing_evidence_vectors"][0] = 0.99999994
+        with self.assertRaisesRegex(
+            RemoteCatalogError,
+            "routing_evidence_vectors_hash is stale or invalid",
+        ):
+            card_from_remote_row(
+                ProviderRow(adjacent),
+                region=REGION,
+                schema_version=REMOTE_SCHEMA_V3,
+            )
+
     def test_provider_vector_rejects_nonfinite_overflow_and_type_errors(self) -> None:
         card = make_card("site-oscilar-com-v1")
         for value in (float("nan"), float("inf"), float("-inf"), 3.5e38, "1.0", True):
@@ -751,6 +831,44 @@ class RemoteSchemaAndCardTests(unittest.TestCase):
             legacy,
         )
 
+        v3_legacy_row = card_to_remote_row(
+            legacy,
+            schema_version=REMOTE_SCHEMA_V3,
+        )
+        self.assertEqual(v3_legacy_row["routing_passages"], [])
+        self.assertEqual(set(v3_legacy_row), {"id", *REMOTE_CARD_ATTRIBUTES_V3})
+        v3_bundle = (
+            "routing_passages",
+            "routing_evidence_vectors",
+            "routing_evidence_vectors_hash",
+        )
+        for null_value in (None, "omitted"):
+            provider_null_passages = dict(v3_legacy_row)
+            if null_value is None:
+                for field in v3_bundle:
+                    provider_null_passages[field] = None
+            else:
+                for field in v3_bundle:
+                    provider_null_passages.pop(field)
+            with self.subTest(null_value=null_value):
+                self.assertEqual(
+                    card_from_remote_row(
+                        provider_null_passages,
+                        region=REGION,
+                        schema_version=REMOTE_SCHEMA_V3,
+                    ),
+                    legacy,
+                )
+
+        partial_v3 = dict(v3_legacy_row)
+        partial_v3.pop("routing_evidence_vectors_hash")
+        with self.assertRaisesRegex(RemoteCatalogError, "missing"):
+            card_from_remote_row(
+                partial_v3,
+                region=REGION,
+                schema_version=REMOTE_SCHEMA_V3,
+            )
+
         enhanced = make_card(
             "site-enhanced-v1",
             routing_examples=["How do I configure retries?"],
@@ -772,6 +890,69 @@ class RemoteSchemaAndCardTests(unittest.TestCase):
                 schema_version=REMOTE_SCHEMA_V2,
             ),
             enhanced,
+        )
+
+        passage_card = make_card(
+            "site-passage-v1",
+            routing_examples=["How do I configure retries?"],
+            routing_passages=["Retry policy defaults and exponential backoff."],
+        )
+        with self.assertRaisesRegex(RemoteCatalogError, "reader-first"):
+            card_to_remote_row(passage_card, schema_version=REMOTE_SCHEMA_V1)
+        with self.assertRaisesRegex(RemoteCatalogError, "schema-v3 migration"):
+            card_to_remote_row(passage_card, schema_version=REMOTE_SCHEMA_V2)
+        passage_row = card_to_remote_row(
+            passage_card,
+            schema_version=REMOTE_SCHEMA_V3,
+        )
+        self.assertEqual(
+            passage_row["routing_passages"],
+            ["Retry policy defaults and exponential backoff."],
+        )
+        self.assertEqual(
+            len(passage_row["routing_evidence_vectors"]),
+            2 * ROUTING_DIMENSIONS,
+        )
+        self.assertEqual(
+            passage_row["routing_evidence_vectors_hash"],
+            vector_hash(passage_row["routing_evidence_vectors"]),
+        )
+        self.assertEqual(set(passage_row), {"id", *REMOTE_CARD_ATTRIBUTES_V3})
+        self.assertEqual(
+            card_from_remote_row(
+                passage_row,
+                region=REGION,
+                schema_version=REMOTE_SCHEMA_V3,
+            ),
+            passage_card,
+        )
+        passage_without_bank = dict(passage_row)
+        passage_without_bank["routing_evidence_vectors"] = []
+        passage_without_bank["routing_evidence_vectors_hash"] = ""
+        with self.assertRaisesRegex(
+            RemoteCatalogError,
+            "non-empty routing_passages requires routing_evidence_vectors",
+        ):
+            card_from_remote_row(
+                passage_without_bank,
+                region=REGION,
+                schema_version=REMOTE_SCHEMA_V3,
+            )
+
+        v3_example = make_card(
+            "site-v3-example-v1",
+            plan_schema_version=PLAN_SCHEMA_VERSION,
+            routing_examples=["Where are retry policies configured?"],
+        )
+        with self.assertRaisesRegex(RemoteCatalogError, "schema-v3 migration"):
+            card_to_remote_row(v3_example, schema_version=REMOTE_SCHEMA_V2)
+        self.assertEqual(
+            card_from_remote_row(
+                card_to_remote_row(v3_example, schema_version=REMOTE_SCHEMA_V3),
+                region=REGION,
+                schema_version=REMOTE_SCHEMA_V3,
+            ),
+            v3_example,
         )
         for missing_field in (
             "routing_examples",
@@ -821,6 +1002,29 @@ class RemoteReadTests(unittest.TestCase):
         }
         values.update(overrides)
         return CompatibilityContract(**values)  # type: ignore[arg-type]
+
+    def test_current_compatibility_accepts_plan_lineage_one_two_and_three(self) -> None:
+        compatibility = self.compatibility()
+        self.assertEqual(compatibility.plan_schema_version, PLAN_SCHEMA_VERSION)
+        cards = [
+            make_card(
+                f"site-plan-{version}-v1",
+                plan_schema_version=version,
+            )
+            for version in (1, 2, PLAN_SCHEMA_VERSION)
+        ]
+
+        snapshot = classify_remote_catalog(
+            live_namespace_ids=[
+                REMOTE_CATALOG_NAMESPACE,
+                *(card.namespace for card in cards),
+            ],
+            cards=cards,
+            compatibility=compatibility,
+        )
+
+        self.assertEqual(snapshot.incompatible_ids, ())
+        self.assertEqual(snapshot.eligible_cards, tuple(cards))
 
     def test_two_namespace_and_card_passes_capture_exact_requests_counts_and_billing(self) -> None:
         cards = [make_card("site-dagster-io-benchmark-v1"), make_card("site-oscilar-com-v1")]
@@ -885,6 +1089,29 @@ class RemoteReadTests(unittest.TestCase):
                 call["include_attributes"], list(REMOTE_CARD_ATTRIBUTES_V2)
             )
 
+    def test_schema_v3_reader_requests_passages_and_normalizes_provider_nulls(self) -> None:
+        card = make_card("site-schema-v3-reader-v1")
+        ids = [REMOTE_CATALOG_NAMESPACE, card.namespace]
+        resource = QueryResource(
+            [card],
+            metadata=metadata_schema(schema_version=REMOTE_SCHEMA_V3),
+        )
+        client = FakeClient([NamespacePage(ids), NamespacePage(ids)], resource)
+
+        snapshot = read_remote_catalog(
+            client,
+            region=REGION,
+            compatibility=self.compatibility(),
+        )
+
+        self.assertEqual(snapshot.catalog_schema_version, REMOTE_SCHEMA_V3)
+        self.assertEqual(snapshot.cards, (card,))
+        self.assertEqual(snapshot.cards[0].routing_passages, [])
+        for call in resource.query_calls:
+            self.assertEqual(
+                call["include_attributes"], list(REMOTE_CARD_ATTRIBUTES_V3)
+            )
+
     def test_card_pagination_uses_advancing_id_filter_on_both_passes(self) -> None:
         cards = [make_card(f"site-{index:03d}-v1") for index in range(101)]
         ids = [REMOTE_CATALOG_NAMESPACE, *(card.namespace for card in cards)]
@@ -926,7 +1153,7 @@ class RemoteReadTests(unittest.TestCase):
     def test_missing_catalog_schema_error_duplicate_listing_and_nonadvancing_pages_fail(self) -> None:
         card = make_card()
         missing_client = FakeClient([NamespacePage([card.namespace])], QueryResource([card]))
-        with self.assertRaisesRegex(RemoteCatalogError, "does not exist"):
+        with self.assertRaisesRegex(RemoteCatalogMissingError, "does not exist"):
             read_remote_catalog(missing_client, region=REGION, compatibility=self.compatibility())
 
         bad_schema = metadata_schema(); bad_schema["schema"]["title"] = {"type": "uint"}  # type: ignore[index]
@@ -1159,6 +1386,33 @@ class MutationTests(unittest.TestCase):
                 migrate_remote_catalog_schema_v2(  # type: ignore[arg-type]
                     SchemaOnlyResource(response)
                 )
+
+    def test_schema_v3_migration_is_schema_only(self) -> None:
+        class SchemaOnlyResource:
+            def __init__(self) -> None:
+                self.write_calls: list[dict[str, object]] = []
+
+            def write(self, **kwargs: object) -> object:
+                self.write_calls.append(kwargs)
+                return {
+                    "status": "OK",
+                    "rows_affected": 0,
+                    "rows_deleted": 0,
+                    "rows_patched": 0,
+                    "rows_upserted": 0,
+                    "deleted_ids": None,
+                    "patched_ids": None,
+                    "upserted_ids": None,
+                    "billing": {"write_units": 1},
+                }
+
+        resource = SchemaOnlyResource()
+        result = migrate_remote_catalog_schema_v3(resource)  # type: ignore[arg-type]
+        self.assertTrue(result.changed)
+        self.assertEqual(
+            resource.write_calls,
+            [{"distance_metric": DISTANCE_METRIC, "schema": REMOTE_CATALOG_SCHEMA_V3}],
+        )
 
     def test_mutations_prevalidate_region_reserved_target_duplicates_and_revision(self) -> None:
         card = make_card()

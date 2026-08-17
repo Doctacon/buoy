@@ -19,6 +19,7 @@ import stat
 import tempfile
 import time
 from typing import Any, Callable
+import unicodedata
 
 from buoy_search.applied_state import (
     ROW_STATUS_ACTIVE,
@@ -42,15 +43,18 @@ from buoy_search.chunker import (
     batched,
 )
 from buoy_search.catalog import (
+    MAX_ROUTING_EVIDENCE,
     CardFields,
     CatalogError,
     GeneratedSemantics,
     NamespaceCard,
+    bounded_routing_passages,
     generated_semantics,
     prepare_card,
 )
 from buoy_search.remote_catalog import (
     REMOTE_CATALOG_NAMESPACE,
+    REMOTE_SCHEMA_V3,
     CompatibilityContract,
     RemoteCatalogError,
     create_client,
@@ -65,6 +69,7 @@ from buoy_search.plan_artifacts import (
     PLAN_SCHEMA_VERSION,
     ChunkManifestRecord,
     ManifestDocument,
+    VerifiedDeltaPlan,
     applied_state_descriptor,
     build_generic_site_row,
     state_path_for_site,
@@ -104,15 +109,17 @@ class _CatalogRegistrationAttemptError(RuntimeError):
         *,
         api_calls_occurred: bool,
         repair_command: str,
+        card_write_attempted: bool = False,
     ) -> None:
         super().__init__(message)
         self.api_calls_occurred = api_calls_occurred
         self.repair_command = repair_command
+        self.card_write_attempted = card_write_attempted
 
 
 @dataclass(frozen=True)
 class VerifiedApplyPlan:
-    """Fully verified schema-v2 delta plus its exact current baseline."""
+    """Fully verified schema-v3 delta plus its exact current baseline."""
 
     plan_path: Path
     plan: JsonObject
@@ -123,6 +130,7 @@ class VerifiedApplyPlan:
     state_root: Path
     upsert_rows: tuple[JsonObject, ...]
     stale_rows: tuple[JsonObject, ...]
+    routing_prototypes: tuple[JsonObject, ...]
     plan_directory_device: int
     plan_directory_inode: int
 
@@ -294,7 +302,7 @@ def _load_stable_applied_state(
 
 
 def discover_latest_plan_path(search_root: Path = DEFAULT_APPLY_PLAN_SEARCH_ROOT) -> Path:
-    """Return the newest summary-qualified schema-v2 plan without opening deltas."""
+    """Return the newest summary-qualified schema-v3 plan without opening deltas."""
 
     if not search_root.exists():
         raise ApplyPlanError(f"No plan search root found: {search_root}; pass --plan explicitly.")
@@ -315,19 +323,20 @@ def discover_latest_plan_path(search_root: Path = DEFAULT_APPLY_PLAN_SEARCH_ROOT
             continue
     if not candidates:
         raise ApplyPlanError(
-            f"No supported schema-v2 plan.json files found under {search_root}; "
+            f"No supported schema-v3 plan.json files found under {search_root}; "
             "run `buoy plan <source>` or pass --plan."
         )
     return max(candidates, key=lambda path: (path.stat().st_mtime_ns, str(path)))
 
 
-def load_verified_apply_plan(*, plan_path: Path, namespace: str | None, state_root: Path) -> VerifiedApplyPlan:
-    """Fully verify one compact delta and its exact applied-state baseline."""
+def _verify_plan_file(plan_path: Path) -> tuple[VerifiedDeltaPlan, os.stat_result]:
+    """Verify an exact schema-v3 artifact and bind its directory identity."""
 
+    _require_safe_diagnostic_path(plan_path.absolute(), label="Plan file")
     if not plan_path.exists():
         raise ApplyPlanError(f"Plan file not found: {plan_path}")
     if plan_path.is_symlink() or not plan_path.is_file():
-        raise ApplyPlanError("Plan file must be a regular schema-v2 plan.json.")
+        raise ApplyPlanError("Plan file must be a regular schema-v3 plan.json.")
     plan_directory = plan_path.parent
     try:
         directory_before = plan_directory.lstat()
@@ -353,7 +362,23 @@ def load_verified_apply_plan(*, plan_path: Path, namespace: str | None, state_ro
     except ApplyPlanError:
         raise
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
-        raise ApplyPlanError(f"Unsupported or invalid schema-v2 plan: {exc}") from exc
+        raise ApplyPlanError(f"Unsupported or invalid schema-v3 plan: {exc}") from exc
+    return verified, directory_before
+
+
+def _require_safe_diagnostic_path(path: Path, *, label: str) -> None:
+    """Keep executable repair diagnostics free of terminal-control paths."""
+
+    unsafe_categories = {"Cc", "Cf", "Cs", "Zl", "Zp"}
+    if any(unicodedata.category(character) in unsafe_categories for character in str(path)):
+        raise ApplyPlanError(f"{label} path contains unsupported control characters.")
+
+
+def load_verified_apply_plan(*, plan_path: Path, namespace: str | None, state_root: Path) -> VerifiedApplyPlan:
+    """Fully verify one compact delta and its exact applied-state baseline."""
+
+    _require_safe_diagnostic_path(state_root.absolute(), label="State root")
+    verified, directory_before = _verify_plan_file(plan_path)
     plan = verified.plan
     resolved_namespace = str(plan["namespace"])
     if namespace is not None and resolved_namespace != namespace:
@@ -374,6 +399,11 @@ def load_verified_apply_plan(*, plan_path: Path, namespace: str | None, state_ro
             "Applied state changed after this plan was created; run buoy plan again."
         )
     _validate_delta_against_state(verified.upsert_rows, verified.stale_rows, state)
+    _validate_routing_prototypes_against_state(
+        verified.routing_prototypes,
+        verified.upsert_rows,
+        state,
+    )
     chunks = tuple(_chunk_from_delta(row) for row in verified.upsert_rows)
     chunks_by_row_id = {chunk.row_id: chunk for chunk in chunks}
     diff = _diff_from_delta(plan, verified.upsert_rows, verified.stale_rows)
@@ -396,6 +426,76 @@ def load_verified_apply_plan(*, plan_path: Path, namespace: str | None, state_ro
         state_root=state_root,
         upsert_rows=verified.upsert_rows,
         stale_rows=verified.stale_rows,
+        routing_prototypes=verified.routing_prototypes,
+        plan_directory_device=directory_before.st_dev,
+        plan_directory_inode=directory_before.st_ino,
+    )
+
+
+def load_verified_catalog_repair_plan(
+    *,
+    plan_path: Path,
+    namespace: str,
+    state_root: Path,
+    apply_id: str,
+) -> VerifiedApplyPlan:
+    """Verify a retained plan against the state committed by its partial apply."""
+
+    _require_safe_diagnostic_path(state_root.absolute(), label="State root")
+    verified, directory_before = _verify_plan_file(plan_path)
+    plan = verified.plan
+    resolved_namespace = str(plan["namespace"])
+    if resolved_namespace != namespace:
+        raise ApplyPlanError(
+            f"namespace mismatch: plan has {resolved_namespace!r}, argument has {namespace!r}"
+        )
+    source_uri = str(plan["source"]["uri"])
+    site_id = str(plan["site_id"])
+    state, state_present = _load_stable_applied_state(
+        site_id=site_id,
+        namespace=resolved_namespace,
+        base_url=source_uri,
+        state_root=state_root,
+    )
+    if not state_present:
+        raise ApplyPlanError("Catalog repair requires the committed applied state.")
+    if state.last_plan_id != str(plan["plan_id"]) or state.last_apply_id != apply_id:
+        raise ApplyPlanError(
+            "Applied state no longer matches this plan/apply repair authority."
+        )
+    current_rows = {row.row_id: row for row in state.rows}
+    for prototype in verified.routing_prototypes:
+        row = current_rows.get(str(prototype["row_id"]))
+        if (
+            row is None
+            or row.status != ROW_STATUS_ACTIVE
+            or row.canonical_url != str(prototype["canonical_url"])
+            or row.chunk_hash != str(prototype["chunk_hash"])
+        ):
+            raise ApplyPlanError(
+                "Retained routing prototype no longer matches committed applied state."
+            )
+    chunks = tuple(_chunk_from_delta(row) for row in verified.upsert_rows)
+    manifest = ManifestDocument(
+        schema_version=PLAN_SCHEMA_VERSION,
+        site_id=site_id,
+        base_url=source_uri,
+        namespace=resolved_namespace,
+        namespace_candidate=str(plan["namespace_candidate"]),
+        pages=[],
+        chunks=list(chunks),
+    )
+    return VerifiedApplyPlan(
+        plan_path=plan_path,
+        plan=plan,
+        manifest=manifest,
+        chunks_by_row_id={chunk.row_id: chunk for chunk in chunks},
+        state=state,
+        diff=_diff_from_delta(plan, verified.upsert_rows, verified.stale_rows),
+        state_root=state_root,
+        upsert_rows=verified.upsert_rows,
+        stale_rows=verified.stale_rows,
+        routing_prototypes=verified.routing_prototypes,
         plan_directory_device=directory_before.st_dev,
         plan_directory_inode=directory_before.st_ino,
     )
@@ -449,6 +549,31 @@ def _validate_delta_against_state(
                 for candidate in active_rows
             ):
                 raise ApplyPlanError("Verified new row has active canonical-URL lineage.")
+
+
+def _validate_routing_prototypes_against_state(
+    routing_prototypes: tuple[JsonObject, ...],
+    upserts: tuple[JsonObject, ...],
+    state: AppliedState,
+) -> None:
+    """Bind unchanged prototype provenance to the exact applied-state baseline."""
+
+    upsert_ids = {str(row["row_id"]) for row in upserts}
+    baseline = {row.row_id: row for row in state.rows}
+    for prototype in routing_prototypes:
+        row_id = str(prototype["row_id"])
+        if row_id in upsert_ids:
+            continue
+        row = baseline.get(row_id)
+        if (
+            row is None
+            or row.status != ROW_STATUS_ACTIVE
+            or row.canonical_url != str(prototype["canonical_url"])
+            or row.chunk_hash != str(prototype["chunk_hash"])
+        ):
+            raise ApplyPlanError(
+                "Verified routing prototype does not match applied-state baseline."
+            )
 
 
 def _chunk_from_delta(row: JsonObject) -> ChunkManifestRecord:
@@ -618,8 +743,15 @@ def catalog_registration_preview(
         "namespace": namespace,
         "action": "create_or_update_after_content_and_state_commit",
         "remote_catalog_state": "unknown_until_approved",
+        "required_catalog_schema_version": REMOTE_SCHEMA_V3,
+        "routing_catalog_prerequisite": "exact_schema_v3_reader_first_setup",
         "manual_semantics_preserved": True,
         "enabled_state_preserved": True,
+        "routing_prototype_strategy": verified.plan["routing_prototypes"]["strategy"],
+        "reviewed_routing_passages": len(verified.routing_prototypes),
+        "routing_passage_budget": MAX_ROUTING_EVIDENCE,
+        "routing_model_work": "at_most_one_bounded_local_batch_after_approval",
+        "generative_model_used": False,
         "source_kind": semantics.source_kind,
         "region": region,
         "vector_dimensions": VECTOR_DIMENSIONS,
@@ -643,6 +775,16 @@ def generated_card_for_apply(
         region=region,
     )
     manual = existing is not None and existing.semantic_origin == "manual"
+    routing_examples = list(
+        existing.routing_examples if existing is not None else []
+    )
+    routing_passages = bounded_routing_passages(
+        routing_examples=routing_examples,
+        routing_passages=[
+            str(prototype["passage_text"])
+            for prototype in verified.routing_prototypes
+        ],
+    )
     fields = CardFields(
         namespace=namespace,
         enabled=existing.enabled if existing is not None else True,
@@ -656,9 +798,8 @@ def generated_card_for_apply(
         # Reviewed routing questions are operator-owned prototype authority.
         # Generated refreshes may neither invent them for a new card nor clear
         # them from any existing manual or generated card.
-        routing_examples=list(
-            existing.routing_examples if existing is not None else []
-        ),
+        routing_examples=routing_examples,
+        routing_passages=routing_passages,
         semantic_origin="manual" if manual else "generated",
         region=region,
         embedding_model=str(verified.plan["embedding_model"]),
@@ -683,83 +824,59 @@ def _catalog_repair_command(
     *,
     namespace: str,
     region: str,
-    card: NamespaceCard | None = None,
+    apply_id: str,
+    existing_revision: str | None = None,
 ) -> str:
-    """Return an executable reviewed catalog-only repair for a generated card."""
+    """Return an opaque retained-plan-backed catalog repair command."""
 
-    semantics, ranking = _generated_card_inputs(
-        verified,
-        namespace=namespace,
-        region=region,
-    )
-    source_kind = card.source_kind if card is not None else semantics.source_kind
-    source_uri = card.source_uri if card is not None else semantics.source_uri
-    site_id = card.site_id if card is not None else str(verified.plan["site_id"])
-    title = card.title if card is not None else semantics.title
-    summary = card.summary if card is not None else semantics.summary
-    aliases = card.aliases if card is not None else semantics.aliases
-    tags = card.tags if card is not None else semantics.tags
-    routing_examples = (
-        card.routing_examples if card is not None else semantics.routing_examples
-    )
     command = [
         "buoy",
         "catalog",
-        "upsert",
+        "repair-apply",
+        "--plan",
+        str(verified.plan_path.absolute()),
+        "--namespace",
         namespace,
-        "--source-kind",
-        source_kind,
-        "--source-uri",
-        source_uri,
-        "--site-id",
-        site_id,
-        "--title",
-        title,
-        "--summary",
-        summary,
+        "--state-root",
+        str(verified.state_root.absolute()),
+        "--apply-id",
+        apply_id,
+        "--region",
+        region,
     ]
-    for alias in aliases:
-        command.extend(("--alias", alias))
-    for tag in tags:
-        command.extend(("--tag", tag))
-    for example in routing_examples:
-        command.extend(("--routing-example", example))
-    command.extend(
-        (
-            "--embedding-model",
-            str(verified.plan["embedding_model"]),
-            "--embedding-precision",
-            str(verified.plan.get("embedding_precision", "float32")),
-            "--plan-schema-version",
-            str(verified.plan["schema_version"]),
-            "--ranking-mode",
-            str(ranking["ranking_mode"]),
-            "--ranking-profile",
-            str(ranking["ranking_profile"]).replace("_", "-"),
-            "--ranking-pool",
-            str(ranking["ranking_pool"]),
-            "--ranking-aggregation",
-            str(ranking["ranking_aggregation"]).replace("_", "-"),
-            "--region",
-            region,
-            "--approve",
-        )
-    )
-    if card is not None and not card.enabled:
-        command.append("--disabled")
+    if existing_revision is None:
+        command.append("--expect-absent")
+    else:
+        command.extend(("--expected-card-revision", existing_revision))
+    command.append("--approve")
     return shlex.join(command)
 
 
-def _catalog_repair_fallback(*, namespace: str, region: str) -> str:
+def _catalog_repair_inspect_command(
+    verified: VerifiedApplyPlan,
+    *,
+    namespace: str,
+    region: str,
+    apply_id: str,
+) -> str:
+    """Return a read-only command that can establish a safe repair binding."""
+
     return shlex.join(
         (
             "buoy",
             "catalog",
-            "show",
+            "repair-apply",
+            "--plan",
+            str(verified.plan_path.absolute()),
+            "--namespace",
             namespace,
+            "--state-root",
+            str(verified.state_root.absolute()),
+            "--apply-id",
+            apply_id,
             "--region",
             region,
-            "--json",
+            "--inspect-current",
         )
     )
 
@@ -770,7 +887,7 @@ def _safe_catalog_registration_error(exc: Exception) -> str:
     return f"catalog registration failed ({exc.__class__.__name__})"
 
 
-def register_apply_catalog_card(
+def inspect_apply_catalog_repair(
     verified: VerifiedApplyPlan,
     *,
     config: RuntimeConfig,
@@ -778,30 +895,108 @@ def register_apply_catalog_card(
     apply_id: str,
     api_key: str,
 ) -> JsonObject:
+    """Strong-read exact v3 and return an opaque, revision-bound repair command."""
+
+    try:
+        client = REMOTE_CATALOG_CLIENT_FACTORY(
+            api_key=api_key,
+            region=config.region,
+        )
+        compatibility = CompatibilityContract(
+            region=config.region,
+            embedding_model=config.embedding_model,
+            embedding_precision=config.embedding_precision,
+        )
+        snapshot = read_remote_catalog(
+            client,
+            region=config.region,
+            compatibility=compatibility,
+        )
+        if snapshot.catalog_schema_version != REMOTE_SCHEMA_V3:
+            raise RemoteCatalogError(
+                "catalog repair inspection requires the separately approved "
+                "reader-first routing catalog schema-v3 migration"
+            )
+        if namespace not in snapshot.live_namespace_ids:
+            raise RemoteCatalogError(
+                f"applied content namespace {namespace!r} is not live in "
+                f"region {config.region!r}"
+            )
+        existing = next(
+            (card for card in snapshot.cards if card.namespace == namespace),
+            None,
+        )
+    except (CatalogError, RemoteCatalogError):
+        raise
+    except Exception as exc:
+        raise RemoteCatalogError(
+            "catalog repair inspection failed "
+            f"({exc.__class__.__name__})"
+        ) from None
+    return {
+        "catalog_schema_version": snapshot.catalog_schema_version,
+        "catalog_snapshot_revision": snapshot.snapshot_revision,
+        "catalog_card_revision": (
+            existing.card_revision if existing is not None else None
+        ),
+        "catalog_repair_command": _catalog_repair_command(
+            verified,
+            namespace=namespace,
+            region=config.region,
+            apply_id=apply_id,
+            existing_revision=(
+                existing.card_revision if existing is not None else None
+            ),
+        ),
+    }
+
+
+def register_apply_catalog_card(
+    verified: VerifiedApplyPlan,
+    *,
+    config: RuntimeConfig,
+    namespace: str,
+    apply_id: str,
+    api_key: str,
+    expected_card_revision: str | None = None,
+    expect_absent: bool = False,
+) -> JsonObject:
     """Conditionally create/update and exactly verify one post-apply card."""
 
+    if expected_card_revision is not None and expect_absent:
+        raise ValueError("catalog repair preconditions are mutually exclusive")
+
     api_calls_occurred = False
-    # Until the current card has been read, only suggest inspection. A
-    # generated upsert at this point could overwrite operator-authored title,
-    # aliases, tags, description, routing vector, or enabled state.
-    repair_command = _catalog_repair_fallback(
+    card_write_attempted = False
+    # Until an exact-v3 card snapshot has been read, only suggest the retained-
+    # plan inspection path. It establishes a revision/absence precondition
+    # without assuming anything about unreadable or not-yet-migrated state.
+    repair_command = _catalog_repair_inspect_command(
+        verified,
         namespace=namespace,
         region=config.region,
+        apply_id=apply_id,
     )
     try:
         # Projection can load the pinned local route model, but happens only
         # after content and local state are durably committed by the caller.
         client = REMOTE_CATALOG_CLIENT_FACTORY(api_key=api_key, region=config.region)
         api_calls_occurred = True
+        compatibility = CompatibilityContract(
+            region=config.region,
+            embedding_model=config.embedding_model,
+            embedding_precision=config.embedding_precision,
+        )
         snapshot = read_remote_catalog(
             client,
             region=config.region,
-            compatibility=CompatibilityContract(
-                region=config.region,
-                embedding_model=config.embedding_model,
-                embedding_precision=config.embedding_precision,
-            ),
+            compatibility=compatibility,
         )
+        if snapshot.catalog_schema_version != REMOTE_SCHEMA_V3:
+            raise RemoteCatalogError(
+                "schema-v3 plan registration requires the separately approved "
+                "reader-first routing catalog schema-v3 migration"
+            )
         if namespace not in snapshot.live_namespace_ids:
             raise RemoteCatalogError(
                 f"applied content namespace {namespace!r} is not live in region {config.region!r}"
@@ -810,6 +1005,34 @@ def register_apply_catalog_card(
             (card for card in snapshot.cards if card.namespace == namespace),
             None,
         )
+        repair_command = _catalog_repair_command(
+            verified,
+            namespace=namespace,
+            region=config.region,
+            apply_id=apply_id,
+            existing_revision=(
+                existing.card_revision if existing is not None else None
+            ),
+        )
+        precondition_matches = (
+            (expect_absent and existing is None)
+            or (
+                expected_card_revision is not None
+                and existing is not None
+                and existing.card_revision == expected_card_revision
+            )
+            or (not expect_absent and expected_card_revision is None)
+        )
+        # A matching precondition means this invocation will need the fixed
+        # catalog namespace for its create/update. Acquire that provider
+        # resource before loading the pinned local routing model so an
+        # unavailable catalog fails quickly and through the redacted remote
+        # boundary. Drift/idempotence checks deliberately skip acquisition:
+        # they may prove that no write is needed and must not add a provider
+        # call.
+        resource = (
+            remote_catalog_resource(client) if precondition_matches else None
+        )
         card = generated_card_for_apply(
             verified,
             namespace=namespace,
@@ -817,50 +1040,97 @@ def register_apply_catalog_card(
             apply_id=apply_id,
             existing=existing,
         )
-        repair_command = _catalog_repair_command(
-            verified,
-            namespace=namespace,
-            region=config.region,
-            card=card,
+        routing_projection_reused = bool(
+            existing is not None
+            and existing.routing_prototype_hash == card.routing_prototype_hash
+            and existing.routing_model == card.routing_model
+            and existing.routing_model_revision == card.routing_model_revision
+            and existing.routing_evidence_vectors == card.routing_evidence_vectors
+            and existing.routing_evidence_vectors_hash
+            == card.routing_evidence_vectors_hash
         )
-        resource = remote_catalog_resource(client)
-        mutation = (
-            create_remote_cards(
-                resource,
-                [card],
-                region=config.region,
-                schema_version=snapshot.catalog_schema_version,
+        if not precondition_matches:
+            # A conditional create/update may have committed before its response
+            # was lost. Treat the strongly-read card as success only when every
+            # plan/apply-controlled field (including lineage and passage bank)
+            # is already exactly what this retained authority would produce.
+            if (
+                existing is not None
+                and existing.last_plan_id == str(verified.plan["plan_id"])
+                and existing.last_apply_id == apply_id
+                and existing.card_revision == card.card_revision
+            ):
+                mutation = None
+            elif expect_absent:
+                raise RemoteCatalogError(
+                    "routing card appeared after the failed apply and does not "
+                    "match its retained plan/apply authority"
+                )
+            else:
+                raise RemoteCatalogError(
+                    "routing card drifted from the failed apply and does not "
+                    "match its retained plan/apply authority"
+                )
+        else:
+            assert resource is not None
+            card_write_attempted = True
+            mutation = (
+                create_remote_cards(
+                    resource,
+                    [card],
+                    region=config.region,
+                    schema_version=snapshot.catalog_schema_version,
+                )
+                if existing is None
+                else update_remote_card(
+                    resource,
+                    card,
+                    expected_revision=existing.card_revision,
+                    region=config.region,
+                    schema_version=snapshot.catalog_schema_version,
+                )
             )
-            if existing is None
-            else update_remote_card(
-                resource,
-                card,
-                expected_revision=existing.card_revision,
-                region=config.region,
-                schema_version=snapshot.catalog_schema_version,
-            )
-        )
     except Exception as exc:
         raise _CatalogRegistrationAttemptError(
             _safe_catalog_registration_error(exc),
             api_calls_occurred=api_calls_occurred,
             repair_command=repair_command,
+            card_write_attempted=card_write_attempted,
         ) from None
 
-    if existing is None:
+    if mutation is None:
+        status = "unchanged"
+    elif existing is None:
         status = "created" if mutation.changed else "unchanged"
     else:
         status = "updated" if mutation.changed else "unchanged"
-    verified_card = mutation.card or card
+    verified_card = existing if mutation is None else mutation.card or card
+    assert verified_card is not None
     return {
         "catalog_registered": True,
         "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
         "catalog_mutation_status": status,
         "catalog_card_revision": verified_card.card_revision,
+        "catalog_schema_version": snapshot.catalog_schema_version,
+        "catalog_bootstrapped": False,
         "catalog_manual_semantics_preserved": bool(
             existing is not None and existing.semantic_origin == "manual"
         ),
         "catalog_enabled_state": verified_card.enabled,
+        "routing_passage_count": len(verified_card.routing_passages),
+        "routing_projection_reused": routing_projection_reused,
+        "routing_embeddings_generated": (
+            0
+            if routing_projection_reused
+            else 1
+            + len(verified_card.routing_examples)
+            + len(verified_card.routing_passages)
+        ),
+        "automatic_retrieval_ready": bool(verified_card.enabled),
+        "automatic_routing_status": (
+            "provisional_ready" if verified_card.enabled else "disabled"
+        ),
+        "calibrated_singletons_enabled": False,
         "catalog_repair_command": None,
     }
 
@@ -891,6 +1161,9 @@ def apply_preflight_summary(
         "cancelled": False,
         "confirmation": "not_requested",
         "catalog_registered": False,
+        "automatic_retrieval_ready": False,
+        "automatic_routing_status": "pending_approved_catalog_registration",
+        "calibrated_singletons_enabled": False,
         "catalog_registration": catalog_registration_preview(
             verified,
             namespace=namespace,
@@ -1113,6 +1386,7 @@ def run_approved_apply(
             "content_applied": True,
         }
         emit_progress("apply: registering routing card")
+        catalog_registration_started_at = observe_monotonic()
         try:
             registration = register_apply_catalog_card(
                 verified,
@@ -1122,6 +1396,17 @@ def run_approved_apply(
                 api_key=api_key,
             )
         except _CatalogRegistrationAttemptError as exc:
+            catalog_registration_seconds = elapsed_since(
+                catalog_registration_started_at
+            )
+            timing = dict(receipt["timing"])
+            timing.update(
+                {
+                    "elapsed_seconds": elapsed_since(apply_started_at),
+                    "catalog_registration_seconds": catalog_registration_seconds,
+                }
+            )
+            receipt = {**receipt, "timing": timing}
             api_calls_occurred = (
                 content_api_calls_occurred or exc.api_calls_occurred
             )
@@ -1133,6 +1418,10 @@ def run_approved_apply(
                 "catalog_registered": False,
                 "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
                 "catalog_mutation_status": "failed",
+                "catalog_card_write_attempted": exc.card_write_attempted,
+                "automatic_retrieval_ready": False,
+                "automatic_routing_status": "registration_failed",
+                "calibrated_singletons_enabled": False,
                 "catalog_error": str(exc),
                 "catalog_repair_command": exc.repair_command,
             }
@@ -1141,8 +1430,19 @@ def run_approved_apply(
                 f"registration failed: {exc}. Repair with: {exc.repair_command}",
                 partial,
             ) from None
+        catalog_registration_seconds = elapsed_since(
+            catalog_registration_started_at
+        )
+        timing = dict(receipt["timing"])
+        timing.update(
+            {
+                "elapsed_seconds": elapsed_since(apply_started_at),
+                "catalog_registration_seconds": catalog_registration_seconds,
+            }
+        )
         return {
             **receipt,
+            "timing": timing,
             "turbopuffer_api_calls": True,
             "api_calls_occurred": True,
             "partial_success": False,
@@ -1266,6 +1566,8 @@ def build_apply_summary(
         "rows_upserted": rows_upserted,
         "embeddings_to_generate": verified.diff.chunks_to_embed,
         "embeddings_generated": embeddings_generated,
+        "routing_prototypes_reviewed": len(verified.routing_prototypes),
+        "routing_prototype_strategy": verified.plan["routing_prototypes"]["strategy"],
         "stale_rows": verified.diff.stale_rows,
         "retained_stale_rows": verified.diff.retained_stale_rows,
         "stale_rows_to_delete": len(row_ids_to_delete),

@@ -27,6 +27,7 @@ from buoy_search.catalog import (
     ROUTING_PROTOTYPE_CONTRACT,
     card_passage_text,
     canonical_text,
+    routing_source_passage_text,
 )
 from buoy_search.cross_encoder import CROSS_ENCODER_MODEL, CROSS_ENCODER_REVISION
 from buoy_search.multi_corpus_evals import (
@@ -47,10 +48,12 @@ ROUTING_CANARY_SCHEMA_VERSION = 1
 ROUTING_QUALITY_RUN_SCHEMA_VERSION = 1
 ROUTING_CALIBRATION_SCHEMA_VERSION = 1
 ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION = 2
+ROUTING_ANCHORED_CALIBRATION_SCHEMA_VERSION = 3
 ROUTING_QUALITY_EVALUATOR_VERSION = "1"
 ROUTING_CALIBRATION_ID = "automatic-routing-confidence-v2"
 ROUTING_COLLECT_CALIBRATION_REVISION = "collect-unassessed-v1"
 ROUTING_ACTIVE_CALIBRATION_REVISION = "active-16357c62-e559a8aa-v1"
+ROUTING_ANCHORED_CALIBRATION_REVISION = "active-anchor-e559a8aa-v1"
 
 ROUTING_ACTIVE_SCORE_FLOOR = -10.167728424072266
 ROUTING_ACTIVE_MARGIN_FLOOR = 1.0735645294189453
@@ -59,6 +62,17 @@ ROUTING_ACTIVE_CANARY_SUITE_SHA256 = (
 )
 ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256 = (
     "e559a8aac5a4f7fb808f137b1c6a3710b6cd5b6764fc84f7f06120e33307ef7c"
+)
+# Schema v3 carries this exact set and its aggregate projection as the only
+# catalog state authorized to use the certified singleton thresholds.
+ROUTING_ACTIVE_ANCHOR_NAMESPACES = (
+    "site-dagster-io-v1",
+    "site-developer-salesforce-com-v1",
+    "site-oscilar-com-v1",
+    "site-rentptr-com-v1",
+    "site-turbopuffer-com-v1",
+    "site-whiteboxgeo-com-v1",
+    "site-www-thistle-co-v1",
 )
 ROUTING_ACTIVE_CALIBRATION_CASE_COUNT = 6
 ROUTING_ACTIVE_CALIBRATION_CASE_IDS_SHA256 = (
@@ -95,6 +109,7 @@ ROUTING_ROUTE_CONTRACT_REVISION = ROUTING_PROTOTYPE_CONTRACT
 ROUTING_CONFIDENCE_FEATURE_CONTRACT = "max_prototype_score_and_margin_v1"
 ROUTING_CONFIDENCE_SCORE_FIELD = "reranker_score"
 ROUTING_CONFIDENCE_MARGIN_FIELD = "reranker_margin"
+ROUTING_CATALOG_POLICY = "certified-exact-otherwise-provisional-v1"
 
 CANARY_ROLES = frozenset(
     {"named_self", "capability_self", "confusable_self", "contrast_other"}
@@ -167,6 +182,12 @@ _CALIBRATION_BINDING_FIELDS = {
     "margin_field",
     "canary_suite_sha256",
     "catalog_projection_sha256",
+}
+_ANCHORED_CALIBRATION_BINDING_FIELDS = {
+    *_CALIBRATION_BINDING_FIELDS,
+    "certified_namespaces",
+    "certified_catalog_projection_sha256",
+    "catalog_policy",
 }
 _COLLECT_CERTIFICATION_FIELDS = {"passed", "case_count", "verdict_sha256"}
 _ACTIVE_CALIBRATION_RECEIPT_FIELDS = {
@@ -347,6 +368,9 @@ class RoutingConfidenceBindings:
     margin_field: str
     canary_suite_sha256: str | None
     catalog_projection_sha256: str | None
+    certified_namespaces: tuple[str, ...] | None
+    certified_catalog_projection_sha256: str | None
+    catalog_policy: str | None
 
 
 @dataclass(frozen=True)
@@ -389,6 +413,17 @@ class RoutingConfidenceCalibration:
     certification_case_ids_sha256: str | None
     certification_verdict_sha256: str | None
     receipts: RoutingActivationReceipts | None
+
+
+@dataclass(frozen=True)
+class RoutingConfidenceCatalogState:
+    """Validated relationship between one confidence artifact and live cards."""
+
+    mode: str
+    catalog_projection_sha256: str
+    anchor_projection_sha256: str | None
+    anchor_namespaces: tuple[str, ...]
+    provisional_namespaces: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -764,6 +799,16 @@ def routing_example_passage(*, title: str, summary: str, example: str) -> str:
     return f"Title: {title}\nSummary: {summary}\nRouting example: {example}"
 
 
+def routing_source_passage(*, title: str, summary: str, passage: str) -> str:
+    """Return the exact governed reranker text for source-derived evidence."""
+
+    return routing_source_passage_text(
+        title=title,
+        summary=summary,
+        passage=passage,
+    )
+
+
 def routing_prototype_hash(value: str) -> str:
     """Return a content-free identity for one exact prototype passage."""
 
@@ -797,13 +842,46 @@ def routing_catalog_projection_sha256(cards: Sequence[object]) -> str:
         examples = _canonical_string_sequence(
             raw_examples, where=f"routing card {namespace!r} routing_examples"
         )
-        if len(examples) > ROUTING_MAX_EXAMPLES:
+        raw_passages = _object_field(card, "routing_passages", default=())
+        passages = _ordered_canonical_string_sequence(
+            raw_passages, where=f"routing card {namespace!r} routing_passages"
+        )
+        raw_evidence_vectors = _object_field(
+            card, "routing_evidence_vectors", default=()
+        )
+        if not isinstance(raw_evidence_vectors, Sequence) or isinstance(
+            raw_evidence_vectors, (str, bytes, bytearray)
+        ):
             raise ValueError(
-                f"Routing card {namespace!r} has more than {ROUTING_MAX_EXAMPLES} examples."
+                f"Routing card {namespace!r} routing_evidence_vectors must be a sequence."
+            )
+        evidence_vectors_hash = _object_field(
+            card, "routing_evidence_vectors_hash", default=""
+        )
+        if raw_evidence_vectors:
+            evidence_vectors_hash = _sha256(
+                evidence_vectors_hash,
+                where=(
+                    f"routing card {namespace!r} "
+                    "routing_evidence_vectors_hash"
+                ),
+            )
+        elif evidence_vectors_hash != "":
+            raise ValueError(
+                f"Routing card {namespace!r} has a routing evidence hash without vectors."
+            )
+        if len(examples) + len(passages) > ROUTING_MAX_EXAMPLES:
+            raise ValueError(
+                f"Routing card {namespace!r} has more than {ROUTING_MAX_EXAMPLES} "
+                "non-base routing passages."
             )
         if any(len(example) > MAX_ROUTING_EXAMPLE_CHARACTERS for example in examples):
             raise ValueError(
                 f"Routing card {namespace!r} has an overlong routing example."
+            )
+        if any(len(passage) > MAX_ROUTING_EXAMPLE_CHARACTERS for passage in passages):
+            raise ValueError(
+                f"Routing card {namespace!r} has an overlong routing source passage."
             )
         base = card_passage_text(
             title=title,
@@ -818,44 +896,62 @@ def routing_catalog_projection_sha256(cards: Sequence[object]) -> str:
             )
             for example in examples
         )
+        prototype_hashes.extend(
+            routing_prototype_hash(
+                routing_source_passage(
+                    title=title,
+                    summary=summary,
+                    passage=passage,
+                )
+            )
+            for passage in passages
+        )
         semantic_hash = _nonempty_object_string(
             card, "semantic_hash", namespace=namespace
         )
         vector_hash_value = _nonempty_object_string(
             card, "vector_hash", namespace=namespace
         )
-        projections.append(
-            {
-                "namespace": namespace,
-                "enabled": enabled,
-                "title": title,
-                "summary": summary,
-                "aliases": list(aliases),
-                "tags": list(tags),
-                "routing_examples": list(examples),
-                "semantic_hash": semantic_hash,
-                "vector_hash": vector_hash_value,
-                "routing_prototype_hash": _nonempty_object_string(
-                    card,
-                    "routing_prototype_hash",
-                    namespace=namespace,
-                    default=semantic_hash,
-                ),
-                "routing_prototype_vector_hash": _nonempty_object_string(
-                    card,
-                    "routing_prototype_vector_hash",
-                    namespace=namespace,
-                    default=vector_hash_value,
-                ),
-                "prototype_hashes": prototype_hashes,
-                "routing_model": _nonempty_object_string(
-                    card, "routing_model", namespace=namespace
-                ),
-                "routing_model_revision": _nonempty_object_string(
-                    card, "routing_model_revision", namespace=namespace
-                ),
-            }
-        )
+        projection: dict[str, object] = {
+            "namespace": namespace,
+            "enabled": enabled,
+            "title": title,
+            "summary": summary,
+            "aliases": list(aliases),
+            "tags": list(tags),
+            "routing_examples": list(examples),
+            "semantic_hash": semantic_hash,
+            "vector_hash": vector_hash_value,
+            "routing_prototype_hash": _nonempty_object_string(
+                card,
+                "routing_prototype_hash",
+                namespace=namespace,
+                default=semantic_hash,
+            ),
+            "routing_prototype_vector_hash": _nonempty_object_string(
+                card,
+                "routing_prototype_vector_hash",
+                namespace=namespace,
+                default=vector_hash_value,
+            ),
+            "prototype_hashes": prototype_hashes,
+            "routing_model": _nonempty_object_string(
+                card, "routing_model", namespace=namespace
+            ),
+            "routing_model_revision": _nonempty_object_string(
+                card, "routing_model_revision", namespace=namespace
+            ),
+        }
+        # Empty schema-v3 passage banks retain the exact schema-v1/v2
+        # projection bytes so the certified anchor digest remains valid.
+        if passages:
+            projection["routing_passages"] = list(passages)
+        # The individual vectors, rather than their centroid alone, nominate
+        # cards for the top-12 shortlist. Bind their verified content identity
+        # whenever a schema-v3 bank is present while leaving legacy bytes exact.
+        if raw_evidence_vectors:
+            projection["routing_evidence_vectors_hash"] = evidence_vectors_hash
+        projections.append(projection)
     _require_unique(namespaces, where="routing catalog projection namespaces")
     return stable_hash(sorted(projections, key=lambda item: str(item["namespace"])))
 
@@ -1533,7 +1629,10 @@ def load_routing_confidence_calibration(
         raise ValueError("Routing confidence calibration schema is incompatible.")
     if schema_version == ROUTING_CALIBRATION_SCHEMA_VERSION:
         calibration = _parse_collect_routing_confidence_calibration(payload)
-    elif schema_version == ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION:
+    elif schema_version in {
+        ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION,
+        ROUTING_ANCHORED_CALIBRATION_SCHEMA_VERSION,
+    }:
         if selected.resolve() != DEFAULT_ROUTING_CALIBRATION.resolve():
             raise ValueError(
                 "Active routing confidence is authorized only from the installed "
@@ -1602,21 +1701,44 @@ def validate_routing_confidence_calibration(
             {
                 "canary_suite_sha256": None,
                 "catalog_projection_sha256": None,
+                "certified_namespaces": None,
+                "certified_catalog_projection_sha256": None,
+                "catalog_policy": None,
             },
             where="collect-mode routing confidence calibration binding",
         )
         return
 
-    if not _is_exact_frozen_value(
+    if _is_exact_frozen_value(
         calibration.schema_version, ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION
     ):
+        active_schema_version = ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION
+        active_revision = ROUTING_ACTIVE_CALIBRATION_REVISION
+        anchored_bindings: dict[str, object] = {
+            "certified_namespaces": None,
+            "certified_catalog_projection_sha256": None,
+            "catalog_policy": None,
+        }
+    elif _is_exact_frozen_value(
+        calibration.schema_version, ROUTING_ANCHORED_CALIBRATION_SCHEMA_VERSION
+    ):
+        active_schema_version = ROUTING_ANCHORED_CALIBRATION_SCHEMA_VERSION
+        active_revision = ROUTING_ANCHORED_CALIBRATION_REVISION
+        anchored_bindings = {
+            "certified_namespaces": tuple(ROUTING_ACTIVE_ANCHOR_NAMESPACES),
+            "certified_catalog_projection_sha256": (
+                ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256
+            ),
+            "catalog_policy": ROUTING_CATALOG_POLICY,
+        }
+    else:
         raise ValueError("Routing confidence calibration schema is incompatible.")
     _require_exact_frozen_attributes(
         calibration,
         {
-            "schema_version": ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION,
+            "schema_version": active_schema_version,
             "calibration_id": ROUTING_CALIBRATION_ID,
-            "calibration_revision": ROUTING_ACTIVE_CALIBRATION_REVISION,
+            "calibration_revision": active_revision,
             "mode": "active",
             "owner_approved": True,
             "score_floor": ROUTING_ACTIVE_SCORE_FLOOR,
@@ -1637,6 +1759,7 @@ def validate_routing_confidence_calibration(
             "catalog_projection_sha256": (
                 ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256
             ),
+            **anchored_bindings,
         },
         where="active routing confidence calibration binding",
     )
@@ -1665,19 +1788,71 @@ def validate_routing_confidence_calibration(
 def validate_routing_confidence_catalog(
     calibration: RoutingConfidenceCalibration,
     eligible_cards: Sequence[object],
-) -> str:
-    """Bind active thresholds to the exact eligible-card semantic projection."""
+) -> RoutingConfidenceCatalogState:
+    """Classify exact certified state or any other valid state as provisional."""
 
     validate_routing_confidence_calibration(calibration)
     projection = routing_catalog_projection_sha256(eligible_cards)
-    if (
-        calibration.mode == "active"
-        and projection != calibration.bindings.catalog_projection_sha256
-    ):
-        raise ValueError(
-            "Live routing catalog projection does not match the active confidence artifact."
+    live_namespaces = tuple(
+        sorted(
+            _safe_id(
+                _object_field(card, "namespace"),
+                where="eligible routing card namespace",
+            )
+            for card in eligible_cards
         )
-    return projection
+    )
+    _require_unique(live_namespaces, where="eligible routing card namespaces")
+    if calibration.mode != "active":
+        return RoutingConfidenceCatalogState(
+            mode="provisional",
+            catalog_projection_sha256=projection,
+            anchor_projection_sha256=None,
+            anchor_namespaces=(),
+            provisional_namespaces=live_namespaces,
+        )
+
+    if calibration.schema_version == ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION:
+        # Schema v2 had no namespace anchor, so retaining its original strict
+        # whole-catalog behavior is the only safe rollback interpretation.
+        expected_projection = calibration.bindings.catalog_projection_sha256
+        if expected_projection is None or projection != expected_projection:
+            raise ValueError(
+                "Live routing catalog projection does not match the active "
+                "confidence artifact."
+            )
+        return RoutingConfidenceCatalogState(
+            mode="certified",
+            catalog_projection_sha256=projection,
+            anchor_projection_sha256=expected_projection,
+            anchor_namespaces=live_namespaces,
+            provisional_namespaces=(),
+        )
+
+    anchor_namespaces = calibration.bindings.certified_namespaces
+    anchor_projection = (
+        calibration.bindings.certified_catalog_projection_sha256
+    )
+    if (
+        anchor_namespaces is None
+        or anchor_projection is None
+        or calibration.bindings.catalog_policy != ROUTING_CATALOG_POLICY
+    ):
+        raise ValueError("Active routing confidence has no valid certified anchor policy.")
+    exact_anchor = (
+        live_namespaces == tuple(anchor_namespaces)
+        and projection == anchor_projection
+    )
+    return RoutingConfidenceCatalogState(
+        mode="certified" if exact_anchor else "provisional",
+        catalog_projection_sha256=projection,
+        anchor_projection_sha256=anchor_projection,
+        anchor_namespaces=anchor_namespaces,
+        # When the aggregate state drifts, no individual card is covered by
+        # the certified singleton thresholds; every live candidate is routed
+        # under the provisional top-three policy.
+        provisional_namespaces=() if exact_anchor else live_namespaces,
+    )
 
 
 def _parse_collect_routing_confidence_calibration(
@@ -1757,8 +1932,15 @@ def _parse_active_routing_confidence_calibration(
         payload.get("calibration_revision"),
         where="routing confidence calibration revision",
     )
+    schema_version = payload.get("schema_version")
+    anchored = schema_version == ROUTING_ANCHORED_CALIBRATION_SCHEMA_VERSION
+    if schema_version not in {
+        ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION,
+        ROUTING_ANCHORED_CALIBRATION_SCHEMA_VERSION,
+    }:
+        raise ValueError("Active routing confidence calibration schema is incompatible.")
     if payload.get("mode") != "active":
-        raise ValueError("Schema-v2 routing confidence calibration must be active mode.")
+        raise ValueError("Active routing confidence calibration must be active mode.")
     if payload.get("owner_approved") is not True:
         raise ValueError("Active routing confidence calibration requires owner approval.")
     raw_score_floor = payload.get("score_floor")
@@ -1768,7 +1950,7 @@ def _parse_active_routing_confidence_calibration(
     score_floor = _finite(raw_score_floor, where="routing confidence score floor")
     margin_floor = _finite(raw_margin_floor, where="routing confidence margin floor")
     bindings_payload = _parse_routing_confidence_bindings_payload(
-        payload.get("bindings"), active=True
+        payload.get("bindings"), active=True, anchored=anchored
     )
 
     calibration_payload = _required_mapping(
@@ -1821,7 +2003,7 @@ def _parse_active_routing_confidence_calibration(
     )
     receipts = _parse_activation_receipts(payload.get("receipts"))
     calibration = RoutingConfidenceCalibration(
-        schema_version=ROUTING_ACTIVE_CALIBRATION_SCHEMA_VERSION,
+        schema_version=schema_version,
         calibration_id=ROUTING_CALIBRATION_ID,
         calibration_revision=revision,
         mode="active",
@@ -1844,13 +2026,18 @@ def _parse_routing_confidence_bindings_payload(
     value: object,
     *,
     active: bool,
+    anchored: bool = False,
 ) -> Mapping[str, object]:
     bindings = _required_mapping(
         value, where="routing confidence calibration bindings"
     )
     _require_exact_fields(
         bindings,
-        _CALIBRATION_BINDING_FIELDS,
+        (
+            _ANCHORED_CALIBRATION_BINDING_FIELDS
+            if anchored
+            else _CALIBRATION_BINDING_FIELDS
+        ),
         where="routing confidence calibration bindings",
     )
     expected: dict[str, object] = {
@@ -1872,6 +2059,16 @@ def _parse_routing_confidence_bindings_payload(
             ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256 if active else None
         ),
     }
+    if anchored:
+        expected.update(
+            {
+                "certified_namespaces": list(ROUTING_ACTIVE_ANCHOR_NAMESPACES),
+                "certified_catalog_projection_sha256": (
+                    ROUTING_ACTIVE_CATALOG_PROJECTION_SHA256
+                ),
+                "catalog_policy": ROUTING_CATALOG_POLICY,
+            }
+        )
     for field, expected_value in expected.items():
         if not _is_exact_frozen_value(bindings.get(field), expected_value):
             raise ValueError(
@@ -1901,6 +2098,15 @@ def _routing_confidence_bindings(
         catalog_projection_sha256=cast(
             str | None, payload["catalog_projection_sha256"]
         ),
+        certified_namespaces=(
+            tuple(cast(Sequence[str], payload["certified_namespaces"]))
+            if "certified_namespaces" in payload
+            else None
+        ),
+        certified_catalog_projection_sha256=cast(
+            str | None, payload.get("certified_catalog_projection_sha256")
+        ),
+        catalog_policy=cast(str | None, payload.get("catalog_policy")),
     )
 
 
@@ -2180,16 +2386,18 @@ def _validate_case_observation(
         if score.winning_prototype_kind == "card":
             if score.winning_prototype_index is not None:
                 raise ValueError("A card prototype has no example index.")
-        elif score.winning_prototype_kind == "example":
+        elif score.winning_prototype_kind in {"example", "source"}:
             index = score.winning_prototype_index
             if (
                 isinstance(index, bool)
                 or not isinstance(index, int)
                 or not 0 <= index < ROUTING_MAX_EXAMPLES
             ):
-                raise ValueError("A routing example prototype index is invalid.")
+                raise ValueError("A routing evidence prototype index is invalid.")
         else:
-            raise ValueError("Winning routing prototype kind must be card or example.")
+            raise ValueError(
+                "Winning routing prototype kind must be card, example, or source."
+            )
         _sha256(
             score.winning_prototype_hash,
             where="routing observation winning_prototype_hash",
@@ -2396,6 +2604,29 @@ def _canonical_string_sequence(value: object, *, where: str) -> tuple[str, ...]:
         keys.add(key)
         cleaned.append(text)
     return tuple(sorted(cleaned))
+
+
+def _ordered_canonical_string_sequence(
+    value: object, *, where: str
+) -> tuple[str, ...]:
+    """Validate source-derived passages while retaining reviewed plan order."""
+
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        raise ValueError(f"{where} must be a sequence of strings.")
+    cleaned: list[str] = []
+    keys: set[str] = set()
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"{where} entries must be non-empty strings.")
+        text = item.strip()
+        if text != item:
+            raise ValueError(f"{where} entries must already be canonical strings.")
+        key = canonical_text(text)
+        if not key or key in keys:
+            raise ValueError(f"{where} contains duplicate normalized values.")
+        keys.add(key)
+        cleaned.append(text)
+    return tuple(cleaned)
 
 
 def _require_unique(values: Sequence[object], *, where: str) -> None:

@@ -69,12 +69,11 @@ The runtime also reads `TURBOPUFFER_REGION` (default
 
 ## Automatic routing
 
-Automatic routing is intentionally bounded. Before it scores the question,
-Buoy requires one valid card for every live content namespace. Reserved control
-namespaces such as `buoy-routing-catalog-v1` and `buoy-evidence-*` are never
-content candidates. Stale cards, missing cards, incompatible cards, and
-disabled cards are reported; incomplete or corrupt coverage fails before any
-content query.
+Automatic routing is intentionally bounded. Reserved control namespaces such
+as `buoy-routing-catalog-v1` and `buoy-evidence-*` are never content candidates.
+Valid enabled compatible cards are candidates. Stale, missing, incompatible,
+and disabled cards are reported but do not prevent valid cards from being
+searched; malformed catalog state still fails before any content query.
 
 Selection first looks for complete normalized titles or aliases in the
 question:
@@ -83,9 +82,20 @@ question:
 - two or three named corpora select all of them in deterministic order;
 - more than three named corpora fails with guidance to use explicit selection;
 - otherwise a pinned local semantic router selects one corpus only when the
-  top result clears both the confidence and margin thresholds;
+  catalog exactly matches the installed certified projection and the top
+  result clears both the confidence and margin thresholds;
 - an ambiguous semantic route selects the top three, or every eligible corpus
   when fewer than three exist.
+
+Every schema-v3 plan includes up to eight representative source passages.
+Approved apply embeds and stores the reviewed passages and their individual
+shortlist vectors on the namespace's one routing card, without a generative LLM
+or invented questions. Operator-authored
+`routing_examples` remain separate and take priority within the shared
+eight-passage budget. A new or content-refreshed card participates immediately;
+because its projection is provisional, descriptor-free routing starts with the
+best three candidates until a later reviewed certification updates the exact
+confidence authority. Exact title/alias matches still select the named card.
 
 Automatic `--dry-run` requires `TURBOPUFFER_API_KEY` because live inventory and
 catalog reads are routing authority. It performs those read-only requests and
@@ -95,19 +105,20 @@ namespace, or write provider state.
 
 ### Growing the routing catalog
 
-Adding a corpus does not require adding it to the fixed end-to-end retrieval
-answer key. Each new enabled corpus instead gets a small reviewed route-canary
-pack: a named query, two descriptor-free capability queries, one query that is
-easy to confuse with a neighboring corpus, and one contrast query that should
-route elsewhere. The complete route-only suite is replayed against the current
-eligible catalog so a new card cannot silently steal an existing route.
+Adding a corpus does not require an LLM, a catalog command, or synchronous
+evaluation. `plan` derives source-grounded routing passages and `apply`
+publishes them with the card. A later certification can add reviewed route
+canaries and authorize calibrated singleton routing; certification is an
+optimization, not a prerequisite for automatic search.
 
 The unreleased scalable-routing reader understands an additive
 `routing_examples` card field containing at most eight reviewed questions the
 corpus can answer. These examples are separate from aliases and tags and never
 trigger exact-name routing. The bounded prototype route takes an exact in-
-memory vector shortlist of at most twelve cards from the already-read catalog,
-then compares their base text and examples with the pinned local MiniLM model.
+memory vector shortlist of at most twelve cards from the already-read catalog.
+Each card is nominated by its best base/example/source-passage vector, so a
+relevant passage is not diluted by the centroid of a diverse source. MiniLM
+then compares the shortlisted cards' bounded passage banks.
 It still queries at most three content namespaces and adds no provider query
 per card.
 
@@ -120,15 +131,16 @@ intended final state of this Unreleased source package. Until certification is
 recorded, the dormant checkpoint remains collect-only. In active mode, exact
 title and alias matches remain authoritative; descriptor-free routing selects
 one corpus only when both the approved finite score and margin floors pass, and
-otherwise selects at most three. A malformed artifact, source-receipt mismatch,
-or eligible-card projection drift stops before content access instead of
-falling back.
+otherwise selects at most three. A malformed artifact or source-receipt
+mismatch stops before content access. Valid eligible-card projection drift
+switches to provisional top-three routing instead of disabling automatic
+search.
 
 The installed artifact, not a command-line option, environment variable, or
 catalog mutation, determines which selector is authorized. Even the final
 active task tree is not integration, publication, or deployment. Ordinary apply
-cannot invent capability examples from a URL or source name and preserves
-reviewed manual examples.
+never invents capability questions. It preserves reviewed manual examples and
+adds only deterministic excerpts that were visible in the reviewed plan.
 
 ## Explicit override
 
@@ -317,6 +329,11 @@ operator below when only that field is changing. `upsert`, `enable`, and
 only. They never delete, enable, disable, or otherwise mutate a content
 namespace.
 
+Source-derived routing passages are system-owned. Generic `catalog upsert`
+cannot set, clear, or replace them and preserves an existing passage bank. Only
+approved apply, retained-plan repair, or a separately governed
+migration/backfill may mutate that bank.
+
 ### Reader-first schema and reviewed examples
 
 Deploy the exact v1/v2-compatible reader everywhere before changing the shared
@@ -344,8 +361,40 @@ then requires an unchanged, complete schema-v2 strong read. Drift or incomplete
 verification is a failure requiring a new preview; Buoy never attempts schema
 rollback.
 
-After schema v2 is verified, preview one card's reviewed questions. Repeat
-`--routing-example` for one through eight exact questions:
+Before a shared catalog can receive plan-derived passages, deploy the
+v1/v2/v3-compatible reader everywhere and repeat the same reviewed migration
+flow for the additive `routing_passages` text plus its flattened individual
+vector bank and hash:
+
+```bash
+buoy catalog migrate-routing-v3 --json
+
+buoy catalog migrate-routing-v3 \
+  --expected-snapshot-revision REPLACE_WITH_PREVIEW_SHA256 \
+  --expected-projection-sha256 REPLACE_WITH_PREVIEW_SHA256 \
+  --approve --json
+```
+
+This is also schema-only and preserves every existing row. Provision a missing
+catalog through a separately reviewed operator action; neither first nor
+ordinary apply creates catalog schema. An existing shared v1/v2 catalog is
+never upgraded by ordinary apply. Until exact v3 exists, content may commit but
+card registration reports partial success, performs no catalog mutation, and
+retains the plan for the emitted `catalog repair-apply --inspect-current`
+command. After provisioning or migration, run that read-only command to
+revalidate the retained plan and committed IDs under the namespace lock and
+strongly read exact-v3 card state. It performs no model work or write, keeps the
+plan, and emits an approval command bound to observed card absence or its exact
+revision. Review that binding before running the repair. A failure after apply
+already observed exact-v3 state may emit the bound command directly.
+
+The stored passages are bounded but verbatim-derived source excerpts. Buoy
+redacts them and their vectors from normal output, but a credential allowed to
+query raw catalog rows can read them. Treat raw catalog access as source-content
+access, not metadata-only access.
+
+After schema v2 or v3 is verified, preview one card's reviewed questions.
+Repeat `--routing-example` for one through eight exact questions:
 
 ```bash
 buoy catalog set-routing-examples site-example-docs-v1 \
@@ -386,9 +435,11 @@ basket and adds five owner-approved route-only canaries for each of RentPTR,
 Salesforce, and WhiteboxGeo. The exact 65-case suite reserves six cases for
 threshold calibration and locks the other 59 for certification. The three
 packaged canary files are evaluation ground truth only; ordinary routing never
-reads their question text. Adding or changing an eligible corpus requires a
-new reviewed pack and a complete-suite replay so a new card cannot silently
-steal an existing route.
+reads their question text. Adding or changing an eligible corpus makes the
+catalog provisional and forces top-three routing immediately. Promoting that
+state back to calibrated singleton routing requires a new reviewed pack and a
+complete-suite replay so the enlarged certified catalog cannot silently steal
+an existing route.
 
 Provider-backed route scoring is read-only: it reads namespace inventory and
 the routing catalog, performs one local route embedding and one bounded local
