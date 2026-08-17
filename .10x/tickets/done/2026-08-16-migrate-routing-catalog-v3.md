@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-16
 Updated: 2026-08-17
 Depends-On: .10x/tickets/done/2026-08-16-promote-automatic-routing-to-main-once.md
@@ -298,11 +298,11 @@ the missing site remains excluded from automatic routing, and this ticket
 grants no registration or backfill authority.
 
 `Preview-Verdict: go` in the review binds only the exhaustive capture recorded
-for this exact snapshot and projection. Approval remains HOLD until this exact
-three-record exception and GO integrate into `develop`. Only after that
-integration and a fresh recheck of the exact-R installation, private credential
-presence, exact region, and uninterrupted freeze may the executor invoke this
-one command exactly once:
+for this exact snapshot and projection. At that checkpoint, approval remained
+HOLD until this exact three-record exception and GO integrated into `develop`.
+Only after that integration and a fresh recheck of the exact-R installation,
+private credential presence, exact region, and uninterrupted freeze could the
+executor invoke this one command exactly once:
 
 ```text
 /Users/crlough/.local/bin/buoy catalog migrate-routing-v3 --expected-snapshot-revision abb0d38193c8c00963fff6536bcf755f3bf707942a2b1f1ba4fa90b74f5a4ce8 --expected-projection-sha256 eb006aff8058da775ffd9a3dcae19e41050cf2b471b831aa95755c2e1cca5a38 --approve --region gcp-us-central1 --json
@@ -312,3 +312,78 @@ This records-only preview-GO branch makes no provider request, reads no
 credential, and authorizes its own session only to validate, commit, and push
 the exact three amended records. It may not execute approval, open or merge a
 PR, or change any other path or external state.
+
+## Append-only progress: bound approval and exact-v3 readback
+
+PR #127 durably integrated the exact three-record Preview GO through ordinary
+squash commit `S = 2dc00f5dec73820b63a71c2cf860e43ad4cc4f63`, with sole parent
+`e4993e86e65d0e57a80baf887749b6d1fa29a708` and tree
+`a4a90aa70f5d6610234d9d07959a642d4acfe455`. Its exact head was
+`ddef40e2a53e7c5781279d3178f2fa2385f487ae`; CI run `32006692705` passed
+Python 3.11 job `95317528721`, Python 3.13 job `95317528730`, and Build
+distributions job `95318192181`. The PR changed only this ticket, the linked
+evidence, and the linked review; hosted comments and reviews were empty. Main
+remained exact `R`.
+
+Immediately before the one authorized approval, the executor freshly
+reverified the sole installed exact-R executable/package at version
+`0.5.2.dev28+g4d1efc458`, CPython `3.11.10`, the two installed migration
+module SHA-256 / exact-R Git-blob identities, installed `turbopuffer 2.4.0`
+with `DEFAULT_MAX_RETRIES=4` and both retry-source hashes, and successful
+migration-command help. Credential presence was privately true without
+retaining its value or output; the exact region remained `gcp-us-central1`.
+The mutation freeze had remained uninterrupted from preview through this
+preflight and continued through the command and built-in readback.
+
+The executor invoked exactly once:
+
+```text
+/Users/crlough/.local/bin/buoy catalog migrate-routing-v3 --expected-snapshot-revision abb0d38193c8c00963fff6536bcf755f3bf707942a2b1f1ba4fa90b74f5a4ce8 --expected-projection-sha256 eb006aff8058da775ffd9a3dcae19e41050cf2b471b831aa95755c2e1cca5a38 --approve --region gcp-us-central1 --json
+```
+
+It exited `0` with empty stderr. Captured raw stdout is 7,349 bytes with
+SHA-256
+`44af6e7158123803e2079c820a80c6d0c29938ee197682a16a4afbe62363b22a`;
+the recursively key-sorted compact JSON is 5,994 bytes with SHA-256
+`aed3a9af26e42073a3463b587e049970fe51d8d11c621dca5c4af87561d1aea5`.
+The evidence preserves the exhaustive result.
+
+The command migrated exact v2 to exact v3 with final fingerprint
+`f596eccb4878fc462d4ea7165a553bd0f21b13bbce46af70a867999daedc888a`,
+`verification_complete=true`, unchanged snapshot revision
+`abb0d38193c8c00963fff6536bcf755f3bf707942a2b1f1ba4fa90b74f5a4ce8`,
+and unchanged vector-inclusive projection
+`eb006aff8058da775ffd9a3dcae19e41050cf2b471b831aa95755c2e1cca5a38`.
+All 13 card identities/revisions, counts, coverage sets, and affected IDs
+remained unchanged; `affected_ids=[]`. The command-internal second strong read
+and full-card comparison prove unchanged stored card payloads, including
+unchanged routing examples and empty passage/evidence-vector/evidence-hash
+banks on existing cards. No card, content, example, passage, vector, model,
+delete, registration, or backfill operation occurred.
+
+Exact operation accounting is two logical strong reads and one logical schema
+write, with every other operation counter zero. The complete command used 11
+logical SDK invocations: four namespace-list pages, two metadata reads, four
+card-query pages, zero separate mutation-verification queries, and one write.
+The four read billing entries each report `256000000` logical bytes queried
+and `58409` returned; the write billing entry reports zero logical bytes
+written. With the installed four-retry SDK policy, those 11 logical
+invocations imply an unobserved bound of 11–55 physical transport attempts;
+the single logical write implies one–five physical attempts under one reused
+idempotency key. No second operator/CLI/application approval was invoked.
+
+The earlier Approval HOLD was satisfied only when PR #127 produced exact `S`.
+The one-time approval authority is now consumed and cannot authorize any
+retry, rollback, second command, registration, card creation, or backfill.
+The real `site-docs-aurelio-ai-v1` coverage gap remains unchanged and excluded
+from automatic routing pending separately governed registration. Exact v3 now
+provides the schema capability needed for future reviewed `buoy plan` / `buoy
+apply` operations to populate their own routing passages and evidence vectors;
+this migration did not populate existing cards.
+
+This provider-free closure session only records the already completed
+operation. It reads no credential and makes no provider request. Apart from
+the exact three-record task-branch commit/push and ordinary PR handoff, it
+changes no source, specification, dependency, workflow, publication, tag,
+GitHub Release, protection/ruleset, direct/integration branch,
+provider/catalog, credential, or unrelated external state.
