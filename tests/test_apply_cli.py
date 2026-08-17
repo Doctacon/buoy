@@ -277,8 +277,16 @@ class ApplyCliTests(unittest.TestCase):
                 "catalog_namespace": "buoy-routing-catalog-v1",
                 "catalog_mutation_status": "updated",
                 "catalog_card_revision": "test-card-revision",
+                "catalog_schema_version": 3,
+                "catalog_bootstrapped": False,
                 "catalog_manual_semantics_preserved": False,
                 "catalog_enabled_state": True,
+                "routing_passage_count": 2,
+                "routing_projection_reused": False,
+                "routing_embeddings_generated": 3,
+                "automatic_retrieval_ready": True,
+                "automatic_routing_status": "provisional_ready",
+                "calibrated_singletons_enabled": False,
                 "catalog_repair_command": None,
             },
         )
@@ -996,6 +1004,15 @@ class ApplyCliTests(unittest.TestCase):
         self.assertEqual(payload["rows_to_upsert"], 1)
         self.assertEqual(payload["rows_upserted"], 1)
         self.assertEqual(payload["embeddings_generated"], 1)
+        self.assertEqual(payload["routing_prototypes_reviewed"], 2)
+        self.assertEqual(
+            payload["routing_prototype_strategy"],
+            "diverse-content-passages-v1",
+        )
+        self.assertTrue(payload["catalog_registered"])
+        self.assertEqual(payload["catalog_schema_version"], 3)
+        self.assertTrue(payload["automatic_retrieval_ready"])
+        self.assertEqual(payload["automatic_routing_status"], "provisional_ready")
         self.assertEqual(len(FakeEmbedder.texts), 1)
         self.assertIn("Beta useful docs", FakeEmbedder.texts[0])
         self.assertEqual([row["id"] for row in FakeWriter.rows], [needs_upsert.row_id])
@@ -1041,18 +1058,28 @@ class ApplyCliTests(unittest.TestCase):
         self.assertIn("Warning: could not remove plan artifact directory", stderr)
         self.assertTrue(plan_retained)
 
-    def test_catalog_partial_success_consumes_applied_plan_and_reports_truthfully(self) -> None:
+    def test_catalog_partial_success_retains_plan_and_opaque_inspection_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             state_root = root / "state"
             artifacts, plan_path = build_saved_plan(root, state_root=state_root)
-            self.catalog_registration.side_effect = apply_module._CatalogRegistrationAttemptError(
-                "catalog unavailable",
-                api_calls_occurred=True,
-                repair_command=(
-                    f"buoy catalog show {artifacts.manifest.namespace} --json"
-                ),
-            )
+            captured_repair: list[str] = []
+
+            def fail_registration(verified, **kwargs):  # noqa: ANN001, ANN003, ANN202
+                repair_command = apply_module._catalog_repair_inspect_command(
+                    verified,
+                    namespace=kwargs["namespace"],
+                    region=kwargs["config"].region,
+                    apply_id=kwargs["apply_id"],
+                )
+                captured_repair.append(repair_command)
+                raise apply_module._CatalogRegistrationAttemptError(
+                    "catalog unavailable",
+                    api_calls_occurred=True,
+                    repair_command=repair_command,
+                )
+
+            self.catalog_registration.side_effect = fail_registration
 
             with patch("buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder), patch(
                 "buoy_search.apply.TurbopufferWriter", FakeWriter
@@ -1072,15 +1099,31 @@ class ApplyCliTests(unittest.TestCase):
                     env={"TURBOPUFFER_API_KEY": "test-key"},
                 )
             payload = json.loads(stdout)
-            plan_removed = not plan_path.parent.exists()
+            plan_retained = plan_path.exists()
 
         self.assertEqual(result, 2, stderr)
         self.assertTrue(payload["content_applied"])
         self.assertTrue(payload["state_updated"])
         self.assertTrue(payload["partial_success"])
         self.assertFalse(payload["catalog_registered"])
-        self.assertIn("buoy catalog show", payload["catalog_repair_command"])
-        self.assertTrue(plan_removed)
+        self.assertFalse(payload["automatic_retrieval_ready"])
+        self.assertEqual(payload["automatic_routing_status"], "registration_failed")
+        self.assertTrue(payload["plan_retained_for_catalog_repair"])
+        self.assertTrue(plan_retained)
+        self.assertEqual(payload["catalog_repair_command"], captured_repair[0])
+        repair = shlex.split(payload["catalog_repair_command"])
+        self.assertEqual(repair[:3], ["buoy", "catalog", "repair-apply"])
+        self.assertEqual(repair[repair.index("--namespace") + 1], artifacts.manifest.namespace)
+        self.assertEqual(repair[repair.index("--plan") + 1], str(plan_path))
+        self.assertEqual(repair[repair.index("--apply-id") + 1], payload["apply_id"])
+        self.assertNotIn("--routing-passage", repair)
+        for prototype in artifacts.routing_prototypes:
+            self.assertNotIn(prototype["passage_text"], payload["catalog_repair_command"])
+        self.assertIn("--inspect-current", repair)
+        self.assertNotIn("--approve", repair)
+        self.assertNotIn("--expect-absent", repair)
+        self.assertNotIn("--expected-card-revision", repair)
+        self.assertIn("catalog_registration_seconds", payload["timing"])
 
     def test_failed_apply_preserves_existing_state_and_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1924,7 +1967,9 @@ class ApplyCliTests(unittest.TestCase):
                 namespace=artifacts.manifest.namespace,
                 state_root=state_root,
             )
-            main_clock = iter([0.0, 1.0, 3.0, 4.0, 6.0, 7.0, 8.0, 17.0])
+            main_clock = iter(
+                [0.0, 1.0, 3.0, 4.0, 6.0, 7.0, 8.0, 17.0, 18.0, 20.0, 21.0]
+            )
             write_clock = iter([10.0, 13.0, 20.0, 26.0])
 
             def clock() -> float:
@@ -1950,9 +1995,10 @@ class ApplyCliTests(unittest.TestCase):
         self.assertEqual(
             summary["timing"],
             {
-                "elapsed_seconds": 17.0,
+                "elapsed_seconds": 21.0,
                 "embedding_seconds": 4.0,
                 "write_seconds": 9.0,
+                "catalog_registration_seconds": 2.0,
                 "embedding_batch_size": 7,
                 "write_batch_size": 1,
                 "embedding_precision": "float32",
@@ -2013,7 +2059,7 @@ class ApplyCliTests(unittest.TestCase):
                 namespace=artifacts.manifest.namespace,
                 state_root=state_root,
             )
-            clock = iter([0.0, 1.0, 4.0, 5.0, 6.0])
+            clock = iter([0.0, 1.0, 4.0, 5.0, 6.0, 7.0, 9.0, 10.0])
             progress: list[str] = []
             with patch.dict("os.environ", {"TURBOPUFFER_API_KEY": "test-key"}, clear=True), patch(
                 "buoy_search.apply.TurbopufferWriter", FakeWriter
@@ -2033,7 +2079,8 @@ class ApplyCliTests(unittest.TestCase):
         self.assertEqual(summary["rows_deleted"], 1)
         self.assertEqual(summary["timing"]["embedding_seconds"], 0.0)
         self.assertEqual(summary["timing"]["write_seconds"], 3.0)
-        self.assertEqual(summary["timing"]["elapsed_seconds"], 6.0)
+        self.assertEqual(summary["timing"]["catalog_registration_seconds"], 2.0)
+        self.assertEqual(summary["timing"]["elapsed_seconds"], 10.0)
         self.assertIn(
             "apply: deleted stale rows=1; elapsed=5.0s; embedding=0.0s; write=3.0s",
             progress,

@@ -164,7 +164,8 @@ class PlanningService:
             f"pages={len(result.artifacts.manifest.pages)}; "
             f"chunks={len(result.artifacts.manifest.chunks)}; "
             f"upserts={len(result.artifacts.upsert_rows)}; "
-            f"stale={len(result.artifacts.stale_rows)}",
+            f"stale={len(result.artifacts.stale_rows)}; "
+            f"routing_prototypes={len(result.artifacts.routing_prototypes)}",
         )
         return result
 
@@ -542,6 +543,10 @@ def plan_summary(
             "embedding_model": plan_dict["embedding_model"],
             "embedding_precision": plan_dict["embedding_precision"],
             "artifact_hash": plan_dict["artifact_hash"],
+            "routing_prototypes": plan_dict["routing_prototypes"],
+            "routing_prototype_review": [
+                dict(row) for row in artifacts.routing_prototypes
+            ],
             "diff": diff_summary,
             **diff_summary,
         }

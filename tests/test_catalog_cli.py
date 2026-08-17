@@ -15,6 +15,7 @@ from buoy_search.remote_catalog import (
     REMOTE_CATALOG_NAMESPACE,
     REMOTE_SCHEMA_V1,
     REMOTE_SCHEMA_V2,
+    REMOTE_SCHEMA_V3,
     CompatibilityContract,
     MutationMetrics,
     MutationResult,
@@ -77,7 +78,9 @@ def make_card(
     title: str = "Example",
     region: str = REGION,
     embedding_model: str = "BAAI/bge-small-en-v1.5",
+    plan_schema_version: int = 1,
     routing_examples: list[str] | None = None,
+    routing_passages: list[str] | None = None,
 ):
     return prepare_card(
         CardFields(
@@ -94,7 +97,7 @@ def make_card(
             region=region,
             embedding_model=embedding_model,
             embedding_precision="float32",
-            plan_schema_version=1,
+            plan_schema_version=plan_schema_version,
             ranking_mode="page",
             ranking_profile="none",
             ranking_pool=20,
@@ -102,6 +105,7 @@ def make_card(
             last_plan_id=None,
             last_apply_id=None,
             routing_examples=list(routing_examples or []),
+            routing_passages=list(routing_passages or []),
         ),
         embedder=FixedEmbedder(),
         now="2026-07-18T00:00:00Z",
@@ -128,7 +132,12 @@ def make_snapshot(
     )
 
 
-def upsert_args(*, namespace: str = "site-example-v1", source_uri: str | None = None) -> list[str]:
+def upsert_args(
+    *,
+    namespace: str = "site-example-v1",
+    source_uri: str | None = None,
+    plan_schema_version: int = 1,
+) -> list[str]:
     return [
         "catalog", "upsert", namespace,
         "--source-kind", "website",
@@ -141,7 +150,7 @@ def upsert_args(*, namespace: str = "site-example-v1", source_uri: str | None = 
         "--region", REGION,
         "--embedding-model", "BAAI/bge-small-en-v1.5",
         "--embedding-precision", "float32",
-        "--plan-schema-version", "1",
+        "--plan-schema-version", str(plan_schema_version),
         "--ranking-mode", "page",
         "--ranking-profile", "none",
         "--ranking-pool", "20",
@@ -197,7 +206,9 @@ class CatalogCliTests(unittest.TestCase):
             "list",
             "show",
             "upsert",
+            "repair-apply",
             "migrate-routing-v2",
+            "migrate-routing-v3",
             "set-routing-examples",
             "enable",
             "disable",
@@ -212,6 +223,48 @@ class CatalogCliTests(unittest.TestCase):
         self.assertEqual((result, stderr), (0, ""))
         self.assertIn("database", stdout)
         self.assertIn("--routing-example", stdout)
+        self.assertNotIn("--routing-passage", stdout)
+        self.assertNotIn("--clear-routing-passages", stdout)
+
+        result, stdout, stderr = run_cli(
+            ["catalog", "repair-apply", "--help"], env={}
+        )
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertIn("--inspect-current", stdout)
+        self.assertIn("--expected-card-revision", stdout)
+        self.assertIn("--expect-absent", stdout)
+
+        result, stdout, stderr = run_cli(
+            [
+                "catalog",
+                "repair-apply",
+                "--plan",
+                "retained/plan.json",
+                "--namespace",
+                "site-example-v1",
+                "--apply-id",
+                "apply-id",
+                "--inspect-current",
+                "--expect-absent",
+            ],
+            env={},
+        )
+        self.assertEqual((result, stdout), (2, ""))
+        self.assertIn("not allowed with argument", stderr)
+
+        for removed_args in (
+            ("--routing-passage", "source passage"),
+            ("--clear-routing-passages",),
+        ):
+            with self.subTest(removed_args=removed_args):
+                result, stdout, stderr = run_cli(
+                    [*upsert_args(), *removed_args]
+                )
+                self.assertEqual((result, stdout), (2, ""))
+                self.assertIn(
+                    f"unrecognized arguments: {' '.join(removed_args)}",
+                    stderr,
+                )
 
         result, stdout, stderr = run_cli(["catalog", "list", "--catalog", "legacy.json"])
         self.assertEqual((result, stdout), (2, ""))
@@ -228,6 +281,7 @@ class CatalogCliTests(unittest.TestCase):
         )
         commands = (
             ["catalog", "migrate-routing-v2", "--json"],
+            ["catalog", "migrate-routing-v3", "--json"],
             [
                 "catalog",
                 "set-routing-examples",
@@ -418,6 +472,9 @@ class CatalogCliTests(unittest.TestCase):
         created = create.call_args.args[1][0]
         self.assertEqual(created.semantic_origin, "manual")
         self.assertEqual(created.region, REGION)
+        self.assertEqual(created.routing_passages, [])
+        self.assertEqual(created.routing_evidence_vectors, [])
+        self.assertEqual(created.routing_evidence_vectors_hash, "")
         self.assertEqual(len(embedder.calls), 2)
 
         changed = make_card(title="Changed")
@@ -471,7 +528,10 @@ class CatalogCliTests(unittest.TestCase):
 
     def test_routing_example_approval_uses_observed_v2_schema(self) -> None:
         example = "Where are retries configured?"
-        final_card = make_card(routing_examples=[example])
+        final_card = make_card(
+            routing_examples=[example],
+            plan_schema_version=2,
+        )
         empty = make_snapshot(
             live=(final_card.namespace,), schema_version=REMOTE_SCHEMA_V2
         )
@@ -485,7 +545,12 @@ class CatalogCliTests(unittest.TestCase):
         ))
 
         result, stdout, stderr = run_cli(
-            [*upsert_args(), "--routing-example", example, "--approve"],
+            [
+                *upsert_args(plan_schema_version=2),
+                "--routing-example",
+                example,
+                "--approve",
+            ],
             patches=(
                 patch(
                     "buoy_search.catalog_cli.read_remote_catalog",
@@ -506,6 +571,104 @@ class CatalogCliTests(unittest.TestCase):
             create.call_args.args[1][0].routing_examples,
             [example],
         )
+        self.assertEqual(create.call_args.args[1][0].routing_evidence_vectors, [])
+        self.assertEqual(
+            create.call_args.args[1][0].routing_evidence_vectors_hash,
+            "",
+        )
+
+    def test_upsert_preserves_apply_owned_routing_passage_bank(self) -> None:
+        passage = "Retry policy defaults and exponential backoff."
+        current = make_card(
+            plan_schema_version=REMOTE_SCHEMA_V3,
+            routing_passages=[passage],
+        )
+        before = make_snapshot(current, schema_version=REMOTE_SCHEMA_V3)
+        sent = []
+
+        def update(_resource, card, **_kwargs):  # noqa: ANN001, ANN003, ANN202
+            sent.append(card)
+            return MutationResult(
+                True,
+                card,
+                1,
+                (remote_card_id(card.namespace),),
+                MutationMetrics(1, 2, ()),
+            )
+
+        def read_catalog(*_args, **_kwargs):  # noqa: ANN002, ANN003, ANN202
+            return (
+                before
+                if not sent
+                else make_snapshot(sent[0], schema_version=REMOTE_SCHEMA_V3)
+            )
+
+        args = [*upsert_args(plan_schema_version=REMOTE_SCHEMA_V3), "--approve"]
+        args[args.index("--ranking-pool") + 1] = "24"
+
+        result, stdout, stderr = run_cli(
+            args,
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.read_remote_catalog",
+                    side_effect=read_catalog,
+                ),
+                patch(
+                    "buoy_search.catalog_cli.update_remote_card",
+                    side_effect=update,
+                ),
+                patch(
+                    "buoy_search.catalog.load_routing_embedder",
+                    side_effect=AssertionError("unchanged passage bank loaded model"),
+                ),
+            ),
+        )
+
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertEqual(json.loads(stdout)["mutation_status"], "updated")
+        self.assertEqual(len(sent), 1)
+        intended = sent[0]
+        self.assertEqual(intended.ranking_pool, 24)
+        self.assertEqual(intended.routing_passages, current.routing_passages)
+        self.assertEqual(
+            intended.routing_evidence_vectors,
+            current.routing_evidence_vectors,
+        )
+        self.assertEqual(
+            intended.routing_evidence_vectors_hash,
+            current.routing_evidence_vectors_hash,
+        )
+
+    def test_upsert_does_not_evict_passages_for_manual_examples(self) -> None:
+        current = make_card(
+            plan_schema_version=REMOTE_SCHEMA_V3,
+            routing_passages=[f"Source passage {index}." for index in range(8)],
+        )
+        snapshot = make_snapshot(current, schema_version=REMOTE_SCHEMA_V3)
+        no_write = Mock(side_effect=AssertionError("invalid upsert wrote"))
+        no_model = Mock(side_effect=AssertionError("invalid upsert loaded model"))
+
+        result, stdout, stderr = run_cli(
+            [
+                *upsert_args(plan_schema_version=REMOTE_SCHEMA_V3),
+                "--routing-example",
+                "How are retries configured?",
+                "--approve",
+            ],
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.read_remote_catalog",
+                    return_value=snapshot,
+                ),
+                patch("buoy_search.catalog_cli.update_remote_card", no_write),
+                patch("buoy_search.catalog.load_routing_embedder", no_model),
+            ),
+        )
+
+        self.assertEqual((result, stdout), (2, ""))
+        self.assertIn("at most 8 combined entries", stderr)
+        no_write.assert_not_called()
+        no_model.assert_not_called()
 
     def test_schema_v2_migration_preview_approval_and_idempotence(self) -> None:
         card = make_card()
@@ -651,6 +814,100 @@ class CatalogCliTests(unittest.TestCase):
         self.assertIn("already exact schema v2", text_unchanged)
         self.assertIn("strong_reads=1; model_inferences=0", text_unchanged)
         self.assertIn("writes: schema=0; cards=0; content=0; deletes=0", text_unchanged)
+
+    def test_schema_v3_migration_preview_approval_and_idempotence(self) -> None:
+        card = make_card()
+        v2 = make_snapshot(card, schema_version=REMOTE_SCHEMA_V2)
+        v3 = make_snapshot(card, schema_version=REMOTE_SCHEMA_V3)
+        projection = remote_catalog_projection_sha256(v2)
+        mutation = MutationResult(
+            True,
+            None,
+            0,
+            (),
+            MutationMetrics(1, 0, ({"write_units": 1},)),
+        )
+
+        result, stdout, stderr = run_cli(
+            ["catalog", "migrate-routing-v3", "--json"],
+            patches=(
+                patch("buoy_search.catalog_cli.read_remote_catalog", return_value=v2),
+                patch(
+                    "buoy_search.catalog_cli.migrate_remote_catalog_schema_v3",
+                    side_effect=AssertionError("preview wrote"),
+                ),
+            ),
+        )
+        self.assertEqual((result, stderr), (0, ""))
+        preview = json.loads(stdout)
+        self.assertEqual(preview["mutation_status"], "preview")
+        self.assertEqual(preview["schema"]["observed_version"], REMOTE_SCHEMA_V2)
+        self.assertEqual(preview["schema"]["target_version"], REMOTE_SCHEMA_V3)
+        self.assertEqual(
+            preview["schema"]["additions"],
+            {
+                "routing_passages": {"type": "[]string", "filterable": False},
+                "routing_evidence_vectors": {
+                    "type": "[]float",
+                    "filterable": False,
+                },
+                "routing_evidence_vectors_hash": {
+                    "type": "string",
+                    "filterable": False,
+                },
+            },
+        )
+
+        approval = [
+            "catalog",
+            "migrate-routing-v3",
+            "--expected-snapshot-revision",
+            v2.snapshot_revision,
+            "--expected-projection-sha256",
+            projection,
+            "--approve",
+            "--json",
+        ]
+        result, stdout, stderr = run_cli(
+            approval,
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.read_remote_catalog",
+                    side_effect=[v2, v3],
+                ),
+                patch(
+                    "buoy_search.catalog_cli.migrate_remote_catalog_schema_v3",
+                    return_value=mutation,
+                ),
+            ),
+        )
+        self.assertEqual((result, stderr), (0, ""))
+        approved = json.loads(stdout)
+        self.assertEqual(approved["mutation_status"], "migrated")
+        self.assertEqual(approved["schema"]["final_version"], REMOTE_SCHEMA_V3)
+        self.assertEqual(approved["operations_performed"]["schema_writes"], 1)
+
+        result, stdout, stderr = run_cli(
+            [
+                "catalog",
+                "migrate-routing-v3",
+                "--expected-snapshot-revision",
+                v3.snapshot_revision,
+                "--expected-projection-sha256",
+                remote_catalog_projection_sha256(v3),
+                "--approve",
+                "--json",
+            ],
+            patches=(
+                patch("buoy_search.catalog_cli.read_remote_catalog", return_value=v3),
+                patch(
+                    "buoy_search.catalog_cli.migrate_remote_catalog_schema_v3",
+                    side_effect=AssertionError("exact v3 wrote"),
+                ),
+            ),
+        )
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertEqual(json.loads(stdout)["mutation_status"], "already_v3")
 
     def test_schema_migration_bindings_preflight_and_failed_attempt_are_bounded(self) -> None:
         factory = Mock(side_effect=AssertionError("factory called before binding validation"))
@@ -1043,6 +1300,65 @@ class CatalogCliTests(unittest.TestCase):
         self.assertIn("canonical routing examples were already present", text_unchanged)
         self.assertIn("strong_reads=1; model_inferences=0", text_unchanged)
         self.assertIn("writes: schema=0; cards=0; content=0; deletes=0", text_unchanged)
+
+    def test_v3_routing_example_update_rebuilds_complete_hidden_bank(self) -> None:
+        current = make_card(
+            plan_schema_version=REMOTE_SCHEMA_V3,
+            routing_passages=["Retry defaults.", "Timeout configuration."],
+        )
+        snapshot = make_snapshot(current, schema_version=REMOTE_SCHEMA_V3)
+        sent: list[object] = []
+
+        def write(_resource, card, **_kwargs):  # noqa: ANN001, ANN003, ANN202
+            sent.append(card)
+            return MutationResult(
+                True,
+                card,
+                1,
+                (remote_card_id(card.namespace),),
+                MutationMetrics(1, 2, ()),
+            )
+
+        def read_catalog(*_args, **_kwargs):  # noqa: ANN002, ANN003, ANN202
+            if not sent:
+                return snapshot
+            return make_snapshot(sent[0], schema_version=REMOTE_SCHEMA_V3)
+
+        result, stdout, stderr = run_cli(
+            [
+                "catalog",
+                "set-routing-examples",
+                current.namespace,
+                "--routing-example",
+                "How do I configure retries?",
+                "--expected-card-revision",
+                current.card_revision,
+                "--approve",
+                "--json",
+            ],
+            patches=(
+                patch(
+                    "buoy_search.catalog_cli.read_remote_catalog",
+                    side_effect=read_catalog,
+                ),
+                patch("buoy_search.catalog_cli.update_remote_card", side_effect=write),
+                patch(
+                    "buoy_search.catalog.load_routing_embedder",
+                    return_value=FixedEmbedder(),
+                ),
+            ),
+        )
+
+        self.assertEqual((result, stderr), (0, ""))
+        intended = sent[0]
+        self.assertEqual(len(intended.routing_evidence_vectors), 3 * ROUTING_DIMENSIONS)
+        self.assertNotEqual(
+            intended.routing_evidence_vectors_hash,
+            current.routing_evidence_vectors_hash,
+        )
+        payload = json.loads(stdout)
+        self.assertNotIn("routing_passages", payload["card"])
+        self.assertNotIn("routing_evidence_vectors", payload["card"])
 
     def test_dedicated_example_preconditions_targets_and_failed_attempt_are_safe(self) -> None:
         secret_question = "Where is SECRET-CANARY configured?"

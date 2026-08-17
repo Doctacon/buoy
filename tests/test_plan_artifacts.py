@@ -4,28 +4,43 @@ import json
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
+import buoy_search.plan_artifacts as plan_artifacts_module
 from buoy_search.applied_state import AppliedStateRow, build_applied_state
 from buoy_search.chunker import IndexingPlan, IndexingStats, MarkdownChunk, process_corpus
 from buoy_search.plan_artifacts import (
     GENERIC_SITE_TURBOPUFFER_SCHEMA,
+    MAX_ROUTING_PROTOTYPE_CHARACTERS,
+    MAX_ROUTING_PROTOTYPES,
     PLAN_SCHEMA_VERSION,
+    ROUTING_PROTOTYPE_STRATEGY,
+    ChunkManifestRecord,
     build_generic_site_row,
     build_plan_artifacts,
     chunk_jsonl_records,
+    routing_passage_text_for_chunk,
+    select_routing_prototypes,
     verify_plan_artifacts,
     write_plan_artifacts,
 )
 from buoy_search.plan_diff import diff_manifest_against_state
 
 
-def write_page(corpus: Path, *, crawl_timestamp: str, body: str, name: str = "page.md") -> None:
+def write_page(
+    corpus: Path,
+    *,
+    crawl_timestamp: str,
+    body: str,
+    name: str = "page.md",
+    title: str = "Example Page",
+) -> None:
     (corpus / name).write_text(
         "\n".join(
             [
                 "---",
                 'url: "https://example.com/docs/page"',
-                'title: "Example Page"',
+                f'title: "{title}"',
                 'status: "200"',
                 'content_type: "text/html; charset=utf-8"',
                 'source_hash: "raw-source-hash"',
@@ -69,7 +84,7 @@ class PlanArtifactTests(unittest.TestCase):
             diff=diff,
         )
 
-    def test_plan_and_delta_have_required_schema_v2_fields(self) -> None:
+    def test_plan_and_delta_have_required_schema_v3_fields(self) -> None:
         artifacts = self.build_artifacts()
         plan = artifacts.plan_dict()
         upsert = artifacts.upsert_rows[0]
@@ -88,6 +103,9 @@ class PlanArtifactTests(unittest.TestCase):
         self.assertEqual(plan["applied_state"]["present"], False)
         self.assertEqual(plan["delta"]["filename"], "delta.duckdb")
         self.assertEqual(plan["delta"]["upsert_count"], 1)
+        self.assertEqual(plan["routing_prototypes"]["strategy"], ROUTING_PROTOTYPE_STRATEGY)
+        self.assertEqual(plan["routing_prototypes"]["count"], 1)
+        self.assertRegex(plan["routing_prototypes"]["logical_hash"], r"^[0-9a-f]{64}$")
         self.assertEqual(plan["diff"]["rows_to_upsert"], 1)
         self.assertRegex(plan["artifact_hash"], r"^[0-9a-f]{64}$")
         self.assertNotIn("state_path", plan)
@@ -97,8 +115,16 @@ class PlanArtifactTests(unittest.TestCase):
         self.assertEqual(upsert["source_path"], "page.md")
         self.assertIn("Useful documentation", upsert["content"])
         self.assertNotIn("content_preview", upsert)
+        prototype = artifacts.routing_prototypes[0]
+        self.assertEqual(prototype["ordinal"], 0)
+        self.assertEqual(prototype["row_id"], upsert["row_id"])
+        self.assertEqual(prototype["source_path"], "page.md")
+        self.assertIn("Source excerpt:\nUseful documentation", prototype["passage_text"])
+        self.assertLessEqual(
+            len(prototype["passage_text"]), MAX_ROUTING_PROTOTYPE_CHARACTERS
+        )
 
-    def test_schema_v2_plan_identity_golden_is_deterministic(self) -> None:
+    def test_schema_v3_plan_identity_golden_is_deterministic(self) -> None:
         artifacts = self.build_artifacts()
         plan = artifacts.plan_dict()
         chunks = list(chunk_jsonl_records(artifacts.chunks_jsonl))
@@ -106,7 +132,7 @@ class PlanArtifactTests(unittest.TestCase):
         # Precision-aware plans retain deterministic row and namespace identity.
         self.assertEqual(
             plan["artifact_hash"],
-            "d6b5e13bbbfdbbdeacef69ec5f154e9340038f88b28b40160135e7d9ed1014e0",
+            "19b26203880f6cc1b59f57078ceaf41420b7cbeb51bf77a5e51c27c65dfb44d9",
         )
         self.assertEqual(plan["namespace"], "site-example-com-v1")
         self.assertEqual(chunks[0]["row_id"], "ts_2fd4695f91b79df01d0f8b1d47587127")
@@ -149,7 +175,7 @@ class PlanArtifactTests(unittest.TestCase):
         self.assertEqual(diff.rows_to_upsert_records[0].row_id, previous.row_id)
         self.assertEqual(diff.chunks_unchanged, 0)
 
-    def test_schema_v2_plan_excludes_legacy_paths_and_full_manifest(self) -> None:
+    def test_schema_v3_plan_excludes_legacy_paths_and_full_manifest(self) -> None:
         artifacts = self.build_artifacts()
         plan = artifacts.plan_dict()
 
@@ -157,12 +183,86 @@ class PlanArtifactTests(unittest.TestCase):
             "schema_version", "command", "plan_id", "created_at", "artifact_hash",
             "source", "site_id", "namespace", "namespace_candidate", "crawl_options",
             "chunk_options", "embedding_model", "embedding_precision", "applied_state",
-            "delta", "diff",
+            "delta", "routing_prototypes", "diff",
         })
         serialized = json.dumps(plan)
         self.assertNotIn("manifest.json", serialized)
         self.assertNotIn("chunks.jsonl", serialized)
         self.assertNotIn("pages_dir", serialized)
+
+    def test_routing_prototype_selection_is_bounded_diverse_and_title_optional(self) -> None:
+        def chunk(
+            index: int,
+            *,
+            url: str,
+            title: str,
+            section: str,
+            content: str,
+        ) -> ChunkManifestRecord:
+            return ChunkManifestRecord(
+                row_id=f"ts_{index:032x}",
+                row_id_candidate=f"ts_{index:032x}",
+                site_id="example-com",
+                duplicate_ordinal=0,
+                canonical_url=url,
+                page_content_path=f"page-{index}.md",
+                page_hash=f"{index + 1:064x}",
+                chunk_hash=f"{index + 2:064x}",
+                embedding_text_hash=f"{index + 3:064x}",
+                title=title,
+                section_path=section,
+                chunk_index=index,
+                content=content,
+                content_preview=content,
+                doc_kind="page",
+                tags=[],
+            )
+
+        diverse = [
+            chunk(
+                0, url="https://example.com/a", title="A", section="Intro",
+                content="shared alpha material",
+            ),
+            chunk(
+                1, url="https://example.com/a", title="A", section="Details",
+                content="different material",
+            ),
+            chunk(
+                2, url="https://example.com/b", title="B", section="Intro",
+                content="shared alpha material",
+            ),
+        ]
+        selected = select_routing_prototypes(diverse)
+
+        self.assertEqual([row["row_id"] for row in selected[:2]], [diverse[0].row_id, diverse[2].row_id])
+        self.assertEqual(selected, select_routing_prototypes(diverse))
+        self.assertEqual([row["ordinal"] for row in selected], list(range(len(selected))))
+
+        many = [
+            chunk(
+                index + 10,
+                url=f"https://example.com/{index}",
+                title=f"Document {index}",
+                section="Overview",
+                content=(f"topic-{index} " * 300),
+            )
+            for index in range(12)
+        ]
+        bounded = select_routing_prototypes(many)
+        self.assertEqual(len(bounded), MAX_ROUTING_PROTOTYPES)
+        self.assertTrue(all(
+            len(row["passage_text"]) <= MAX_ROUTING_PROTOTYPE_CHARACTERS
+            for row in bounded
+        ))
+
+        untitled = chunk(
+            99,
+            url="https://example.com/untitled",
+            title="",
+            section="Reference",
+            content="Usable source content even without a document title.",
+        )
+        self.assertIn("Source: page-99.md", routing_passage_text_for_chunk(untitled))
 
     def test_pdf_source_metadata_is_preserved_in_manifest_chunks_and_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -322,6 +422,7 @@ class PlanArtifactTests(unittest.TestCase):
         self.assertEqual(initial_plan, rebuilt_plan)
         self.assertEqual(initial.upsert_rows, rebuilt.upsert_rows)
         self.assertEqual(initial.stale_rows, rebuilt.stale_rows)
+        self.assertEqual(initial.routing_prototypes, rebuilt.routing_prototypes)
 
     def test_artifact_hash_ignores_volatile_crawl_timestamp(self) -> None:
         first = self.build_artifacts(crawl_timestamp="2026-06-20T00:00:00+00:00")
@@ -356,6 +457,7 @@ class PlanArtifactTests(unittest.TestCase):
         self.assertEqual(plan["artifact_hash"], artifacts.plan.artifact_hash)
         self.assertEqual(len(verified.upsert_rows), 1)
         self.assertEqual(verified.upsert_rows[0]["chunk_hash"], artifacts.upsert_rows[0]["chunk_hash"])
+        self.assertEqual(verified.routing_prototypes, artifacts.routing_prototypes)
 
     def test_generic_row_id_is_stable_when_unrelated_page_section_changes(self) -> None:
         original = self.build_artifacts(
@@ -434,6 +536,142 @@ class PlanArtifactTests(unittest.TestCase):
         self.assertEqual(first_chunks[1].row_id, first_chunks[1].row_id_candidate)
         self.assertNotEqual(first_chunks[0].row_id, first_chunks[1].row_id)
         self.assertEqual([chunk.row_id for chunk in first_chunks], [chunk.row_id for chunk in second_chunks])
+
+    def test_duplicate_source_row_titles_collapse_to_ordinal_zero_prototype(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            corpus = root / "pages"
+            corpus.mkdir()
+            for name, title in (
+                ("canonical.md", "Canonical title"),
+                ("variant.md", "Display variant"),
+            ):
+                write_page(
+                    corpus,
+                    crawl_timestamp="2026-06-20T00:00:00+00:00",
+                    body="# Intro\n\nRepeated source content.",
+                    name=name,
+                    title=title,
+                )
+            duplicate_chunks = [
+                MarkdownChunk(
+                    id=f"jf_title_variant_{index}",
+                    content="Repeated source content.",
+                    title=title,
+                    url="https://example.com/docs/page",
+                    path=name,
+                    section_path="Intro",
+                    chunk_index=index,
+                    doc_kind="page",
+                    tags=["page"],
+                    source_hash="page-hash",
+                )
+                for index, (name, title) in enumerate(
+                    (
+                        ("canonical.md", "Canonical title"),
+                        ("variant.md", "Display variant"),
+                    )
+                )
+            ]
+            indexing_plan = IndexingPlan(
+                corpus_dir=corpus,
+                files_discovered=2,
+                chunks=duplicate_chunks,
+                stats=IndexingStats(chunks_generated=2),
+            )
+            out_dir = root / "plan"
+
+            artifacts = build_plan_artifacts(
+                indexing_plan=indexing_plan,
+                base_url="https://example.com/docs/",
+                out_dir=out_dir,
+            )
+            write_plan_artifacts(artifacts, out_dir)
+            verified = verify_plan_artifacts(out_dir / "plan.json")
+
+        self.assertEqual(
+            [chunk.duplicate_ordinal for chunk in artifacts.manifest.chunks],
+            [0, 1],
+        )
+        self.assertEqual(len(artifacts.routing_prototypes), 1)
+        self.assertEqual(
+            artifacts.routing_prototypes[0]["row_id"],
+            artifacts.manifest.chunks[0].row_id,
+        )
+        self.assertIn(
+            "Title: Canonical title",
+            artifacts.routing_prototypes[0]["passage_text"],
+        )
+        self.assertEqual(verified.routing_prototypes, artifacts.routing_prototypes)
+
+    def test_routing_prototype_source_link_validation_never_fetches_full_upsert_table(self) -> None:
+        chunk = ChunkManifestRecord(
+            row_id="ts_" + "1" * 32,
+            row_id_candidate="ts_" + "1" * 32,
+            site_id="example-com",
+            duplicate_ordinal=0,
+            canonical_url="https://example.com/docs/page",
+            page_content_path="page.md",
+            page_hash="2" * 64,
+            chunk_hash="3" * 64,
+            embedding_text_hash="4" * 64,
+            title="Example Page",
+            section_path="Intro",
+            chunk_index=0,
+            content="Bounded source-link validation.",
+            content_preview="Bounded source-link validation.",
+            doc_kind="page",
+            tags=[],
+        )
+        prototype = select_routing_prototypes([chunk])[0]
+        upsert = {
+            "row_id": chunk.row_id,
+            "canonical_url": chunk.canonical_url,
+            "source_path": chunk.page_content_path,
+            "section_path": chunk.section_path,
+            "chunk_hash": chunk.chunk_hash,
+            "title": chunk.title,
+            "content": chunk.content,
+        }
+
+        class FetchOneOnlyCursor:
+            def __init__(self) -> None:
+                self.rows = iter([(upsert,)])
+                self.fetchone_calls = 0
+
+            def fetchone(self):  # noqa: ANN201 - DuckDB cursor sentinel.
+                self.fetchone_calls += 1
+                return next(self.rows, None)
+
+            def fetchall(self):  # noqa: ANN201 - forbidden regression sentinel.
+                raise AssertionError("source-link validation materialized all upserts")
+
+        class RecordingConnection:
+            def __init__(self) -> None:
+                self.cursor = FetchOneOnlyCursor()
+                self.sql = ""
+                self.parameters: list[str] = []
+
+            def execute(self, sql, parameters):  # noqa: ANN001, ANN201 - test double.
+                self.sql = sql
+                self.parameters = list(parameters)
+                return self.cursor
+
+        connection = RecordingConnection()
+        with patch.object(
+            plan_artifacts_module,
+            "_upsert_from_sql",
+            side_effect=lambda row: row[0],
+        ):
+            plan_artifacts_module._validate_routing_prototype_source_links(
+                connection,  # type: ignore[arg-type]
+                [prototype],
+            )
+
+        self.assertIn("WHERE row_id IN (?)", " ".join(connection.sql.split()))
+        self.assertIn(f"LIMIT {MAX_ROUTING_PROTOTYPES}", connection.sql)
+        self.assertEqual(connection.parameters, [chunk.row_id])
+        self.assertEqual(connection.cursor.fetchone_calls, 2)
 
     def test_duplicate_disambiguation_does_not_reintroduce_page_hash_churn(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

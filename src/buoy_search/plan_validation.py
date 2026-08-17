@@ -1,4 +1,4 @@
-"""Import-safe schema-v2 plan document validation.
+"""Import-safe schema-v3 plan document validation.
 
 This module validates plan metadata and identity without importing acquisition,
 database-relation, or local-source adapters. Full delta validation remains in
@@ -20,8 +20,10 @@ from buoy_search.applied_state import APPLIED_STATE_SCHEMA_VERSION
 from buoy_search.config import EMBEDDING_PRECISIONS
 from buoy_search.source_url import validate_base_url, validate_http_url_authority
 
-PLAN_SCHEMA_VERSION = 2
-DELTA_SCHEMA_VERSION = 1
+PLAN_SCHEMA_VERSION = 3
+DELTA_SCHEMA_VERSION = 2
+ROUTING_PROTOTYPE_STRATEGY = "diverse-content-passages-v1"
+MAX_ROUTING_PROTOTYPES = 8
 
 _HEX_SHA256 = re.compile(r"[0-9a-f]{64}")
 _PLAN_ID = re.compile(r"plan_[0-9a-f]{16}")
@@ -65,7 +67,7 @@ _SECRET_URI_COMPONENTS = {
 
 
 def validate_plan_document(plan: object) -> None:
-    """Validate the complete schema-v2 plan metadata contract and identity."""
+    """Validate the complete schema-v3 plan metadata contract and identity."""
 
     if not isinstance(plan, dict):
         raise ValueError("plan.json must be an object")
@@ -73,11 +75,11 @@ def validate_plan_document(plan: object) -> None:
         "schema_version", "command", "plan_id", "created_at", "artifact_hash",
         "source", "site_id", "namespace", "namespace_candidate", "crawl_options",
         "chunk_options", "embedding_model", "embedding_precision", "applied_state",
-        "delta", "diff",
+        "delta", "routing_prototypes", "diff",
     }
     allowed = required | {"originating_job_id"}
     if set(plan) != required and set(plan) != allowed:
-        raise ValueError("plan.json fields do not match schema v2")
+        raise ValueError("plan.json fields do not match schema v3")
     if type(plan["schema_version"]) is not int or plan["schema_version"] != PLAN_SCHEMA_VERSION:
         raise ValueError("unsupported plan schema version")
     if plan["command"] != "plan" or not _PLAN_ID.fullmatch(str(plan["plan_id"])):
@@ -140,6 +142,21 @@ def validate_plan_document(plan: object) -> None:
     for key in ("upsert_count", "stale_count", "retained_stale_count"):
         if type(delta[key]) is not int or delta[key] < 0:
             raise ValueError("invalid delta count")
+    routing_prototypes = plan["routing_prototypes"]
+    if not isinstance(routing_prototypes, dict) or set(routing_prototypes) != {
+        "strategy", "count", "logical_hash",
+    }:
+        raise ValueError("invalid routing prototype descriptor")
+    if routing_prototypes["strategy"] != ROUTING_PROTOTYPE_STRATEGY:
+        raise ValueError("invalid routing prototype strategy")
+    if (
+        type(routing_prototypes["count"]) is not int
+        or routing_prototypes["count"] < 0
+        or routing_prototypes["count"] > MAX_ROUTING_PROTOTYPES
+    ):
+        raise ValueError("invalid routing prototype count")
+    if not _HEX_SHA256.fullmatch(str(routing_prototypes["logical_hash"])):
+        raise ValueError("invalid routing prototype logical hash")
     normalize_diff(plan["diff"])
     _validate_diff_counts(plan["diff"], delta)
     if not baseline["present"] and not plan["diff"]["first_apply"]:
@@ -300,7 +317,7 @@ def _safe_slug(value: str, *, fallback: str) -> str:
 
 def normalize_diff(value: Mapping[str, object]) -> dict[str, object]:
     if set(value) != set(_DIFF_FIELDS):
-        raise ValueError("diff summary fields do not match schema v2")
+        raise ValueError("diff summary fields do not match schema v3")
     result: dict[str, object] = {}
     for key in _DIFF_FIELDS:
         item = value[key]
@@ -344,6 +361,7 @@ def artifact_identity(plan: Mapping[str, object]) -> dict[str, object]:
         "embedding_precision": plan["embedding_precision"],
         "applied_state": plan["applied_state"],
         "delta": plan["delta"],
+        "routing_prototypes": plan["routing_prototypes"],
         "diff": plan["diff"],
     }
 
