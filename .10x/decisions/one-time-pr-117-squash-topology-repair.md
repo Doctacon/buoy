@@ -1,8 +1,18 @@
-Status: accepted
+Status: superseded
 Created: 2026-08-16
 Updated: 2026-08-16
 
 # One-Time PR #117 Squash-Topology Repair
+
+## 2026-08-16 disposition
+
+The exact repair completed through content-empty bridge PR #121 as integration
+`33e7a52d85ed28a637090cedfa470c5ed9e8196b` and is consumed. Final `develop`
+contains exact PR #117 main squash
+`0db802ec1a895f289c7600b19c80603986839873` as an ancestor without any change
+from the bound pre-bridge develop tree. This decision is retained as historical
+context only and grants no current or recurring branch, merge-method, release,
+provider, or publication authority.
 
 ## Context
 

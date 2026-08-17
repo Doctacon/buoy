@@ -1,17 +1,14 @@
-Status: provisional
+Status: recorded
 Created: 2026-08-16
 Updated: 2026-08-16
-Ticket: .10x/tickets/2026-08-16-bridge-pr-117-squash-topology-once.md
+Ticket: .10x/tickets/done/2026-08-16-bridge-pr-117-squash-topology-once.md
 Specification: .10x/specs/one-time-pr-117-squash-topology-repair.md
 Governance-Review: .10x/reviews/2026-08-16-pr-117-squash-topology-governance-review.md
+Bridge-Review: .10x/reviews/2026-08-16-pr-117-squash-topology-repair-review.md
 
 # PR #117 Squash-Topology Repair Evidence
 
-## Provisional pre-bridge observation
-
-This record contains prerequisite observations only. It is not evidence that a
-bridge commit, pull request, CI run, independent bridge review, integration, or
-main promotion exists or passed.
+## Pre-bridge observation
 
 Read-only local ref inspection observed:
 
@@ -112,27 +109,71 @@ empty-prototype reader fix from `D0` at these exact blobs: evidence
 `27d663ea63edfd01ba82f55c3e5943c71678749c`, and remote-reader tests
 `78f3094cedc4f2f19e5e139cd83f5ec8cdefabfa`.
 
-The accepted decision, active repair specification, passing governance review,
-behavioral branch-flow exception, active bridge ticket, and this evidence are
-integrated. Phase 1 is complete. This record remains `provisional` because no
-bridge commit, bridge PR, bridge CI, bridge review, bridge integration, or main
-promotion has occurred.
+The accepted decision, then-active repair specification, passing governance
+review, behavioral branch-flow exception, then-active bridge ticket, and this
+evidence were integrated. Phase 1 completed before any bridge action.
 
-## Pending evidence
+## Recorded Phase 2 bridge and integration
 
-Before this record can become `recorded` completion evidence, it must add the
-freshly bound post-closure `D`, exact bridge and integration
-commits/parents/trees, zero-content PR and exact-head hosted CI, independent
-bridge review, post-integration ancestry/tree checks, unchanged hosted and
-external state, final closure mapping, and consumed disposition required by
-the specification. Missing pending evidence blocks bridge integration or
-closure.
+A fresh pre-bridge fetch bound:
 
-## External effects so far
+- `D = f4fcd1c95110222f19826f7966a1e37b174ad82b`, with sole parent
+  `034e01c3bb8bfa5726f57bdd5c17c74b7d55dc9f` and tree
+  `acd2346b2d4806aee30bd0924dae0bbc48a742e4`;
+- unchanged `M = 0db802ec1a895f289c7600b19c80603986839873`,
+  with parent `059753a0cff756c531ec1b723747c85d22fc542d` and tree
+  `1df8c48adc5d578dc274693e9aea2c8cf786a9f0`;
+- exact merge base `b9d996250893974c11b4dc69ecd12fd99bf2e016`
+  and pre-bridge divergence `15` main-only / `4` develop-only commits.
 
-Phase 1 created its task branch and PR #119, ran hosted CI, and squash-integrated
-the reviewed governance/content tree into `develop` as the exact commit above.
-It made no ancestry bridge commit, bridge PR, direct/force push, protection
-change, main merge, tag, Release, package publication, provider request/write,
-catalog migration, content-index mutation, model inference, or credential
-read/change.
+Bridge commit `C = 2072668d61babe3111056470aff139901950af94`
+has exact ordered parents `[D,M]` and tree
+`acd2346b2d4806aee30bd0924dae0bbc48a742e4`, identical to `D`. PR #121
+targeted exact base `D` from exact head `C` and reported zero changed files,
+zero additions, and zero deletions. Hosted CI run `31995662463` passed at that
+exact head:
+
+- Python 3.11 job `95286736415`: success;
+- Python 3.13 job `95286736608`: success;
+- Build distributions job `95287078213`: success.
+
+Independent review passed the exact PR, refs, ordered parents, tree identity,
+zero content delta, hosted checks, and bounded authority before integration.
+The dedicated integration session then used merge-commit integration, never
+squash or rebase. Resulting integration
+`I = 33e7a52d85ed28a637090cedfa470c5ed9e8196b` has exact ordered parents
+`[D,C]` and the same tree `acd2346b2d4806aee30bd0924dae0bbc48a742e4`.
+
+## Post-integration verification
+
+Fresh readback proved `origin/develop == I` and `origin/main == M`; `M` and
+`C` are both ancestors of `I`. Both `git diff D..C` and `git diff D..I` are
+empty, and post-bridge divergence is `0` main-only / `6` develop-only commits.
+The four exact README blobs and seven reader-fix blobs enumerated above remain
+unchanged because `tree(D) == tree(C) == tree(I)`.
+
+Read-only `git merge-tree --write-tree M I` exited successfully and produced
+exact tree `acd2346b2d4806aee30bd0924dae0bbc48a742e4`. An ordinary future
+`develop -> main` merge candidate can therefore be constructed without a
+content conflict. No main merge or release action occurred in this task.
+
+Fresh read-only GitHub observation at `2026-08-17T05:04:33Z` reported exact
+`main == M`, exact `develop == I`, `protected=false` and
+`protection.enabled=false` for both branches, and zero repository rulesets.
+The exact tag inventory remained six existing tags: `v0.5.1` at
+`284b309a02546b13a63e709d9afe7f72c557b474`, `v0.5.0` at
+`c7a47a8565f578b9efcef9d23e072c05c98848d8`, `v0.4.0` at
+`c49dc0582bf3f06a16eafdcca0707d1e64e1c58d`, `v0.3.0` at
+`595d157177bd032c20cf6e6c0112ee6b43212a88`, `v0.2.1` at
+`0afde6643162fdedc00810152e226701aa1d38b1`, and `v0.2.0` at
+`d846d2b2e965e7f62ff180442724d02705688a1a`. The release inventory remained
+five non-draft, non-prerelease releases: `v0.5.1` (`369682440`), `v0.5.0`
+(`363582802`), `v0.4.0` (`357504706`), `v0.3.0` (`355388511`), and `v0.2.1`
+(`354036337`). No new tag or Release exists, and no protection setting changed.
+
+Execution made exactly zero provider requests or writes and performed no
+credential access/change, catalog migration, indexed-content mutation, model
+inference, package publication, deployment, or other publication action. The
+only external effects were the authorized bridge branch, PR #121, hosted CI,
+and merge-commit integration into `develop`; this closure task adds only its
+records branch. The one-time exception is consumed and MUST NOT recur.

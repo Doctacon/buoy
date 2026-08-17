@@ -1,9 +1,18 @@
-Status: active
+Status: superseded
 Created: 2026-08-16
 Updated: 2026-08-16
 Decision: .10x/decisions/one-time-pr-117-squash-topology-repair.md
 
 # One-Time PR #117 Squash-Topology Repair
+
+## 2026-08-16 disposition
+
+Both phases completed as exact integration
+`33e7a52d85ed28a637090cedfa470c5ed9e8196b`, and the exception is consumed.
+The bridge ticket, evidence, and independent review are closed at their durable
+paths. This specification remains historical proof of the bounded repair only;
+it grants no authority to repeat an ancestry bridge or to vary ordinary task
+integration.
 
 ## Purpose and scope
 
@@ -55,8 +64,9 @@ content. These rules are the complete conflict resolution.
 
 ## Phase 2: content-neutral ancestry bridge
 
-Only `.10x/tickets/2026-08-16-bridge-pr-117-squash-topology-once.md` may execute
-this phase, after Phase 1 is integrated.
+Phase 2 execution authority belonged only to the ticket now closed at
+`.10x/tickets/done/2026-08-16-bridge-pr-117-squash-topology-once.md`. Its
+historical execution contract follows; this text cannot reauthorize it.
 
 1. Fetch without mutating long-lived branches. Require `origin/main == M`; bind
    exact current `origin/develop` as `D`; record both commits and trees.
