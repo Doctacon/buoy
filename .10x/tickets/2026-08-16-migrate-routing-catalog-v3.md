@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-08-16
-Updated: 2026-08-16
+Updated: 2026-08-17
 Depends-On: .10x/tickets/done/2026-08-16-promote-automatic-routing-to-main-once.md
 Decision: .10x/decisions/buoy-derives-routing-prototypes-from-reviewed-plans.md
 Specification: .10x/specs/automatic-routing-after-apply.md
@@ -226,3 +226,89 @@ change, direct/force push, credential change, or unrelated operation.
 This record-creation task permits only the exact three-file branch, validation,
 commit, and task-branch push. It performs no credential or provider access and
 grants no PR creation or integration authority to its own session.
+
+## Append-only progress: authority integration and preview GO
+
+PR #126 integrated the exact three-record authority into `develop` as ordinary
+squash commit `e4993e86e65d0e57a80baf887749b6d1fa29a708`, with sole parent
+`31d2a7756c5bd712147772a77b606154fb2610c3` and exact authority tree
+`4e51d5297eb18b4b872544cc34b21bd42ffcd1ab`. Its exact head was
+`ae708f3846e665eecf854a38bc41e214563e7ed8`; CI run `32004320577` passed
+Python 3.13 job `95310638934`, Python 3.11 job `95310639046`, and Build
+distributions job `95311183447`. The PR changed only the ticket, evidence, and
+review records. Exact main remained `R`.
+
+Immediately before the one authorized preview, the executor reverified the
+installed exact-R executable/package, both migration-module hashes, installed
+`turbopuffer 2.4.0` and its four-retry source identities, and command help.
+Credential presence was privately true without retaining its value or output;
+the exact region was `gcp-us-central1`. The catalog mutation freeze began before
+preview and has remained uninterrupted, with no intervening catalog operation.
+
+The exact command exited `0` with empty stderr:
+
+```text
+/Users/crlough/.local/bin/buoy catalog migrate-routing-v3 --region gcp-us-central1 --json
+```
+
+The raw stdout file was not captured, so
+`raw_stdout_sha256=unavailable-not-captured`. A second provider read solely to
+manufacture that digest is forbidden. For this exact preview output only, the
+independent review may
+replace only the raw-output digest requirement with the exhaustive ordered
+parsed-JSON field capture in the evidence and its independently recomputed
+`canonical_structured_preview_sha256`, defined exactly as:
+
+```text
+sha256(json.dumps(payload, sort_keys=True, separators=(',', ':'),
+                  ensure_ascii=False).encode('utf-8'))
+```
+
+There is no trailing newline in the hashed canonical byte string. The capture
+is not raw stdout and is not represented as a reconstruction of unavailable
+stdout bytes. Its exact
+`canonical_structured_preview_sha256` is
+`0d9e217022c3d651408551edbf2132e79a6244de05f955e562ce7c24b385cbc2`.
+It binds every top-level field: `affected_ids`, `approved`,
+`card_identities`, `catalog_namespace`, `command`, `counts`, `coverage`,
+`expected_projection_sha256`, `expected_snapshot_revision`,
+`final_projection_sha256`, `mutation_status`, `observed_projection_sha256`,
+`observed_snapshot_revision`, `old_reader_warning`, `operation_budget`,
+`operations_performed`, `read_metrics`, `region`, `request_summary`, `schema`,
+`snapshot_revision`, and `verification_complete`. It also binds the successful
+preview's explicit absence of `write_attempted`, `failure`, `rows_affected`,
+`retry_requires_fresh_preview`, `request_accounting_mode`,
+`operation_accounting_complete`, `known_lower_bound_request_summary`, and
+top-level or `request_summary.accounting_complete`. No failure, retry,
+accounting-mode, or accounting-completeness field was emitted.
+
+The exact target-v3 fingerprint
+`f596eccb4878fc462d4ea7165a553bd0f21b13bbce46af70a867999daedc888a` is
+derived from exact-R source, was not emitted by this preview, and is not part of
+the structured digest.
+
+This exception waives no other field, identity, privacy, accounting, inventory,
+freeze, or approval condition and transfers to no other output. The exact-v2
+preview has five logical read invocations, zero writes/deletes/model/content
+operations, and an unknown bounded 5–25 physical transport attempts. The
+17-namespace / 13-card inventory matches the prior stable audit. Its one
+missing content card, `site-docs-aurelio-ai-v1`, is a real but nonblocking
+coverage gap distinct from the present parsed `site-www-aurelio-ai-v1` card;
+the missing site remains excluded from automatic routing, and this ticket
+grants no registration or backfill authority.
+
+`Preview-Verdict: go` in the review binds only the exhaustive capture recorded
+for this exact snapshot and projection. Approval remains HOLD until this exact
+three-record exception and GO integrate into `develop`. Only after that
+integration and a fresh recheck of the exact-R installation, private credential
+presence, exact region, and uninterrupted freeze may the executor invoke this
+one command exactly once:
+
+```text
+/Users/crlough/.local/bin/buoy catalog migrate-routing-v3 --expected-snapshot-revision abb0d38193c8c00963fff6536bcf755f3bf707942a2b1f1ba4fa90b74f5a4ce8 --expected-projection-sha256 eb006aff8058da775ffd9a3dcae19e41050cf2b471b831aa95755c2e1cca5a38 --approve --region gcp-us-central1 --json
+```
+
+This records-only preview-GO branch makes no provider request, reads no
+credential, and authorizes its own session only to validate, commit, and push
+the exact three amended records. It may not execute approval, open or merge a
+PR, or change any other path or external state.
