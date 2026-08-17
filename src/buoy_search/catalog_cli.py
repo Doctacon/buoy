@@ -10,7 +10,11 @@ from pathlib import Path
 import re
 import sys
 
-from buoy_search.applied_state import acquire_namespace_apply_lock
+from buoy_search.applied_state import (
+    AppliedStateError,
+    acquire_namespace_apply_lock,
+    resolve_state_root,
+)
 from buoy_search.catalog import (
     CardFields,
     CatalogError,
@@ -121,7 +125,12 @@ def configure_catalog_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     )
     parser.add_argument("--plan", required=True, type=Path)
     parser.add_argument("--namespace", required=True)
-    parser.add_argument("--state-root", type=Path, default=Path(".buoy"))
+    parser.add_argument(
+        "--state-root",
+        type=Path,
+        default=None,
+        help="Local applied-state root. Defaults to the absolute user-global ~/.buoy directory.",
+    )
     parser.add_argument("--apply-id", required=True)
     repair_precondition = parser.add_mutually_exclusive_group(required=True)
     repair_precondition.add_argument("--expected-card-revision", default=None)
@@ -930,6 +939,7 @@ def _run_repair_apply(args: argparse.Namespace) -> int:
 
     region = _resolved_region(args)
     try:
+        args.state_root, _ = resolve_state_root(args.state_root)
         namespace = _operator_namespace(args.namespace)
         expected_revision = (
             _approval_sha256(
@@ -1099,6 +1109,7 @@ def _run_repair_apply(args: argparse.Namespace) -> int:
             )
     except (
         ApplyPlanError,
+        AppliedStateError,
         RemoteCatalogError,
         CatalogError,
         RuntimeConfigError,

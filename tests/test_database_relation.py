@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from buoy_search.chunker import parse_markdown_file
 from buoy_search.crawler import CrawlOptions
@@ -60,23 +61,26 @@ class FakeSource:
 class DatabaseRelationTests(unittest.TestCase):
     def test_shared_identity_is_stable_and_backend_specific(self) -> None:
         filenames: set[str] = set()
-        for backend in ("duckdb", "bigquery", "snowflake"):
-            with self.subTest(backend=backend):
-                source = FakeSource(backend)
-                self.assertEqual(source.base_url, f"{backend}://gong-calls")
-                self.assertEqual(source.site_id, f"{backend}-gong-calls")
-                self.assertEqual(source.namespace_candidate, f"{backend}-gong-calls-v1")
-                self.assertEqual(
-                    source.default_out_dir,
-                    Path(f"artifacts/site-crawls/{backend}-gong-calls"),
-                )
-                self.assertEqual(
-                    source.document_url("call/1 ? ü"),
-                    f"{backend}://gong-calls/call%2F1%20%3F%20%C3%BC",
-                )
-                filename = stable_page_filename(source, "call/1 ? ü")
-                self.assertEqual(filename, stable_page_filename(source, "call/1 ? ü"))
-                filenames.add(filename)
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "buoy_search.local_paths.Path.home", return_value=Path(tmp)
+        ):
+            for backend in ("duckdb", "bigquery", "snowflake"):
+                with self.subTest(backend=backend):
+                    source = FakeSource(backend)
+                    self.assertEqual(source.base_url, f"{backend}://gong-calls")
+                    self.assertEqual(source.site_id, f"{backend}-gong-calls")
+                    self.assertEqual(source.namespace_candidate, f"{backend}-gong-calls-v1")
+                    self.assertEqual(
+                        source.default_out_dir,
+                        Path(tmp) / f".buoy/artifacts/site-crawls/{backend}-gong-calls",
+                    )
+                    self.assertEqual(
+                        source.document_url("call/1 ? ü"),
+                        f"{backend}://gong-calls/call%2F1%20%3F%20%C3%BC",
+                    )
+                    filename = stable_page_filename(source, "call/1 ? ü")
+                    self.assertEqual(filename, stable_page_filename(source, "call/1 ? ü"))
+                    filenames.add(filename)
         self.assertEqual(len(filenames), 3)
 
     def test_database_base_url_rejects_trailing_slash(self) -> None:

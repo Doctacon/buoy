@@ -39,6 +39,7 @@ from buoy_search.database_relation import (
     database_identity_from_url,
     is_database_base_url,
 )
+from buoy_search.local_paths import default_artifact_root, prepare_default_buoy_home
 from buoy_search.source_url import validate_base_url
 
 DEFAULT_CRAWL_MAX_PAGES = 3000
@@ -49,7 +50,6 @@ DEFAULT_GITHUB_REPO_MAX_FILE_BYTES = 50 * 1024
 DEFAULT_CRAWL_CONCURRENT_REQUESTS = 2
 DEFAULT_CRAWL_CONCURRENT_REQUESTS_PER_DOMAIN = 4
 DEFAULT_CRAWL_DOWNLOAD_DELAY = 0.25
-DEFAULT_CRAWL_OUT_DIR = Path("artifacts/site-crawls")
 DEFAULT_CRAWL_STRATEGY = "sitemap"
 CRAWL_STRATEGIES = ("sitemap", "link", "hybrid")
 DEFAULT_DOCS_VERSION_POLICY = "warn"
@@ -249,7 +249,6 @@ class GitHubRepoSource:
     repo_full_name: str
     site_id: str
     namespace_candidate: str
-    default_out_dir: Path
     tree_ref: str | None = None
     tree_path: str | None = None
     blob_hint: GitHubBlobHint | None = None
@@ -257,6 +256,10 @@ class GitHubRepoSource:
     @property
     def base_url(self) -> str:
         return self.repo_root_url
+
+    @property
+    def default_out_dir(self) -> Path:
+        return default_artifact_root() / self.site_id
 
     @property
     def clone_url(self) -> str:
@@ -285,11 +288,14 @@ class PdfSource:
     file_sha256: str
     source_id: str
     namespace_candidate: str
-    default_out_dir: Path
 
     @property
     def base_url(self) -> str:
         return f"pdf://{self.source_id}"
+
+    @property
+    def default_out_dir(self) -> Path:
+        return default_artifact_root() / self.source_id
 
     @property
     def document_url(self) -> str:
@@ -316,11 +322,14 @@ class LocalFileSource:
     file_sha256: str
     source_id: str
     namespace_candidate: str
-    default_out_dir: Path
 
     @property
     def base_url(self) -> str:
         return f"file://{self.source_id}"
+
+    @property
+    def default_out_dir(self) -> Path:
+        return default_artifact_root() / self.source_id
 
     @property
     def document_url(self) -> str:
@@ -471,13 +480,13 @@ def source_id_for_url(base_url: str) -> str:
 
 def default_out_dir(base_url: str) -> Path:
     if is_database_base_url(base_url):
-        return DEFAULT_CRAWL_OUT_DIR / source_id_for_url(base_url)
+        return default_artifact_root() / source_id_for_url(base_url)
     source = (
         detect_source(base_url) if not is_local_document_base_url(base_url) else None
     )
     if isinstance(source, (GitHubRepoSource, PdfSource, LocalFileSource)):
         return source.default_out_dir
-    return DEFAULT_CRAWL_OUT_DIR / source_id_for_url(base_url)
+    return default_artifact_root() / source_id_for_url(base_url)
 
 
 def sitemap_seed_urls(base_url: str) -> list[str]:
@@ -565,7 +574,6 @@ def pdf_source_from_path(value: str | Path) -> PdfSource:
         file_sha256=file_sha256,
         source_id=source_id,
         namespace_candidate=f"{source_id}-v1",
-        default_out_dir=DEFAULT_CRAWL_OUT_DIR / source_id,
     )
 
 
@@ -593,7 +601,6 @@ def local_file_source_from_path(value: str | Path) -> LocalDocumentSource:
         file_sha256=file_sha256,
         source_id=source_id,
         namespace_candidate=f"{source_id}-v1",
-        default_out_dir=DEFAULT_CRAWL_OUT_DIR / source_id,
     )
 
 
@@ -676,7 +683,6 @@ def parse_github_repo_url(url: str) -> GitHubRepoSource | None:
         repo_full_name=repo_full_name,
         site_id=site_id,
         namespace_candidate=f"{site_id}-v1",
-        default_out_dir=DEFAULT_CRAWL_OUT_DIR / site_id,
     )
 
     remaining = segments[2:]
@@ -698,7 +704,6 @@ def parse_github_repo_url(url: str) -> GitHubRepoSource | None:
             repo_full_name=repo_full_name,
             site_id=site_id,
             namespace_candidate=f"{site_id}-v1",
-            default_out_dir=DEFAULT_CRAWL_OUT_DIR / site_id,
             tree_ref=remaining[1],
             tree_path="/".join(remaining[2:]) or None,
         )
@@ -716,7 +721,6 @@ def parse_github_repo_url(url: str) -> GitHubRepoSource | None:
             repo_full_name=repo_full_name,
             site_id=site_id,
             namespace_candidate=f"{site_id}-v1",
-            default_out_dir=DEFAULT_CRAWL_OUT_DIR / site_id,
             blob_hint=GitHubBlobHint(ref=remaining[1], path="/".join(remaining[2:])),
         )
 
@@ -2419,6 +2423,7 @@ def crawl_local_document_with_plan(
 ) -> CrawlExecution:
     """Convert one local document and retain its already-built indexing plan."""
 
+    prepare_default_buoy_home(options.out_dir)
     total_started_at = observe_monotonic()
     conversion_started_at = observe_monotonic()
     label = "pdf" if isinstance(source, PdfSource) else "local file"
@@ -2488,6 +2493,7 @@ def crawl_pdf(source: PdfSource, options: CrawlOptions) -> dict[str, object]:
 def crawl_site_with_plan(options: CrawlOptions) -> CrawlExecution:
     """Run the Scrapling crawl and retain its already-built indexing plan."""
 
+    prepare_default_buoy_home(options.out_dir)
     total_started_at = observe_monotonic()
     options = CrawlOptions(
         base_url=validate_base_url(options.base_url),

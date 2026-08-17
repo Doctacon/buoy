@@ -22,6 +22,7 @@ from buoy_search.planning_service import (
     PlanProgress,
     PlanningRequest,
     PlanningService,
+    default_plan_out_dir,
     emit_progress,
 )
 
@@ -91,6 +92,29 @@ def crawl_summary(options: CrawlOptions) -> dict[str, object]:
 
 
 class PlanningServiceTests(unittest.TestCase):
+    def test_default_plan_output_is_global_and_distinct_from_database_crawl_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            home.mkdir()
+            with patch("buoy_search.local_paths.Path.home", return_value=home):
+                self.assertEqual(
+                    default_plan_out_dir(
+                        SimpleNamespace(kind="website"),
+                        "https://example.com/docs/",
+                    ),
+                    home / ".buoy/artifacts/site-crawls/example-com-plan",
+                )
+                for kind in ("duckdb_relation", "bigquery_relation", "snowflake_relation"):
+                    with self.subTest(kind=kind):
+                        crawl_dir = home / ".buoy/artifacts/site-crawls" / kind.removesuffix("_relation")
+                        self.assertEqual(
+                            default_plan_out_dir(
+                                SimpleNamespace(kind=kind, default_out_dir=crawl_dir),
+                                f"{kind.removesuffix('_relation')}://docs",
+                            ),
+                            crawl_dir.with_name(f"{crawl_dir.name}-plan"),
+                        )
+
     def test_one_source_writes_one_verified_namespace_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -106,18 +130,22 @@ class PlanningServiceTests(unittest.TestCase):
                     indexing_plan=process_corpus(options.out_dir / "pages"),
                 )
 
-            result = PlanningService(
-                crawl_runner=fake_crawl,
-                cleanup_runner=lambda *_args, **_kwargs: [],
-            ).plan(
-                PlanningRequest(
-                    source="https://example.com/docs/",
-                    out_dir=out_dir,
-                    state_root=root / "state",
-                    namespace="docs-explicit-v1",
-                ),
-                progress_callback=events.append,
-            )
+            with patch(
+                "buoy_search.local_paths.Path.home",
+                side_effect=RuntimeError("home unavailable"),
+            ):
+                result = PlanningService(
+                    crawl_runner=fake_crawl,
+                    cleanup_runner=lambda *_args, **_kwargs: [],
+                ).plan(
+                    PlanningRequest(
+                        source="https://example.com/docs/",
+                        out_dir=out_dir,
+                        state_root=root / "state",
+                        namespace="docs-explicit-v1",
+                    ),
+                    progress_callback=events.append,
+                )
 
             self.assertEqual(result.summary["namespace"], "docs-explicit-v1")
             self.assertEqual(result.summary["routing_prototypes"]["count"], 1)

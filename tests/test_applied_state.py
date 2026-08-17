@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -60,89 +61,132 @@ def sample_state(rows: list[AppliedStateRow] | None = None):
 
 class AppliedStateStoreTests(unittest.TestCase):
     def test_default_paths_are_per_namespace_duckdb(self) -> None:
-        paths = applied_state_paths(site_id="example-com", namespace="site-example-com-v1")
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            with mock.patch("buoy_search.local_paths.Path.home", return_value=home):
+                paths = applied_state_paths(site_id="example-com", namespace="site-example-com-v1")
 
-        self.assertEqual(paths.state_dir, Path(".buoy/state/example-com/site-example-com-v1"))
+        self.assertEqual(paths.state_dir, home / ".buoy/state/example-com/site-example-com-v1")
+        self.assertTrue(paths.state_dir.is_absolute())
         self.assertEqual(paths.database_path, paths.state_dir / "state.duckdb")
         self.assertEqual(paths.lock_path, paths.state_dir / "apply.lock")
 
-    def test_implicit_state_root_defaults_to_buoy_without_creating_it(self) -> None:
+    def test_implicit_state_root_defaults_to_global_buoy_home_without_creating_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            current = Path(tmp) / ".buoy"
-            legacy = Path(tmp) / ".turbo-search"
-            with mock.patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), mock.patch(
-                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
-            ):
+            home = Path(tmp) / "home"
+            home.mkdir()
+            expected = home / ".buoy"
+            with mock.patch("buoy_search.local_paths.Path.home", return_value=home):
                 resolved, warning = resolve_state_root(None)
 
-            self.assertEqual(resolved, current)
+            self.assertEqual(resolved, expected)
+            self.assertTrue(resolved.is_absolute())
             self.assertIsNone(warning)
-            self.assertFalse(current.exists())
-            self.assertFalse(legacy.exists())
+            self.assertFalse(expected.exists())
 
-    def test_implicit_state_root_uses_existing_buoy(self) -> None:
+    def test_implicit_state_root_ignores_project_roots_without_mutation(self) -> None:
+        for project_roots in ((".buoy",), (".turbo-search",), (".buoy", ".turbo-search")):
+            with self.subTest(project_roots=project_roots), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                home = root / "home"
+                cwd = root / "project"
+                home.mkdir()
+                cwd.mkdir()
+                for name in project_roots:
+                    legacy_root = cwd / name
+                    legacy_root.mkdir()
+                    (legacy_root / "marker").write_bytes(f"preserve {name}\n".encode())
+                historical_plan = cwd / "artifacts" / "site-crawls" / "historical-plan"
+                historical_plan.mkdir(parents=True)
+                (historical_plan / "plan.json").write_bytes(b"preserve historical plan\n")
+                before_tree = sorted(path.relative_to(cwd) for path in cwd.rglob("*"))
+                before_files = {
+                    path.relative_to(cwd): file_snapshot(path)
+                    for path in cwd.rglob("*")
+                    if path.is_file()
+                }
+                original_cwd = Path.cwd()
+                try:
+                    os.chdir(cwd)
+                    with mock.patch("buoy_search.local_paths.Path.home", return_value=home):
+                        resolved, warning = resolve_state_root(None)
+                finally:
+                    os.chdir(original_cwd)
+
+                after_tree = sorted(path.relative_to(cwd) for path in cwd.rglob("*"))
+                after_files = {
+                    path.relative_to(cwd): file_snapshot(path)
+                    for path in cwd.rglob("*")
+                    if path.is_file()
+                }
+                self.assertEqual(resolved, home / ".buoy")
+                self.assertIsNone(warning)
+                self.assertEqual(after_tree, before_tree)
+                self.assertEqual(after_files, before_files)
+                self.assertFalse((home / ".buoy").exists())
+
+    def test_explicit_project_state_roots_remain_relative_and_usable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            current = Path(tmp) / ".buoy"
-            legacy = Path(tmp) / ".turbo-search"
-            current.mkdir()
-            with mock.patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), mock.patch(
-                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
-            ):
-                resolved, warning = resolve_state_root(None)
+            root = Path(tmp)
+            home = root / "home"
+            cwd = root / "project"
+            home.mkdir()
+            cwd.mkdir()
+            for name in (".buoy", ".turbo-search"):
+                legacy_root = cwd / name
+                legacy_root.mkdir()
+                (legacy_root / "marker").write_text("preserve", encoding="utf-8")
+            original_cwd = Path.cwd()
+            try:
+                os.chdir(cwd)
+                with mock.patch("buoy_search.local_paths.Path.home", return_value=home):
+                    for explicit in (Path(".buoy"), Path(".turbo-search")):
+                        with self.subTest(explicit=explicit):
+                            resolved, warning = resolve_state_root(explicit)
+                            paths = save_applied_state(sample_state(), state_root=resolved)
+                            loaded = load_applied_state(
+                                site_id="example-com",
+                                namespace="site-example-com-v1",
+                                base_url="https://example.com/docs/",
+                                state_root=resolved,
+                            )
 
-            self.assertEqual(resolved, current)
-            self.assertIsNone(warning)
+                            self.assertEqual(resolved, explicit)
+                            self.assertIsNone(warning)
+                            self.assertEqual(
+                                paths.database_path,
+                                explicit
+                                / "state"
+                                / "example-com"
+                                / "site-example-com-v1"
+                                / "state.duckdb",
+                            )
+                            self.assertEqual(loaded, sample_state())
+                            self.assertEqual((resolved / "marker").read_text(encoding="utf-8"), "preserve")
+                    self.assertFalse((home / ".buoy").exists())
+            finally:
+                os.chdir(original_cwd)
 
-    def test_implicit_state_root_uses_legacy_in_place_without_copying(self) -> None:
+    def test_explicit_state_root_remains_usable_when_home_resolution_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            current = Path(tmp) / ".buoy"
-            legacy = Path(tmp) / ".turbo-search"
-            legacy.mkdir()
-            marker = legacy / "marker"
-            marker.write_text("preserve", encoding="utf-8")
-            before = sorted(path.relative_to(Path(tmp)) for path in Path(tmp).rglob("*"))
-            with mock.patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), mock.patch(
-                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
+            explicit = Path(tmp) / "explicit-state"
+            with mock.patch(
+                "buoy_search.local_paths.Path.home",
+                side_effect=RuntimeError("home unavailable"),
             ):
-                resolved, warning = resolve_state_root(None)
-            after = sorted(path.relative_to(Path(tmp)) for path in Path(tmp).rglob("*"))
+                paths = save_applied_state(sample_state(), state_root=explicit)
+                loaded = load_applied_state(
+                    site_id="example-com",
+                    namespace="site-example-com-v1",
+                    base_url="https://example.com/docs/",
+                    state_root=explicit,
+                )
 
-            self.assertEqual(resolved, legacy)
-            self.assertIn("using legacy state root", warning or "")
-            self.assertEqual(after, before)
-            self.assertEqual(marker.read_text(encoding="utf-8"), "preserve")
-            self.assertFalse(current.exists())
-
-    def test_implicit_state_root_refuses_dual_roots_without_mutation(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            current = Path(tmp) / ".buoy"
-            legacy = Path(tmp) / ".turbo-search"
-            current.mkdir()
-            legacy.mkdir()
-            before = sorted(path.relative_to(Path(tmp)) for path in Path(tmp).rglob("*"))
-            with mock.patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), mock.patch(
-                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
-            ):
-                with self.assertRaisesRegex(AppliedStateError, "both implicit state roots exist"):
-                    resolve_state_root(None)
-            after = sorted(path.relative_to(Path(tmp)) for path in Path(tmp).rglob("*"))
-            self.assertEqual(after, before)
-
-    def test_explicit_state_root_bypasses_dual_root_detection(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            current = Path(tmp) / ".buoy"
-            legacy = Path(tmp) / ".turbo-search"
-            explicit = Path(tmp) / "chosen"
-            current.mkdir()
-            legacy.mkdir()
-            with mock.patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), mock.patch(
-                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
-            ):
-                resolved, warning = resolve_state_root(explicit)
-
-            self.assertEqual(resolved, explicit)
-            self.assertIsNone(warning)
-            self.assertFalse(explicit.exists())
+            self.assertEqual(loaded, sample_state())
+            self.assertEqual(
+                paths.database_path,
+                explicit / "state/example-com/site-example-com-v1/state.duckdb",
+            )
 
     def test_missing_state_loads_as_first_apply_without_creating_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

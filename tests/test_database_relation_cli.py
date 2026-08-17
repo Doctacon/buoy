@@ -253,12 +253,19 @@ class DatabaseRelationCliTests(unittest.TestCase):
                 "Snowflake support is not installed",
             ),
         ]
-        for argv, target, error, expected in commands:
-            with self.subTest(argv=argv), patch(target, side_effect=error):
-                result, stdout, stderr = self.run_cli(argv)
-                self.assertEqual(result, 2)
-                self.assertEqual(stdout, "")
-                self.assertIn(expected, stderr)
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            home.mkdir()
+            with patch("buoy_search.local_paths.Path.home", return_value=home):
+                for argv, target, error, expected in commands:
+                    with self.subTest(argv=argv), patch(target, side_effect=error):
+                        result, stdout, stderr = self.run_cli(argv)
+                        self.assertEqual(result, 2)
+                        self.assertEqual(stdout, "")
+                        self.assertIn(expected, stderr)
+
+            self.assertTrue((home / ".buoy").is_dir())
+            self.assertFalse(Path(".buoy-test-not-created").exists())
 
     def test_invalid_backend_flag_and_path_combinations_fail_clearly(self) -> None:
         cases = [

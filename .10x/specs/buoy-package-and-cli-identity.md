@@ -1,8 +1,17 @@
 Status: active
 Created: 2026-07-21
-Updated: 2026-07-21
+Updated: 2026-08-17
+Amended-By: .10x/specs/user-global-buoy-home-defaults.md
 
 # Buoy Package, Dynamic Version, and CLI Identity
+
+## User-global-default amendment
+
+The later user-global-home specification supersedes only this record's claim
+that `.turbo-search` remains an implicit state-root fallback. Explicit legacy
+state and plan compatibility remains. The active routing artifact separately
+binds the exact raw bytes of `src/buoy_search/cli.py`; this path-default task
+does not bypass or silently rewrite that receipt.
 
 ## Purpose and scope
 

@@ -51,29 +51,56 @@ Create a plan for a source:
 
 ```bash
 buoy plan https://github.com/Doctacon/buoy \
-  --namespace github-doctacon-buoy-v1 \
-  --out-dir artifacts/buoy-repo
+  --namespace github-doctacon-buoy-v1
 ```
+
+Buoy prints the saved plan path under
+`~/.buoy/artifacts/site-crawls/`. When that directory contains exactly one
+supported pending plan, `apply` can select it without a path.
 
 Verify the saved plan and preview its change summary without touching
 Turbopuffer:
 
 ```bash
-buoy apply --plan artifacts/buoy-repo/plan.json --dry-run
+buoy apply --dry-run
 ```
 
 When the plan looks right, apply it and search the result:
 
 ```bash
 export TURBOPUFFER_API_KEY=...
-buoy apply --plan artifacts/buoy-repo/plan.json --approve
+buoy apply --approve
 buoy retrieve "How does repository indexing work?" \
   --namespace github-doctacon-buoy-v1
 ```
 
+If more than one pending plan exists, Buoy refuses to guess; pass the exact
+printed `plan.json` path with `--plan`.
+
 Planning may fetch or query the source itself. In the walkthrough above,
 `plan` and `apply --dry-run` do not connect to Turbopuffer; the approved
 `apply` writes to it, and `retrieve` reads from it.
+
+## Local storage
+
+A `uv tool` installation makes the `buoy` command available across your
+computer. Buoy's own mutable files also use one user-global default rather
+than whichever directory you happen to run it from:
+
+- applied-state databases live under `~/.buoy/state/`;
+- crawl output and pending plans live under
+  `~/.buoy/artifacts/site-crawls/`.
+
+Existing project-local `.buoy`, `.turbo-search`, and
+`artifacts/site-crawls` paths are not implicitly scanned, moved, backfilled, or
+deleted. You can continue using supported old state and plans by passing their
+exact paths with `--state-root`, `--out-dir`, and `--plan`. Once selected, an
+old state root receives normal state writes and a successfully applied old plan
+retains the normal verified cleanup lifecycle.
+
+This Buoy home does not relocate package-manager or model-download caches.
+`uv`, Hugging Face, and Sentence Transformers continue to use their own cache
+locations.
 
 ## Supported sources
 

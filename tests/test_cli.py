@@ -726,29 +726,52 @@ class CliTests(unittest.TestCase):
             "TURBO_SEARCH_EMBEDDING_MODEL -> BUOY_EMBEDDING_MODEL\n",
         )
 
-    def test_dual_implicit_state_roots_fail_before_plan_crawl(self) -> None:
+    def test_implicit_plan_ignores_project_state_roots_and_writes_under_user_home(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            current = root / ".buoy"
-            legacy = root / ".turbo-search"
-            current.mkdir()
-            legacy.mkdir()
+            home = root / "home"
+            home.mkdir()
+            project = root / "project"
+            project.mkdir()
+            for name in (".buoy", ".turbo-search"):
+                path = project / name
+                path.mkdir()
+                (path / "marker").write_text(name, encoding="utf-8")
+
+            def fake_crawl(_source, options):  # noqa: ANN001 - parser source union.
+                write_fake_crawl_page(options.out_dir / "pages")
+                return CrawlExecution(
+                    summary=fake_plan_crawl_summary(options),
+                    indexing_plan=process_corpus(options.out_dir / "pages"),
+                )
+
             stdout = StringIO()
             stderr = StringIO()
-            with patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), patch(
-                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
-            ), patch("buoy_search.cli.crawl_source") as crawl_mock, redirect_stdout(stdout), redirect_stderr(stderr):
-                result = main(["plan", "https://example.com/", "--json"])
+            old_cwd = Path.cwd()
+            try:
+                os.chdir(project)
+                with patch("buoy_search.local_paths.Path.home", return_value=home), patch(
+                    "buoy_search.planning_service.crawl_source_with_plan", side_effect=fake_crawl
+                ), redirect_stdout(stdout), redirect_stderr(stderr):
+                    result = main(["plan", "https://example.com/", "--json"])
+            finally:
+                os.chdir(old_cwd)
 
-            self.assertEqual(result, 2)
-            self.assertEqual(stdout.getvalue(), "")
-            self.assertIn("both implicit state roots exist", stderr.getvalue())
-            self.assertIn("--state-root", stderr.getvalue())
-            crawl_mock.assert_not_called()
+            self.assertEqual(result, 0, stderr.getvalue())
+            payload = json.loads(stdout.getvalue())
+            expected = home / ".buoy/artifacts/site-crawls/example-com-plan"
+            self.assertEqual(payload["out_dir"], str(expected))
+            self.assertTrue((expected / "plan.json").is_file())
+            self.assertFalse((home / ".buoy/state").exists())
+            self.assertEqual((project / ".buoy/marker").read_text(encoding="utf-8"), ".buoy")
+            self.assertEqual((project / ".turbo-search/marker").read_text(encoding="utf-8"), ".turbo-search")
+            self.assertFalse((project / "artifacts").exists())
 
     def test_explicit_state_root_bypasses_dual_roots(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            home = root / "home"
+            home.mkdir()
             current = root / ".buoy"
             legacy = root / ".turbo-search"
             explicit = root / "chosen-state"
@@ -758,15 +781,16 @@ class CliTests(unittest.TestCase):
 
             def fake_crawl(_source, options):  # noqa: ANN001 - parser source union.
                 write_fake_crawl_page(options.out_dir / "pages")
-                return fake_plan_crawl_summary(options)
+                return CrawlExecution(
+                    summary=fake_plan_crawl_summary(options),
+                    indexing_plan=process_corpus(options.out_dir / "pages"),
+                )
 
             stdout = StringIO()
             stderr = StringIO()
-            with patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), patch(
-                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
-            ), patch("buoy_search.cli.crawl_source", side_effect=fake_crawl), redirect_stdout(stdout), redirect_stderr(
-                stderr
-            ):
+            with patch("buoy_search.local_paths.Path.home", return_value=home), patch(
+                "buoy_search.planning_service.crawl_source_with_plan", side_effect=fake_crawl
+            ), redirect_stdout(stdout), redirect_stderr(stderr):
                 result = main(
                     [
                         "plan",
@@ -851,6 +875,20 @@ class CliTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
         self.assertIn("base URL must be an absolute http(s) URL", stderr.getvalue())
 
+    def test_crawl_default_home_resolution_failure_is_clean_and_precedes_crawl(self) -> None:
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch(
+            "buoy_search.local_paths.Path.home",
+            side_effect=RuntimeError("home unavailable"),
+        ), patch("buoy_search.cli.crawl_site") as crawl_mock, redirect_stdout(stdout), redirect_stderr(stderr):
+            result = main(["crawl", "--base-url", "https://example.com/", "--json"])
+
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("could not resolve an absolute user home for Buoy", stderr.getvalue())
+        crawl_mock.assert_not_called()
+
     def test_crawl_command_is_dry_run_and_needs_no_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp) / "crawl"
@@ -931,7 +969,9 @@ class CliTests(unittest.TestCase):
 
     def test_crawl_text_output_warns_when_caps_are_hit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            out_dir = Path(tmp) / "crawl"
+            home = Path(tmp) / "home"
+            home.mkdir()
+            out_dir = home / ".buoy/artifacts/site-crawls/example-com"
             fake_summary = {
                 "command": "crawl",
                 "dry_run": True,
@@ -958,7 +998,9 @@ class CliTests(unittest.TestCase):
                 "sample_chunks": [],
             }
             stdout = StringIO()
-            with patch("buoy_search.cli.crawl_site", return_value=fake_summary):
+            with patch("buoy_search.local_paths.Path.home", return_value=home), patch(
+                "buoy_search.cli.crawl_site", return_value=fake_summary
+            ):
                 with redirect_stdout(stdout):
                     result = main(["crawl", "--base-url", "https://example.com/", "--max-pages", "3", "--max-chunks", "5"])
 
@@ -977,16 +1019,21 @@ class CliTests(unittest.TestCase):
             return fake_plan_crawl_summary(options)
 
         stdout = StringIO()
-        with patch("buoy_search.cli.crawl_site", side_effect=fake_crawl):
-            with redirect_stdout(stdout):
-                result = main(
-                    [
-                        "crawl",
-                        "--base-url",
-                        "https://example.com/docs/",
-                        "--json",
-                    ]
-                )
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            home.mkdir()
+            with patch("buoy_search.local_paths.Path.home", return_value=home), patch(
+                "buoy_search.cli.crawl_site", side_effect=fake_crawl
+            ):
+                with redirect_stdout(stdout):
+                    result = main(
+                        [
+                            "crawl",
+                            "--base-url",
+                            "https://example.com/docs/",
+                            "--json",
+                        ]
+                    )
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(result, 0)

@@ -52,6 +52,7 @@ from buoy_search.catalog import (
     generated_semantics,
     prepare_card,
 )
+from buoy_search.local_paths import default_artifact_root
 from buoy_search.remote_catalog import (
     REMOTE_CATALOG_NAMESPACE,
     REMOTE_SCHEMA_V3,
@@ -84,7 +85,6 @@ from buoy_search.plan_diff import (
 from buoy_search.retriever import ranking_defaults_for_namespace
 
 JsonObject = dict[str, Any]
-DEFAULT_APPLY_PLAN_SEARCH_ROOT = Path("artifacts/site-crawls")
 REMOTE_CATALOG_CLIENT_FACTORY = create_client
 
 
@@ -301,8 +301,10 @@ def _load_stable_applied_state(
         os.close(parent_fd)
 
 
-def discover_latest_plan_path(search_root: Path = DEFAULT_APPLY_PLAN_SEARCH_ROOT) -> Path:
-    """Return the newest summary-qualified schema-v3 plan without opening deltas."""
+def discover_latest_plan_path(search_root: Path | None = None) -> Path:
+    """Return the sole implicit schema-v3 plan without opening deltas."""
+
+    search_root = default_artifact_root() if search_root is None else Path(search_root)
 
     if not search_root.exists():
         raise ApplyPlanError(f"No plan search root found: {search_root}; pass --plan explicitly.")
@@ -326,7 +328,12 @@ def discover_latest_plan_path(search_root: Path = DEFAULT_APPLY_PLAN_SEARCH_ROOT
             f"No supported schema-v3 plan.json files found under {search_root}; "
             "run `buoy plan <source>` or pass --plan."
         )
-    return max(candidates, key=lambda path: (path.stat().st_mtime_ns, str(path)))
+    if len(candidates) > 1:
+        raise ApplyPlanError(
+            f"Found {len(candidates)} supported pending plans under {search_root}; "
+            "pass --plan explicitly."
+        )
+    return candidates[0]
 
 
 def _verify_plan_file(plan_path: Path) -> tuple[VerifiedDeltaPlan, os.stat_result]:
