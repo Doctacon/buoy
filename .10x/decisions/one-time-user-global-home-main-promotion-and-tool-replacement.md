@@ -1,8 +1,27 @@
-Status: accepted
+Status: superseded
 Created: 2026-08-17
 Updated: 2026-08-17
 
 # One-Time User-Global-Home Main Promotion and Tool Replacement
+
+## 2026-08-17 disposition
+
+The exact one-time authorities were consumed by same-repository
+`develop -> main` PR #131 and merge result
+`R = 78ffbf796d4fbe1bee8de0544fa018c8da512698`, followed by the one reviewed
+global `uv tool install --force` invocation. `R` has ordered parents
+`[7f7ddfe245e1e5b57946eb6ac10dcc01358559fc,
+74f80d6a32b4b9ae4556e1af4cd06b628d9474e6]` and preserves exact develop tree
+`f43548540aa203013164164648549795c49dd44b`. All required release and
+post-main checks passed. The installation invocation exited zero, installed
+`buoy-search 0.5.2.dev36+g78ffbf796`, and passed independent post-install
+readback without creating the real `~/.buoy` application home.
+
+This decision is retained as historical context only. Both consumption
+boundaries have passed. It grants no retry, rollback, uninstall, second main
+merge, second tool replacement, recurring release or installation procedure,
+publication, provider operation, migration, deployment, protection change,
+direct push, or force push and MUST NOT be reused.
 
 ## Context
 
