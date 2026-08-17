@@ -1,10 +1,11 @@
-Status: active
+Status: done
 Created: 2026-08-16
 Updated: 2026-08-16
 Depends-On: .10x/tickets/done/2026-08-16-govern-pr-117-squash-topology-repair.md
 Decision: .10x/decisions/one-time-pr-117-squash-topology-repair.md
 Specification: .10x/specs/one-time-pr-117-squash-topology-repair.md
 Evidence: .10x/evidence/2026-08-16-pr-117-squash-topology-repair.md
+Review: .10x/reviews/2026-08-16-pr-117-squash-topology-repair-review.md
 
 # Bridge PR #117 Squash Topology Once
 
@@ -92,3 +93,34 @@ continuing after drift; merging `develop -> main`; publication/provider work.
 - 2026-08-16: Opened as an executable future child of the governance/content-
   alignment task. No bridge worktree, commit, branch, PR, CI, review verdict,
   merge, provider call, protection change, or publication occurred.
+- 2026-08-16: Bound pre-bridge develop
+  `f4fcd1c95110222f19826f7966a1e37b174ad82b` (`D`) and unchanged main
+  `0db802ec1a895f289c7600b19c80603986839873` (`M`). Content-empty bridge
+  `2072668d61babe3111056470aff139901950af94` (`C`) has ordered parents
+  `[D, M]` and exact `D` tree
+  `acd2346b2d4806aee30bd0924dae0bbc48a742e4`.
+- 2026-08-16: PR #121 reported zero files, additions, and deletions. Exact-head
+  CI run `31995662463` passed Python 3.11 job `95286736415`, Python 3.13 job
+  `95286736608`, and Build distributions job `95287078213`. Independent review
+  passed the exact topology and authorized merge-commit integration only.
+- 2026-08-16: Dedicated integration merged PR #121 by merge commit as exact
+  develop `33e7a52d85ed28a637090cedfa470c5ed9e8196b` (`I`), with ordered parents
+  `[D, C]`, unchanged tree, and both `M` and `C` as ancestors. Main remained
+  exact `M`; the exception is consumed.
+
+## Closure mapping
+
+- Exact identities, parents, trees, zero-content assertions, PR/check
+  identities, ancestry, normal release-candidate construction, and unchanged
+  external-state boundaries are recorded in
+  `.10x/evidence/2026-08-16-pr-117-squash-topology-repair.md`.
+- Independent pre-integration review and exact post-integration readback are
+  recorded in
+  `.10x/reviews/2026-08-16-pr-117-squash-topology-repair-review.md`.
+- Every acceptance criterion passed. The decision and one-time specification
+  are superseded, the active branch policy contains no remaining PR #117
+  merge-commit exception, and this bridge MUST NOT recur.
+
+## Blockers
+
+None.

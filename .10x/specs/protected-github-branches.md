@@ -60,19 +60,15 @@ NOT merge its pull request until the exact current head incorporates current
 review passes. The integration session MUST squash-merge the ordinary task pull
 request.
 
-The completed exact v0.4 squash-topology bridge is a consumed historical
-exception and grants no current authority. The only pending behavioral
-exception is the exact, non-repeatable PR #117 repair governed by
-`.10x/decisions/one-time-pr-117-squash-topology-repair.md` and
-`.10x/specs/one-time-pr-117-squash-topology-repair.md`. After its ordinary
-governance/content-alignment task is squash-integrated, only the content-empty
-bridge owned by
-`.10x/tickets/2026-08-16-bridge-pr-117-squash-topology-once.md` MUST use a merge
-commit so exact main ancestry survives integration. Current hosted branch
-protection is intentionally absent under the user's retained choice; exact-head
-CI and independent topology review are behavioral execution prerequisites, not
-mechanically enforced claims. This exception neither authorizes protection
-restoration/mutation nor merge commits for any other `work/* -> develop` task.
+The exact v0.4 and PR #117 squash-topology bridges are consumed historical
+exceptions and grant no current authority. PR #117 bridge PR #121 completed as
+integration `33e7a52d85ed28a637090cedfa470c5ed9e8196b` under
+`.10x/tickets/done/2026-08-16-bridge-pr-117-squash-topology-once.md`; its
+decision and specification are superseded, and its evidence and independent
+review record the exact non-repeatable result. No pending exception authorizes
+merge-commit integration for any `work/* -> develop` task. Current hosted
+branch protection remains intentionally absent under the user's retained
+choice, and no completed exception authorizes restoring or changing it.
 
 ### Release integration
 
@@ -102,13 +98,9 @@ flows above.
 - Remote `origin/develop` retains the ratified bootstrap commit in its ancestry.
 - GitHub reports no branch-protection rules for `main` or `develop`, matching
   the owner's retained choice, and this task leaves that state unchanged.
-- Task integration uses squash merge except for the completed, consumed v0.4
-  bridge and the exact pending PR #117 content-empty bridge. The latter has no
-  authority until its governance prerequisite is squash-integrated and its own
-  exact-head CI/review requirements pass. Neither exception authorizes any
-  other merge commit, protection mutation, or automatic release integration
-  while publication is paused. The PR #117 gates are behavioral because hosted
-  protection is intentionally absent.
+- Task integration uses squash merge. The completed v0.4 and PR #117
+  content-empty bridges are consumed historical exceptions; neither grants
+  current merge-commit, protection-mutation, or automatic-release authority.
 - CI source and static tests include both push branches.
 - An ordinary task pull request runs the three exact-head develop checks and is
   not merged by the integration session until they and independent review pass.

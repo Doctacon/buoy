@@ -39,10 +39,10 @@ only after this ordinary task is reviewed and squash-integrated.
   - `.10x/tickets/done/2026-08-16-rewrite-readme-for-newcomers.md`
 - Record the accepted one-time repair decision and active exact repair
   specification.
-- Truthfully update the active branch/CI specification to the observed absence
-  of hosted protection and behavioral PR/CI/review/merge-method gates, then
-  allow only the bridge owned by
-  `.10x/tickets/2026-08-16-bridge-pr-117-squash-topology-once.md` to use
+- At Phase 1 execution time, truthfully update the active branch/CI
+  specification to the observed absence of hosted protection and behavioral
+  PR/CI/review/merge-method gates, then allow only the then-future bridge owned by
+  `.10x/tickets/done/2026-08-16-bridge-pr-117-squash-topology-once.md` to use
   merge-commit integration into `develop`.
 - Apply the same bounded truth correction to root `AGENTS.md` and
   `.10x/specs/pi-worktree-development-flow.md`: absent protection grants no
@@ -74,15 +74,16 @@ ancestry.
 - The new decision/specification bind `M`, `D0`, `B`, user authority, exact
   ordered-parent/tree requirements, stop-on-drift behavior, and consumed
   non-repeatability.
-- Active branch-flow policy still requires squash for every ordinary task and
-  permits merge-commit integration only for the exact future bridge. It
-  truthfully records absent hosted protection and treats exact-head CI/review as
-  behavioral gates without authorizing a settings change.
-- The bridge ticket is executable, active, and content-neutral; it establishes
-  actual independent review and exact-head hosted CI as future execution
-  prerequisites without claiming either has already occurred.
-- Provisional evidence records only verified pre-bridge facts and cannot be
-  mistaken for bridge completion.
+- At the Phase 1 acceptance checkpoint, active branch-flow policy still
+  required squash for every ordinary task and permitted merge-commit
+  integration only for the exact then-future bridge. It truthfully recorded
+  absent hosted protection and treated exact-head CI/review as behavioral gates
+  without authorizing a settings change.
+- At that checkpoint, the bridge ticket was executable, active, and content-
+  neutral; it established actual independent review and exact-head hosted CI as
+  future execution prerequisites without claiming either had occurred.
+- At that checkpoint, provisional evidence recorded only verified pre-bridge
+  facts and could not be mistaken for bridge completion.
 - Required validation and `git diff --check` pass; the commit contains only the
   bounded paths above.
 
@@ -124,12 +125,12 @@ ancestry.
   and behavioral-gate truth correction)
 - `AGENTS.md` (the corresponding concise session instruction)
 - `.10x/tickets/done/2026-08-16-govern-pr-117-squash-topology-repair.md`
-- `.10x/tickets/2026-08-16-bridge-pr-117-squash-topology-once.md`
+- `.10x/tickets/done/2026-08-16-bridge-pr-117-squash-topology-once.md`
 - `.10x/evidence/2026-08-16-pr-117-squash-topology-repair.md`
 - `.10x/reviews/2026-08-16-pr-117-squash-topology-governance-review.md`
   when the independent governance review is recorded
 - `.10x/reviews/2026-08-16-pr-117-squash-topology-repair-review.md` only as the
-  future bridge review contract; this task must not predeclare its verdict
+  then-future bridge review contract; this task did not predeclare its verdict
 
 ## Closure mapping
 
@@ -148,12 +149,12 @@ ancestry.
   `e90b980aa0817e5e2a2d786c725f46fc34cc01b3`, and done ticket
   `c15c6932f230e02670bb3fd78882818e04f4b40f`. The seven reader-fix blobs
   remain exact pre-integration develop as enumerated in the shared evidence.
-  The accepted decision, active repair specification, passing governance
-  review, behavioral branch-flow exception, active bridge ticket, and
-  provisional evidence are present.
+  At Phase 1 integration, the accepted decision, then-active repair
+  specification, passing governance review, behavioral branch-flow exception,
+  then-active bridge ticket, and provisional evidence were present.
 - Phase 1 changed no source, test, dependency, lock, workflow, release,
   routing, provider, catalog, indexed content, credential, or protection
-  state. Phase 2 remains separately gated and unexecuted.
+  state. At that checkpoint, Phase 2 remained separately gated and unexecuted.
 
 ## External effects
 
@@ -183,12 +184,13 @@ v0.4 exception.
   154-package lock check, ranking contract, C6 forecast, 88-file in-memory
   compilation, five safe CLI help/version checks, unchanged
   source/test/tool/workflow comparison, and diff hygiene passed under isolated
-  Python 3.13. Hosted CI and independent governance review remain future
-  handoff gates and are not claimed here.
+  Python 3.13. At that pre-review checkpoint, hosted CI and independent
+  governance review remained future handoff gates and were not claimed.
 - 2026-08-16: Independent governance review passed for commit, branch push, and
   ordinary pull-request handoff. The final thirteen-path allowlist adds only the
-  review record and its links; hosted CI, integration, and bridge execution
-  remain unclaimed future gates.
+  review record and its links; at that review checkpoint hosted CI, integration,
+  and bridge execution remained unclaimed future gates.
 - 2026-08-16: PR #119 passed all three hosted jobs and was squash-integrated as
-  exact develop `034e01c3bb8bfa5726f57bdd5c17c74b7d55dc9f`. This records and
-  closes Phase 1 only; the ancestry bridge remains active and unexecuted.
+  exact develop `034e01c3bb8bfa5726f57bdd5c17c74b7d55dc9f`. This recorded and
+  closed Phase 1 only; at that checkpoint the ancestry bridge remained active
+  and unexecuted.

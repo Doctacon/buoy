@@ -31,8 +31,9 @@ identities:
   `c66e069b429cd4dde547b26de9875f53f3fc33fb`;
 - `.10x/specs/protected-github-branches.md`:
   `d104c797827a22214cbb411283ac593a126f3e8f`;
-- `.10x/tickets/2026-08-16-bridge-pr-117-squash-topology-once.md`:
-  `5aecdb53b278c6c8492c4119541c91fc60e0fc50`;
+- bridge ticket, originally reviewed at its active path and now closed at
+  `.10x/tickets/done/2026-08-16-bridge-pr-117-squash-topology-once.md`:
+  reviewed Phase 1 blob `5aecdb53b278c6c8492c4119541c91fc60e0fc50`;
 - governance ticket, now closed at
   `.10x/tickets/done/2026-08-16-govern-pr-117-squash-topology-repair.md`:
   reviewed Phase 1 blob `c9175edd89d6e3fe85c1b72d51138ecc0b03a0cc`;
@@ -103,6 +104,7 @@ Under the original pre-integration verdict, the final staged tree had to
 contain only the reviewed twelve paths plus this review record and its
 ticket/evidence link updates, and the governance pull request still required
 exact-head hosted CI and ordinary squash integration. The Phase 1 readback
-above records that those gates later passed. The bridge must still bind fresh
-refs and receive its own exact-head CI and independent review before
-merge-commit integration.
+above records that those gates later passed. At this governance review's
+checkpoint, the bridge still had to bind fresh refs and receive its own
+exact-head CI and independent review before merge-commit integration; the
+separate bridge review now records that later result.
