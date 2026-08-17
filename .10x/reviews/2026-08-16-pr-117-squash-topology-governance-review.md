@@ -60,8 +60,10 @@ bytes.
 - The content-resolution rule is complete: exact main wins only for the four
   pinned README blobs, exact develop wins every other preexisting path, and the
   future bridge preserves its freshly bound develop tree wholesale.
-- Provisional evidence does not claim a bridge, hosted CI, bridge review,
-  integration, main promotion, provider action, or publication.
+- At the original pre-integration review point, provisional evidence did not
+  claim hosted CI or integration and did not claim a bridge, bridge review,
+  main promotion, provider action, or publication. Its later Phase 1 checkpoint
+  is assessed separately below.
 
 Validation passed for the exact scope and blobs, README 94-line / 456-word
 contract, eight local targets, four displayed command shapes, source-release
@@ -69,7 +71,23 @@ policy and active routing receipts, 154-package lock, frozen ranking contract,
 C6 forecast, 88-file in-memory compilation, safe CLI help/version commands,
 unchanged executable/test/tool/workflow bytes, and diff hygiene. A separate
 full local suite was not required because those bytes remain exact reviewed
-develop; exact-head hosted PR CI remains a future behavioral integration gate.
+develop. At that original review point, exact-head hosted PR CI remained a
+future behavioral integration gate.
+
+## Phase 1 post-integration readback
+
+Read-only follow-up confirms that ordinary PR #119 used exact reviewed head
+`fcccda7adb35178902a894ae2a7ba2000702e857`. Hosted CI run `31992210742`
+completed successfully at that head: Python 3.11 job `95277638964`, Python
+3.13 job `95277638907`, and Build distributions job `95277896981` all passed.
+
+Ordinary squash integration produced exact develop commit
+`034e01c3bb8bfa5726f57bdd5c17c74b7d55dc9f`, whose sole parent is
+`fc867bebb541f06f116502798a08640df375a3dc` and whose tree is
+`660581caadb070b4ca24f8474f1696bb476c52ec`. This closes only the Phase 1
+governance/content-alignment gates reviewed here. It does not claim a bridge
+commit, bridge pull request, bridge CI, bridge review, bridge integration, main
+promotion, provider action, or publication.
 
 ## Verdict
 
@@ -81,8 +99,10 @@ deployment operation.
 
 ## Residual gates
 
-The final staged tree must contain only the reviewed twelve paths plus this
-review record and its ticket/evidence link updates. The governance pull request
-still requires exact-head hosted CI and ordinary squash integration. The bridge
-must later bind fresh refs and receive its own exact-head CI and independent
-review before merge-commit integration.
+Under the original pre-integration verdict, the final staged tree had to
+contain only the reviewed twelve paths plus this review record and its
+ticket/evidence link updates, and the governance pull request still required
+exact-head hosted CI and ordinary squash integration. The Phase 1 readback
+above records that those gates later passed. The bridge must still bind fresh
+refs and receive its own exact-head CI and independent review before
+merge-commit integration.
