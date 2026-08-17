@@ -1,8 +1,19 @@
 Status: active
 Created: 2026-07-14
-Updated: 2026-07-19
+Updated: 2026-08-17
+Amended-By: .10x/specs/user-global-buoy-home-defaults.md
 
 # Buoy Local Compatibility
+
+## User-global-default amendment
+
+The later user-global-home specification supersedes this record's implicit
+working-directory state-root selection, legacy fallback, dual-root refusal,
+and warning rules. Omitted state roots now resolve only to absolute
+`~/.buoy`. Explicit old `.buoy` and `.turbo-search` roots remain compatible
+without copying or migration and retain their normal selected-state behavior.
+The remaining identity, environment, and explicit-plan compatibility clauses
+stay active.
 
 ## Purpose and scope
 

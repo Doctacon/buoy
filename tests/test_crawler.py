@@ -88,9 +88,15 @@ class CrawlerHelperTests(unittest.TestCase):
     def test_namespace_candidate_and_default_out_dir_are_host_based_for_websites(self) -> None:
         url = "https://Scrapling.ReadTheDocs.io/en/latest/"
 
-        self.assertEqual(namespace_candidate(url), "site-scrapling-readthedocs-io-v1")
-        self.assertEqual(source_id_for_url(url), "scrapling-readthedocs-io")
-        self.assertEqual(default_out_dir(url), Path("artifacts/site-crawls/scrapling-readthedocs-io"))
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "buoy_search.local_paths.Path.home", return_value=Path(tmp)
+        ):
+            self.assertEqual(namespace_candidate(url), "site-scrapling-readthedocs-io-v1")
+            self.assertEqual(source_id_for_url(url), "scrapling-readthedocs-io")
+            self.assertEqual(
+                default_out_dir(url),
+                Path(tmp) / ".buoy/artifacts/site-crawls/scrapling-readthedocs-io",
+            )
 
     def test_local_pdf_path_defaults_are_filename_and_hash_based(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -99,7 +105,8 @@ class CrawlerHelperTests(unittest.TestCase):
             pdf_path.write_bytes(pdf_bytes)
             sha256 = hashlib.sha256(pdf_bytes).hexdigest()
 
-            source = detect_source(str(pdf_path))
+            with patch("buoy_search.local_paths.Path.home", return_value=Path(tmp)):
+                source = detect_source(str(pdf_path))
 
             self.assertIsInstance(source, PdfSource)
             assert isinstance(source, PdfSource)
@@ -112,7 +119,11 @@ class CrawlerHelperTests(unittest.TestCase):
             self.assertEqual(source.namespace_candidate, f"pdf-quarterly-report-{sha256[:16]}-v1")
             self.assertEqual(namespace_candidate(str(pdf_path)), source.namespace_candidate)
             self.assertEqual(source_id_for_url(str(pdf_path)), source.source_id)
-            self.assertEqual(default_out_dir(str(pdf_path)), Path("artifacts/site-crawls") / source.source_id)
+            with patch("buoy_search.local_paths.Path.home", return_value=Path(tmp)):
+                self.assertEqual(
+                    default_out_dir(str(pdf_path)),
+                    Path(tmp) / ".buoy/artifacts/site-crawls" / source.source_id,
+                )
 
     def test_local_file_path_defaults_are_extension_filename_and_hash_based(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -121,7 +132,8 @@ class CrawlerHelperTests(unittest.TestCase):
             csv_path.write_bytes(csv_bytes)
             sha256 = hashlib.sha256(csv_bytes).hexdigest()
 
-            source = detect_source(str(csv_path))
+            with patch("buoy_search.local_paths.Path.home", return_value=Path(tmp)):
+                source = detect_source(str(csv_path))
 
             self.assertIsInstance(source, LocalFileSource)
             assert isinstance(source, LocalFileSource)
@@ -135,7 +147,11 @@ class CrawlerHelperTests(unittest.TestCase):
             self.assertEqual(source.namespace_candidate, f"file-csv-quarterly-report-{sha256[:16]}-v1")
             self.assertEqual(namespace_candidate(str(csv_path)), source.namespace_candidate)
             self.assertEqual(source_id_for_url(str(csv_path)), source.source_id)
-            self.assertEqual(default_out_dir(str(csv_path)), Path("artifacts/site-crawls") / source.source_id)
+            with patch("buoy_search.local_paths.Path.home", return_value=Path(tmp)):
+                self.assertEqual(
+                    default_out_dir(str(csv_path)),
+                    Path(tmp) / ".buoy/artifacts/site-crawls" / source.source_id,
+                )
 
     def test_local_file_unsupported_existing_extension_fails_clearly(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -146,34 +162,69 @@ class CrawlerHelperTests(unittest.TestCase):
                 detect_source(str(image_path))
 
     def test_pdf_internal_base_url_supports_plan_artifact_identity(self) -> None:
-        self.assertEqual(namespace_candidate("pdf://pdf-quarterly-report-abc123"), "pdf-quarterly-report-abc123-v1")
-        self.assertEqual(source_id_for_url("pdf://pdf-quarterly-report-abc123"), "pdf-quarterly-report-abc123")
-        self.assertEqual(default_out_dir("pdf://pdf-quarterly-report-abc123"), Path("artifacts/site-crawls/pdf-quarterly-report-abc123"))
-        self.assertEqual(validate_base_url("pdf://pdf-quarterly-report-abc123#ignored"), "pdf://pdf-quarterly-report-abc123")
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "buoy_search.local_paths.Path.home", return_value=Path(tmp)
+        ):
+            self.assertEqual(namespace_candidate("pdf://pdf-quarterly-report-abc123"), "pdf-quarterly-report-abc123-v1")
+            self.assertEqual(source_id_for_url("pdf://pdf-quarterly-report-abc123"), "pdf-quarterly-report-abc123")
+            self.assertEqual(
+                default_out_dir("pdf://pdf-quarterly-report-abc123"),
+                Path(tmp) / ".buoy/artifacts/site-crawls/pdf-quarterly-report-abc123",
+            )
+            self.assertEqual(validate_base_url("pdf://pdf-quarterly-report-abc123#ignored"), "pdf://pdf-quarterly-report-abc123")
 
     def test_local_file_internal_base_url_supports_plan_artifact_identity(self) -> None:
-        self.assertEqual(namespace_candidate("file://file-csv-quarterly-report-abc123"), "file-csv-quarterly-report-abc123-v1")
-        self.assertEqual(source_id_for_url("file://file-csv-quarterly-report-abc123"), "file-csv-quarterly-report-abc123")
-        self.assertEqual(default_out_dir("file://file-csv-quarterly-report-abc123"), Path("artifacts/site-crawls/file-csv-quarterly-report-abc123"))
-        self.assertEqual(validate_base_url("file://file-csv-quarterly-report-abc123#ignored"), "file://file-csv-quarterly-report-abc123")
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "buoy_search.local_paths.Path.home", return_value=Path(tmp)
+        ):
+            self.assertEqual(namespace_candidate("file://file-csv-quarterly-report-abc123"), "file-csv-quarterly-report-abc123-v1")
+            self.assertEqual(source_id_for_url("file://file-csv-quarterly-report-abc123"), "file-csv-quarterly-report-abc123")
+            self.assertEqual(
+                default_out_dir("file://file-csv-quarterly-report-abc123"),
+                Path(tmp) / ".buoy/artifacts/site-crawls/file-csv-quarterly-report-abc123",
+            )
+            self.assertEqual(validate_base_url("file://file-csv-quarterly-report-abc123#ignored"), "file://file-csv-quarterly-report-abc123")
 
     def test_github_repo_url_root_defaults_are_repo_specific(self) -> None:
         url = "https://github.com/Doctacon/open-streaming-lab"
 
-        source = detect_source(url)
-
-        self.assertIsInstance(source, GitHubRepoSource)
-        assert isinstance(source, GitHubRepoSource)
-        self.assertEqual(source.kind, "github_repo")
-        self.assertEqual(source.repo_root_url, "https://github.com/Doctacon/open-streaming-lab")
-        self.assertEqual(source.repo_full_name, "Doctacon/open-streaming-lab")
-        self.assertEqual(source.clone_url, "https://github.com/Doctacon/open-streaming-lab.git")
-        self.assertEqual(source.site_id, "github-doctacon-open-streaming-lab")
-        self.assertEqual(source.namespace_candidate, "github-doctacon-open-streaming-lab-v1")
-        self.assertEqual(source.default_out_dir, Path("artifacts/site-crawls/github-doctacon-open-streaming-lab"))
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "buoy_search.local_paths.Path.home", return_value=Path(tmp)
+        ):
+            source = detect_source(url)
+            self.assertIsInstance(source, GitHubRepoSource)
+            assert isinstance(source, GitHubRepoSource)
+            self.assertEqual(source.kind, "github_repo")
+            self.assertEqual(source.repo_root_url, "https://github.com/Doctacon/open-streaming-lab")
+            self.assertEqual(source.repo_full_name, "Doctacon/open-streaming-lab")
+            self.assertEqual(source.clone_url, "https://github.com/Doctacon/open-streaming-lab.git")
+            self.assertEqual(source.site_id, "github-doctacon-open-streaming-lab")
+            self.assertEqual(source.namespace_candidate, "github-doctacon-open-streaming-lab-v1")
+            self.assertEqual(
+                source.default_out_dir,
+                Path(tmp) / ".buoy/artifacts/site-crawls/github-doctacon-open-streaming-lab",
+            )
         self.assertEqual(namespace_candidate(url), "github-doctacon-open-streaming-lab-v1")
         self.assertEqual(source_id_for_url(url), "github-doctacon-open-streaming-lab")
-        self.assertEqual(default_out_dir(url), Path("artifacts/site-crawls/github-doctacon-open-streaming-lab"))
+        with patch("buoy_search.local_paths.Path.home", return_value=Path(tmp)):
+            self.assertEqual(
+                default_out_dir(url),
+                Path(tmp) / ".buoy/artifacts/site-crawls/github-doctacon-open-streaming-lab",
+            )
+
+    def test_explicit_source_detection_does_not_require_home_resolution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            document = Path(tmp) / "notes.txt"
+            document.write_text("Explicit source content.", encoding="utf-8")
+            with patch(
+                "buoy_search.local_paths.Path.home",
+                side_effect=RuntimeError("home unavailable"),
+            ):
+                github = detect_source("https://github.com/Doctacon/open-streaming-lab")
+                local = detect_source(str(document))
+
+            self.assertIsInstance(github, GitHubRepoSource)
+            self.assertIsInstance(local, LocalFileSource)
 
     def test_github_repo_url_parser_accepts_trailing_slash_dot_git_and_tree_urls(self) -> None:
         trailing = parse_github_repo_url("https://github.com/owner/repo/")

@@ -39,6 +39,7 @@ from buoy_search.chunker import (
     process_corpus,
     sha256_text,
 )
+from buoy_search.local_paths import prepare_default_buoy_home
 from buoy_search.repo_syntax_chunking import (
     PYTHON_SYNTAX_ARMS,
     REPO_CHUNKING_ARMS,
@@ -482,6 +483,7 @@ def acquire_github_repo(
 def crawl_github_repo_with_plan(source: GitHubRepoSource, options: CrawlOptions) -> CrawlExecution:
     """Acquire a repository and retain its already-built indexing plan."""
 
+    prepare_default_buoy_home(options.out_dir)
     validate_repo_chunking_options(options)
     total_started_at = observe_monotonic()
     crawl_started_at = observe_monotonic()

@@ -756,59 +756,116 @@ class ApplyCliTests(unittest.TestCase):
         self.assertIn("retrieval after successful apply (live):", stdout)
         self.assertIn("no credentials, embeddings, or turbopuffer API calls", stdout)
 
-    def test_apply_defaults_to_latest_old_plan_and_uses_legacy_state_in_place(self) -> None:
+    def test_apply_uses_sole_global_plan_and_ignores_project_local_assets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            home = root / "home"
+            home.mkdir()
+            project = root / "project"
+            project.mkdir()
+            global_state = home / ".buoy"
+            _, global_plan_path = build_saved_plan(
+                home / ".buoy/artifacts/site-crawls/global-site-plan",
+                state_root=global_state,
+            )
             old_cwd = Path.cwd()
             try:
-                os.chdir(root)
+                os.chdir(project)
                 legacy_root = Path(".turbo-search")
                 legacy_root.mkdir()
                 marker = legacy_root / "marker"
                 marker.write_text("preserve", encoding="utf-8")
                 _, old_plan_path = build_saved_plan(
-                    root / "artifacts/site-crawls/old-site-plan",
+                    project / "artifacts/site-crawls/old-site-plan",
                     state_root=legacy_root,
                 )
-                _, latest_plan_path = build_saved_plan(
-                    root / "artifacts/site-crawls/latest-site-plan",
-                    state_root=legacy_root,
-                )
-                old_artifact_hash = json.loads(latest_plan_path.read_text(encoding="utf-8"))["artifact_hash"]
-                os.utime(old_plan_path, (1, 1))
-                os.utime(latest_plan_path, (2, 2))
+                old_plan_bytes = old_plan_path.read_bytes()
 
-                with patch(
+                with patch("buoy_search.local_paths.Path.home", return_value=home), patch(
                     "buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")
                 ), patch("buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")):
                     result, stdout, stderr = self.run_main(["apply", "--dry-run", "--json"])
 
-                self.assertFalse(Path(".buoy").exists())
+                self.assertFalse((project / ".buoy").exists())
                 self.assertEqual(marker.read_text(encoding="utf-8"), "preserve")
-                self.assertEqual(json.loads(latest_plan_path.read_text(encoding="utf-8"))["artifact_hash"], old_artifact_hash)
+                self.assertEqual(old_plan_path.read_bytes(), old_plan_bytes)
             finally:
                 os.chdir(old_cwd)
 
         payload = json.loads(stdout)
         self.assertEqual(result, 0, stderr)
-        self.assertEqual(payload["plan_path"], str(latest_plan_path.relative_to(root)))
+        self.assertEqual(payload["plan_path"], str(global_plan_path))
         self.assertEqual(payload["namespace"], "site-example-com-v1")
-        self.assertEqual(payload["state_path"], ".turbo-search/state/example-com/site-example-com-v1/state.duckdb")
+        self.assertEqual(
+            payload["state_path"],
+            str(home / ".buoy/state/example-com/site-example-com-v1/state.duckdb"),
+        )
         self.assertFalse(payload["approved"])
         self.assertFalse(payload["turbopuffer_api_calls"])
-        self.assertIn("using legacy state root .turbo-search in place", stderr)
+        self.assertEqual(stderr, "")
         self.assertNotIn("Warning", stdout)
 
-    def test_dual_implicit_state_roots_fail_before_apply_plan_or_remote_work(self) -> None:
+    def test_successful_implicit_apply_writes_global_state_and_cleans_only_global_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            current = root / ".buoy"
-            legacy = root / ".turbo-search"
-            current.mkdir()
-            legacy.mkdir()
-            with patch("buoy_search.applied_state.DEFAULT_STATE_ROOT", current), patch(
-                "buoy_search.applied_state.LEGACY_STATE_ROOT", legacy
-            ), patch("buoy_search.cli.discover_latest_plan_path") as discover_mock, patch(
+            home = root / "home"
+            home.mkdir()
+            project = root / "project"
+            project.mkdir()
+            project_marker = project / ".buoy" / "marker"
+            project_marker.parent.mkdir()
+            project_marker.write_text("preserve", encoding="utf-8")
+            global_state = home / ".buoy"
+            artifacts, plan_path = build_saved_plan(
+                home / ".buoy/artifacts/site-crawls/example-com-plan",
+                state_root=global_state,
+            )
+            old_cwd = Path.cwd()
+            try:
+                os.chdir(project)
+                with patch("buoy_search.local_paths.Path.home", return_value=home), patch(
+                    "buoy_search.apply.SentenceTransformerEmbedder", FakeEmbedder
+                ), patch("buoy_search.apply.TurbopufferWriter", FakeWriter), patch(
+                    "buoy_search.cli._confirm_apply", side_effect=AssertionError("prompted")
+                ):
+                    result, stdout, stderr = self.run_main(
+                        ["apply", "--approve", "--json"],
+                        env={"TURBOPUFFER_API_KEY": "test-key"},
+                    )
+            finally:
+                os.chdir(old_cwd)
+
+            payload = json.loads(stdout)
+            state_path = (
+                global_state
+                / "state"
+                / artifacts.manifest.site_id
+                / artifacts.manifest.namespace
+                / "state.duckdb"
+            )
+            self.assertEqual(result, 0, stderr)
+            self.assertTrue(payload["state_updated"])
+            self.assertTrue(payload["automatic_retrieval_ready"])
+            self.assertTrue(state_path.is_file())
+            self.assertFalse(plan_path.parent.exists())
+            self.assertEqual(project_marker.read_text(encoding="utf-8"), "preserve")
+            self.assertEqual({path.name for path in project.iterdir()}, {".buoy"})
+
+    def test_multiple_global_plans_fail_before_remote_work(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / "home"
+            home.mkdir()
+            state_root = home / ".buoy"
+            build_saved_plan(
+                home / ".buoy/artifacts/site-crawls/first-plan",
+                state_root=state_root,
+            )
+            build_saved_plan(
+                home / ".buoy/artifacts/site-crawls/second-plan",
+                state_root=state_root,
+            )
+            with patch("buoy_search.local_paths.Path.home", return_value=home), patch(
                 "buoy_search.apply.SentenceTransformerEmbedder", side_effect=AssertionError("embedder called")
             ), patch("buoy_search.apply.TurbopufferWriter", side_effect=AssertionError("writer called")):
                 result, stdout, stderr = self.run_main(
@@ -817,16 +874,19 @@ class ApplyCliTests(unittest.TestCase):
 
         self.assertEqual(result, 2)
         self.assertEqual(stdout, "")
-        self.assertIn("both implicit state roots exist", stderr)
-        discover_mock.assert_not_called()
+        self.assertIn("Found 2 supported pending plans", stderr)
+        self.assertIn("pass --plan explicitly", stderr)
 
     def test_apply_without_plan_fails_clearly_when_no_local_plan_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            home = root / "home"
+            home.mkdir()
             old_cwd = Path.cwd()
             try:
                 os.chdir(root)
-                result, stdout, stderr = self.run_main(["apply", "--dry-run", "--json"])
+                with patch("buoy_search.local_paths.Path.home", return_value=home):
+                    result, stdout, stderr = self.run_main(["apply", "--dry-run", "--json"])
             finally:
                 os.chdir(old_cwd)
 

@@ -17,6 +17,7 @@ import time
 from typing import TYPE_CHECKING, Callable, Iterable, Mapping, Protocol
 from urllib.parse import quote, urlparse
 
+from buoy_search.local_paths import default_artifact_root, prepare_default_buoy_home
 from buoy_search.chunker import IndexingPlan, process_corpus, sha256_text
 
 if TYPE_CHECKING:
@@ -193,7 +194,7 @@ def database_namespace_candidate(backend: str, source_id: str) -> str:
 
 
 def database_default_out_dir(backend: str, source_id: str) -> Path:
-    return Path("artifacts/site-crawls") / database_site_id(backend, source_id)
+    return default_artifact_root() / database_site_id(backend, source_id)
 
 
 def database_document_url(backend: str, source_id: str, document_id: str) -> str:
@@ -261,6 +262,7 @@ def crawl_database_relation_with_plan(
 ) -> DatabaseRelationExecution:
     """Acquire, materialize, and process one relation through the shared corpus path."""
 
+    prepare_default_buoy_home(options.out_dir)
     started_at = time.monotonic()
     scan_started_at = time.monotonic()
     scan = scan_relation(source, max_documents=options.max_pages)

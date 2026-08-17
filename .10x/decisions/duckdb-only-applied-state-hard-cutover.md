@@ -1,9 +1,17 @@
 Status: active
 Created: 2026-07-18
-Updated: 2026-08-13
-Amended-By: .10x/decisions/buoy-owns-bounded-multi-corpus-retrieval.md
+Updated: 2026-08-17
+Amended-By: .10x/decisions/buoy-owns-bounded-multi-corpus-retrieval.md, .10x/decisions/buoy-defaults-local-assets-to-one-user-home.md
 
 # DuckDB-Only Applied-State Hard Cutover
+
+## User-global-default amendment
+
+The later user-global-home decision supersedes this record's exclusion of the
+state-root fallback from change: omitted roots now use absolute `~/.buoy` and
+never inspect a noncanonical working-directory `.turbo-search`. Explicit old
+roots remain usable. The DuckDB-only schema, obsolete-JSON inertness, locking,
+and apply-ordering contract remains unchanged.
 
 ## Bounded-retrieval amendment
 

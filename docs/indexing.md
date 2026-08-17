@@ -12,6 +12,54 @@ Indexing has three gates:
 
 Stale rows are retained unless `--delete-stale` is also explicit. Namespace deletion is not part of this workflow.
 
+## Default local storage
+
+Buoy resolves its implicit local paths from the operating-system user's home,
+not from the current working directory:
+
+| Data | Implicit location |
+| --- | --- |
+| Applied state | `~/.buoy/state/<source-id>/<namespace>/state.duckdb` |
+| Crawl and plan artifacts | `~/.buoy/artifacts/site-crawls/` |
+| `apply` plan discovery | The same artifact root, only when it contains exactly one supported pending plan |
+
+Source-specific directories beneath the artifact root remain deterministic.
+`crawl` retains its normal crawl leaf, while every default plan leaf ends in
+`-plan` (including database-relation plans) so the two outputs cannot collide.
+A successful schema-v3 `plan` retains exactly `plan.json` and `delta.duckdb`
+in its plan directory.
+
+The existing `--state-root`, `--out-dir`, and `--plan` options remain explicit
+overrides. They do not redirect one another, so a plan written to a custom
+`--out-dir` must later be selected with `--plan`. For example, a supported plan
+and DuckDB ledger already kept in a project can still be selected explicitly:
+
+```bash
+uv run buoy apply \
+  --plan /path/to/project/artifacts/site-crawls/example-plan/plan.json \
+  --state-root /path/to/project/.buoy \
+  --dry-run
+```
+
+Omitting those options does not inspect a noncanonical current-directory
+`.buoy`, legacy `.turbo-search`, or `artifacts/site-crawls`. Buoy does not
+implicitly copy, move, merge, backfill, or delete any existing files. If
+continuity with an old ledger matters, use its explicit `--state-root` for both
+planning and apply; otherwise the user-global ledger begins with normal
+first-apply semantics. Explicitly selected state and plans retain normal state
+writes and verified success-only plan cleanup.
+
+This layout governs Buoy-owned applied state and crawl/plan artifacts only.
+Package and model caches owned by `uv`, Hugging Face, or Sentence Transformers
+keep their normal cache locations.
+
+Compatibility note: several option descriptions in `buoy ... --help` still
+name the former current-directory defaults. Automatic routing binds the exact
+CLI module bytes as an active safety receipt, so this path-only change does not
+silently rewrite that receipt. The runtime defaults and explicit behavior in
+this section are current; updating those embedded help strings requires a
+separate routing recertification.
+
 ## Sources
 
 ### Websites
@@ -199,6 +247,10 @@ plan.json
 delta.duckdb
 ```
 
+Without `--out-dir`, that directory is created beneath
+`~/.buoy/artifacts/site-crawls/`, regardless of the shell's current working
+directory.
+
 `plan.json` is bounded metadata: source and namespace identity, options, diff
 counts, the applied-state baseline hash, routing-passage counts, delta counts,
 and artifact identity. `delta.duckdb` contains exact
@@ -252,7 +304,12 @@ See `uv run buoy plan --help` for current caps and all crawl controls.
 uv run buoy apply --dry-run
 ```
 
-By default, apply selects the newest plan under `artifacts/site-crawls/`. Use `--plan <path>` when multiple plans exist. Plain apply requires an interactive stdin; scripts must choose `--dry-run` or `--approve`, and piped input cannot confirm.
+By default, apply searches `~/.buoy/artifacts/site-crawls/` and proceeds only
+when exactly one supported pending plan exists there. Zero or multiple plans
+fail without choosing one; use `--plan <path>` to select the intended plan.
+Implicit discovery never searches the current directory. Plain apply requires
+an interactive stdin; scripts must choose `--dry-run` or `--approve`, and
+piped input cannot confirm.
 
 Preflight fully verifies the schema-v3 metadata and delta, row identities,
 embedding-text hashes, routing-passage text and provenance, artifact integrity,
@@ -354,10 +411,15 @@ The reviewed plan governs apply precision; ambient retrieval settings cannot ove
 Each `(source, namespace)` has an embedded DuckDB ledger:
 
 ```text
-.buoy/state/<source-id>/<namespace>/state.duckdb
+~/.buoy/state/<source-id>/<namespace>/state.duckdb
 ```
 
-It stores current row identity/status plus compact apply summaries, not full snapshots. Existing `.turbo-search` state remains usable without being moved; see [Migrating from turbo-search](migrating-to-buoy.md). Replanning the same source reports new/changed rows to upsert, unchanged rows to skip, and previously applied rows now stale.
+It stores current row identity/status plus compact apply summaries, not full
+snapshots. Existing project-local `.buoy` or `.turbo-search` state remains
+untouched and can be used with an explicit `--state-root`; it is no longer an
+implicit fallback. See [Migrating to focused Buoy](migrating-to-buoy.md).
+Replanning the same source against the selected state root reports new/changed
+rows to upsert, unchanged rows to skip, and previously applied rows now stale.
 
 A same-namespace approved apply fails fast if another apply holds its lock. Different namespaces have independent ledgers and may apply concurrently. State is local to this machine; it is not a shared service.
 

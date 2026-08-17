@@ -29,6 +29,7 @@ from buoy_search.applied_state import (
     AppliedState,
     AppliedStateRow,
 )
+from buoy_search.local_paths import default_state_root
 from buoy_search.config import DEFAULT_EMBEDDING_PRECISION, EMBEDDING_PRECISIONS
 from buoy_search.crawler import namespace_candidate, safe_slug, source_id_for_url, validate_base_url
 from buoy_search.plan_validation import (
@@ -253,10 +254,16 @@ def site_id_for_url(base_url: str) -> str:
     return safe_slug(source_id_for_url(base_url), fallback="site")
 
 
-def state_path_for_site(site_id: str, namespace: str, *, state_root: Path = Path(".buoy")) -> str:
+def state_path_for_site(
+    site_id: str,
+    namespace: str,
+    *,
+    state_root: Path | None = None,
+) -> str:
     """Retained helper for applied-state callers; schema-v3 plans do not persist it."""
 
-    return str(Path(state_root) / "state" / site_id / namespace / "state.duckdb")
+    root = default_state_root() if state_root is None else Path(state_root)
+    return str(root / "state" / site_id / namespace / "state.duckdb")
 
 
 def generic_site_row_id(
@@ -304,7 +311,7 @@ def build_plan_artifacts(
     embedding_model: str = DEFAULT_PLAN_EMBEDDING_MODEL,
     embedding_precision: str = DEFAULT_EMBEDDING_PRECISION,
     diff: object | None = None,
-    state_root: Path = Path(".buoy"),
+    state_root: Path | None = None,
     applied_state: AppliedState | None = None,
     state_present: bool = False,
     source_summary: Mapping[str, object] | None = None,

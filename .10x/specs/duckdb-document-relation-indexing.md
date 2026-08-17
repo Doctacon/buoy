@@ -1,8 +1,17 @@
 Status: active
 Created: 2026-07-22
-Updated: 2026-07-24
+Updated: 2026-08-17
+Amended-By: .10x/specs/user-global-buoy-home-defaults.md
 
 # DuckDB Document Relation Indexing
+
+## User-global output amendment
+
+The later user-global-home specification changes only the implicit output
+prefix and plan-leaf separation. The example crawl output is now
+`~/.buoy/artifacts/site-crawls/duckdb-gong-calls`; its plan uses the distinct
+`duckdb-gong-calls-plan` sibling. Explicit outputs and DuckDB source/document
+identity remain unchanged.
 
 ## Purpose and scope
 
