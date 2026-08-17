@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-15
-Updated: 2026-07-15
+Updated: 2026-08-16
 
 # Pi Worktree Development Flow
 
@@ -8,7 +8,9 @@ Updated: 2026-07-15
 
 Define the repository-local instructions every new Pi session receives for isolated task development and controlled integration.
 
-This specification governs the root `AGENTS.md` and Pi session behavior. GitHub enforcement is governed by `.10x/specs/protected-github-branches.md`.
+This specification governs the root `AGENTS.md` and Pi session behavior. Hosted
+branch posture and repository behavioral gates are governed by
+`.10x/specs/protected-github-branches.md`.
 
 ## Behavior
 
@@ -42,7 +44,9 @@ Before handing work to integration, a task session MUST:
 3. commit the bounded change on its `work/*` branch;
 4. report the branch, commit, validation, compatibility risks, and external-side-effect risks.
 
-When `develop` advances before merge, the task branch MUST incorporate the new target state and re-run required CI before GitHub allows integration.
+When `develop` advances before merge, the task branch MUST incorporate the new
+target state and re-run exact-head CI. The integration session MUST NOT merge
+until required CI and independent review pass on that exact head.
 
 ### Durable project discipline
 
@@ -59,7 +63,11 @@ The root instructions MUST retain the repository's 10x execution gate, ticket ow
 ## Constraints
 
 - `AGENTS.md` is behavioral guidance, not a security boundary.
-- GitHub branch protection remains the mechanical merge boundary.
+- Hosted branch protection is absent under the owner's retained choice and MUST
+  NOT be created or changed by an agent, workflow, integration session, or
+  release session. Pull requests, exact-head CI, independent review, and merge
+  methods remain behavioral stop gates; absence of mechanical enforcement
+  grants no push or merge authority.
 - Instructions MUST be concise enough to remain useful in every Pi session.
 - Existing parent/global instructions remain additive; the root file MUST NOT attempt to replace Pi's system prompt.
 
