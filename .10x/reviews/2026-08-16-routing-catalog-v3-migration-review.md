@@ -1,14 +1,14 @@
-Status: pending
+Status: pass
 Created: 2026-08-16
 Updated: 2026-08-17
-Target: exact three-record authority plus future live preview, operation, and closure
-Ticket: .10x/tickets/2026-08-16-migrate-routing-catalog-v3.md
+Target: PR #127 / S and exact schema-v3 operation closure
+Ticket: .10x/tickets/done/2026-08-16-migrate-routing-catalog-v3.md
 Evidence: .10x/evidence/2026-08-16-routing-catalog-v3-migration.md
 Decision: .10x/decisions/buoy-derives-routing-prototypes-from-reviewed-plans.md
 Specification: .10x/specs/automatic-routing-after-apply.md
 Record-Verdict: pass
 Preview-Verdict: go
-Post-Operation-Verdict: pending
+Post-Operation-Verdict: pass
 
 # Live Routing Catalog V3 Migration Review
 
@@ -19,8 +19,9 @@ Independent records-phase review bound exact task base / current develop
 `efc512005e3f31f9b26da408473324c35fc15774` and these settled candidate
 identities:
 
-- `.10x/tickets/2026-08-16-migrate-routing-catalog-v3.md` blob
-  `28c832131ad097304763a515430ad6e7c7cb6dd5`;
+- the same ticket now at
+  `.10x/tickets/done/2026-08-16-migrate-routing-catalog-v3.md` (then active)
+  blob `28c832131ad097304763a515430ad6e7c7cb6dd5`;
 - `.10x/evidence/2026-08-16-routing-catalog-v3-migration.md` blob
   `748b4aa6fb12cb2ac9deab62b8a754a6d07ee0f0`;
 - this review path, with `Record-Verdict: pass`, `Preview-Verdict: pending`,
@@ -165,10 +166,11 @@ append-only; only current status/verdict/link fields and the ticket path
 advance. Any failed, uncertain, or mismatched state remains open and receives
 no PASS.
 
-## Pending verdicts
+## Historical verdicts before operation
 
 - Preview verdict: go under the one-time exhaustive-field exception below.
-- Post-operation verdict: pending; no v3 operation has been reviewed.
+- Post-operation verdict was pending at the Preview GO checkpoint; no v3
+  operation had then been reviewed.
 
 ## One-time exception and Preview GO
 
@@ -272,20 +274,99 @@ model inferences, and mutation-verification queries; affected IDs are empty.
 
 `Preview-Verdict: go` binds only this exhaustive object, structured digest,
 snapshot, projection, exact-R reader, region/catalog, inventory explanation,
-accounting, privacy boundary, and uninterrupted freeze. Post-operation review
-remains pending; this is not PASS or evidence that a migration write occurred.
+accounting, privacy boundary, and uninterrupted freeze. At that checkpoint,
+post-operation review remained pending; Preview GO was not PASS or evidence
+that a migration write had occurred.
 
-Approval remains HOLD until this exact three-record exception and Preview GO
-integrate into `develop`. Before approval, the executor must freshly rebind the
-installed exact-R identities, private credential presence, exact region, and
-uninterrupted freeze. Only then may it invoke exactly once:
+Approval remained HOLD until this exact three-record exception and Preview GO
+integrated into `develop`. Before approval, the executor had to freshly rebind
+the installed exact-R identities, private credential presence, exact region,
+and uninterrupted freeze. Only then could it invoke exactly once:
 
 ```text
 /Users/crlough/.local/bin/buoy catalog migrate-routing-v3 --expected-snapshot-revision abb0d38193c8c00963fff6536bcf755f3bf707942a2b1f1ba4fa90b74f5a4ce8 --expected-projection-sha256 eb006aff8058da775ffd9a3dcae19e41050cf2b471b831aa95755c2e1cca5a38 --approve --region gcp-us-central1 --json
 ```
 
-This records-only review branch made no provider call and inspected no
-credential. Its verdict permits only exact three-record validation, commit,
-push, and ordinary PR handoff; its session may not approve, open or merge a PR,
-or change source, dependencies, workflows, specifications, publication,
+That records-only review branch made no provider call and inspected no
+credential. Its verdict permitted only exact three-record validation, commit,
+push, and ordinary PR handoff; its session could not approve, open or merge a
+PR, or change source, dependencies, workflows, specifications, publication,
 provider state, or any unrelated surface.
+
+## Independent post-operation PASS
+
+Independent post-operation review binds exact closure base
+`S = 2dc00f5dec73820b63a71c2cf860e43ad4cc4f63`, sole parent
+`e4993e86e65d0e57a80baf887749b6d1fa29a708`, and tree
+`a4a90aa70f5d6610234d9d07959a642d4acfe455`. PR #127 had exact head
+`ddef40e2a53e7c5781279d3178f2fa2385f487ae`, exactly the three migration
+record paths, and ordinary squash integration `S`; CI run `32006692705`
+passed Python 3.11 job `95317528721`, Python 3.13 job `95317528730`, and
+Build distributions job `95318192181`. Hosted PR comments and reviews were
+empty; this independent records review supplies the substantive verdict.
+Exact main remained `R = 4d1efc458fd13b270bf84984ffeb550d5b24fd04`.
+
+The review rechecked the fresh pre-approval identity of the sole exact-R
+Buoy executable/package at version `0.5.2.dev28+g4d1efc458` under CPython
+`3.11.10`; installed `catalog_cli.py` and `remote_catalog.py` hashes against
+exact-R blobs; installed `turbopuffer 2.4.0`, `DEFAULT_MAX_RETRIES=4`, and
+both retry-source hashes; command help; privately true credential presence
+without retaining value/output; exact region `gcp-us-central1`; literal
+catalog `buoy-routing-catalog-v1`; and the uninterrupted mutation freeze.
+
+The bound snapshot and projection in the once-invoked approval command match
+Preview GO byte-for-byte. The command exited `0` with empty stderr. Its raw
+stdout is 7,349 bytes including the trailing newline, SHA-256
+`44af6e7158123803e2079c820a80c6d0c29938ee197682a16a4afbe62363b22a`;
+its canonical sorted compact JSON is 5,994 bytes without a trailing newline,
+SHA-256
+`aed3a9af26e42073a3463b587e049970fe51d8d11c621dca5c4af87561d1aea5`.
+The evidence preserves the complete sanitized 22-field object, explicit
+success-field omissions, and the exhaustive preview-to-approval delta.
+
+That result proves exact schema v3, final fingerprint
+`f596eccb4878fc462d4ea7165a553bd0f21b13bbce46af70a867999daedc888a`,
+only the three expected non-filterable additions, and
+`verification_complete=true`. Snapshot
+`abb0d38193c8c00963fff6536bcf755f3bf707942a2b1f1ba4fa90b74f5a4ce8`
+and projection
+`eb006aff8058da775ffd9a3dcae19e41050cf2b471b831aa95755c2e1cca5a38`
+remain unchanged. All 13 card identities/revisions, the 17/13 inventory,
+counts, coverage, and the one explained missing-card gap are unchanged;
+`affected_ids=[]`.
+
+The command performed exactly two logical strong reads and one logical
+schema-write invocation, with all card/content/example/passage/vector/model/
+delete/backfill counters zero. Complete accounting is 11 logical SDK
+invocations: four namespace-list pages, two metadata reads, four card-query
+pages, zero separate mutation-verification queries, and one write. Four read
+billing entries each report `256000000` queried / `58409` returned; the write
+billing entry reports zero row bytes written, not zero schema invocation.
+Installed retry behavior bounds the 11 logical calls to 11–55 hidden physical
+attempts and the sole write to one–five attempts under one reused idempotency
+key. There was no second approval or separate repeat-read command.
+
+Exact-R source makes a successful built-in readback compare every full card
+before/after, including stored vectors, routing examples, passages, evidence
+vectors, and evidence-vector hashes. Together with
+`verification_complete=true`, unchanged projection/identities/revisions, and
+the exact operation counters, this proves unchanged existing card payloads
+and empty new evidence banks. It proves a schema-only migration, not a card
+registration, routing-evidence backfill, or source-aware conversion of old
+cards.
+
+`Post-Operation-Verdict: pass` is limited to this exact output and operation.
+The earlier HOLD became historical when PR #127 integrated as exact `S`; the
+once-invoked successful approval consumed all provider authority in this
+ticket. No retry, rollback, second provider command/read, registration,
+plan/apply, or backfill is authorized. No credential or raw provider row,
+passage, or vector is recorded. There was no publication, deployment, package
+install, tag, GitHub Release, protection/ruleset, branch, model, or unrelated
+effect.
+
+The closure itself is provider-free and changes only this review, the linked
+evidence, and the ticket moved to the linked done path. It may validate,
+commit, push, and undergo ordinary PR handoff only; it grants its own session
+no provider, credential, PR creation/integration, direct-push, or unrelated
+authority. Preview GO remains valid historical evidence, and the final PASS
+permits evidence status `recorded` and ticket status `done`.
