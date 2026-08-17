@@ -1,6 +1,6 @@
 Status: provisional
 Created: 2026-08-16
-Updated: 2026-08-16
+Updated: 2026-08-17
 Ticket: .10x/tickets/2026-08-16-migrate-routing-catalog-v3.md
 Decision: .10x/decisions/buoy-derives-routing-prototypes-from-reviewed-plans.md
 Specification: .10x/specs/automatic-routing-after-apply.md
@@ -218,3 +218,301 @@ statuses/verdicts, moves the ticket to
 `.10x/tickets/done/2026-08-16-migrate-routing-catalog-v3.md`, changes this
 record's and the review's `Ticket:` link to that done path, and integrates the
 records-only closure.
+
+## Authority integration and contemporaneous preview preflight
+
+The initial authority records integrated through PR #126. Exact PR base was
+`31d2a7756c5bd712147772a77b606154fb2610c3`; exact one-commit head was
+`ae708f3846e665eecf854a38bc41e214563e7ed8`; and the exact three changed paths
+were this evidence, its ticket, and its review. CI run `32004320577` passed
+Python 3.13 job `95310638934`, Python 3.11 job `95310639046`, and Build
+distributions job `95311183447`. Hosted comments and reviews were empty. The
+ordinary squash integration is
+`e4993e86e65d0e57a80baf887749b6d1fa29a708`, with sole parent
+`31d2a7756c5bd712147772a77b606154fb2610c3` and exact tree
+`4e51d5297eb18b4b872544cc34b21bd42ffcd1ab`. Exact main remained
+`R = 4d1efc458fd13b270bf84984ffeb550d5b24fd04`.
+
+Immediately before preview, read-only preflight reverified:
+
+- sole executable `/Users/crlough/.local/bin/buoy`, package/version
+  `0.5.2.dev28+g4d1efc458`, and CPython `3.11.10`;
+- installed `catalog_cli.py` SHA-256
+  `4803b57bf9037b026d7ecc3b45b4e6bae9258c96ac13c166f22a7c70a5efb677`
+  against exact-R blob `7871cdce67759e1f58c4c5a54197974728b536fe`;
+- installed `remote_catalog.py` SHA-256
+  `9980208230c4743322447b32db75844cfdd2bcb6fc33abda0153d751db8048f1`
+  against exact-R blob `27d663ea63edfd01ba82f55c3e5943c71678749c`;
+- installed `turbopuffer 2.4.0`, `DEFAULT_MAX_RETRIES=4`, `_constants.py`
+  SHA-256
+  `3512a85ebc1dc3d3a76139a644cb4c4eb2482068e2b05d1e3ebe8195a570f304`,
+  and `_base_client.py` SHA-256
+  `76cc43f05ee8f265a2b86d5ccd6fed8d94ae7925a427eecf717cea5b7f8eee91`;
+- successful `catalog migrate-routing-v3 --help`, credential presence privately
+  true without retaining its value or output, and exact nonsecret region
+  `gcp-us-central1`.
+
+The routing-catalog mutation freeze began before preview and remained
+uninterrupted through capture and review. No catalog operation has occurred
+since this preview. The exact command
+
+```text
+/Users/crlough/.local/bin/buoy catalog migrate-routing-v3 --region gcp-us-central1 --json
+```
+
+exited `0` with empty stderr.
+
+## One-time exhaustive-field preview binding
+
+The original stdout file was not retained, so
+`raw_stdout_sha256=unavailable-not-captured`. No raw-output digest is claimed,
+and the parsed capture below is not represented as raw stdout or as a
+reconstruction of unavailable stdout bytes. A second provider read solely to
+obtain a raw-output digest is forbidden.
+
+For this output only, the independently reviewed one-time exception replaces
+only the raw-output digest with an exhaustive ordered capture of every parsed
+JSON field and an independently recomputed structured digest. The following
+object is ordered recursively by key:
+
+```json
+{
+  "affected_ids": [],
+  "approved": false,
+  "card_identities": [
+    {
+      "card_revision": "5d91be183324820cd544681096895e8e26af559c4e116362f74a9a198f361e09",
+      "namespace": "routing-test-fleetdeck-v1",
+      "row_id": "bc_55e61a2303a028ef758a9b3109fb6e69e5e816d288207cffb9418cf41b894"
+    },
+    {
+      "card_revision": "f118fe4959e2a46a28eb5d04e5d109380a63deff9e57ed8f18e87d74e8e18ec4",
+      "namespace": "routing-test-fleetshield-v1",
+      "row_id": "bc_25b74c624a9dad2d6c14e2b3ea87b7f4d9559495acd14bd8dbb94f4d6ff5f"
+    },
+    {
+      "card_revision": "132fdfced513e80671ec6b4c40048ca54b3854149a9808c16db183180216109b",
+      "namespace": "routing-test-orbitstock-v1",
+      "row_id": "bc_a1eef2fbc223f2771fc129d26dcf59dede0d7017c63e79c36c9cca67ae761"
+    },
+    {
+      "card_revision": "e009324f6a8d8e4c073be5cf379d1318c3136cd61e001401372a8dff5ea08049",
+      "namespace": "routing-test-orbitwatch-v1",
+      "row_id": "bc_19ae3de0120123c8cd2947d2f049003c27503de936fb9bff69e6302aea9e5"
+    },
+    {
+      "card_revision": "868cad7d4beec3409734761aaa859fbef33bb35c747a2ad5a651172e904fdc5a",
+      "namespace": "site-dagster-io-benchmark-v1",
+      "row_id": "bc_c861f601295c592d8c2b1cfa2f3c6a1aafc581ad5a0aa409c094731a29d3e"
+    },
+    {
+      "card_revision": "a225f5ee64b682f69bfd7e5b22a9f5151220e12874e9d5c081e73663b68b76eb",
+      "namespace": "site-dagster-io-v1",
+      "row_id": "bc_dde01f1e5f88e9078c088fb3819ec683c74c1523b2bf1b10b2f1fc55b4db5"
+    },
+    {
+      "card_revision": "0ca826e3c5a89a2e3f69b220a238b0f3fee28df2e879adf11042e53f6c10ecf3",
+      "namespace": "site-developer-salesforce-com-v1",
+      "row_id": "bc_61070833c9d31c93dec5d6354200e3d98a2860080695b020f59507402172e"
+    },
+    {
+      "card_revision": "20fb6bf187d4ecb3c5cb81c3eaa4c2c0b2f9ba4dd074928fabe2fa2b0137910d",
+      "namespace": "site-oscilar-com-v1",
+      "row_id": "bc_504c979785839b90ccc580949ba74c4e98e780d105336834a0e4aa698ffb3"
+    },
+    {
+      "card_revision": "886029bcb65d06f085387955eac31bf58ed4d13867356f21fcbda9ade0eafc5d",
+      "namespace": "site-rentptr-com-v1",
+      "row_id": "bc_b5aac4db8a1713e4a77f0904ef46ba65f60cd272cf7fd6595866ce08b9665"
+    },
+    {
+      "card_revision": "2e68d97ed37bb32f2e8c8929ee727fc1c7c3903c67b735afcb15ebd2ea280e38",
+      "namespace": "site-turbopuffer-com-v1",
+      "row_id": "bc_759119f10bf4a5502a4177c5ee7a833b6a90676982c42bc0a0949f0875d29"
+    },
+    {
+      "card_revision": "c6c73fe50ba1f43f4c5852ebd33e5019a87a1cd4ef83f2fffe924326c8ebb99d",
+      "namespace": "site-whiteboxgeo-com-v1",
+      "row_id": "bc_0a4def95e12c5db6a88d57f90f056f91024e4f7a1653cf813cbb60961f84d"
+    },
+    {
+      "card_revision": "4f7b38c80552a1c6e6686c44da035a8b317ab48e5f6feb6ae4fc06ff28200dd0",
+      "namespace": "site-www-aurelio-ai-v1",
+      "row_id": "bc_3f1b50121da245c98098ee63fdf7afac3a37d51af83cf34cc2f517b9f52b3"
+    },
+    {
+      "card_revision": "09bd6be824d913db57c8e78034f1f4c56159abe4765aca9c0f9c9197a6e2895b",
+      "namespace": "site-www-thistle-co-v1",
+      "row_id": "bc_a3f6a1295c53b7b1149673a24169c23cabf0aff9ff115a3b8c42b25b54d0f"
+    }
+  ],
+  "catalog_namespace": "buoy-routing-catalog-v1",
+  "command": "catalog migrate-routing-v3",
+  "counts": {
+    "card_count": 13,
+    "content_live_count": 14,
+    "control_plane_count": 3,
+    "disabled_count": 5,
+    "eligible_count": 8,
+    "incompatible_count": 0,
+    "listed_total": 17,
+    "missing_card_count": 1,
+    "stale_target_count": 0
+  },
+  "coverage": {
+    "disabled_ids": [
+      "routing-test-fleetdeck-v1",
+      "routing-test-fleetshield-v1",
+      "routing-test-orbitstock-v1",
+      "routing-test-orbitwatch-v1",
+      "site-dagster-io-benchmark-v1"
+    ],
+    "eligible_ids": [
+      "site-dagster-io-v1",
+      "site-developer-salesforce-com-v1",
+      "site-oscilar-com-v1",
+      "site-rentptr-com-v1",
+      "site-turbopuffer-com-v1",
+      "site-whiteboxgeo-com-v1",
+      "site-www-aurelio-ai-v1",
+      "site-www-thistle-co-v1"
+    ],
+    "incompatible_ids": [],
+    "missing_card_ids": [
+      "site-docs-aurelio-ai-v1"
+    ],
+    "stale_target_ids": []
+  },
+  "expected_projection_sha256": "eb006aff8058da775ffd9a3dcae19e41050cf2b471b831aa95755c2e1cca5a38",
+  "expected_snapshot_revision": "abb0d38193c8c00963fff6536bcf755f3bf707942a2b1f1ba4fa90b74f5a4ce8",
+  "final_projection_sha256": "eb006aff8058da775ffd9a3dcae19e41050cf2b471b831aa95755c2e1cca5a38",
+  "mutation_status": "preview",
+  "observed_projection_sha256": "eb006aff8058da775ffd9a3dcae19e41050cf2b471b831aa95755c2e1cca5a38",
+  "observed_snapshot_revision": "abb0d38193c8c00963fff6536bcf755f3bf707942a2b1f1ba4fa90b74f5a4ce8",
+  "old_reader_warning": "Exact schema-v1/v2 readers fail closed after this additive migration; deploy the v1/v2/v3-compatible reader first.",
+  "operation_budget": {
+    "card_writes": 0,
+    "content_operations": 0,
+    "content_writes": 0,
+    "deletes": 0,
+    "model_inferences": 0,
+    "schema_writes": 1,
+    "strong_read_calls": 2
+  },
+  "operations_performed": {
+    "card_writes": 0,
+    "content_operations": 0,
+    "content_writes": 0,
+    "deletes": 0,
+    "model_inferences": 0,
+    "schema_writes": 0,
+    "strong_read_calls": 1
+  },
+  "read_metrics": {
+    "billing": [
+      {
+        "billable_logical_bytes_queried": 256000000,
+        "billable_logical_bytes_returned": 58409
+      },
+      {
+        "billable_logical_bytes_queried": 256000000,
+        "billable_logical_bytes_returned": 58409
+      }
+    ],
+    "card_query_pages": 2,
+    "metadata_requests": 1,
+    "namespace_list_pages": 2
+  },
+  "region": "gcp-us-central1",
+  "request_summary": {
+    "billing": [
+      {
+        "billable_logical_bytes_queried": 256000000,
+        "billable_logical_bytes_returned": 58409
+      },
+      {
+        "billable_logical_bytes_queried": 256000000,
+        "billable_logical_bytes_returned": 58409
+      }
+    ],
+    "catalog_page_query_requests": 2,
+    "metadata_requests": 1,
+    "mutation_verification_query_requests": 0,
+    "namespace_list_requests": 2,
+    "total_requests": 5,
+    "write_requests": 0
+  },
+  "schema": {
+    "additions": {
+      "routing_evidence_vectors": {
+        "filterable": false,
+        "type": "[]float"
+      },
+      "routing_evidence_vectors_hash": {
+        "filterable": false,
+        "type": "string"
+      },
+      "routing_passages": {
+        "filterable": false,
+        "type": "[]string"
+      }
+    },
+    "final_fingerprint_sha256": "e273200baa7161ce130ca4745d7e9e810e971cf8007ed4636b04cec9e3b6e23b",
+    "final_version": 2,
+    "observed_fingerprint_sha256": "e273200baa7161ce130ca4745d7e9e810e971cf8007ed4636b04cec9e3b6e23b",
+    "observed_version": 2,
+    "target_version": 3
+  },
+  "snapshot_revision": "abb0d38193c8c00963fff6536bcf755f3bf707942a2b1f1ba4fa90b74f5a4ce8",
+  "verification_complete": false
+}
+```
+
+`canonical_structured_preview_sha256=0d9e217022c3d651408551edbf2132e79a6244de05f955e562ce7c24b385cbc2`
+is computed as
+SHA-256 over
+`json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)`
+encoded as UTF-8 with no trailing newline. This value binds only the parsed
+object above, not unavailable stdout bytes.
+
+The successful preview contains no top-level `write_attempted`, `failure`,
+`rows_affected`, `retry_requires_fresh_preview`, `request_accounting_mode`,
+`operation_accounting_complete`, `known_lower_bound_request_summary`, or
+`accounting_complete` field; its `request_summary` also contains no
+`accounting_complete`. No failure/retry/accounting-mode/completeness field is
+present anywhere in the captured success payload.
+
+The exact target-v3 fingerprint
+`f596eccb4878fc462d4ea7165a553bd0f21b13bbce46af70a867999daedc888a` was
+derived independently from exact-R source; it was not emitted in this preview
+payload and is therefore not included in its structured digest.
+
+## Preview assessment and external effects
+
+The preview observed exact schema v2 and ended at exact schema v2. Snapshot
+revision and observed/expected/final vector-inclusive projection are internally
+identical. Its three target additions are exactly the non-filterable passage,
+evidence-vector, and evidence-vector-hash fields. It performed one logical
+strong read: two namespace-list calls, one metadata call, and two card-query
+pages, for five logical SDK calls total. With four SDK retries per call, the
+unobserved physical-attempt count is bounded to 5–25. It performed zero schema,
+card, or content writes; zero content operations, deletes, and model
+inferences; empty affected IDs; and no mutation-verification query.
+
+Inventory reconciles exactly: 17 listed namespaces equal 3 control-plane plus
+14 live content namespaces; 13 cards equal 8 eligible plus 5 disabled, with
+zero incompatible or stale cards. `site-docs-aurelio-ai-v1` is the sole live
+content namespace missing a card. It is distinct from the present, parsed, and
+eligible `site-www-aurelio-ai-v1` card. The missing docs site remains excluded
+from automatic routing until a future separately governed registration; this
+schema migration grants no card creation, registration, or backfill authority.
+The 17/13 inventory matches the prior stable audit, so the real coverage gap is
+nonblocking for this schema-only migration.
+
+The earlier “Pending fresh preview” and “External effects so far” paragraphs
+are preserved append-only and describe only the pre-preview authority-record
+session. This appended phase supersedes their current temporal reading. The
+preview itself made the five logical read calls above and no write. This
+records-only amendment branch has made no provider call and has not inspected
+a credential. It authorizes no approval until its exact three amended records,
+including independent Preview GO, integrate into `develop`.

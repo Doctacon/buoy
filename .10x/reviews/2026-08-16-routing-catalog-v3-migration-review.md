@@ -1,13 +1,13 @@
 Status: pending
 Created: 2026-08-16
-Updated: 2026-08-16
+Updated: 2026-08-17
 Target: exact three-record authority plus future live preview, operation, and closure
 Ticket: .10x/tickets/2026-08-16-migrate-routing-catalog-v3.md
 Evidence: .10x/evidence/2026-08-16-routing-catalog-v3-migration.md
 Decision: .10x/decisions/buoy-derives-routing-prototypes-from-reviewed-plans.md
 Specification: .10x/specs/automatic-routing-after-apply.md
 Record-Verdict: pass
-Preview-Verdict: pending
+Preview-Verdict: go
 Post-Operation-Verdict: pending
 
 # Live Routing Catalog V3 Migration Review
@@ -167,5 +167,125 @@ no PASS.
 
 ## Pending verdicts
 
-- Preview verdict: pending; no live preview has been reviewed.
+- Preview verdict: go under the one-time exhaustive-field exception below.
 - Post-operation verdict: pending; no v3 operation has been reviewed.
+
+## One-time exception and Preview GO
+
+### Integrated authority and exact preflight
+
+PR #126 integrated the initial three-record authority. It bound base
+`31d2a7756c5bd712147772a77b606154fb2610c3`, one-commit head
+`ae708f3846e665eecf854a38bc41e214563e7ed8`, and exactly the ticket, evidence,
+and review paths. CI run `32004320577` passed Python 3.13 job `95310638934`,
+Python 3.11 job `95310639046`, and Build distributions job `95311183447`;
+hosted comments and reviews were empty. Ordinary squash integration
+`e4993e86e65d0e57a80baf887749b6d1fa29a708` has sole parent
+`31d2a7756c5bd712147772a77b606154fb2610c3` and exact tree
+`4e51d5297eb18b4b872544cc34b21bd42ffcd1ab`. Main remained exact `R`.
+
+Contemporaneous preflight reverified exact installed Buoy version
+`0.5.2.dev28+g4d1efc458`, CPython `3.11.10`, `catalog_cli.py` SHA-256 / exact-R
+blob
+`4803b57bf9037b026d7ecc3b45b4e6bae9258c96ac13c166f22a7c70a5efb677` /
+`7871cdce67759e1f58c4c5a54197974728b536fe`, `remote_catalog.py` SHA-256 /
+exact-R blob
+`9980208230c4743322447b32db75844cfdd2bcb6fc33abda0153d751db8048f1` /
+`27d663ea63edfd01ba82f55c3e5943c71678749c`, and installed
+`turbopuffer 2.4.0` with `DEFAULT_MAX_RETRIES=4` and the recorded
+`_constants.py` / `_base_client.py` hashes. Command help passed. Credential
+presence was privately true without retaining its value or output; exact
+region was `gcp-us-central1`. The mutation freeze began before preview and has
+remained uninterrupted, with no catalog operation since.
+
+The exact command
+
+```text
+/Users/crlough/.local/bin/buoy catalog migrate-routing-v3 --region gcp-us-central1 --json
+```
+
+exited `0` with empty stderr and bound literal catalog namespace
+`buoy-routing-catalog-v1`.
+
+### One-output digest exception
+
+The original stdout file was not captured, so
+`raw_stdout_sha256=unavailable-not-captured`. No raw stdout or raw digest is
+claimed, and the evidence's parsed
+field capture is not represented as raw stdout or as a reconstruction of
+unavailable stdout bytes. A second provider read solely to create that digest
+is forbidden.
+
+For this exact output only, review replaces only the raw-output digest
+requirement with the evidence's exhaustive ordered parsed object and
+`canonical_structured_preview_sha256=0d9e217022c3d651408551edbf2132e79a6244de05f955e562ce7c24b385cbc2`.
+The digest was independently recomputed from exactly
+`json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)`
+encoded as UTF-8 with no trailing newline.
+
+The object binds every top-level field: `affected_ids`, `approved`,
+`card_identities`, `catalog_namespace`, `command`, `counts`, `coverage`,
+`expected_projection_sha256`, `expected_snapshot_revision`,
+`final_projection_sha256`, `mutation_status`, `observed_projection_sha256`,
+`observed_snapshot_revision`, `old_reader_warning`, `operation_budget`,
+`operations_performed`, `read_metrics`, `region`, `request_summary`, `schema`,
+`snapshot_revision`, and `verification_complete`, including every nested value
+and array order. It explicitly proves top-level `write_attempted`, `failure`,
+`rows_affected`, `retry_requires_fresh_preview`, `request_accounting_mode`,
+`operation_accounting_complete`, `known_lower_bound_request_summary`, and
+`accounting_complete` absent, plus `request_summary.accounting_complete`
+absent. No failure, retry, accounting-mode, or accounting-completeness field
+was present on this successful preview.
+
+This exception waives no other condition and transfers to no other output. The
+exact target-v3 fingerprint
+`f596eccb4878fc462d4ea7165a553bd0f21b13bbce46af70a867999daedc888a` is a
+separate exact-R source derivation, not an emitted preview field and not part of
+the structured digest.
+
+### Bound preview findings
+
+The exhaustive object proves observed/final schema v2 with fingerprint
+`e273200baa7161ce130ca4745d7e9e810e971cf8007ed4636b04cec9e3b6e23b`, target
+schema v3 with exactly the three non-filterable additions, snapshot revision
+`abb0d38193c8c00963fff6536bcf755f3bf707942a2b1f1ba4fa90b74f5a4ce8`, and
+identical observed/expected/final projection
+`eb006aff8058da775ffd9a3dcae19e41050cf2b471b831aa95755c2e1cca5a38`.
+
+The inventory is internally exact and matches the prior stable 17/13 audit:
+17 listed equals 3 control-plane plus 14 live content namespaces; 13 cards
+equals 8 eligible plus 5 disabled, with zero incompatible and zero stale.
+`site-docs-aurelio-ai-v1` is the one content namespace missing a card, distinct
+from present eligible `site-www-aurelio-ai-v1`. The missing docs site remains
+excluded from automatic routing until separately governed registration. This
+real coverage gap is nonblocking for the schema-only migration and grants no
+card creation, registration, or backfill authority.
+
+The preview performed one logical strong read and five logical SDK calls: two
+namespace-list calls, one metadata call, and two card-query pages. Physical
+transport attempts were not observed and are bounded to 5–25. Both billing
+entries record `256000000` logical bytes queried and `58409` returned. The
+preview performed zero schema/card/content writes, content operations, deletes,
+model inferences, and mutation-verification queries; affected IDs are empty.
+
+### Verdict and approval hold
+
+`Preview-Verdict: go` binds only this exhaustive object, structured digest,
+snapshot, projection, exact-R reader, region/catalog, inventory explanation,
+accounting, privacy boundary, and uninterrupted freeze. Post-operation review
+remains pending; this is not PASS or evidence that a migration write occurred.
+
+Approval remains HOLD until this exact three-record exception and Preview GO
+integrate into `develop`. Before approval, the executor must freshly rebind the
+installed exact-R identities, private credential presence, exact region, and
+uninterrupted freeze. Only then may it invoke exactly once:
+
+```text
+/Users/crlough/.local/bin/buoy catalog migrate-routing-v3 --expected-snapshot-revision abb0d38193c8c00963fff6536bcf755f3bf707942a2b1f1ba4fa90b74f5a4ce8 --expected-projection-sha256 eb006aff8058da775ffd9a3dcae19e41050cf2b471b831aa95755c2e1cca5a38 --approve --region gcp-us-central1 --json
+```
+
+This records-only review branch made no provider call and inspected no
+credential. Its verdict permits only exact three-record validation, commit,
+push, and ordinary PR handoff; its session may not approve, open or merge a PR,
+or change source, dependencies, workflows, specifications, publication,
+provider state, or any unrelated surface.
