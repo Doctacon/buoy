@@ -11,9 +11,11 @@ from unittest.mock import patch
 from buoy_search.catalog import (
     ROUTING_DIMENSIONS,
     CardFields,
+    CatalogError,
     NamespaceCard,
     card_revision,
     card_to_dict,
+    parse_card,
     prepare_card,
     vector_hash,
 )
@@ -701,6 +703,67 @@ class RemoteSchemaAndCardTests(unittest.TestCase):
                 region=REGION,
                 schema_version=REMOTE_SCHEMA_V2,
             )
+
+    def test_provider_empty_prototype_decimal_in_same_float32_bucket_restores_exact_card(self) -> None:
+        card = make_card("site-empty-prototype-v1")
+        for schema_version in (REMOTE_SCHEMA_V2, REMOTE_SCHEMA_V3):
+            with self.subTest(schema_version=schema_version):
+                row = card_to_remote_row(card, schema_version=schema_version)
+                provider_vector = list(card.routing_prototype_vector)
+                provider_vector[0] = 1.00000001
+                row["routing_prototype_vector"] = provider_vector
+
+                restored = card_from_remote_row(
+                    ProviderRow(row),
+                    region=REGION,
+                    schema_version=schema_version,
+                )
+
+                self.assertEqual(
+                    restored.routing_prototype_vector,
+                    card.routing_prototype_vector,
+                )
+                self.assertEqual(
+                    restored.routing_prototype_vector_hash,
+                    card.routing_prototype_vector_hash,
+                )
+                self.assertEqual(restored.card_revision, card.card_revision)
+                self.assertEqual(restored, card)
+
+    def test_provider_empty_prototype_decimal_in_adjacent_float32_bucket_rejects_stale_hash(self) -> None:
+        card = make_card("site-empty-prototype-v1")
+        for schema_version in (REMOTE_SCHEMA_V2, REMOTE_SCHEMA_V3):
+            row = card_to_remote_row(card, schema_version=schema_version)
+            provider_vector = list(card.routing_prototype_vector)
+            provider_vector[0] = 0.99999994
+            row["routing_prototype_vector"] = provider_vector
+
+            with self.subTest(schema_version=schema_version), self.assertRaisesRegex(
+                RemoteCatalogError,
+                "routing_prototype_vector_hash is stale or invalid",
+            ):
+                card_from_remote_row(
+                    ProviderRow(row),
+                    region=REGION,
+                    schema_version=schema_version,
+                )
+
+    def test_local_empty_prototype_decimal_drift_remains_strict(self) -> None:
+        card = make_card("site-empty-prototype-v1")
+        payload = card_to_dict(
+            card,
+            include_vector=True,
+            include_routing_examples=True,
+        )
+        prototype = list(payload["routing_prototype_vector"])
+        prototype[0] = 1.00000001
+        payload["routing_prototype_vector"] = prototype
+
+        with self.assertRaisesRegex(
+            CatalogError,
+            "routing_prototype_vector_hash is stale or invalid",
+        ):
+            parse_card(payload)
 
     def test_provider_evidence_decimal_is_float32_canonical_and_hash_bound(self) -> None:
         card = make_card(

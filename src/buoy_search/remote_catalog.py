@@ -460,14 +460,18 @@ def card_from_remote_row(
             if isinstance(item, bool) or not isinstance(item, (int, float)):
                 raise RemoteCatalogError(
                     "remote card field routing_prototype_vector"
-                    f"[{index}] must be a finite number"
+                    f"[{index}] must be a finite float32 number"
                 )
-            number = float(item)
-            if not math.isfinite(number):
+            try:
+                number = float(item)
+                if not math.isfinite(number):
+                    raise ValueError
+                number = struct.unpack("!f", struct.pack("!f", number))[0]
+            except (OverflowError, struct.error, ValueError):
                 raise RemoteCatalogError(
                     "remote card field routing_prototype_vector"
-                    f"[{index}] must be a finite number"
-                )
+                    f"[{index}] must be a finite float32 number"
+                ) from None
             canonical_prototype_vector.append(number)
         payload["routing_prototype_vector"] = canonical_prototype_vector
     try:

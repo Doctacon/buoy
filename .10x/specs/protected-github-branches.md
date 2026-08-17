@@ -1,32 +1,38 @@
 Status: active
 Created: 2026-07-15
-Updated: 2026-07-21
+Updated: 2026-08-16
 
 # Protected GitHub Branches
 
 ## Purpose and scope
 
-Define GitHub and CI enforcement for the long-lived `develop` integration branch and `main` release branch in `Doctacon/buoy`.
+Define the repository's behavioral pull-request, CI, review, and merge-method
+gates for the long-lived `develop` integration branch and `main` release branch
+in `Doctacon/buoy`, including the truthfully observed hosted posture.
 
 ## Completed branch bootstrap
 
 - `develop` was created from exact then-current `main` commit `78d255b6e54567018e4ea7ad565a67224ee9c4bf` and pushed to `origin`.
 - The initial direct-push bootstrap exception is consumed historical authority and MUST NOT be reused.
-- Branch protection was installed before ordinary work merged.
+- Branch protection was installed historically before ordinary work merged;
+  that observation is not a claim about current hosted state.
 
-## Required protection
+## Current hosted posture and behavioral gates
 
-Both `main` and `develop` MUST require pull requests, zero fixed approving reviews, administrator enforcement without bypass, and branch-deletion denial.
+Readback on 2026-08-16 established that `main` and `develop` currently have no
+hosted branch-protection rules. The owner explicitly chose to retain that
+absence. No agent, workflow, integration session, or release session may create,
+restore, weaken, or otherwise change branch protection under this specification.
 
-`develop` MUST require strict app-bound `Python 3.11`, `Python 3.13`, and `Build distributions`; disallow force pushes; and disable last-push approval.
+Hosted absence is not merge or push authority. Pull requests, exact-head CI,
+independent review, branch roles, and merge methods below remain mandatory
+behavioral stop gates. The responsible integration or release session must
+read and verify those gates and must stop rather than merge when any is absent,
+failed, stale, ambiguous, or mismatched.
 
-`main` MUST retain the four app-bound check names preserved by
-`.10x/decisions/release-publication-is-paused.md`; use `strict=false`; allow
-force pushes under the user's retained hosted setting; and disable last-push
-approval. The force-push capability is not authorized for any
-agent/workflow/release path.
-
-Protection MUST NOT require code-owner review, signed commits, linear history, deployment success, conversation resolution, or additional checks unless separately ratified.
+No agent, workflow, integration session, or release session may directly push
+or force-push either long-lived branch, bypass a pull request, or treat
+administrator capability as authority.
 
 ## CI behavior
 
@@ -47,20 +53,38 @@ Static tests MUST assert the exact push branch set so the checked-in workflow ca
 
 ### Task integration
 
-Given a `work/*` branch based on `develop`, when its pull request targets `develop`, then GitHub MUST block merge until all required checks pass on a head that incorporates current `develop`. The integration session MUST squash-merge the task pull request.
+Given a `work/*` branch based on current `develop`, the integration session MUST
+NOT merge its pull request until the exact current head incorporates current
+`develop`, the app-bound `Python 3.11`, `Python 3.13`, and
+`Build distributions` checks pass for that exact head, and required independent
+review passes. The integration session MUST squash-merge the ordinary task pull
+request.
 
-The sole exception is the exact one-time v0.4 squash-topology bridge in `.10x/decisions/one-time-v0-4-squash-topology-bridge.md`. That protected, tree-identical bridge PR MUST use a merge commit so exact main ancestry survives integration. This exception is pinned, migration-only, and MUST NOT authorize merge commits for any other `work/* -> develop` task.
+The exact v0.4 and PR #117 squash-topology bridges are consumed historical
+exceptions and grant no current authority. PR #117 bridge PR #121 completed as
+integration `33e7a52d85ed28a637090cedfa470c5ed9e8196b` under
+`.10x/tickets/done/2026-08-16-bridge-pr-117-squash-topology-once.md`; its
+decision and specification are superseded, and its evidence and independent
+review record the exact non-repeatable result. No pending exception authorizes
+merge-commit integration for any `work/* -> develop` task. Current hosted
+branch protection remains intentionally absent under the user's retained
+choice, and no completed exception authorizes restoring or changing it.
 
 ### Release integration
 
-Given a same-repository `develop -> main` pull request, GitHub MUST block merge
-until all four readiness checks pass. Main strict freshness is not required.
-Passing those checks does not authorize an automated merge, tag, or Release;
-publication remains separately paused.
+Given a same-repository `develop -> main` pull request, the dedicated release
+session MUST NOT merge until all four exact-head readiness checks and required
+independent release review pass. It MUST use a merge commit, never squash or
+rebase. Passing those behavioral gates does not authorize an automated merge,
+tag, or Release; publication remains separately paused.
 
 ### Direct push
 
-Given any ordinary or administrator credential, direct pushes to `develop` MUST be rejected mechanically. Agents and release procedures MUST NOT directly push or force-push `main` even though its retained hosted configuration permits force pushes; all main changes still arrive through reviewed pull requests.
+Agents, workflows, integration sessions, and release sessions MUST NOT directly
+push or force-push `develop` or `main`. Because current hosted settings do not
+reject such a push mechanically, every session must treat that capability as
+forbidden and route long-lived-branch changes through the reviewed pull-request
+flows above.
 
 ## Release compatibility
 
@@ -71,19 +95,25 @@ Given any ordinary or administrator credential, direct pushes to `develop` MUST 
 
 ## Acceptance criteria
 
-- Remote `origin/develop` exists at the ratified bootstrap commit before ordinary integration.
-- GitHub reports the ratified common protection plus exact branch-specific checks/freshness/force-push/last-push settings.
-- Task integration uses squash merge except for the completed exact one-time
-  v0.4 tree-identical bridge; this record does not authorize automatic release
-  integration while publication is paused.
-- Develop strict checks and main non-strict four-check policy, pull requests, zero fixed approvals, administrator enforcement, deletion denial, develop force-push denial, retained main force-push allowance, and last-push approval disabled are observable.
+- Remote `origin/develop` retains the ratified bootstrap commit in its ancestry.
+- GitHub reports no branch-protection rules for `main` or `develop`, matching
+  the owner's retained choice, and this task leaves that state unchanged.
+- Task integration uses squash merge. The completed v0.4 and PR #117
+  content-empty bridges are consumed historical exceptions; neither grants
+  current merge-commit, protection-mutation, or automatic-release authority.
 - CI source and static tests include both push branches.
-- A pull request from the implementation branch to `develop` runs all three required checks and cannot merge until they pass.
+- An ordinary task pull request runs the three exact-head develop checks and is
+  not merged by the integration session until they and independent review pass.
+- A release pull request runs the four exact-head readiness checks and is not
+  merged by the release session until they and independent review pass; its
+  merge method is merge commit.
+- No direct/force push or branch-protection mutation occurs despite the absence
+  of mechanical hosted enforcement.
 - No launcher, local hook, or Pi extension is added.
 
 ## External side effects
 
 The historical bootstrap authority is consumed. Current authority permits
-bounded work-branch and draft-PR operations only and does not authorize
-direct/force pushes, bypass, unrelated protection mutation, tags, Releases,
-package registries, transfer/rename, secrets, or Turbopuffer mutation.
+bounded work-branch and pull-request operations only and does not authorize
+direct/force pushes, bypass, protection creation/restoration/mutation, tags,
+Releases, package registries, transfer/rename, secrets, or Turbopuffer mutation.
