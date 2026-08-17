@@ -1,8 +1,9 @@
-Status: active
+Status: done
 Created: 2026-08-16
 Updated: 2026-08-16
 Decision: .10x/decisions/one-time-pr-117-squash-topology-repair.md
 Specification: .10x/specs/one-time-pr-117-squash-topology-repair.md
+Evidence: .10x/evidence/2026-08-16-pr-117-squash-topology-repair.md
 Review: .10x/reviews/2026-08-16-pr-117-squash-topology-governance-review.md
 
 # Govern PR #117 Squash-Topology Repair
@@ -122,13 +123,37 @@ ancestry.
 - `.10x/specs/pi-worktree-development-flow.md` (the same bounded hosted-posture
   and behavioral-gate truth correction)
 - `AGENTS.md` (the corresponding concise session instruction)
-- `.10x/tickets/2026-08-16-govern-pr-117-squash-topology-repair.md`
+- `.10x/tickets/done/2026-08-16-govern-pr-117-squash-topology-repair.md`
 - `.10x/tickets/2026-08-16-bridge-pr-117-squash-topology-once.md`
 - `.10x/evidence/2026-08-16-pr-117-squash-topology-repair.md`
 - `.10x/reviews/2026-08-16-pr-117-squash-topology-governance-review.md`
   when the independent governance review is recorded
 - `.10x/reviews/2026-08-16-pr-117-squash-topology-repair-review.md` only as the
   future bridge review contract; this task must not predeclare its verdict
+
+## Closure mapping
+
+- Ordinary PR #119 used exact reviewed head
+  `fcccda7adb35178902a894ae2a7ba2000702e857`. Hosted CI run
+  `31992210742` completed successfully: Python 3.11 job `95277638964`, Python
+  3.13 job `95277638907`, and Build distributions job `95277896981` all
+  passed.
+- Squash integration produced exact develop commit
+  `034e01c3bb8bfa5726f57bdd5c17c74b7d55dc9f`, with sole parent
+  `fc867bebb541f06f116502798a08640df375a3dc` and tree
+  `660581caadb070b4ca24f8474f1696bb476c52ec`.
+- The four newcomer-README blobs remain exact `M`: `README.md`
+  `c4408beb8bc0613401fd0fa66222023e0d496f69`, evidence
+  `180b58b9546f1b9c70c69d2d958df576accac6fe`, review
+  `e90b980aa0817e5e2a2d786c725f46fc34cc01b3`, and done ticket
+  `c15c6932f230e02670bb3fd78882818e04f4b40f`. The seven reader-fix blobs
+  remain exact pre-integration develop as enumerated in the shared evidence.
+  The accepted decision, active repair specification, passing governance
+  review, behavioral branch-flow exception, active bridge ticket, and
+  provisional evidence are present.
+- Phase 1 changed no source, test, dependency, lock, workflow, release,
+  routing, provider, catalog, indexed content, credential, or protection
+  state. Phase 2 remains separately gated and unexecuted.
 
 ## External effects
 
@@ -164,3 +189,6 @@ v0.4 exception.
   ordinary pull-request handoff. The final thirteen-path allowlist adds only the
   review record and its links; hosted CI, integration, and bridge execution
   remain unclaimed future gates.
+- 2026-08-16: PR #119 passed all three hosted jobs and was squash-integrated as
+  exact develop `034e01c3bb8bfa5726f57bdd5c17c74b7d55dc9f`. This records and
+  closes Phase 1 only; the ancestry bridge remains active and unexecuted.
