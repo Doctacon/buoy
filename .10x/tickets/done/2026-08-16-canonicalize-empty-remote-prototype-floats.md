@@ -1,7 +1,9 @@
-Status: active
+Status: done
 Created: 2026-08-16
 Updated: 2026-08-16
 Specification: .10x/specs/remote-empty-prototype-float-canonicalization.md
+Evidence: .10x/evidence/2026-08-16-empty-remote-prototype-float-canonicalization.md
+Review: .10x/reviews/2026-08-16-empty-remote-prototype-float-canonicalization-review.md
 
 # Canonicalize Empty Remote Prototype Floats
 
@@ -35,5 +37,25 @@ the same float32 buckets as the already-canonical base vector.
 
 ## External effects
 
-None. Live catalog preview/migration resumes only after this exact compatible
-reader reaches `main` and replaces the installed tool.
+The task branch was pushed, draft PR #118 was opened, and its hosted CI ran.
+No merge, deployment, provider request or mutation, model call, live migration,
+publication, tag, Release, README change, branch-protection change, or history
+rewrite occurred. Live catalog preview/migration resumes only after this exact
+compatible reader reaches `main` and replaces the installed tool.
+
+## Closure
+
+- Implementation commit:
+  `6ad5e1c85d33d8e63b568fda8abbedc44b233125`.
+- PR #118 targets exact `develop@7e55f73bb6df428bddd24aa9db80039ba0809923`;
+  hosted CI run `31988110171` passed Python 3.11 job `95266561616`, Python 3.13
+  job `95266561637`, and distribution job `95266865418`.
+- Complete Python 3.11 and 3.13 suites each passed `851/851`; source,
+  distribution, ranking, C6, lock, compile, and diff validation passed.
+- Evidence:
+  `.10x/evidence/2026-08-16-empty-remote-prototype-float-canonicalization.md`.
+- Independent review:
+  `.10x/reviews/2026-08-16-empty-remote-prototype-float-canonicalization-review.md`
+  (PASS).
+- No live card/schema/content mutation, model inference, publication, tag,
+  Release, README change, branch-protection change, or history rewrite occurred.

@@ -1,7 +1,7 @@
-Status: provisional
+Status: recorded
 Created: 2026-08-16
 Updated: 2026-08-16
-Ticket: .10x/tickets/2026-08-16-canonicalize-empty-remote-prototype-floats.md
+Ticket: .10x/tickets/done/2026-08-16-canonicalize-empty-remote-prototype-floats.md
 Specification: .10x/specs/remote-empty-prototype-float-canonicalization.md
 
 # Empty Remote Prototype Float Canonicalization Evidence
@@ -52,9 +52,22 @@ query pages with zero writes, deletes, or model work.
   It made no provider call, live mutation, model inference, publication, tag,
   Release, push, or merge.
 
-## Remaining handoff evidence
+## Source-task handoff
 
-Append the final task commit, PR, and hosted-check identities before source-task
-closure. Installed fixed-reader identity and successful live read-only preview
-belong to `.10x/evidence/2026-08-16-routing-catalog-v3-migration.md`; provider
-mutation remains governed only by that separate live migration ticket.
+- The bounded implementation and records were committed as
+  `6ad5e1c85d33d8e63b568fda8abbedc44b233125` on
+  `work/canonicalize-empty-remote-prototype-floats`, based on exact
+  `develop@7e55f73bb6df428bddd24aa9db80039ba0809923`; its tree is
+  `bd552b7934f269d60c82bdc9aadabab102caae83`.
+- Draft PR #118 targets `develop` with that exact head, one commit, seven files,
+  `+220/-5`, and no `README.md` change.
+- Hosted CI run `31988110171` passed at that exact head: Python 3.11 job
+  `95266561616`, Python 3.13 job `95266561637`, and distribution job
+  `95266865418` all completed successfully.
+- Independent review is recorded at
+  `.10x/reviews/2026-08-16-empty-remote-prototype-float-canonicalization-review.md`
+  with verdict PASS and no source blocker.
+
+Installed fixed-reader identity and a successful live read-only preview belong
+to `.10x/evidence/2026-08-16-routing-catalog-v3-migration.md`; provider mutation
+remains governed only by that separate live migration ticket.

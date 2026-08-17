@@ -1,7 +1,7 @@
 Status: pass
 Created: 2026-08-16
 Updated: 2026-08-16
-Ticket: .10x/tickets/2026-08-16-canonicalize-empty-remote-prototype-floats.md
+Ticket: .10x/tickets/done/2026-08-16-canonicalize-empty-remote-prototype-floats.md
 Evidence: .10x/evidence/2026-08-16-empty-remote-prototype-float-canonicalization.md
 
 # Empty Remote Prototype Float Canonicalization Review
