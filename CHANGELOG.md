@@ -48,6 +48,9 @@ as GitHub Release assets rather than to PyPI.
 
 ### Changed
 
+- Remote catalog reads now normalize empty routing-prototype float arrays at
+  the same float32 boundary as base vectors, accepting harmless provider
+  decimal round trips while retaining stale adjacent-bucket rejection.
 - Schema-v3 registration now requires an existing exact-v3 remote catalog.
   First and ordinary apply never provision or migrate it; when the prerequisite
   is absent or catalog state cannot be safely read after content/state commit,
