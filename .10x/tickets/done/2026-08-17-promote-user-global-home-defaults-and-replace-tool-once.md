@@ -1,9 +1,10 @@
-Status: active
+Status: done
 Created: 2026-08-17
 Updated: 2026-08-17
 Decision: .10x/decisions/one-time-user-global-home-main-promotion-and-tool-replacement.md
 Evidence: .10x/evidence/2026-08-17-user-global-home-main-promotion-and-tool-replacement.md
 Authority-Review: .10x/reviews/2026-08-17-user-global-home-main-promotion-authority-review.md
+Review: .10x/reviews/2026-08-17-user-global-home-main-promotion-and-tool-replacement-review.md
 
 # Promote User-Global-Home Defaults and Replace the Tool Once
 
@@ -137,8 +138,42 @@ or mutation of any uv tool other than `buoy-search`.
   is two main-only merge commits and one develop-only squash commit. Although
   neither tip is an ancestor of the other, `tree(M) == tree(B)` and the exact
   merge construction equals `tree(D0)`, so the candidate is content-coherent.
+- 2026-08-17: The four-record authority branch ended at exact
+  `266a5f586f939c044fe3fe8a40243bbfd9a8a7b7`. PR #130 passed its exact-head
+  three-job CI and squash-integrated as final release head
+  `D = 74f80d6a32b4b9ae4556e1af4cd06b628d9474e6`, with sole parent `D0` and
+  tree `f43548540aa203013164164648549795c49dd44b`.
+- 2026-08-17: Independent release review passed exact same-repository PR #131
+  at base `M`, head `D`, and prospective result
+  `P = c02f5d7ec88821450517a79ffa2a117b8710114f`. All seven exact-head jobs
+  passed and hosted discussions were empty. The dedicated release session used
+  merge-commit integration only.
+- 2026-08-17: PR #131 merged as exact
+  `R = 78ffbf796d4fbe1bee8de0544fa018c8da512698`, with ordered parents `[M,D]`
+  and exact `D` tree. Exact-main CI and `Release / Publication paused` passed;
+  refs, topology, empty `D..R` content diff, and unchanged hosted inventories
+  were independently verified.
+- 2026-08-17: Two independent install reviews issued `INSTALL-GO` for the
+  exact command digest and artifact set. The command was invoked exactly once,
+  exited zero, installed `buoy-search 0.5.2.dev36+g78ffbf796`, and required no
+  retry, rollback, uninstall, or fallback. Post-install review passed the
+  executable, environment, receipt, source hashes, path defaults, other-tool,
+  and real-home invariants.
+
+## Closure mapping
+
+- Exact PR #130 and PR #131 identities, check runs and jobs, merge topology,
+  post-main state, artifact preparation, package-network accounting, one-shot
+  installation, hash-enforcement caveat, installed identities, and zero-effect
+  boundaries are recorded in
+  `.10x/evidence/2026-08-17-user-global-home-main-promotion-and-tool-replacement.md`.
+- Independent final release/install verification and the final PASS are
+  recorded in
+  `.10x/reviews/2026-08-17-user-global-home-main-promotion-and-tool-replacement-review.md`.
+- Every acceptance criterion passed. The governing decision is superseded and
+  consumed, publication remains paused, and no closed-task record authorizes
+  another main merge or tool replacement.
 
 ## Blockers
 
-Phase 1 authority integration, release checks/review, main integration,
-post-main checks, install review, replacement, and closure are pending.
+None.
