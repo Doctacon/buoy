@@ -1,8 +1,10 @@
-Status: active
+Status: done
 Created: 2026-08-18
 Updated: 2026-08-18
 Decision: .10x/decisions/buoy-records-opt-in-local-retrieval-telemetry.md
 Specification: .10x/specs/local-retrieval-telemetry.md
+Evidence: .10x/evidence/2026-08-18-local-retrieval-telemetry.md
+Review: .10x/reviews/2026-08-18-local-retrieval-telemetry-review.md
 
 # Implement Local Retrieval Telemetry
 
@@ -92,5 +94,16 @@ changes to ranking/routing/evidence behavior are excluded.
   system-qualified schema validation.
 - 2026-08-18: The completed worktree passed 21 telemetry tests, 137 combined
   telemetry/retrieval tests, and all 904 tests on both Python 3.11 and 3.13.
-  Lock/source/ranking/C6/compile/diff checks passed; exact-commit distribution
-  and clean-wheel validation remain before independent handoff review.
+  Lock/source/ranking/C6/compile/diff checks passed. Python 3.11 and 3.13
+  produced byte-identical validated distributions, and an isolated clean-wheel
+  trace persisted the expected analytical rows with private permissions.
+- 2026-08-18: Independent exact-commit review passed 21 telemetry tests, 138
+  focused tests, all 117 established retrieval tests with telemetry enabled,
+  a full 904-test Python 3.11 run, zero-network audit, schema-security probes,
+  and exact scope/receipt checks. No correctness, privacy, network,
+  failure-isolation, compatibility, or documentation blocker remains.
+- 2026-08-18: Implementation commit
+  `3a9aa15db39829171d5c9fc74754d48b9629e224`, tree
+  `3b58627d4279f48bf9418156bd86f5e6a2ec1de2`, is ready for bounded closure,
+  branch publication, exact-head CI, and the separately reviewed squash merge
+  into `develop` explicitly requested by the owner.
