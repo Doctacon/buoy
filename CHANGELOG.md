@@ -8,6 +8,11 @@ as GitHub Release assets rather than to PyPI.
 
 ### Added
 
+- Added opt-in, local-only retrieval tracing with OpenTelemetry and a private
+  DuckDB history at `~/.buoy/telemetry/telemetry.duckdb`. The first schema
+  records allowlisted timing and outcome metadata only; it does not record
+  queries, result content, source identifiers, paths, credentials, or raw
+  errors, and it does not configure a Collector or remote export.
 - Added schema-v3/delta-v2 plans with deterministic bounded source-derived
   routing passages, exact `plan.json` plus `delta.duckdb` output, remote catalog
   schema v3 support, and retained-plan `catalog repair-apply` inspection plus

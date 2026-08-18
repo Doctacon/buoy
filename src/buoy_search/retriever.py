@@ -34,6 +34,16 @@ from buoy_search.evidence import (
     decide_evidence,
     observe_evidence_scores,
 )
+from buoy_search.telemetry import (
+    EVIDENCE_SPAN_NAME,
+    NAMESPACE_QUERY_SPAN_NAME,
+    QUERY_EMBED_SPAN_NAME,
+    RERANK_SPAN_NAME,
+    TelemetrySpan,
+    copied_context_callable,
+    retrieval_trace,
+    telemetry_span,
+)
 
 DEFAULT_TOP_K = 5
 DEFAULT_CANDIDATES = 200
@@ -678,10 +688,58 @@ class HybridRetriever:
         cleaned_query = query.strip()
         if not cleaned_query:
             raise RuntimeError("A non-empty query is required for retrieval.")
-        vectors = self._embedder.encode([cleaned_query])
-        if not vectors or not vectors[0]:
-            raise RuntimeError("The embedding model returned no vector for the query.")
-        return self.retrieve_embedded(cleaned_query, vectors[0], options)
+        with retrieval_trace(
+            mode="explicit_single",
+            embedding_model=self._config.embedding_model,
+            embedding_precision=self._config.embedding_precision,
+            top_k=options.top_k,
+            candidates=options.candidates,
+            namespace_count=1,
+            initial_fanout=1,
+        ) as trace_span:
+            with telemetry_span(QUERY_EMBED_SPAN_NAME) as embed_span:
+                vectors = self._embedder.encode([cleaned_query])
+                if not vectors or not vectors[0]:
+                    raise RuntimeError(
+                        "The embedding model returned no vector for the query."
+                    )
+                embed_span.mark_ok()
+            trace_span.set_attribute("buoy.retrieval.final_fanout", 1)
+            with telemetry_span(
+                NAMESPACE_QUERY_SPAN_NAME,
+                {"buoy.route.rank": 1},
+            ) as namespace_span:
+                try:
+                    result = self.retrieve_embedded(
+                        cleaned_query,
+                        vectors[0],
+                        options,
+                    )
+                except BaseException:
+                    namespace_span.set_attribute("buoy.namespace.status", "failed")
+                    trace_span.set_attributes(
+                        {
+                            "buoy.retrieval.failure_count": 1,
+                            "buoy.retrieval.incomplete": True,
+                        }
+                    )
+                    raise
+                namespace_span.set_attributes(
+                    {
+                        "buoy.namespace.status": "ok",
+                        "buoy.namespace.hit_count": len(result.hits),
+                    }
+                )
+                namespace_span.mark_ok()
+            trace_span.set_attributes(
+                {
+                    "buoy.retrieval.outcome": "success",
+                    "buoy.retrieval.hit_count": len(result.hits),
+                    "buoy.retrieval.final_fanout": 1,
+                }
+            )
+            trace_span.mark_ok()
+            return result
 
     def retrieve_embedded(
         self,
@@ -909,9 +967,59 @@ class MultiNamespaceRetriever:
         cleaned_query = query.strip()
         if not cleaned_query:
             raise RuntimeError("A non-empty query is required for retrieval.")
-        vectors = self._embedder.encode([cleaned_query])
-        if not vectors or not vectors[0]:
-            raise RuntimeError("The embedding model returned no vector for the query.")
+        first_config = self._retrievers[0]._config
+        with retrieval_trace(
+            mode=("automatic" if evidence_assessor is not None else "explicit_multi"),
+            embedding_model=first_config.embedding_model,
+            embedding_precision=first_config.embedding_precision,
+            top_k=first_options.top_k,
+            candidates=first_options.candidates,
+            namespace_count=len(self._retrievers),
+            initial_fanout=requested_fanout,
+            routing_selection_reason=(
+                evidence_route_context.selection_reason
+                if evidence_route_context is not None
+                else None
+            ),
+            routing_semantic_score=(
+                evidence_route_context.semantic_score
+                if evidence_route_context is not None
+                else None
+            ),
+            routing_semantic_margin=(
+                evidence_route_context.semantic_margin
+                if evidence_route_context is not None
+                else None
+            ),
+        ) as trace_span:
+            return self._retrieve_traced(
+                cleaned_query,
+                options,
+                first_options=first_options,
+                requested_fanout=requested_fanout,
+                evidence_assessor=evidence_assessor,
+                evidence_route_context=evidence_route_context,
+                evidence_mode=evidence_mode,
+                trace_span=trace_span,
+            )
+
+    def _retrieve_traced(
+        self,
+        cleaned_query: str,
+        options: Sequence[RetrievalOptions],
+        *,
+        first_options: RetrievalOptions,
+        requested_fanout: int,
+        evidence_assessor: EvidenceAssessor | None,
+        evidence_route_context: EvidenceRouteContext | None,
+        evidence_mode: Literal["collect", "shadow", "active"] | None,
+        trace_span: TelemetrySpan,
+    ) -> MultiNamespaceRetrievalResult:
+        with telemetry_span(QUERY_EMBED_SPAN_NAME) as embed_span:
+            vectors = self._embedder.encode([cleaned_query])
+            if not vectors or not vectors[0]:
+                raise RuntimeError("The embedding model returned no vector for the query.")
+            embed_span.mark_ok()
 
         targets = [
             _NamespaceRetrievalTarget(
@@ -927,6 +1035,10 @@ class MultiNamespaceRetriever:
         if requested_fanout > 1:
             reranker = self._load_reranker()
         initial_targets = targets[:requested_fanout]
+        trace_span.set_attribute(
+            "buoy.retrieval.final_fanout",
+            len(initial_targets),
+        )
         outcomes = self._retrieve_batch(
             initial_targets,
             query=cleaned_query,
@@ -959,14 +1071,18 @@ class MultiNamespaceRetriever:
                     top_k=min(EVIDENCE_ASSESSMENT_TOP_K, first_options.top_k),
                     reranker=None,
                 )
-                initial_decision, evidence_payload = _assess_retrieval_evidence(
-                    evidence_assessor,
-                    query=cleaned_query,
-                    hits=initial_hits[:EVIDENCE_ASSESSMENT_TOP_K],
-                    route_context=evidence_route_context,
-                    namespace_failure_count=0,
-                    weak_evidence_widening_triggered=False,
-                )
+                with telemetry_span(EVIDENCE_SPAN_NAME) as evidence_span:
+                    initial_decision, evidence_payload = (
+                        _assess_retrieval_evidence(
+                            evidence_assessor,
+                            query=cleaned_query,
+                            hits=initial_hits[:EVIDENCE_ASSESSMENT_TOP_K],
+                            route_context=evidence_route_context,
+                            namespace_failure_count=0,
+                            weak_evidence_widening_triggered=False,
+                        )
+                    )
+                    _record_evidence_telemetry(evidence_span, evidence_payload)
                 if initial_decision is not None and initial_decision.is_weak is True:
                     should_widen = True
                     fallback_reason = "weak_top1"
@@ -981,6 +1097,10 @@ class MultiNamespaceRetriever:
                     initial_namespaces=(first_outcome.target.namespace,),
                     added_namespaces=tuple(target.namespace for target in added_targets),
                 )
+                trace_span.set_attribute(
+                    "buoy.retrieval.final_fanout",
+                    len(outcomes) + len(added_targets),
+                )
                 outcomes.extend(
                     self._retrieve_batch(
                         added_targets,
@@ -990,48 +1110,88 @@ class MultiNamespaceRetriever:
                         single_namespace_top_k=first_options.top_k,
                     )
                 )
+                trace_span.add_event(
+                    "retrieval.widened",
+                    {
+                        "buoy.retrieval.initial_fanout": requested_fanout,
+                        "buoy.retrieval.final_fanout": len(outcomes),
+                        "buoy.retrieval.fallback_reason": fallback_reason,
+                    },
+                )
 
         outcomes.sort(key=lambda outcome: outcome.target.route_rank)
         successful = [outcome for outcome in outcomes if outcome.result is not None]
         failures = [
             outcome.failure for outcome in outcomes if outcome.failure is not None
         ]
+        trace_span.set_attributes(
+            {
+                "buoy.retrieval.final_fanout": len(outcomes),
+                "buoy.retrieval.failure_count": len(failures),
+                "buoy.retrieval.incomplete": bool(failures),
+                "buoy.retrieval.widened": fallback.widened,
+                "buoy.retrieval.fallback_reason": fallback.reason,
+            }
+        )
         if not successful:
             attempted = ", ".join(repr(outcome.target.namespace) for outcome in outcomes)
             raise ProviderCallError(
                 f"Retrieval failed for every attempted namespace: {attempted}."
             )
 
-        hits, reranking = cross_namespace_rerank(
-            cleaned_query,
-            successful,
-            top_k=first_options.top_k,
-            reranker=reranker,
-        )
+        with telemetry_span(RERANK_SPAN_NAME) as rerank_span:
+            hits, reranking = cross_namespace_rerank(
+                cleaned_query,
+                successful,
+                top_k=first_options.top_k,
+                reranker=reranker,
+            )
+            rerank_span.set_attributes(
+                {
+                    "buoy.rerank.applied": reranking.applied,
+                    "buoy.rerank.candidates_before_dedupe": (
+                        reranking.candidates_before_dedupe
+                    ),
+                    "buoy.rerank.candidates_after_dedupe": (
+                        reranking.candidates_after_dedupe
+                    ),
+                    "buoy.reranker.model": (
+                        reranking.model if reranking.applied else None
+                    ),
+                    "buoy.reranker.revision": (
+                        reranking.revision if reranking.applied else None
+                    ),
+                }
+            )
+            rerank_span.mark_ok()
         if evidence_assessor is not None:
             assessment_hits = hits[:EVIDENCE_ASSESSMENT_TOP_K]
             if evidence_payload is None:
-                decision, evidence_payload = _assess_retrieval_evidence(
-                    evidence_assessor,
-                    query=cleaned_query,
-                    hits=assessment_hits,
-                    route_context=evidence_route_context,
-                    namespace_failure_count=len(failures),
-                    weak_evidence_widening_triggered=(
-                        weak_evidence_widening_triggered
-                    ),
-                )
+                with telemetry_span(EVIDENCE_SPAN_NAME) as evidence_span:
+                    decision, evidence_payload = _assess_retrieval_evidence(
+                        evidence_assessor,
+                        query=cleaned_query,
+                        hits=assessment_hits,
+                        route_context=evidence_route_context,
+                        namespace_failure_count=len(failures),
+                        weak_evidence_widening_triggered=(
+                            weak_evidence_widening_triggered
+                        ),
+                    )
+                    _record_evidence_telemetry(evidence_span, evidence_payload)
                 if (
                     decision is not None
                     and evidence_mode == "active"
                     and decision.status in {"no_relevant_evidence", "inconclusive"}
                 ):
                     hits = []
+            if evidence_payload is not None:
+                _record_evidence_telemetry(trace_span, evidence_payload)
         first_config = self._retrievers[0]._config
         namespace_results = [
             outcome.result for outcome in successful if outcome.result is not None
         ]
-        return MultiNamespaceRetrievalResult(
+        result = MultiNamespaceRetrievalResult(
             query=cleaned_query,
             hits=hits,
             region=first_config.region,
@@ -1056,6 +1216,16 @@ class MultiNamespaceRetriever:
             ),
             evidence=evidence_payload,
         )
+        trace_span.set_attributes(
+            {
+                "buoy.retrieval.outcome": (
+                    "partial" if failures else "success"
+                ),
+                "buoy.retrieval.hit_count": len(result.hits),
+            }
+        )
+        trace_span.mark_ok()
+        return result
 
     def _load_reranker(self) -> CrossEncoderReranker:
         loader = self._reranker_loader or load_cross_encoder_reranker
@@ -1087,7 +1257,10 @@ class MultiNamespaceRetriever:
                     ),
                 )
                 future = executor.submit(
-                    target.retriever.retrieve_embedded,
+                    copied_context_callable(
+                        MultiNamespaceRetriever._retrieve_target
+                    ),
+                    target,
                     query,
                     query_vector,
                     target_options,
@@ -1114,6 +1287,55 @@ class MultiNamespaceRetriever:
                     )
         outcomes.sort(key=lambda outcome: outcome.target.route_rank)
         return outcomes
+
+    @staticmethod
+    def _retrieve_target(
+        target: _NamespaceRetrievalTarget,
+        query: str,
+        query_vector: Sequence[float],
+        options: RetrievalOptions,
+    ) -> RetrievalResult:
+        with telemetry_span(
+            NAMESPACE_QUERY_SPAN_NAME,
+            {"buoy.route.rank": target.route_rank},
+        ) as namespace_span:
+            try:
+                result = target.retriever.retrieve_embedded(
+                    query,
+                    query_vector,
+                    options,
+                )
+            except BaseException:
+                namespace_span.set_attribute("buoy.namespace.status", "failed")
+                raise
+            namespace_span.set_attributes(
+                {
+                    "buoy.namespace.status": "ok",
+                    "buoy.namespace.hit_count": len(result.hits),
+                }
+            )
+            namespace_span.mark_ok()
+            return result
+
+
+def _record_evidence_telemetry(
+    span: TelemetrySpan,
+    payload: Mapping[str, object],
+) -> None:
+    """Copy only governed, content-free evidence observations to a span."""
+
+    span.set_attributes(
+        {
+            "buoy.evidence.mode": payload.get("mode"),
+            "buoy.evidence.status": payload.get("status"),
+            "buoy.evidence.candidates_scored": payload.get(
+                "candidates_scored"
+            ),
+            "buoy.evidence.top_score": payload.get("top_score"),
+            "buoy.evidence.second_score": payload.get("second_score"),
+            "buoy.evidence.score_gap": payload.get("score_gap"),
+        }
+    )
 
 
 def _validated_evidence_mode(value: object) -> Literal["collect", "shadow", "active"]:

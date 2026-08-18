@@ -30,6 +30,7 @@ dependencies = [
     "markitdown[docx,pdf,pptx,xls,xlsx]",
     "duckdb>=1.5.4",
     "portalocker>=3.2.0",
+    "opentelemetry-sdk>=1.44,<2",
 ]
 
 [project.optional-dependencies]
