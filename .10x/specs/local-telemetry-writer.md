@@ -45,6 +45,14 @@ through existing CLI modules, but telemetry completion MUST NOT call
 the database-write lock, or wait for database acknowledgement. Telemetry
 failure MUST remain silent and MUST NOT change retrieval behavior or output.
 
+The distribution's sole console script is
+`buoy = buoy_search.entrypoint:main`. The lightweight entry point dispatches
+only top-level `telemetry` commands without importing `buoy_search.cli`; all
+other arguments are forwarded unchanged to `buoy_search.cli:main`. Source and
+distribution validation MUST enforce that exact sole mapping, require the
+entry point and all governed telemetry runtime modules in the wheel, and
+reject the former direct `cli:main` mapping or any additional console script.
+
 ## Enablement and zero-side-effect behavior
 
 Telemetry is enabled only when the stripped, case-insensitive value of

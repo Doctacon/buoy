@@ -1,12 +1,30 @@
 Status: recorded
 Created: 2026-08-19
 Updated: 2026-08-19
-Ticket: .10x/tickets/done/2026-08-19-implement-private-local-telemetry-writer.md
+Ticket: .10x/tickets/2026-08-19-implement-private-local-telemetry-writer.md
 Decision: .10x/decisions/buoy-uses-a-private-local-telemetry-writer.md
 Specification: .10x/specs/local-telemetry-writer.md
 Review: .10x/reviews/2026-08-19-local-telemetry-writer-review.md
 
 # Private Local Telemetry Writer Evidence
+
+## 2026-08-19 integration stop and correction
+
+This record's original distribution-PASS claim is withdrawn. Installation
+preflight reproduced that exact runtime implementation commit `55f41fd9` built
+the intended sole `buoy_search.entrypoint:main` console mapping, while
+`scripts/release_automation.py` still required the former
+`buoy_search.cli:main` mapping. PR #134 exact-head Python 3.11 and Python 3.13
+jobs passed, but Build distributions failed on that mismatch. The PR was
+returned to draft before merge, the task was reopened, and no installation
+occurred.
+
+The runtime, privacy, crash, concurrency, and performance observations below
+remain valid for their exact subject. The distribution-validation, clean-wheel
+delivery, no-packaging-blocker, and closure claims are not final acceptance
+evidence. A later additive correction will bind the repaired commit, rebuilt
+artifact identities, clean-wheel results, exact-head CI, and independent
+repair review without erasing this stop-gate history.
 
 ## Outcome and exact identity
 

@@ -1,7 +1,7 @@
 Status: active
 Created: 2026-07-14
-Updated: 2026-08-17
-Amended-By: .10x/specs/user-global-buoy-home-defaults.md
+Updated: 2026-08-19
+Amended-By: .10x/specs/user-global-buoy-home-defaults.md, .10x/specs/local-telemetry-writer.md
 
 # Buoy Local Compatibility
 
@@ -44,7 +44,11 @@ No command may automatically copy, move, merge, or delete either root. JSON stdo
 - New branded variables use `BUOY_*`; vendor variables `TURBOPUFFER_API_KEY` and `TURBOPUFFER_REGION` retain their existing contracts. `TURBOPUFFER_NAMESPACE` no longer influences `buoy retrieve`; only a CLI `--namespace` selects explicit retrieval.
 - `BUOY_EMBEDDING_MODEL` replaces `TURBO_SEARCH_EMBEDDING_MODEL`.
 - Through 0.3, an old branded variable is accepted only when the corresponding new variable is absent and emits a deprecation warning; conflicting old/new values fail.
-- Starting in 0.4.0, actual command invocations reject either old branded embedding variable on presence under `.10x/specs/buoy-v0-4-environment-alias-removal.md`.
+- Starting in 0.4.0, embedding product-command invocations reject either old
+  branded embedding variable on presence under
+  `.10x/specs/buoy-v0-4-environment-alias-removal.md`. The later
+  provider/model-inert `telemetry status` and `telemetry flush` management
+  commands are explicitly exempt and do not read those values.
 - State-root fallback removal is not implied; any future state migration requires a separate decision and migration contract.
 
 ## Verification

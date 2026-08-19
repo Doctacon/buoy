@@ -1,4 +1,4 @@
-Status: done
+Status: active
 Created: 2026-08-19
 Updated: 2026-08-19
 Decision: .10x/decisions/buoy-uses-a-private-local-telemetry-writer.md
@@ -6,7 +6,8 @@ Specification: .10x/specs/local-telemetry-writer.md
 Depends-On: .10x/tickets/done/2026-08-18-implement-local-retrieval-telemetry.md
 Diagnostic-Evidence: .10x/evidence/2026-08-19-local-telemetry-100-scenario-findings.md
 Evidence: .10x/evidence/2026-08-19-local-telemetry-writer.md
-Review: .10x/reviews/2026-08-19-local-telemetry-writer-review.md
+Prior-Review: .10x/reviews/2026-08-19-local-telemetry-writer-review.md
+Review: pending exact repaired-head review
 
 # Implement Private Local Telemetry Writer
 
@@ -130,3 +131,11 @@ raw/dead-letter payload archives, and release/installed-tool work.
   clean-wheel lifecycle, privacy, filesystem, and independent exact-commit
   review gates passed. The task is ready for a separately authorized
   integration handoff; this implementation session does not push or merge it.
+- 2026-08-19: Installation preflight found that the built wheel correctly
+  exposed the new lightweight `buoy_search.entrypoint:main`, but the release
+  validator and active package-identity specification still required the old
+  direct `buoy_search.cli:main` mapping. PR #134's Python 3.11 and 3.13 jobs
+  passed and its Build distributions job failed on that exact mismatch. The
+  PR was returned to draft before merge, no tool replacement occurred, the
+  prior review was superseded, and this ticket was reopened for a bounded
+  validator/spec/test/evidence repair and full revalidation.

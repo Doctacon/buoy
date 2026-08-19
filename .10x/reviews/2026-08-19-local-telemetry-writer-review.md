@@ -1,12 +1,28 @@
-Status: pass
+Status: superseded
 Created: 2026-08-19
 Updated: 2026-08-19
-Ticket: .10x/tickets/done/2026-08-19-implement-private-local-telemetry-writer.md
+Ticket: .10x/tickets/2026-08-19-implement-private-local-telemetry-writer.md
 Evidence: .10x/evidence/2026-08-19-local-telemetry-writer.md
 Decision: .10x/decisions/buoy-uses-a-private-local-telemetry-writer.md
 Specification: .10x/specs/local-telemetry-writer.md
+Superseded-By: .10x/reviews/2026-08-19-local-telemetry-writer-packaging-repair-review.md
 
 # Private Local Telemetry Writer Review
+
+## 2026-08-19 correction
+
+This PASS is superseded. A later installation preflight proved that the exact
+candidate wheel used the intended `buoy_search.entrypoint:main` mapping but
+the repository's distribution validator still required
+`buoy_search.cli:main`. PR #134 Build distributions therefore failed while
+both Python jobs passed. The PR was returned to draft before merge and the
+tool was not installed.
+
+The review remains a valid record of the runtime, privacy, recovery, and
+performance challenges it actually performed. Its packaging, distribution,
+documentation-completeness, and final no-blocker verdict must not be used as
+integration authority. Only a later exact repaired-head review may restore a
+PASS.
 
 Target: exact implementation commit
 `55f41fd9e2f98fed83fd0619c29a9a5549ae4052`, tree
