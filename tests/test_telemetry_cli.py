@@ -150,6 +150,29 @@ assert "buoy_search.cli" not in sys.modules
         self.assertEqual(result, 7)
         self.assertEqual(calls, [["retrieve", "question", "--dry-run"]])
 
+    def test_nontelemetry_dispatch_preserves_removed_environment_gate(self) -> None:
+        stdout = StringIO()
+        stderr = StringIO()
+        with (
+            patch.dict(
+                os.environ,
+                {"TURBO_SEARCH_EMBEDDING_MODEL": "must-not-be-reported"},
+                clear=True,
+            ),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            result = entrypoint_main(["retrieve", "question", "--dry-run"])
+
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(
+            stderr.getvalue(),
+            "Removed environment variable is not supported in Buoy 0.4.0: "
+            "TURBO_SEARCH_EMBEDDING_MODEL -> BUOY_EMBEDDING_MODEL\n",
+        )
+        self.assertNotIn("must-not-be-reported", stderr.getvalue())
+
     def test_installed_and_module_entrypoints_use_lightweight_dispatch(self) -> None:
         root = Path(__file__).resolve().parents[1]
         pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
