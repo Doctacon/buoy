@@ -23,7 +23,9 @@ not create telemetry.
 
 ## What is stored
 
-When enabled, Buoy writes to:
+When enabled, Buoy publishes a sanitized private envelope beneath
+`~/.buoy/telemetry/inbox-v1/`. One short-lived Buoy writer drains those
+envelopes into:
 
 ```text
 ~/.buoy/telemetry/telemetry.duckdb
@@ -42,13 +44,46 @@ command arguments, raw error messages, or stack traces.
 This local mode does not start or contact an OpenTelemetry Collector. It does
 not send telemetry over the network or to a cloud service. Buoy uses a private
 in-process OpenTelemetry provider that is not installed as the process-wide
-current trace, then appends the completed retrieval to the local database.
+current trace, sanitizes the completed trace before it touches disk, and asks
+a Buoy-owned local writer to persist it. The handoff is a private filesystem
+queue, not OTLP.
 
-Telemetry is best-effort and never controls retrieval. If the database is
-locked, unavailable, incompatible, or cannot accept a complete trace, Buoy
-silently drops that trace and preserves the retrieval result or error. Writes
-are serialized and committed as one transaction, so readers see complete
-retrievals rather than partially written traces.
+Telemetry never controls retrieval. Once an envelope is published, database
+contention or writer absence leaves it recoverable instead of discarding it.
+The queue has strict private size limits; a full or unsafe queue drops only the
+newest observation and still preserves the retrieval result or error. The
+single writer commits each trace as one transaction, so readers see complete
+retrievals rather than partially written traces. Persistence is eventual: a
+successful retrieval can return before its row appears in DuckDB.
+
+## Check or flush telemetry
+
+Inspect enablement, pending work, writer health, and the last compatible store
+snapshot without creating or changing anything:
+
+```bash
+buoy telemetry status
+buoy telemetry status --json
+```
+
+Ask the local writer to drain the envelopes that are pending at command start,
+waiting at most 30 seconds by default:
+
+```bash
+buoy telemetry flush
+buoy telemetry flush --timeout 120 --json
+```
+
+`status` never starts the writer or opens DuckDB. `flush` is bounded and can
+drain existing work even after collection has been disabled. Neither command
+contacts a provider, model, Collector, or network service. A degraded or
+blocked result uses a nonzero exit code and contains only operational counts
+and reason codes, not envelope contents or raw errors.
+
+The private writer currently requires the POSIX no-follow, ownership, and
+descriptor-relative filesystem safeguards available on macOS and Linux. If
+those primitives are unavailable, telemetry fails closed without affecting
+retrieval and `status` reports `platform_unsupported`.
 
 ## Query the database
 
@@ -103,13 +138,17 @@ ORDER BY retrievals DESC;
 The underlying `spans` and `span_events` tables are available for deeper local
 analysis, but their JSON attributes are implementation details. Prefer
 `retrieval_runs_v1` and `retrieval_stage_latency_v1` for saved queries.
-Buoy validates the versioned schema and view definitions before each append;
-editing those database objects makes the store incompatible and causes later
-traces to be dropped rather than modifying an unknown layout.
+Buoy validates the versioned schema and view definitions in the writer;
+editing those database objects makes the store incompatible and leaves later
+envelopes pending rather than modifying an unknown layout.
 
 ## Storage lifecycle
 
-Version 1 has no automatic retention or purge policy. The database grows with
-each recorded live retrieval until you manage the file yourself. Disable new
-records by unsetting `BUOY_TELEMETRY`, setting it to a value other than
-`local`, or setting `OTEL_SDK_DISABLED=true`.
+Version 1 has no database retention or purge policy. The database grows with
+each recorded live retrieval until you manage the file yourself. Content-free
+terminal receipts rotate within a fixed bound; pending envelopes are never
+evicted to make room for newer ones. Disable new records by unsetting
+`BUOY_TELEMETRY`, setting it to a value other than `local`, or setting
+`OTEL_SDK_DISABLED=true`. Use `buoy telemetry flush` before inspecting or
+backing up the database when you need all currently accepted envelopes
+persisted.

@@ -95,3 +95,22 @@ raw/dead-letter payload archives, and release/installed-tool work.
   local writer recommendation. Renamed the clean isolated branch/worktree to
   `work/local-telemetry-writer` at exact `develop`
   `3787e0eabd2720732fb5c68ca168f926342ae454` before implementation.
+- 2026-08-19: The first synchronized 100-process implementation run exposed a
+  real publication-contention blocker: the initial 250-ms producer lock bound
+  persisted 93 of 100 instrumented publications in the confirming run. The
+  exact same harness persisted 100 of 100 at 500 ms with 259.7-ms maximum
+  producer time; 1,000 ms also persisted all traces but was slower. The
+  governing specification now assigns 500 ms only to producer publication and
+  retains 250 ms for writer/management locks pending the final campaign.
+- 2026-08-19: The first exact-source warm-visibility campaign exposed a second
+  real contention blocker. Separate read-only validation and read-write append
+  connections yielded p95 421.4 ms and p99 660.8 ms while a consumer polled
+  DuckDB. One verified transaction connection reduced the tail but the 100-ms
+  retry cadence still yielded p95 320.1 ms and p99 511.8 ms. Controlled
+  100-trace comparisons on that one-connection design passed with fixed 10-ms
+  retry (p95 72.8 ms, p99 82.6 ms, max 91.3 ms), fixed 5-ms retry (p95 112.2
+  ms, p99 140.1 ms, max 201.1 ms), and bounded exponential retry (p95 82.0 ms,
+  p99 139.7 ms, max 240.5 ms). Fixed 10 ms also required the fewest failed
+  opens, so the governing specification now selects it. Validation remains
+  per trace and shares the exact transaction connection; no lifecycle cache
+  or persistent DuckDB session is introduced.

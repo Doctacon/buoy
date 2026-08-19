@@ -391,7 +391,11 @@ condition cannot be proven.
 
 The verified `queue.lock` linearizes count/byte capacity, publication, claims,
 acknowledgements, and recognized temporary cleanup across processes. A
-producer waits at most 250 ms, polling every 5 ms. At exactly 4,095 entries a
+producer publication waits at most 500 ms, polling every 5 ms; writer and
+management queue operations retain the 250-ms lock bound. The 500-ms
+publication bound is the smallest tested bound that admitted all 100
+synchronized producers on the reference host (250 ms admitted only 93). At
+exactly 4,095 entries a
 conforming final envelope may publish; at 4,096, or when adding its bytes would
 exceed the byte cap, the newest observation is dropped. Queue-lock timeout
 also drops only the newest observation. Older published envelopes are never
@@ -569,9 +573,11 @@ operations.
 
 Fixed lifecycle bounds are:
 
-- queue/start/database-lock wait: 250 ms, 5-ms lock poll;
+- producer publication-lock wait: 500 ms, 5-ms lock poll;
+- writer/management queue-, start-, and database-lock wait: 250 ms, 5-ms lock
+  poll;
 - inbox poll: 50 ms;
-- database-busy retry delay: 100 ms;
+- database-busy/unavailable retry delay: 10 ms;
 - one drain batch: at most 128 envelopes;
 - one continuous busy/unavailable retry window: 30 seconds;
 - idle exit: 60 seconds after the queue is empty;
@@ -612,8 +618,10 @@ it best-effort reconciles one `recovered_claims` increment. It then repeats:
    otherwise bounded-read at most 65,537 bytes to detect growth, re-verify,
    hash, parse, canonicalize, and independently validate it;
 3. acquire the existing verified `write.lock` within 250 ms;
-4. initialize atomically or validate the exact DuckDB-v1 store;
-5. commit the complete run/spans/events graph in one transaction;
+4. initialize atomically or open one short-lived verified read-write
+   connection and validate the exact DuckDB-v1 store inside the transaction;
+5. on that same connection, commit the complete run/spans/events graph and
+   close it before acknowledging the envelope;
 6. under `queue.lock`, rotate only eligible receipts, durably write the unique
    `committed` or `replayed` receipt, then acknowledge by unlinking the claim
    and synchronizing the claimed directory only after commit; and
@@ -693,7 +701,11 @@ lock, opens no DuckDB connection, and repairs/migrates/deletes nothing. It
 uses only bounded `lstat`/safe scans and canonical state snapshots. Each queue
 directory scan stops after 8,193 entries or when 250 ms has elapsed between
 filesystem calls; it then reports `scan_incomplete=true`. No hard wall-clock
-bound is claimed for a single hostile filesystem syscall.
+bound is claimed for a single hostile filesystem syscall. Existing fixed
+locks and `database-init-v1` are included in the metadata scan. The exact
+same-inode two-link initialization publication window is recoverable and
+reported `present_unverified`; every other unsafe lock, scratch entry, or
+hardlink is blocked.
 
 JSON output is one compact sorted-key object plus newline with exactly these
 top-level objects/fields:

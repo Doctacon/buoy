@@ -44,7 +44,7 @@ Changelog = "https://github.com/Doctacon/buoy/blob/main/CHANGELOG.md"
 Documentation = "https://github.com/Doctacon/buoy/tree/main/docs"
 
 [project.scripts]
-buoy = "buoy_search.cli:main"
+buoy = "buoy_search.entrypoint:main"
 
 [build-system]
 requires = ["hatchling==1.31.0", "hatch-vcs==0.5.0"]
