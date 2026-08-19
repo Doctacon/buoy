@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-19
 Updated: 2026-08-19
 Decision: .10x/decisions/buoy-uses-a-private-local-telemetry-writer.md
@@ -7,7 +7,7 @@ Depends-On: .10x/tickets/done/2026-08-18-implement-local-retrieval-telemetry.md
 Diagnostic-Evidence: .10x/evidence/2026-08-19-local-telemetry-100-scenario-findings.md
 Evidence: .10x/evidence/2026-08-19-local-telemetry-writer.md
 Prior-Review: .10x/reviews/2026-08-19-local-telemetry-writer-review.md
-Review: pending exact repaired-head review
+Review: .10x/reviews/2026-08-19-local-telemetry-writer-packaging-repair-review.md
 
 # Implement Private Local Telemetry Writer
 
@@ -139,3 +139,16 @@ raw/dead-letter payload archives, and release/installed-tool work.
   PR was returned to draft before merge, no tool replacement occurred, the
   prior review was superseded, and this ticket was reopened for a bounded
   validator/spec/test/evidence repair and full revalidation.
+- 2026-08-19: Governance correction `adeb42766f2e2d1e6f854d395b359587f61341f1`
+  made the failed gate and superseded review explicit. Exact repair commit
+  `33c6124180120bb6711e3463556a672789bc134c`, tree
+  `b4b66fa3eb627d10032693c1dfd9d0d479714fcf`, aligned source/wheel
+  validation on the lightweight target, required every telemetry runtime
+  module, and added positive/negative regressions without changing runtime
+  source.
+- 2026-08-19: Both runtimes passed 1,030/1,030 full tests and 166/166 focused
+  tests. Fresh wheel/sdist validation, exact installed metadata, clean-wheel
+  telemetry lifecycle, source/lock/ranking/C6/compile/diff/receipt checks,
+  and independent exact repaired-head review passed. The task is again ready
+  for exact-head PR #134 CI and separately reviewed squash integration; no
+  global installation is authorized by this closure.

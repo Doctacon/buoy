@@ -1,10 +1,11 @@
 Status: recorded
 Created: 2026-08-19
 Updated: 2026-08-19
-Ticket: .10x/tickets/2026-08-19-implement-private-local-telemetry-writer.md
+Ticket: .10x/tickets/done/2026-08-19-implement-private-local-telemetry-writer.md
 Decision: .10x/decisions/buoy-uses-a-private-local-telemetry-writer.md
 Specification: .10x/specs/local-telemetry-writer.md
-Review: .10x/reviews/2026-08-19-local-telemetry-writer-review.md
+Prior-Review: .10x/reviews/2026-08-19-local-telemetry-writer-review.md
+Review: .10x/reviews/2026-08-19-local-telemetry-writer-packaging-repair-review.md
 
 # Private Local Telemetry Writer Evidence
 
@@ -16,15 +17,71 @@ the intended sole `buoy_search.entrypoint:main` console mapping, while
 `scripts/release_automation.py` still required the former
 `buoy_search.cli:main` mapping. PR #134 exact-head Python 3.11 and Python 3.13
 jobs passed, but Build distributions failed on that mismatch. The PR was
-returned to draft before merge, the task was reopened, and no installation
-occurred.
+returned to draft before merge, the task was reopened, and no global
+installation or user-tool replacement occurred.
 
 The runtime, privacy, crash, concurrency, and performance observations below
 remain valid for their exact subject. The distribution-validation, clean-wheel
 delivery, no-packaging-blocker, and closure claims are not final acceptance
-evidence. A later additive correction will bind the repaired commit, rebuilt
-artifact identities, clean-wheel results, exact-head CI, and independent
-repair review without erasing this stop-gate history.
+evidence. The additive repair record below binds the repaired commit, rebuilt
+artifact identities, clean-wheel results, and independent repair review
+without erasing this stop-gate history; hosted exact-head CI remains an
+integration-session gate.
+
+## Repaired packaging delivery
+
+Governance correction commit
+`adeb42766f2e2d1e6f854d395b359587f61341f1` reopened the ticket,
+superseded the premature review, and amended the active package, console,
+environment, compatibility, and telemetry specifications without changing
+runtime source. Exact repair commit
+`33c6124180120bb6711e3463556a672789bc134c`, tree
+`b4b66fa3eb627d10032693c1dfd9d0d479714fcf`, then changed only the release
+validator and its release/telemetry-CLI regression tests.
+
+The repaired validator uses one constant for the sole
+`buoy = buoy_search.entrypoint:main` source and wheel contract. Source
+validation rejects the former target, a missing mapping, or any additional
+script. Distribution validation rejects former, additional, missing, unequal,
+or non-UTF-8 entry-point metadata and requires `entrypoint.py` plus all six
+telemetry modules in the wheel. A wrapper regression also proves
+that non-telemetry commands still delegate unchanged through the certified
+legacy CLI and retain its removed-environment rejection gate.
+
+A fresh exact-commit offline build produced:
+
+- 697,999-byte wheel
+  `buoy_search-0.5.2.dev40+g33c612418-py3-none-any.whl`, SHA-256
+  `d59a7eb18ef1d5d4c4c457f6a876a02c50b546c0299d3321d042ad9956eb26d6`;
+  and
+- 1,223,042-byte sdist
+  `buoy_search-0.5.2.dev40+g33c612418.tar.gz`, SHA-256
+  `c62ceb14eae267894a328518df2e6825d10d413a185b8eeda0861d3801834e8e`.
+
+The authoritative locked Python 3.13 `validate-distribution` invocation
+exited zero with `publication_occurred=false`. The wheel contains exactly one
+entry-point metadata file and installed metadata reports exactly
+`('console_scripts', 'buoy', 'buoy_search.entrypoint:main')`. All seven
+governed entrypoint/telemetry modules are byte-identical across source, wheel,
+and sdist. A clean isolated wheel install passed version/help, module help,
+telemetry help, read-only absent status, and empty bounded flush; its isolated
+home remained empty. Negative old and additional mappings failed validation.
+
+On exact repair commit `33c6124`, Python 3.11.5 passed 1,030/1,030 tests in
+67.725 seconds and Python 3.13.0 passed 1,030/1,030 in 85.684 seconds with
+isolated homes and fatal `ResourceWarning`. The focused telemetry/release
+basket passed 166/166 on both runtimes. Source validation, the 157-package
+offline lock check, 13-dataset/369-judgment/90-identity ranking validation,
+C6 digest
+`d5199276c19ae89779287eaa90824ce1e1cc684a3f060899f02f65d976016243`,
+104-file in-memory compilation on both runtimes, diff hygiene, and all five
+certified receipts passed.
+
+Independent repaired-head review reproduced the distribution validator,
+artifact hashes, exact installed entry point, seven module hashes, isolated
+status/flush behavior, and the 30 directly changed tests on both runtimes. It
+found no remaining packaging, authority, history, runtime, privacy, or scope
+blocker. No global installation occurred during repair or validation.
 
 ## Outcome and exact identity
 

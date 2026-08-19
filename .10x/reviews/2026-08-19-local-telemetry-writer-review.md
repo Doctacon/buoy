@@ -1,7 +1,7 @@
 Status: superseded
 Created: 2026-08-19
 Updated: 2026-08-19
-Ticket: .10x/tickets/2026-08-19-implement-private-local-telemetry-writer.md
+Ticket: .10x/tickets/done/2026-08-19-implement-private-local-telemetry-writer.md
 Evidence: .10x/evidence/2026-08-19-local-telemetry-writer.md
 Decision: .10x/decisions/buoy-uses-a-private-local-telemetry-writer.md
 Specification: .10x/specs/local-telemetry-writer.md
