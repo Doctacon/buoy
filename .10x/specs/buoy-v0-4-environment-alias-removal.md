@@ -1,9 +1,21 @@
 Status: active
 Created: 2026-07-19
-Updated: 2026-08-13
-Amended-By: .10x/specs/automatic-multi-corpus-retrieval.md
+Updated: 2026-08-19
+Amended-By: .10x/specs/automatic-multi-corpus-retrieval.md, .10x/specs/local-telemetry-writer.md
 
 # Buoy 0.4 Environment Alias Removal
+
+## Private telemetry management amendment
+
+The later `buoy telemetry status` and `buoy telemetry flush` commands are
+provider/model-inert local telemetry management operations, not embedding
+product commands. They are dispatched by the lightweight package entry point
+without importing the legacy CLI or reading embedding configuration. The two
+removed branded embedding variables therefore do not block those management
+commands and their values remain unread and unreported. This narrow exception
+keeps status available to diagnose local collection; it does not restore either
+alias for `catalog`, `crawl`, `plan`, `apply`, `retrieve`, `evals`, or
+autoresearch.
 
 ## Bounded-retrieval amendment
 
@@ -62,6 +74,9 @@ bounded-retrieval specification, that current matrix is:
 - `catalog list`, `catalog show`, `catalog upsert`, `catalog enable`, and
   `catalog disable`;
 - one successfully parsed `python -m buoy_search.autoresearch` experiment invocation.
+
+The provider/model-inert `telemetry status` and `telemetry flush` management
+commands are explicitly outside this matrix under the amendment above.
 
 Tests MUST cover each command handler with valid minimum arguments while replacing the handler with a sentinel that proves dispatch did not occur. They MUST also cover `buoy --help`, `buoy --version`, every top-level `buoy <command> --help`, every `buoy catalog <command> --help`, bare `buoy`, bare `buoy catalog`, `python -m buoy_search --help`, and `python -m buoy_search.autoresearch --help` with removed variables present. Help/version tests prove availability only and MUST NOT execute command behavior.
 

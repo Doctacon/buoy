@@ -90,8 +90,10 @@ than whichever directory you happen to run it from:
 - applied-state databases live under `~/.buoy/state/`;
 - crawl output and pending plans live under
   `~/.buoy/artifacts/site-crawls/`;
-- optional local retrieval telemetry lives under `~/.buoy/telemetry/` and is
-  disabled by default. See [Inspect local retrieval telemetry](docs/telemetry.md).
+- optional local retrieval telemetry lives under `~/.buoy/telemetry/`, is
+  disabled by default, and can be inspected or drained with `buoy telemetry
+  status` and `buoy telemetry flush`. See
+  [Inspect local retrieval telemetry](docs/telemetry.md).
 
 Existing project-local `.buoy`, `.turbo-search`, and
 `artifacts/site-crawls` paths are not implicitly scanned, moved, backfilled, or

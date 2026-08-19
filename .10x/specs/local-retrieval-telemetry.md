@@ -1,9 +1,17 @@
-Status: active
+Status: superseded
 Created: 2026-08-18
-Updated: 2026-08-18
+Updated: 2026-08-19
 Decision: .10x/decisions/buoy-records-opt-in-local-retrieval-telemetry.md
+Superseded-By: .10x/specs/local-telemetry-writer.md
 
 # Local Retrieval Telemetry
+
+The direct-write persistence contract below records the completed first
+implementation slice. It is superseded for future implementation and
+acceptance by `.10x/specs/local-telemetry-writer.md`, which carries forward
+the retained trace, privacy, DuckDB-v1, failure-isolation, and retrieval-
+compatibility requirements while replacing synchronous database writes,
+nonblocking write-loss behavior, and the `cli.py` byte-identity receipt.
 
 ## Scope and compatibility
 
