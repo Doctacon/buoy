@@ -1,10 +1,12 @@
-Status: active
+Status: done
 Created: 2026-08-19
 Updated: 2026-08-19
 Decision: .10x/decisions/buoy-uses-a-private-local-telemetry-writer.md
 Specification: .10x/specs/local-telemetry-writer.md
 Depends-On: .10x/tickets/done/2026-08-18-implement-local-retrieval-telemetry.md
 Diagnostic-Evidence: .10x/evidence/2026-08-19-local-telemetry-100-scenario-findings.md
+Evidence: .10x/evidence/2026-08-19-local-telemetry-writer.md
+Review: .10x/reviews/2026-08-19-local-telemetry-writer-review.md
 
 # Implement Private Local Telemetry Writer
 
@@ -67,11 +69,11 @@ fresh-process DuckDB latency and contention loss.
 
 Authorized durable effects are the isolated
 `work/local-telemetry-writer` branch/worktree, the bounded records/source/
-  tests/docs changes and one bounded task commit. Validation may create only
-  isolated temporary homes, inboxes, databases, processes, environments, and
-  distribution artifacts. Evidence and independent review records are planned
-  closure outputs. Branch push, pull request, and integration require a later
-  explicit handoff authority.
+tests/docs changes and bounded governance/implementation commits. Validation
+may create only isolated temporary homes, inboxes, databases, processes,
+environments, and distribution artifacts. Evidence and independent review
+records are the closure outputs. Branch push, pull request, and integration
+require a later explicit handoff authority.
 
 No real `~/.buoy` asset, installed tool, provider, model, credential,
 namespace, catalog/content state, `main`, release, tag, package, GitHub Release,
@@ -114,3 +116,17 @@ raw/dead-letter payload archives, and release/installed-tool work.
   opens, so the governing specification now selects it. Validation remains
   per trace and shares the exact transaction connection; no lifecycle cache
   or persistent DuckDB session is introduced.
+- 2026-08-19: Final frozen-source acceptance passed 100/100 synchronized
+  publications with 100 complete graphs and no loss, 100/100 paired retrieval
+  equivalence checks, p99 3.147-ms added producer latency, p99 90.827-ms warm
+  visibility, three cold-home visibility checks below 500 ms, a zero-DuckDB
+  producer guard, and natural exit for every observed writer. The 38-case
+  adversarial campaign and 144-test focused suite passed without a blocker.
+- 2026-08-19: Exact implementation commit
+  `55f41fd9e2f98fed83fd0619c29a9a5549ae4052`, tree
+  `08b1679963b9b88d73601458e7a9890696591e68`, passed all 1,027 tests on
+  Python 3.11 and Python 3.13, including a second complete Python 3.13 run with
+  local telemetry enabled. Source/lock/ranking/C6/compile/diff, distribution,
+  clean-wheel lifecycle, privacy, filesystem, and independent exact-commit
+  review gates passed. The task is ready for a separately authorized
+  integration handoff; this implementation session does not push or merge it.
