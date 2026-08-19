@@ -1,9 +1,10 @@
-Status: active
+Status: done
 Created: 2026-08-19
 Updated: 2026-08-19
 Decision: .10x/decisions/one-time-integrated-local-telemetry-writer-tool-replacement.md
 Evidence: .10x/evidence/2026-08-19-integrated-local-telemetry-writer-tool-replacement.md
 Authority-Review: .10x/reviews/2026-08-19-integrated-local-telemetry-writer-install-authority-review.md
+Review: .10x/reviews/2026-08-19-integrated-local-telemetry-writer-installation-review.md
 
 # Install the Integrated Local Telemetry Writer Once
 
@@ -161,10 +162,32 @@ force-push, or branch-deletion effect.
   commands, local provenance, and inventory snapshots remain owner-private
   outside the repository. Preflight did not mutate the global tool or issue
   the required independent post-commit `INSTALL-GO`.
+- 2026-08-19: Same-repository PR #135 at exact head
+  `124642b2041f6fdb43d22469798bbe08bf5dca08` passed exact-head CI run
+  `32312273623`: Python 3.11 job `96257514149`, Python 3.13 job
+  `96257514006`, and Build distributions job `96257962019`. Ordinary squash
+  integration produced exact
+  `A = 4be90faea973f2ec63a22fe8c61145688e11429e`, whose sole parent is `D0`
+  and whose tree is `84514232229a1af491ae424d241e9322c466c6e7`, exactly the reviewed PR-head
+  tree.
+- 2026-08-19: The independently approved forward replacement was invoked
+  exactly once and exited zero. It installed
+  `buoy-search 0.5.2.dev36+ge9c906ca9` on Python `3.13` with sole
+  `buoy_search.entrypoint:main` entry point and the exact 107 compatible
+  distributions. Independent post-install verification passed, the rollback
+  predicate was false, and no rollback ran.
+
+## Closure mapping
+
+- Exact authority PR/CI/integration facts, the single invocation and installed
+  result, post-install acceptance, and zero-effect boundaries are recorded in
+  `.10x/evidence/2026-08-19-integrated-local-telemetry-writer-tool-replacement.md`.
+- Independent final execution verification and the final PASS are recorded in
+  `.10x/reviews/2026-08-19-integrated-local-telemetry-writer-installation-review.md`.
+- Every acceptance criterion passed. The governing decision is superseded,
+  forward authority is consumed, and unused rollback authority expired at
+  closure. No closed-task record authorizes another installation action.
 
 ## Blockers
 
-The forward invocation remains blocked until Phase 1 integrates and a separate
-post-commit reviewer binds the exact authority commit, completed preflight
-report, command identities, fresh global baseline, and process absence as
-`INSTALL-GO`.
+None.

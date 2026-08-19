@@ -2,9 +2,10 @@ Status: pass
 Created: 2026-08-19
 Updated: 2026-08-19
 Target: work/install-integrated-local-telemetry-writer-authority-safe pre-review candidate
-Ticket: .10x/tickets/2026-08-19-install-integrated-local-telemetry-writer-once.md
+Ticket: .10x/tickets/done/2026-08-19-install-integrated-local-telemetry-writer-once.md
 Evidence: .10x/evidence/2026-08-19-integrated-local-telemetry-writer-tool-replacement.md
 Decision: .10x/decisions/one-time-integrated-local-telemetry-writer-tool-replacement.md
+Review: .10x/reviews/2026-08-19-integrated-local-telemetry-writer-installation-review.md
 Verdict: pass
 
 # Integrated Local Telemetry Writer Installation-Authority Review
@@ -144,3 +145,12 @@ dedicated-session action under the ticket, and installation remains blocked
 until that integration is exact and a separate independent exact-bundle
 `INSTALL-GO` resolves every preflight field. Any pre-review record-blob or
 path drift beyond this review requires independent rereview.
+
+## Time scope and closure backlink
+
+This verdict remains scoped to the exact pre-PR authority candidate and the
+then-future conditional gates reviewed above. It is not retroactively expanded
+into a review of PR #135, its squash integration, or the installation. Those
+actual identities, effects, and final PASS are recorded by the linked evidence
+and final execution review. The completed execution consumes or expires every
+authority reviewed here; this earlier verdict is not reusable.

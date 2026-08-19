@@ -1,9 +1,10 @@
-Status: provisional
+Status: recorded
 Created: 2026-08-19
 Updated: 2026-08-19
-Ticket: .10x/tickets/2026-08-19-install-integrated-local-telemetry-writer-once.md
+Ticket: .10x/tickets/done/2026-08-19-install-integrated-local-telemetry-writer-once.md
 Decision: .10x/decisions/one-time-integrated-local-telemetry-writer-tool-replacement.md
 Authority-Review: .10x/reviews/2026-08-19-integrated-local-telemetry-writer-install-authority-review.md
+Review: .10x/reviews/2026-08-19-integrated-local-telemetry-writer-installation-review.md
 
 # Integrated Local Telemetry Writer Tool-Replacement Evidence
 
@@ -187,36 +188,58 @@ The full report, literal commands, local provenance, and machine inventory
 snapshots remain owner-private outside the repository. Post-integration
 `INSTALL-GO` must verify them against the opaque bindings above.
 
-## Authority-branch boundary
+## Recorded authority integration
 
-This branch starts at exact `D0` and adds only the accepted decision, active
-ticket, this provisional evidence, and independent authority review. Its
-future PR head, CI jobs, squash result `A`, and exact tree are deliberately not
-invented before they exist. A dedicated integration session must collect those
-facts and prove `parent(A) == D0` before installation can proceed.
+The exact four-record authority head was
+`124642b2041f6fdb43d22469798bbe08bf5dca08`. Same-repository PR #135
+targeted exact `develop@D0` from that head. Exact-head CI run `32312273623`
+passed:
 
-## Installation and closure ledger
+- Python 3.11 job `96257514149`;
+- Python 3.13 job `96257514006`; and
+- Build distributions job `96257962019`.
 
-No forward invocation or rollback invocation has occurred at this evidence
-boundary. A later records-only closure must record, without inference:
+Ordinary squash integration produced exact
+`A = 4be90faea973f2ec63a22fe8c61145688e11429e`, with sole parent
+`D0 = e9c906ca99caa7b85d6e31e65e10221161013686` and tree
+`84514232229a1af491ae424d241e9322c466c6e7`, exactly equal to the reviewed
+authority-head tree.
 
-- the authority PR head, exact-head CI run/jobs, discussion state, and squash
-  result `A`;
-- the final fresh pre-install readback and independent `INSTALL-GO`;
-- the forward command digest, start count, exit/result, and output identity;
-- every post-install check and unchanged other-tool identity;
-- whether the rollback predicate was false or, if true, the one exact rollback
-  invocation, package/runtime restoration result, and reviewed new provenance;
-  and
-- all bounded temporary/package-network effects and every excluded zero-effect
-  boundary.
+## One-shot replacement and installed result
 
-## Effects so far
+Fresh pre-install readback and independent review issued `INSTALL-GO` on the
+unchanged private bindings. The reviewed forward replacement was invoked
+exactly once, thereby consuming forward authority, and exited zero. It
+installed `buoy-search 0.5.2.dev36+ge9c906ca9` on Python `3.13` with:
 
-At this record boundary, durable effects are limited to PR #134's already
-authorized squash integration and this isolated four-record task worktree.
-Read-only inspections and bounded owner-only temporary preflight files may
-exist. No user-global tool mutation, rollback, `main` change, release,
-publication, provider operation, retrieval, model inference, credential
-access, real `~/.buoy` access, other-tool mutation, or branch deletion has
-occurred under this authority.
+- sole `buoy_search.entrypoint:main` console entry point;
+- exactly 107 compatible distributions, including
+  `opentelemetry-api==1.44.0`, `opentelemetry-sdk==1.44.0`, and
+  `opentelemetry-semantic-conventions==0.65b0`; and
+- all 72 installed `buoy_search` package members and package metadata equal to
+  the reviewed candidate wheel.
+
+Independent post-install verification recorded `POSTINSTALL PASS`. Version,
+top-level help, module help, telemetry help, telemetry status, and an empty
+bounded telemetry flush all exited successfully. The fresh isolated home
+remained empty, and no telemetry-writer or replacement process remained
+active. The real application home was not inspected.
+
+Every required acceptance check passed, so the rollback predicate was false.
+No rollback invocation occurred. The unused conditional rollback authority
+expired at closure and cannot be reused.
+
+## External effects, exclusions, and closure boundary
+
+The governed execution caused the ordinary PR #135 squash integration and
+exactly one user-global `buoy-search` replacement. The complete report,
+literal command text, local provenance, and machine inventories remain
+owner-private outside the repository.
+
+There was no retry, rollback, uninstall, second invocation, `main` change,
+release, publication, provider operation, retrieval, plan/apply operation,
+model inference, credential access, namespace/catalog/content mutation,
+remote telemetry export, real application-home inspection, other-tool
+mutation, protection/ruleset change, direct/force push, or branch deletion.
+This five-logical-record closure may integrate only through the ordinary task
+PR flow to `develop`; it grants no further installation authority.

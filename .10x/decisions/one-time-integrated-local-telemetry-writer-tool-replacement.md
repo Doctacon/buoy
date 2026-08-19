@@ -1,8 +1,25 @@
-Status: accepted
+Status: superseded
 Created: 2026-08-19
 Updated: 2026-08-19
 
 # One-Time Integrated Local-Telemetry-Writer Tool Replacement
+
+## 2026-08-19 disposition
+
+The records-only authority integrated through PR #135 as exact
+`A = 4be90faea973f2ec63a22fe8c61145688e11429e`, with sole parent
+`D0 = e9c906ca99caa7b85d6e31e65e10221161013686` and reviewed tree
+`84514232229a1af491ae424d241e9322c466c6e7`. The sole reviewed forward
+replacement invocation then began, consuming forward authority, and exited
+zero. Independent post-install verification passed the exact candidate
+package, runtime, entry point, dependency, package-content, and isolated-home
+acceptance gates.
+
+The rollback predicate was false, so rollback was neither authorized nor
+invoked. Unused rollback authority expired at task closure. This decision is
+retained as historical context only and grants no retry, rollback, uninstall,
+second replacement, recurring procedure, publication, provider operation, or
+other excluded action.
 
 ## Context
 
