@@ -1,17 +1,27 @@
 Status: active
 Created: 2026-08-19
-Updated: 2026-08-19
+Updated: 2026-08-20
 Decision: .10x/decisions/buoy-uses-a-private-local-telemetry-writer.md
 Supersedes: .10x/specs/local-retrieval-telemetry.md
+Amended-By: .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md
 
 # Private Local Telemetry Writer
 
 ## Scope, precedence, and compatibility
 
-This specification is the complete governing contract for Buoy retrieval
-telemetry. It supersedes the direct-write contract in
+This specification is the complete governing baseline for Buoy's version-1
+retrieval trace, private local writer, queue, and DuckDB-v1 behavior. It
+supersedes the direct-write contract in
 `.10x/specs/local-retrieval-telemetry.md` while preserving that slice's trace,
 privacy, DuckDB-v1, failure-isolation, and retrieval-equivalence behavior.
+
+`.10x/specs/retrieve-command-telemetry.md` governs version-2 retrieve command
+and nested-pipeline trace semantics. `.10x/specs/local-telemetry-v2-storage-and-migration.md`
+governs the version-2 envelope, inbox, schema, writer compatibility, and
+explicit migration. Those focused specifications replace this baseline only
+where they explicitly define version-2 behavior; every retained security,
+privacy, durability, failure-isolation, and version-1 compatibility
+requirement here remains active.
 
 The following older requirements are replaced:
 
@@ -59,16 +69,20 @@ Telemetry is enabled only when the stripped, case-insensitive value of
 `BUOY_TELEMETRY` is `local` and the stripped, case-insensitive value of
 `OTEL_SDK_DISABLED` is not `true`. Every other state is disabled.
 
-Disabled retrieval and dry-run/plan paths create no telemetry directory,
-queue, temporary file, lock, state, receipt, database, or child process.
-`telemetry status` is always available as a read-only inspection command.
+Disabled retrieval and all dry-run/plan paths under observation schema 1
+create no telemetry directory, queue, temporary file, lock, state, receipt,
+database, or child process. Effective version-2 telemetry MAY observe a
+successfully parsed retrieve preview under the exact opt-in and side-effect
+contract in `.10x/specs/retrieve-command-telemetry.md`; disabled preview
+remains zero-side-effect. `telemetry status` is always available as a read-only
+inspection command.
 `telemetry flush` MAY drain work that was published while telemetry was
 enabled, but it never changes enablement or captures a new trace.
 
-## Retained trace and privacy contract
+## Retained version-1 trace and privacy contract
 
-Every observation uses `buoy.observation.schema_version=1` and exactly one
-root span named `buoy.retrieve`. Permitted child names are:
+Every version-1 observation uses `buoy.observation.schema_version=1` and
+exactly one root span named `buoy.retrieve`. Permitted child names are:
 
 - `buoy.query.embed`;
 - `buoy.namespace.query`;
@@ -790,7 +804,11 @@ JSON output has exactly `schema_version`, `outcome`, `snapshot`, `committed`,
 or fully committed/replayed, 1 for classified or timeout, and 2 for blocked.
 Text output reports the same counts in one content-free line.
 
-## Performance methodology
+## Version-1 performance methodology
+
+This methodology governs the retained version-1 pipeline producer and writer
+critical path. Version-2 command/pipeline boundary acceptance is defined in
+`.10x/specs/retrieve-command-telemetry.md`.
 
 The producer critical-path gate uses a locked persistent environment and one
 deterministic in-memory retriever fixture with no provider/network/model work.
@@ -820,8 +838,9 @@ initialization cannot complete within it on the reference host.
 
 ## Acceptance criteria
 
-1. Disabled/dry-run behavior is byte-compatible and creates no telemetry
-   asset/process; enablement and unsupported-platform branches are exact.
+1. Version-1 disabled/dry-run behavior is byte-compatible and creates no
+   telemetry asset/process; enablement and unsupported-platform branches are
+   exact. Version-2 enabled preview behavior is governed separately.
 2. Success/error/partial/widened traces produce canonical private envelopes
    and eventually byte/semantically identical DuckDB-v1 rows/views.
 3. Exact sentinel scans find no prohibited query/content/identifier/path/
@@ -865,8 +884,11 @@ initialization cannot complete within it on the reference host.
 
 ## Exclusions
 
-Standard OpenTelemetry Collector binaries/configuration, OTLP, sockets,
-network listeners, remote export, cloud backends, new dependencies, DuckDB
-schema migration, raw/dead-letter payload archives, general retention/purge,
-analytics UI, new trace signals/instrumentation, query fingerprints, feedback,
-installed-tool replacement, release, and `main` are excluded.
+For the version-1 baseline, standard OpenTelemetry Collector
+binaries/configuration, OTLP, sockets, network listeners, remote export, cloud
+backends, new dependencies, DuckDB schema migration, raw/dead-letter payload
+archives, general retention/purge, analytics UI, new trace
+signals/instrumentation, query fingerprints, feedback, installed-tool
+replacement, release, and `main` are excluded. The focused version-2
+specifications authorize only their named command trace and explicit local
+schema migration; all other exclusions remain.
