@@ -26,6 +26,12 @@ READ_ONLY_WORKFLOWS = (
     ".github/workflows/release-readiness.yml",
     ".github/workflows/release.yml",
 )
+BUOY_CONSOLE_TARGET = "buoy_search.entrypoint:main"
+BUOY_CONSOLE_SCRIPTS = {"buoy": BUOY_CONSOLE_TARGET}
+BUOY_CONSOLE_ENTRY_POINTS = (
+    "[console_scripts]\n"
+    f"buoy = {BUOY_CONSOLE_TARGET}"
+)
 FORBIDDEN_WORKFLOW_MARKERS = (
     "contents: write",
     "id-token: write",
@@ -92,12 +98,19 @@ REQUIRED_PACKAGE_MEMBERS = (
     "buoy_search/data/routing_canaries/whiteboxgeo.json",
     "buoy_search/evidence.py",
     "buoy_search/evidence_evals.py",
+    "buoy_search/entrypoint.py",
     "buoy_search/multi_corpus_evals.py",
     "buoy_search/planning_service.py",
     "buoy_search/remote_catalog.py",
     "buoy_search/retriever.py",
     "buoy_search/routing.py",
     "buoy_search/routing_quality.py",
+    "buoy_search/telemetry.py",
+    "buoy_search/telemetry_cli.py",
+    "buoy_search/telemetry_envelope.py",
+    "buoy_search/telemetry_queue.py",
+    "buoy_search/telemetry_store.py",
+    "buoy_search/telemetry_writer.py",
 )
 ROUTING_CANARY_MEMBERS = {
     "buoy_search/data/routing_canaries/rentptr.json": (
@@ -453,6 +466,18 @@ def _metadata_version(payload: bytes) -> str:
     raise ReleaseError("distribution metadata has no version")
 
 
+def _validate_console_entry_points(payload: bytes, *, where: str) -> str:
+    try:
+        entry_points = payload.decode("utf-8").strip()
+    except UnicodeDecodeError as exc:
+        raise ReleaseError(f"{where} entry_points.txt must be UTF-8") from exc
+    if entry_points != BUOY_CONSOLE_ENTRY_POINTS:
+        raise ReleaseError(
+            f"{where} must expose only buoy = {BUOY_CONSOLE_TARGET}"
+        )
+    return BUOY_CONSOLE_TARGET
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -517,9 +542,7 @@ def validate_distribution(dist: Path) -> dict[str, object]:
         if len(entries) != 1:
             raise ReleaseError("wheel must contain exactly one entry_points.txt")
         wheel_version = _metadata_version(archive.read(metadata[0]))
-        entry_points = archive.read(entries[0]).decode("utf-8").strip()
-        if entry_points != "[console_scripts]\nbuoy = buoy_search.cli:main":
-            raise ReleaseError("wheel must expose only the buoy console entry point")
+        _validate_console_entry_points(archive.read(entries[0]), where="wheel")
 
     with tarfile.open(sdist, "r:gz") as archive:
         sdist_names = archive.getnames()
@@ -620,6 +643,11 @@ def validate_source(root: Path = ROOT) -> dict[str, object]:
         raise ReleaseError("project.version must remain absent under Hatch VCS")
     if project.get("dynamic") != ["version"]:
         raise ReleaseError("project.dynamic must be exactly ['version']")
+    if project.get("scripts") != BUOY_CONSOLE_SCRIPTS:
+        raise ReleaseError(
+            "project.scripts must expose exactly "
+            f"buoy = {BUOY_CONSOLE_TARGET}"
+        )
 
     build = pyproject.get("build-system", {})
     if build.get("build-backend") != "hatchling.build":
@@ -714,6 +742,7 @@ def validate_source(root: Path = ROOT) -> dict[str, object]:
             raise ReleaseError(f"{relative} contains forbidden publication marker {marker!r}")
 
     return {
+        "console_script": BUOY_CONSOLE_TARGET,
         "dynamic_version": True,
         "generated_version_file": "src/buoy_search/_version.py",
         "published_history_through": "0.5.1",

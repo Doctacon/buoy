@@ -125,6 +125,10 @@ class ReleaseAutomationTests(unittest.TestCase):
         result = release_automation.validate_source(ROOT)
 
         self.assertTrue(result["dynamic_version"])
+        self.assertEqual(
+            result["console_script"],
+            release_automation.BUOY_CONSOLE_TARGET,
+        )
         self.assertTrue(result["publication_paused"])
         self.assertEqual(result["published_history_through"], "0.5.1")
         self.assertIsNone(result["staged_release"])
@@ -177,6 +181,10 @@ class ReleaseAutomationTests(unittest.TestCase):
 
         self.assertNotIn("version", pyproject["project"])
         self.assertEqual(pyproject["project"]["dynamic"], ["version"])
+        self.assertEqual(
+            pyproject["project"]["scripts"],
+            release_automation.BUOY_CONSOLE_SCRIPTS,
+        )
         self.assertEqual(pyproject["tool"]["hatch"]["version"], {"source": "vcs"})
         self.assertEqual(
             pyproject["tool"]["hatch"]["build"]["hooks"]["vcs"],
@@ -264,6 +272,71 @@ class ReleaseAutomationTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(release_automation.ReleaseError, "read-only"):
                 release_automation.validate_source(clone)
+
+    def test_source_validator_requires_exact_console_entry_point(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clone = Path(tmp) / "source"
+            shutil.copytree(
+                ROOT,
+                clone,
+                ignore=shutil.ignore_patterns(".git", ".venv", "__pycache__", "dist"),
+            )
+            pyproject_path = clone / "pyproject.toml"
+            original = pyproject_path.read_text(encoding="utf-8")
+            exact_line = 'buoy = "buoy_search.entrypoint:main"'
+            variants = {
+                "old target": original.replace(
+                    exact_line,
+                    'buoy = "buoy_search.cli:main"',
+                ),
+                "extra target": original.replace(
+                    exact_line,
+                    exact_line + '\nturbo-search = "buoy_search.entrypoint:main"',
+                ),
+                "missing target": original.replace(
+                    f"[project.scripts]\n{exact_line}\n",
+                    "",
+                ),
+            }
+            for label, candidate in variants.items():
+                with self.subTest(label=label):
+                    pyproject_path.write_text(candidate, encoding="utf-8")
+                    with self.assertRaisesRegex(
+                        release_automation.ReleaseError,
+                        "project.scripts must expose exactly",
+                    ):
+                        release_automation.validate_source(clone)
+            pyproject_path.write_text(original, encoding="utf-8")
+            self.assertEqual(
+                release_automation.validate_source(clone)["console_script"],
+                release_automation.BUOY_CONSOLE_TARGET,
+            )
+
+    def test_distribution_validator_requires_exact_console_entry_point(self) -> None:
+        exact = (
+            release_automation.BUOY_CONSOLE_ENTRY_POINTS + "\n"
+        ).encode("utf-8")
+        self.assertEqual(
+            release_automation._validate_console_entry_points(
+                exact,
+                where="fixture",
+            ),
+            release_automation.BUOY_CONSOLE_TARGET,
+        )
+        invalid = (
+            b"[console_scripts]\nbuoy = buoy_search.cli:main\n",
+            exact + b"turbo-search = buoy_search.entrypoint:main\n",
+            b"[console_scripts]\n",
+            b"\xff",
+        )
+        for payload in invalid:
+            with self.subTest(payload=payload), self.assertRaises(
+                release_automation.ReleaseError
+            ):
+                release_automation._validate_console_entry_points(
+                    payload,
+                    where="fixture",
+                )
 
     def test_source_validator_rejects_consumed_v0_5_1_pending_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -606,11 +679,22 @@ class ReleaseAutomationTests(unittest.TestCase):
             "catalog.py",
             "catalog_cli.py",
             "cross_encoder.py",
+            "entrypoint.py",
             "remote_catalog.py",
             "routing.py",
             "routing_quality.py",
+            "telemetry.py",
+            "telemetry_cli.py",
+            "telemetry_envelope.py",
+            "telemetry_queue.py",
+            "telemetry_store.py",
+            "telemetry_writer.py",
         ):
             self.assertTrue((ROOT / "src/buoy_search" / module).is_file())
+            self.assertIn(
+                f"buoy_search/{module}",
+                release_automation.REQUIRED_PACKAGE_MEMBERS,
+            )
         self.assertEqual(
             release_automation.REQUIRED_SDIST_MEMBERS,
             (

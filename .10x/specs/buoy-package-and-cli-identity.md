@@ -1,7 +1,7 @@
 Status: active
 Created: 2026-07-21
-Updated: 2026-08-17
-Amended-By: .10x/specs/user-global-buoy-home-defaults.md
+Updated: 2026-08-19
+Amended-By: .10x/specs/user-global-buoy-home-defaults.md, .10x/specs/local-telemetry-writer.md
 
 # Buoy Package, Dynamic Version, and CLI Identity
 
@@ -13,13 +13,28 @@ state and plan compatibility remains. The active routing artifact separately
 binds the exact raw bytes of `src/buoy_search/cli.py`; this path-default task
 does not bypass or silently rewrite that receipt.
 
+## Private telemetry command-routing amendment
+
+The later private local telemetry writer changes the sole installed console
+target to `buoy = buoy_search.entrypoint:main`. That lightweight entry point
+recognizes only the top-level `telemetry` command before importing the legacy
+CLI module; every other argument sequence delegates unchanged to
+`buoy_search.cli:main`. This preserves the exact certified `cli.py` bytes and
+all existing command behavior while allowing read-only telemetry status to
+avoid importing unrelated provider/model/command modules.
+
+Source and distribution validation must enforce that exact sole target and
+must require the lightweight entry point and its governed telemetry runtime
+modules in the wheel. It does not restore a `turbo-search` alias or a
+`legacy_main` hook.
+
 ## Purpose and scope
 
 Define current code/distribution/CLI identity and tag-derived package version behavior after v0.4. This supersedes `.10x/specs/superseded/buoy-package-and-cli-identity-through-v0-4.md` while preserving its non-version identity and compatibility boundaries.
 
 ## Identity
 
-- Product is Buoy; tagline is **Search that stays anchored to the source.**; distribution `buoy-search`; package `buoy_search`; sole console script `buoy = buoy_search.cli:main`; license Apache-2.0 with root `LICENSE`; canonical repository `Doctacon/buoy`; existing visual identity remains.
+- Product is Buoy; tagline is **Search that stays anchored to the source.**; distribution `buoy-search`; package `buoy_search`; sole console script `buoy = buoy_search.entrypoint:main`; license Apache-2.0 with root `LICENSE`; canonical repository `Doctacon/buoy`; existing visual identity remains.
 - Implementation code lives under `src/buoy_search`; internal imports, tests, mocks, module commands, bundled data paths, reports, and build configuration use `buoy_search`.
 - `python -m buoy_search` and `python -m buoy_search.autoresearch` work. No `turbo-search` console entry point, `legacy_main`, `turbo_search` import shim, or removed environment aliases return.
 - User agents, generated runner identifiers, self-referential eval questions, expected source paths, fixture names, and active user-facing errors use Buoy identity.

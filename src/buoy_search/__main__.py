@@ -1,5 +1,5 @@
-"""Run the Buoy CLI as a module."""
+"""Run the lightweight Buoy command dispatcher as a module."""
 
-from buoy_search.cli import main
+from buoy_search.entrypoint import main
 
 raise SystemExit(main())

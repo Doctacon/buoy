@@ -1,9 +1,19 @@
 Status: active
 Created: 2026-07-19
-Updated: 2026-08-13
-Amended-By: .10x/specs/automatic-multi-corpus-retrieval.md
+Updated: 2026-08-19
+Amended-By: .10x/specs/automatic-multi-corpus-retrieval.md, .10x/specs/local-telemetry-writer.md
 
 # Buoy 0.4 Console Alias Removal
+
+## Post-v0.4 telemetry entry-point amendment
+
+The historical 0.4.0 clauses below remain exact evidence for that released
+artifact. Current distributions are governed by
+`.10x/specs/buoy-package-and-cli-identity.md` and expose the same sole `buoy`
+command through `buoy_search.entrypoint:main`. The lightweight wrapper routes
+only the later `telemetry` command itself and otherwise delegates unchanged to
+`buoy_search.cli:main`; it does not restore `turbo-search`, `legacy_main`, or
+any removed compatibility surface.
 
 ## Bounded-retrieval amendment
 
