@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 
 ENVELOPE_SCHEMA_VERSION = 1
 OBSERVATION_SCHEMA_VERSION = 1
+V2_ENVELOPE_SCHEMA_VERSION = 2
+V2_OBSERVATION_SCHEMA_VERSION = 2
 MAX_ENVELOPE_BYTES = 65_536
 MAX_SPANS = 256
 MAX_EVENTS = 1
@@ -338,6 +340,16 @@ class TraceRows:
 
 
 _TraceRows = TraceRows
+
+
+@dataclass(frozen=True)
+class CommandTraceRows:
+    """Validated DuckDB-v2 command, operation, span, and event rows."""
+
+    command: tuple[object, ...]
+    retrieval_operation: tuple[object, ...] | None
+    spans: tuple[tuple[object, ...], ...]
+    events: tuple[tuple[object, ...], ...]
 
 
 def sanitize_attribute(
@@ -1154,3 +1166,625 @@ def _require_nullable_enum(value: object, choices: set[str]) -> None:
 def _require_exact_integer(value: object, expected: int) -> None:
     if type(value) is not int or value != expected:
         raise TraceEnvelopeError("invalid_value")
+
+# Version-2 command envelopes deliberately reuse only the canonical JSON and
+# primitive validators above.  Their shape/graph validator remains independent
+# from version 1 so neither contract can be weakened by the other.
+V2_COMMAND_ROOT_SPAN_NAME = "buoy.retrieve.command"
+V2_PIPELINE_SPAN_NAME = "buoy.retrieve.pipeline"
+V2_COMMAND_STAGE_NAMES = frozenset(
+    {
+        "buoy.cli.bootstrap",
+        "buoy.retrieve.prepare",
+        "buoy.routing.catalog",
+        "buoy.routing.model",
+        "buoy.routing.select",
+        "buoy.output.render",
+    }
+)
+V2_RETRIEVAL_STAGE_NAMES = frozenset(
+    {
+        QUERY_EMBED_SPAN_NAME,
+        NAMESPACE_QUERY_SPAN_NAME,
+        RERANK_SPAN_NAME,
+        EVIDENCE_SPAN_NAME,
+    }
+)
+V2_SPAN_NAMES = frozenset(
+    {
+        V2_COMMAND_ROOT_SPAN_NAME,
+        V2_PIPELINE_SPAN_NAME,
+        *V2_COMMAND_STAGE_NAMES,
+        *V2_RETRIEVAL_STAGE_NAMES,
+    }
+)
+_V2_ENVELOPE_KEYS = frozenset(
+    {
+        "envelope_schema_version",
+        "observation_schema_version",
+        "command",
+        "retrieval_operation",
+        "spans",
+        "events",
+    }
+)
+_V2_COMMAND_KEYS = (
+    "trace_id",
+    "root_span_id",
+    "started_at_unix_us",
+    "ended_at_unix_us",
+    "command_duration_ms",
+    "execution_mode",
+    "retrieval_mode",
+    "outcome",
+    "exit_code",
+    "error_type",
+    "pipeline_present",
+    "buoy_version",
+    "observation_schema_version",
+)
+_V2_OPERATION_KEYS = (
+    "trace_id",
+    "span_id",
+    "started_at_unix_us",
+    "ended_at_unix_us",
+    "pipeline_duration_ms",
+    "outcome",
+    "hit_count",
+    "namespace_count",
+    "initial_fanout",
+    "final_fanout",
+    "failure_count",
+    "incomplete",
+    "widened",
+    "fallback_reason",
+    "evidence_status",
+    "embedding_model",
+    "embedding_precision",
+    "top_k",
+    "candidates",
+    "buoy_version",
+    "observation_schema_version",
+)
+_V2_COMMAND_ATTRIBUTE_FIELDS = (
+    ("execution_mode", "buoy.command.execution_mode", False),
+    ("retrieval_mode", "buoy.retrieval.mode", False),
+    ("outcome", "buoy.command.outcome", False),
+    ("exit_code", "buoy.command.exit_code", False),
+    ("error_type", "buoy.error.type", True),
+    ("pipeline_present", "buoy.retrieval.pipeline_present", False),
+    ("buoy_version", "buoy.version", False),
+    ("observation_schema_version", "buoy.observation.schema_version", False),
+)
+_V2_OPERATION_ATTRIBUTE_FIELDS = (
+    ("outcome", "buoy.retrieval.outcome", False),
+    ("hit_count", "buoy.retrieval.hit_count", False),
+    ("namespace_count", "buoy.retrieval.namespace_count", False),
+    ("initial_fanout", "buoy.retrieval.initial_fanout", False),
+    ("final_fanout", "buoy.retrieval.final_fanout", False),
+    ("failure_count", "buoy.retrieval.failure_count", False),
+    ("incomplete", "buoy.retrieval.incomplete", False),
+    ("widened", "buoy.retrieval.widened", False),
+    ("fallback_reason", "buoy.retrieval.fallback_reason", True),
+    ("evidence_status", "buoy.evidence.status", True),
+    ("embedding_model", "buoy.embedding.model", False),
+    ("embedding_precision", "buoy.embedding.precision", False),
+    ("top_k", "buoy.retrieval.top_k", False),
+    ("candidates", "buoy.retrieval.candidates", False),
+    ("buoy_version", "buoy.version", False),
+    ("observation_schema_version", "buoy.observation.schema_version", False),
+)
+_V2_COMMAND_ERROR_TYPES = {
+    "configuration_error",
+    "catalog_error",
+    "routing_error",
+    "model_error",
+    "provider_call_error",
+    "render_error",
+    "unexpected_error",
+}
+_V2_COMMAND_ATTRIBUTE_KEYS = frozenset(
+    {
+        "buoy.observation.schema_version",
+        "buoy.version",
+        "buoy.command.name",
+        "buoy.command.execution_mode",
+        "buoy.retrieval.mode",
+        "buoy.command.outcome",
+        "buoy.command.exit_code",
+        "buoy.error.type",
+        "buoy.retrieval.pipeline_present",
+    }
+)
+_V2_PIPELINE_ATTRIBUTE_KEYS = frozenset(
+    {
+        *ROOT_ATTRIBUTE_KEYS,
+    }
+)
+_V2_SPAN_ATTRIBUTE_KEYS = {
+    V2_COMMAND_ROOT_SPAN_NAME: _V2_COMMAND_ATTRIBUTE_KEYS,
+    V2_PIPELINE_SPAN_NAME: _V2_PIPELINE_ATTRIBUTE_KEYS,
+    **{name: frozenset({"buoy.error.type"}) for name in V2_COMMAND_STAGE_NAMES},
+    QUERY_EMBED_SPAN_NAME: SPAN_ATTRIBUTE_KEYS[QUERY_EMBED_SPAN_NAME],
+    NAMESPACE_QUERY_SPAN_NAME: SPAN_ATTRIBUTE_KEYS[NAMESPACE_QUERY_SPAN_NAME],
+    RERANK_SPAN_NAME: SPAN_ATTRIBUTE_KEYS[RERANK_SPAN_NAME],
+    EVIDENCE_SPAN_NAME: SPAN_ATTRIBUTE_KEYS[EVIDENCE_SPAN_NAME],
+}
+
+
+def encode_trace_envelope_v2(rows: CommandTraceRows) -> bytes:
+    """Validate and canonically encode one exact command trace envelope."""
+
+    envelope = _v2_envelope_object_from_rows(rows)
+    _validate_v2_envelope_object(envelope)
+    payload = _canonical_json_bytes(envelope)
+    if len(payload) > MAX_ENVELOPE_BYTES:
+        raise TraceEnvelopeError("oversized")
+    return payload
+
+
+def decode_trace_envelope_v2(payload: bytes) -> CommandTraceRows:
+    """Independently decode and validate one untrusted version-2 envelope."""
+
+    envelope = _load_canonical_envelope(payload)
+    _validate_v2_envelope_object(envelope)
+    return _v2_rows_from_envelope_object(envelope)
+
+
+def _v2_envelope_object_from_rows(rows: CommandTraceRows) -> dict[str, object]:
+    if not isinstance(rows, CommandTraceRows):
+        raise TraceEnvelopeError("invalid_shape")
+    if type(rows.command) is not tuple or len(rows.command) != len(_V2_COMMAND_KEYS):
+        raise TraceEnvelopeError("invalid_shape")
+    if rows.retrieval_operation is not None and (
+        type(rows.retrieval_operation) is not tuple
+        or len(rows.retrieval_operation) != len(_V2_OPERATION_KEYS)
+    ):
+        raise TraceEnvelopeError("invalid_shape")
+    if type(rows.spans) is not tuple or type(rows.events) is not tuple:
+        raise TraceEnvelopeError("invalid_shape")
+
+    command = dict(zip(_V2_COMMAND_KEYS, rows.command, strict=True))
+    for key in ("started_at_unix_us", "ended_at_unix_us"):
+        command[key] = _unix_us_from_datetime(command[key])
+    operation = None
+    if rows.retrieval_operation is not None:
+        operation = dict(
+            zip(_V2_OPERATION_KEYS, rows.retrieval_operation, strict=True)
+        )
+        for key in ("started_at_unix_us", "ended_at_unix_us"):
+            operation[key] = _unix_us_from_datetime(operation[key])
+    spans = [_v2_span_object(row) for row in rows.spans]
+    events = [_v2_event_object(row) for row in rows.events]
+    return {
+        "envelope_schema_version": 2,
+        "observation_schema_version": 2,
+        "command": command,
+        "retrieval_operation": operation,
+        "spans": spans,
+        "events": events,
+    }
+
+
+def _v2_span_object(row: tuple[object, ...]) -> dict[str, object]:
+    if type(row) is not tuple or len(row) != len(_SPAN_KEYS):
+        raise TraceEnvelopeError("invalid_shape")
+    span = dict(zip(_SPAN_KEYS, row, strict=True))
+    for key in ("started_at_unix_us", "ended_at_unix_us"):
+        span[key] = _unix_us_from_datetime(span[key])
+    span["attributes"] = _load_attribute_object(span["attributes"])
+    return span
+
+
+def _v2_event_object(row: tuple[object, ...]) -> dict[str, object]:
+    if type(row) is not tuple or len(row) != len(_EVENT_KEYS):
+        raise TraceEnvelopeError("invalid_shape")
+    event = dict(zip(_EVENT_KEYS, row, strict=True))
+    event["occurred_at_unix_us"] = _unix_us_from_datetime(
+        event["occurred_at_unix_us"]
+    )
+    event["attributes"] = _load_attribute_object(event["attributes"])
+    return event
+
+
+def _v2_rows_from_envelope_object(
+    envelope: dict[str, object],
+) -> CommandTraceRows:
+    command_object = envelope["command"]
+    operation_object = envelope["retrieval_operation"]
+    span_objects = envelope["spans"]
+    event_objects = envelope["events"]
+    assert isinstance(command_object, dict)
+    assert operation_object is None or isinstance(operation_object, dict)
+    assert isinstance(span_objects, list)
+    assert isinstance(event_objects, list)
+
+    command_values = dict(command_object)
+    for key in ("started_at_unix_us", "ended_at_unix_us"):
+        command_values[key] = _datetime_from_unix_us(command_values[key])
+    command_values["command_duration_ms"] = float(
+        command_values["command_duration_ms"]
+    )
+    command = tuple(command_values[key] for key in _V2_COMMAND_KEYS)
+
+    operation = None
+    if operation_object is not None:
+        operation_values = dict(operation_object)
+        for key in ("started_at_unix_us", "ended_at_unix_us"):
+            operation_values[key] = _datetime_from_unix_us(operation_values[key])
+        operation_values["pipeline_duration_ms"] = float(
+            operation_values["pipeline_duration_ms"]
+        )
+        operation = tuple(operation_values[key] for key in _V2_OPERATION_KEYS)
+
+    spans = tuple(_v2_span_row(value) for value in span_objects)
+    events = tuple(_v2_event_row(value) for value in event_objects)
+    return CommandTraceRows(command, operation, spans, events)
+
+
+def _v2_span_row(value: object) -> tuple[object, ...]:
+    assert isinstance(value, dict)
+    row = dict(value)
+    for key in ("started_at_unix_us", "ended_at_unix_us"):
+        row[key] = _datetime_from_unix_us(row[key])
+    row["duration_ms"] = float(row["duration_ms"])
+    row["attributes"] = _canonical_json_text(row["attributes"])
+    return tuple(row[key] for key in _SPAN_KEYS)
+
+
+def _v2_event_row(value: object) -> tuple[object, ...]:
+    assert isinstance(value, dict)
+    row = dict(value)
+    row["occurred_at_unix_us"] = _datetime_from_unix_us(
+        row["occurred_at_unix_us"]
+    )
+    row["attributes"] = _canonical_json_text(row["attributes"])
+    return tuple(row[key] for key in _EVENT_KEYS)
+
+
+def _validate_v2_envelope_object(envelope: object) -> None:
+    if type(envelope) is not dict:
+        raise TraceEnvelopeError("invalid_shape")
+    _require_exact_keys(envelope, _V2_ENVELOPE_KEYS)
+    if type(envelope["envelope_schema_version"]) is not int:
+        raise TraceEnvelopeError("invalid_value")
+    if envelope["envelope_schema_version"] != 2:
+        raise TraceEnvelopeError("unsupported_envelope_version")
+    _require_exact_integer(envelope["observation_schema_version"], 2)
+    command = envelope["command"]
+    operation = envelope["retrieval_operation"]
+    spans = envelope["spans"]
+    events = envelope["events"]
+    if type(command) is not dict:
+        raise TraceEnvelopeError("invalid_shape")
+    if operation is not None and type(operation) is not dict:
+        raise TraceEnvelopeError("invalid_shape")
+    if type(spans) is not list or not 1 <= len(spans) <= MAX_SPANS:
+        raise TraceEnvelopeError("invalid_shape")
+    if type(events) is not list or len(events) > MAX_EVENTS:
+        raise TraceEnvelopeError("invalid_shape")
+    _validate_v2_command(command)
+    if operation is not None:
+        _validate_v2_operation(operation)
+    for span in spans:
+        _validate_v2_span(span)
+    for event in events:
+        _validate_v2_event(event)
+    _validate_v2_graph(command, operation, spans, events)
+
+
+def _validate_v2_command(command: dict[str, object]) -> None:
+    _require_exact_keys(command, frozenset(_V2_COMMAND_KEYS))
+    _require_trace_id(command["trace_id"])
+    _require_span_id(command["root_span_id"])
+    start = _require_timestamp(command["started_at_unix_us"])
+    end = _require_timestamp(command["ended_at_unix_us"])
+    if end < start:
+        raise TraceEnvelopeError("invalid_value")
+    _require_number(command["command_duration_ms"], nonnegative=True)
+    _require_duration_agreement(command["command_duration_ms"], start, end)
+    _require_enum(command["execution_mode"], {"live", "preview"})
+    _require_enum(
+        command["retrieval_mode"],
+        {"explicit_single", "explicit_multi", "automatic"},
+    )
+    _require_enum(command["outcome"], {"success", "error"})
+    exit_code = command["exit_code"]
+    if type(exit_code) is not int or not 0 <= exit_code <= 255:
+        raise TraceEnvelopeError("invalid_value")
+    _require_nullable_enum(command["error_type"], _V2_COMMAND_ERROR_TYPES)
+    if type(command["pipeline_present"]) is not bool:
+        raise TraceEnvelopeError("invalid_value")
+    if type(command["buoy_version"]) is not str or not _VERSION_RE.fullmatch(
+        command["buoy_version"]
+    ):
+        raise TraceEnvelopeError("invalid_value")
+    _require_exact_integer(command["observation_schema_version"], 2)
+    if command["outcome"] == "success":
+        if exit_code != 0 or command["error_type"] is not None:
+            raise TraceEnvelopeError("invalid_graph")
+    elif command["error_type"] is None:
+        raise TraceEnvelopeError("invalid_graph")
+    if command["execution_mode"] == "preview" and command["pipeline_present"]:
+        raise TraceEnvelopeError("invalid_graph")
+
+
+def _validate_v2_operation(operation: dict[str, object]) -> None:
+    _require_exact_keys(operation, frozenset(_V2_OPERATION_KEYS))
+    _require_trace_id(operation["trace_id"])
+    _require_span_id(operation["span_id"])
+    start = _require_timestamp(operation["started_at_unix_us"])
+    end = _require_timestamp(operation["ended_at_unix_us"])
+    if end < start:
+        raise TraceEnvelopeError("invalid_value")
+    _require_number(operation["pipeline_duration_ms"], nonnegative=True)
+    _require_duration_agreement(operation["pipeline_duration_ms"], start, end)
+    _require_enum(operation["outcome"], {"success", "partial", "error"})
+    for key in (
+        "hit_count",
+        "namespace_count",
+        "initial_fanout",
+        "final_fanout",
+        "failure_count",
+        "top_k",
+        "candidates",
+    ):
+        _require_counter(operation[key])
+    for key in ("incomplete", "widened"):
+        if type(operation[key]) is not bool:
+            raise TraceEnvelopeError("invalid_value")
+    _require_nullable_enum(
+        operation["fallback_reason"],
+        {"empty_top1", "failed_top1", "weak_top1"},
+    )
+    _require_nullable_enum(
+        operation["evidence_status"],
+        set(_STRING_ATTRIBUTE_VALUES["buoy.evidence.status"]),
+    )
+    _require_enum(
+        operation["embedding_model"],
+        set(_STRING_ATTRIBUTE_VALUES["buoy.embedding.model"]),
+    )
+    _require_enum(
+        operation["embedding_precision"],
+        set(_STRING_ATTRIBUTE_VALUES["buoy.embedding.precision"]),
+    )
+    if type(operation["buoy_version"]) is not str or not _VERSION_RE.fullmatch(
+        operation["buoy_version"]
+    ):
+        raise TraceEnvelopeError("invalid_value")
+    _require_exact_integer(operation["observation_schema_version"], 2)
+    if bool(operation["failure_count"]) != bool(operation["incomplete"]):
+        raise TraceEnvelopeError("invalid_graph")
+    if operation["final_fanout"] > operation["namespace_count"]:
+        raise TraceEnvelopeError("invalid_graph")
+    if operation["failure_count"] > operation["final_fanout"]:
+        raise TraceEnvelopeError("invalid_graph")
+
+
+def _validate_v2_span(span: object) -> None:
+    if type(span) is not dict:
+        raise TraceEnvelopeError("invalid_shape")
+    _require_exact_keys(span, _SPAN_KEY_SET)
+    _require_trace_id(span["trace_id"])
+    _require_span_id(span["span_id"])
+    if span["parent_span_id"] is not None:
+        _require_span_id(span["parent_span_id"])
+    _require_enum(span["name"], set(V2_SPAN_NAMES))
+    start = _require_timestamp(span["started_at_unix_us"])
+    end = _require_timestamp(span["ended_at_unix_us"])
+    if end < start:
+        raise TraceEnvelopeError("invalid_value")
+    _require_number(span["duration_ms"], nonnegative=True)
+    _require_duration_agreement(span["duration_ms"], start, end)
+    _require_enum(span["status_code"], {"UNSET", "OK", "ERROR"})
+    attributes = span["attributes"]
+    if type(attributes) is not dict or len(attributes) > MAX_SPAN_ATTRIBUTES:
+        raise TraceEnvelopeError("invalid_shape")
+    allowed = _V2_SPAN_ATTRIBUTE_KEYS[str(span["name"])]
+    if not set(attributes) <= allowed:
+        raise TraceEnvelopeError("invalid_shape")
+    for key, value in attributes.items():
+        _validate_v2_attribute(key, value, span_name=str(span["name"]))
+
+
+def _validate_v2_attribute(key: str, value: object, *, span_name: str) -> None:
+    if key == "buoy.observation.schema_version":
+        _require_exact_integer(value, 2)
+    elif key == "buoy.command.name":
+        _require_enum(value, {"retrieve"})
+    elif key == "buoy.command.execution_mode":
+        _require_enum(value, {"live", "preview"})
+    elif key == "buoy.command.outcome":
+        _require_enum(value, {"success", "error"})
+    elif key == "buoy.command.exit_code":
+        if type(value) is not int or not 0 <= value <= 255:
+            raise TraceEnvelopeError("invalid_value")
+    elif key == "buoy.retrieval.pipeline_present":
+        if type(value) is not bool:
+            raise TraceEnvelopeError("invalid_value")
+    elif key == "buoy.error.type" and span_name in {
+        V2_COMMAND_ROOT_SPAN_NAME,
+        *V2_COMMAND_STAGE_NAMES,
+    }:
+        _require_enum(value, _V2_COMMAND_ERROR_TYPES)
+    elif key == "buoy.observation.schema_version":
+        _require_exact_integer(value, 2)
+    else:
+        sanitized = sanitize_attribute(key, value)
+        if key == "buoy.observation.schema_version" and value == 2:
+            return
+        if sanitized != value:
+            raise TraceEnvelopeError("invalid_value")
+
+
+def _validate_v2_event(event: object) -> None:
+    if type(event) is not dict:
+        raise TraceEnvelopeError("invalid_shape")
+    _require_exact_keys(event, _EVENT_KEY_SET)
+    _require_trace_id(event["trace_id"])
+    _require_span_id(event["span_id"])
+    _require_exact_integer(event["event_index"], 0)
+    _require_enum(event["name"], {WIDENED_EVENT_NAME})
+    _require_timestamp(event["occurred_at_unix_us"])
+    attributes = event["attributes"]
+    if type(attributes) is not dict:
+        raise TraceEnvelopeError("invalid_shape")
+    _require_exact_keys(attributes, EVENT_ATTRIBUTE_KEYS)
+    for key, value in attributes.items():
+        if sanitize_attribute(key, value) != value:
+            raise TraceEnvelopeError("invalid_value")
+
+
+def _validate_v2_graph(
+    command: dict[str, object],
+    operation: dict[str, object] | None,
+    spans: list[object],
+    events: list[object],
+) -> None:
+    span_values = [value for value in spans if isinstance(value, dict)]
+    by_id = {span["span_id"]: span for span in span_values}
+    if len(by_id) != len(span_values):
+        raise TraceEnvelopeError("invalid_graph")
+    roots = [span for span in span_values if span["parent_span_id"] is None]
+    if len(roots) != 1:
+        raise TraceEnvelopeError("invalid_graph")
+    root = roots[0]
+    if (
+        root["name"] != V2_COMMAND_ROOT_SPAN_NAME
+        or root["trace_id"] != command["trace_id"]
+        or root["span_id"] != command["root_span_id"]
+    ):
+        raise TraceEnvelopeError("invalid_graph")
+    if any(span["trace_id"] != command["trace_id"] for span in span_values):
+        raise TraceEnvelopeError("invalid_graph")
+    if span_values != sorted(
+        span_values,
+        key=lambda span: (span["started_at_unix_us"], span["span_id"]),
+    ):
+        raise TraceEnvelopeError("invalid_graph")
+    root_start = root["started_at_unix_us"]
+    root_end = root["ended_at_unix_us"]
+    for span in span_values:
+        parent_id = span["parent_span_id"]
+        if parent_id is None:
+            continue
+        parent = by_id.get(parent_id)
+        if parent is None or parent is span:
+            raise TraceEnvelopeError("invalid_graph")
+        if not (
+            parent["started_at_unix_us"] <= span["started_at_unix_us"]
+            <= span["ended_at_unix_us"] <= parent["ended_at_unix_us"]
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+        seen = {span["span_id"]}
+        cursor = parent
+        while cursor["parent_span_id"] is not None:
+            if cursor["span_id"] in seen:
+                raise TraceEnvelopeError("invalid_graph")
+            seen.add(cursor["span_id"])
+            next_parent = by_id.get(cursor["parent_span_id"])
+            if next_parent is None:
+                raise TraceEnvelopeError("invalid_graph")
+            cursor = next_parent
+        if cursor is not root:
+            raise TraceEnvelopeError("invalid_graph")
+    if not all(
+        root_start <= span["started_at_unix_us"] <= span["ended_at_unix_us"] <= root_end
+        for span in span_values
+    ):
+        raise TraceEnvelopeError("invalid_graph")
+    if (
+        command["started_at_unix_us"] != root_start
+        or command["ended_at_unix_us"] != root_end
+        or float(command["command_duration_ms"]) != float(root["duration_ms"])
+    ):
+        raise TraceEnvelopeError("invalid_graph")
+    _require_summary_attributes(command, root["attributes"], _V2_COMMAND_ATTRIBUTE_FIELDS)
+    if root["attributes"].get("buoy.command.name") != "retrieve":
+        raise TraceEnvelopeError("invalid_graph")
+    expected_status = "OK" if command["outcome"] == "success" else "ERROR"
+    if root["status_code"] != expected_status:
+        raise TraceEnvelopeError("invalid_graph")
+
+    pipelines = [span for span in span_values if span["name"] == V2_PIPELINE_SPAN_NAME]
+    if len(pipelines) != (1 if command["pipeline_present"] else 0):
+        raise TraceEnvelopeError("invalid_graph")
+    if (operation is None) != (not command["pipeline_present"]):
+        raise TraceEnvelopeError("invalid_graph")
+    pipeline = pipelines[0] if pipelines else None
+    if pipeline is not None and operation is not None:
+        if (
+            operation["trace_id"] != command["trace_id"]
+            or operation["span_id"] != pipeline["span_id"]
+            or operation["started_at_unix_us"] != pipeline["started_at_unix_us"]
+            or operation["ended_at_unix_us"] != pipeline["ended_at_unix_us"]
+            or float(operation["pipeline_duration_ms"])
+            != float(pipeline["duration_ms"])
+            or operation["buoy_version"] != command["buoy_version"]
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+        _require_summary_attributes(
+            operation,
+            pipeline["attributes"],
+            _V2_OPERATION_ATTRIBUTE_FIELDS,
+        )
+        for span in span_values:
+            if span["name"] in V2_RETRIEVAL_STAGE_NAMES and not _is_descendant(
+                span, pipeline, by_id
+            ):
+                raise TraceEnvelopeError("invalid_graph")
+    elif any(span["name"] in V2_RETRIEVAL_STAGE_NAMES for span in span_values):
+        raise TraceEnvelopeError("invalid_graph")
+
+    if events != sorted(events, key=lambda event: event["event_index"]):
+        raise TraceEnvelopeError("invalid_graph")
+    widened = bool(operation and operation["widened"])
+    if len(events) != (1 if widened else 0):
+        raise TraceEnvelopeError("invalid_graph")
+    if events:
+        event = events[0]
+        assert operation is not None and pipeline is not None
+        if (
+            event["trace_id"] != command["trace_id"]
+            or event["span_id"] != pipeline["span_id"]
+            or not root_start <= event["occurred_at_unix_us"] <= root_end
+            or event["attributes"]["buoy.retrieval.initial_fanout"]
+            != operation["initial_fanout"]
+            or event["attributes"]["buoy.retrieval.final_fanout"]
+            != operation["final_fanout"]
+            or event["attributes"]["buoy.retrieval.fallback_reason"]
+            != operation["fallback_reason"]
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+
+
+def _require_summary_attributes(
+    summary: dict[str, object],
+    attributes: object,
+    fields: tuple[tuple[str, str, bool], ...],
+) -> None:
+    assert isinstance(attributes, dict)
+    for field, attribute, nullable in fields:
+        value = summary[field]
+        if nullable and value is None:
+            if attribute in attributes:
+                raise TraceEnvelopeError("invalid_graph")
+        elif attributes.get(attribute) != value:
+            raise TraceEnvelopeError("invalid_graph")
+
+
+def _is_descendant(
+    span: dict[str, object],
+    ancestor: dict[str, object],
+    by_id: dict[object, dict[str, object]],
+) -> bool:
+    parent_id = span["parent_span_id"]
+    while parent_id is not None:
+        if parent_id == ancestor["span_id"]:
+            return True
+        parent = by_id.get(parent_id)
+        if parent is None:
+            return False
+        parent_id = parent["parent_span_id"]
+    return False

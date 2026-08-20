@@ -1,4 +1,4 @@
-Status: open
+Status: active
 Created: 2026-08-20
 Updated: 2026-08-20
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -87,3 +87,30 @@ None.
 - 2026-08-20: Opened after user ratification and source/record inspection.
   Implementation intentionally deferred to a later turn under the governing
   spec-first execution gate.
+- 2026-08-20: Execution started on `work/retrieval-command-telemetry-v2` at
+  governing commit `d116448`; mandatory branch/worktree checks passed. Scope
+  remains storage/migration only, with production retrieve instrumentation
+  excluded.
+- 2026-08-20: Supervisor ratified the missing mechanical schema detail before
+  implementation: append metadata columns `command_runs_view_sha256` and
+  `command_stage_view_sha256`; add no secondary indexes beyond declared
+  primary-key and `CHECK` constraints. The active storage spec now states this
+  exact contract.
+- 2026-08-20: Implemented the bounded storage/migration slice: canonical v2
+  envelopes, separate v2 inbox/receipts, shared-capacity dual writer, exact
+  additive schema/views, read-only upgrade status and blocked flush behavior,
+  and explicit retained-backup migration. Production retrieve instrumentation
+  remains untouched.
+- 2026-08-20: Focused Python 3.13 validation passed 157 tests plus 121 subtests;
+  focused Python 3.11 validation passed 138 tests plus 100 subtests. The full
+  suite excluding the preexisting missing `scripts.release_checks` collector
+  passed 1016 tests plus 903 subtests. Offline wheel status/flush/migrate
+  lifecycle, compilation, lock check, ranking validator, diff check, privacy,
+  no-network, exact-schema, migration retry, and crash matrix passed. Evidence:
+  `.10x/evidence/2026-08-20-local-telemetry-v2-storage-migration.md`.
+- 2026-08-20: Supervisor ratified the implemented exact status/migrate JSON
+  names and nesting: flat versioned counts under `queue`, top-level
+  `migration_backup_present`, and the eleven migration result keys now stated
+  in the active storage spec. No further output keys or nesting were added.
+- 2026-08-20: Implementation handoff is ready but ticket intentionally remains
+  active pending independent exact-commit review and parent closure.

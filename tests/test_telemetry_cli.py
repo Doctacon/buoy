@@ -15,10 +15,10 @@ from buoy_search.telemetry_cli import build_parser, main as telemetry_main
 
 
 class TelemetryCliTests(unittest.TestCase):
-    def test_parser_registers_status_and_flush(self) -> None:
+    def test_parser_registers_status_flush_and_migrate(self) -> None:
         parser = build_parser()
         choices = parser._subparsers._group_actions[0].choices
-        self.assertEqual(set(choices), {"status", "flush"})
+        self.assertEqual(set(choices), {"status", "flush", "migrate"})
         args = parser.parse_args(["flush"])
         self.assertEqual(args.timeout, 30.0)
         self.assertFalse(args.json)
@@ -80,6 +80,32 @@ class TelemetryCliTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(calls, [(0.25, True)])
         self.assertEqual(stdout.getvalue(), '{"outcome":"empty"}\n')
+
+    def test_migrate_handler_is_lazy_and_content_free(self) -> None:
+        fake_writer = ModuleType("buoy_search.telemetry_writer")
+        calls: list[bool] = []
+
+        def migrate(*, json_output: bool):
+            calls.append(json_output)
+            return SimpleNamespace(exit_code=0, output='{"outcome":"absent"}')
+
+        fake_writer.telemetry_migrate_command = migrate  # type: ignore[attr-defined]
+        stdout = StringIO()
+        with (
+            patch.dict(
+                sys.modules,
+                {
+                    "buoy_search.cli": None,
+                    "buoy_search.telemetry_writer": fake_writer,
+                },
+            ),
+            redirect_stdout(stdout),
+        ):
+            result = entrypoint_main(["telemetry", "migrate", "--json"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(calls, [True])
+        self.assertEqual(stdout.getvalue(), '{"outcome":"absent"}\n')
 
     def test_telemetry_dispatch_never_imports_the_legacy_cli(self) -> None:
         fake_writer = ModuleType("buoy_search.telemetry_writer")

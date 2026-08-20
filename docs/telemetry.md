@@ -85,6 +85,40 @@ descriptor-relative filesystem safeguards available on macOS and Linux. If
 those primitives are unavailable, telemetry fails closed without affecting
 retrieval and `status` reports `platform_unsupported`.
 
+## Upgrade an existing telemetry database
+
+A version-2-capable Buoy installation creates new telemetry databases directly
+at schema version 2. It never upgrades an existing schema-version-1 database
+automatically. `buoy telemetry status` reports `upgrade_required`; version-1
+work can still drain, while version-2 envelopes remain pending.
+
+Run the explicit local migration when you are ready:
+
+```bash
+buoy telemetry migrate
+buoy telemetry migrate --json
+```
+
+Migration first drains its bounded version-1 queue snapshot, validates the
+exact closed database, builds and validates a private scratch copy, and keeps a
+byte-for-byte version-1 backup at:
+
+```text
+~/.buoy/telemetry/telemetry-v1-backup.duckdb
+```
+
+Buoy then atomically publishes the validated schema-version-2 database. The
+migration accepts no alternate path, force, repair, or delete option; it does
+not contact a provider, model, catalog, Collector, or network service. A
+mismatching or unsafe preexisting backup blocks the migration rather than
+overwriting history. Repeating a completed migration is a successful
+read-only no-op. Buoy never deletes the retained backup automatically.
+
+Schema version 2 preserves `retrieval_runs_v1` and
+`retrieval_stage_latency_v1` exactly. The separate version-2 command views are
+populated only by version-2 command envelopes; production command timing is a
+separate instrumentation change from this storage upgrade.
+
 ## Query the database
 
 The versioned views are the stable starting point for analysis. Open the
@@ -144,7 +178,7 @@ envelopes pending rather than modifying an unknown layout.
 
 ## Storage lifecycle
 
-Version 1 has no database retention or purge policy. The database grows with
+Local telemetry has no database retention or purge policy. The database grows with
 each recorded live retrieval until you manage the file yourself. Content-free
 terminal receipts rotate within a fixed bound; pending envelopes are never
 evicted to make room for newer ones. Disable new records by unsetting

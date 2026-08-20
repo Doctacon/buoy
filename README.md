@@ -91,8 +91,9 @@ than whichever directory you happen to run it from:
 - crawl output and pending plans live under
   `~/.buoy/artifacts/site-crawls/`;
 - optional local retrieval telemetry lives under `~/.buoy/telemetry/`, is
-  disabled by default, and can be inspected or drained with `buoy telemetry
-  status` and `buoy telemetry flush`. See
+  disabled by default, and can be inspected, drained, or explicitly upgraded
+  with `buoy telemetry status`, `buoy telemetry flush`, and `buoy telemetry
+  migrate`. See
   [Inspect local retrieval telemetry](docs/telemetry.md).
 
 Existing project-local `.buoy`, `.turbo-search`, and

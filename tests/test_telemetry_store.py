@@ -119,7 +119,7 @@ class TelemetryStoreTests(unittest.TestCase):
                 for table in ("trace_runs", "spans", "span_events")
             )
 
-    def test_first_commit_publishes_complete_private_v1_store(self) -> None:
+    def test_first_v1_commit_publishes_complete_private_v2_store(self) -> None:
         rows = _trace_rows()
 
         result = telemetry_store.append_trace(self.paths, rows)
@@ -130,7 +130,7 @@ class TelemetryStoreTests(unittest.TestCase):
         self.assertEqual(
             result.snapshot,
             telemetry_store.StoreSnapshot(
-                schema_version=1,
+                schema_version=2,
                 persisted_runs_snapshot=1,
                 database_device=database_stat.st_dev,
                 database_inode=database_stat.st_ino,
@@ -151,7 +151,7 @@ class TelemetryStoreTests(unittest.TestCase):
             ).fetchone()
             self.assertIsNotNone(metadata)
             assert metadata is not None
-            self.assertEqual(metadata[0], 1)
+            self.assertEqual(metadata[0], 2)
             self.assertIsNone(metadata[1].tzinfo)
             self.assertEqual(
                 connection.execute(
@@ -290,7 +290,7 @@ class TelemetryStoreTests(unittest.TestCase):
         telemetry_store.append_trace(self.paths, _trace_rows(1))
         with self._connect() as connection:
             connection.execute(
-                "UPDATE telemetry_metadata SET schema_version = 2"
+                "UPDATE telemetry_metadata SET schema_version = 1"
             )
         before = self.paths.database_path.read_bytes()
 
@@ -349,7 +349,11 @@ class TelemetryStoreTests(unittest.TestCase):
 
         self.assertEqual(self._counts(), (1, 2, 1))
 
-    def test_qualified_catalog_validation_ignores_shadow_macros(self) -> None:
+    def test_v1_qualified_catalog_validation_ignores_shadow_macros(self) -> None:
+        self.root.mkdir(mode=0o700)
+        with self._connect() as connection:
+            telemetry_store._initialize_schema_v1(connection)
+        self.paths.database_path.chmod(0o600)
         telemetry_store.append_trace(self.paths, _trace_rows(1))
         shadow_macros = (
             "CREATE MACRO current_database() "

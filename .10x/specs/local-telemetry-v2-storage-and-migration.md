@@ -290,9 +290,13 @@ metadata, validated without binding untrusted persisted views.
 
 ### Metadata and object inventory
 
-Schema version 2 has one exact metadata row identifying schema version 2,
-creation/migration timestamp, and canonical SHA-256 values for all four
-versioned views. The code owns an exact table/view/object inventory. Unknown
+Schema version 2 appends `command_runs_view_sha256` and
+`command_stage_view_sha256` after the retained `runs_view_sha256` and
+`stage_view_sha256` columns in `telemetry_metadata`. It has one exact metadata
+row identifying schema version 2, creation/migration timestamp, and canonical
+SHA-256 values for all four versioned views. The declared primary-key and
+`CHECK` constraints are the complete index/constraint contract; schema version
+2 adds no secondary indexes. The code owns an exact table/view/object inventory. Unknown
 objects, macros, altered views, columns, constraints, metadata, external
 references, attached databases, unsafe WAL/scratch, or shadowed catalog
 functions make the store incompatible or unsafe under existing rules.
@@ -344,7 +348,8 @@ work, status reports:
   the required one-time action visible.
 
 Status JSON increments its own output schema version and preserves all old
-facts under stable keys while adding versioned queue counts and
+facts under stable keys. It adds the flat keys `queue.v1_ready`,
+`queue.v1_claimed`, `queue.v2_ready`, and `queue.v2_claimed`, plus top-level
 `migration_backup_present`. Text renders the same facts without paths beyond
 the existing canonical display path. It never reads envelope contents.
 
@@ -368,10 +373,12 @@ uses only the canonical private telemetry home. It performs no provider,
 model, retrieval, catalog, credential, network, external extension, database
 repair, retention, or deletion operation.
 
-Text and JSON output contain only schema versions, bounded outcome, migrated
-v1 row/span/event counts, pending v2 count, backup-present boolean, and elapsed
-milliseconds. They contain no trace IDs, envelope names/digests, raw errors,
-paths beyond the canonical display path, or stored values.
+Migrate JSON keys are exactly `schema_version`, `database_path`,
+`source_schema_version`, `target_schema_version`, `outcome`,
+`migrated_v1_runs`, `migrated_v1_spans`, `migrated_v1_events`, `pending_v2`,
+`backup_present`, and `elapsed_ms`. Text renders the same facts. Output contains
+no trace IDs, envelope names/digests, raw errors, paths beyond the canonical
+display path, or stored values.
 
 Outcomes are exactly `absent`, `already_current`, `migrated`, `busy`, or
 `blocked`. `absent`, `already_current`, and `migrated` exit 0; `busy` exits 1;

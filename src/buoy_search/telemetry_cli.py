@@ -13,7 +13,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="buoy telemetry",
         description=(
-            "Inspect or flush Buoy's private local telemetry queue. These "
+            "Inspect, flush, or migrate Buoy's private local telemetry. These "
             "commands never contact an OpenTelemetry Collector or a network service."
         ),
     )
@@ -47,6 +47,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="emit the stable content-free JSON flush result",
     )
     flush.set_defaults(func=_run_flush)
+
+    migrate = commands.add_parser(
+        "migrate",
+        help="back up and explicitly upgrade an exact version-1 local store",
+    )
+    migrate.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the stable content-free JSON migration result",
+    )
+    migrate.set_defaults(func=_run_migrate)
     return parser
 
 
@@ -86,5 +97,13 @@ def _run_flush(args: argparse.Namespace) -> int:
         timeout=float(args.timeout),
         json_output=bool(args.json),
     )
+    print(result.output)
+    return result.exit_code
+
+
+def _run_migrate(args: argparse.Namespace) -> int:
+    from buoy_search.telemetry_writer import telemetry_migrate_command
+
+    result = telemetry_migrate_command(json_output=bool(args.json))
     print(result.output)
     return result.exit_code
