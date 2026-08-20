@@ -129,15 +129,15 @@ class ReleaseAutomationTests(unittest.TestCase):
             result["console_script"],
             release_automation.BUOY_CONSOLE_TARGET,
         )
-        self.assertEqual(result["latest_release"], "0.6.0")
+        self.assertEqual(result["latest_release"], "0.6.1")
         self.assertEqual(result["release_date"], "2026-08-20")
-        self.assertEqual(result["changelog_comparison"], "v0.5.1...v0.6.0")
+        self.assertEqual(result["changelog_comparison"], "v0.5.1...v0.6.1")
         self.assertEqual(
             result["installation_asset_url"],
             "https://github.com/Doctacon/buoy/releases/download/"
-            "v0.6.0/buoy_search-0.6.0-py3-none-any.whl",
+            "v0.6.1/buoy_search-0.6.1-py3-none-any.whl",
         )
-        self.assertEqual(result["security_supported_through"], "0.6.0")
+        self.assertEqual(result["security_supported_through"], "0.6.1")
         self.assertEqual(
             result["publication_mode"],
             "annotated-tag-triggered-github-release",
@@ -212,7 +212,7 @@ class ReleaseAutomationTests(unittest.TestCase):
         with redirect_stdout(stdout):
             result = release_automation.main(["release-version"])
         self.assertEqual(result, 0)
-        self.assertEqual(stdout.getvalue(), "0.6.0\n")
+        self.assertEqual(stdout.getvalue(), "0.6.1\n")
 
         with tempfile.TemporaryDirectory() as tmp:
             notes = Path(tmp) / "notes.md"
@@ -221,7 +221,7 @@ class ReleaseAutomationTests(unittest.TestCase):
                     [
                         "release-notes",
                         "--version",
-                        "0.6.0",
+                        "0.6.1",
                         "--output",
                         str(notes),
                     ]
@@ -440,9 +440,9 @@ class ReleaseAutomationTests(unittest.TestCase):
             changelog = clone / "CHANGELOG.md"
             original = changelog.read_text(encoding="utf-8")
             variants = (
-                original.replace("## [0.6.0] - 2026-08-20", "## [0.6.0] - pending"),
-                original.replace("## [0.6.0] - 2026-08-20", "## [0.5.0] - 2026-08-20"),
-                original.replace("## [0.6.0] - 2026-08-20", "## [01.6.0] - 2026-08-20"),
+                original.replace("## [0.6.1] - 2026-08-20", "## [0.6.1] - pending"),
+                original.replace("## [0.6.1] - 2026-08-20", "## [0.5.0] - 2026-08-20"),
+                original.replace("## [0.6.1] - 2026-08-20", "## [01.6.1] - 2026-08-20"),
             )
             for candidate in variants:
                 with self.subTest(candidate=candidate):
@@ -460,10 +460,10 @@ class ReleaseAutomationTests(unittest.TestCase):
             )
             security = clone / "SECURITY.md"
             original = security.read_text(encoding="utf-8")
-            release_row = "| 0.6.0 | Yes |"
+            release_row = "| 0.6.1 | Yes |"
             variants = (
                 original.replace(release_row + "\n", ""),
-                original.replace(release_row, "| 0.6.0 | No |"),
+                original.replace(release_row, "| 0.6.1 | No |"),
             )
             for candidate in variants:
                 with self.subTest(candidate=candidate):
@@ -486,8 +486,8 @@ class ReleaseAutomationTests(unittest.TestCase):
             original_changelog = changelog.read_text(encoding="utf-8")
             changelog.write_text(
                 original_changelog.replace(
-                    "## Unreleased\n\n## [0.6.0] - 2026-08-20",
-                    "## Unreleased\n\n- not staged\n\n## [0.6.0] - 2026-08-20",
+                    "## Unreleased\n\n## [0.6.1] - 2026-08-20",
+                    "## Unreleased\n\n- not staged\n\n## [0.6.1] - 2026-08-20",
                 ),
                 encoding="utf-8",
             )
@@ -499,8 +499,8 @@ class ReleaseAutomationTests(unittest.TestCase):
 
             changelog.write_text(
                 original_changelog.replace(
-                    "[0.6.0]: https://github.com/Doctacon/buoy/compare/v0.5.1...v0.6.0",
-                    "[0.6.0]: https://example.invalid/v0.6.0",
+                    "[0.6.1]: https://github.com/Doctacon/buoy/compare/v0.5.1...v0.6.1",
+                    "[0.6.1]: https://example.invalid/v0.6.1",
                 ),
                 encoding="utf-8",
             )
@@ -515,7 +515,7 @@ class ReleaseAutomationTests(unittest.TestCase):
             readme.write_text(
                 readme.read_text(encoding="utf-8").replace(
                     "https://github.com/Doctacon/buoy/releases/download/"
-                    "v0.6.0/buoy_search-0.6.0-py3-none-any.whl",
+                    "v0.6.1/buoy_search-0.6.1-py3-none-any.whl",
                     "https://github.com/Doctacon/buoy/releases/download/"
                     "v0.5.1/buoy_search-0.5.1-py3-none-any.whl",
                 ),
@@ -825,12 +825,12 @@ class ReleaseAutomationTests(unittest.TestCase):
         self.assertIn("It does not publish to PyPI", docs)
         self.assertIn("validate-source", docs)
         self.assertIn("## Unreleased", changelog)
-        self.assertIn("## [0.6.0] - 2026-08-20", changelog)
+        self.assertIn("## [0.6.1] - 2026-08-20", changelog)
         self.assertIn("## [0.5.1] - 2026-08-13", changelog)
         self.assertIn("## [0.5.0] - 2026-08-01", changelog)
         self.assertIn("## [0.4.0] - 2026-07-21", changelog)
         self.assertEqual(changelog.count(" - pending"), 0)
-        self.assertIn("| 0.6.0 | Yes |", security)
+        self.assertIn("| 0.6.1 | Yes |", security)
         self.assertIn("| 0.5.1 | Yes |", security)
 
     def test_focused_package_surface_includes_routing_but_excludes_operator_assets(self) -> None:

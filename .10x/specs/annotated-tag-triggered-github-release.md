@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-08-19
-Updated: 2026-08-19
+Updated: 2026-08-20
 Decision: .10x/decisions/annotated-tag-triggered-github-releases.md
 
 # Annotated-Tag-Triggered GitHub Release
@@ -39,29 +39,47 @@ The tag workflow must:
 7. read back the immutable published Release, exact annotated tag, two asset
    names/digests, latest identity, and downloaded bytes.
 
-An exact completed rerun is a read-only no-op. An exact complete draft may
-continue to publication. Any mismatched, ambiguous, duplicated, corrupt, or
-partial state fails without deletion, replacement, force, or blind retry.
+An exact rerun after the matching Release is already successfully published
+is a read-only verification no-op. Any failed run or unpublished hosted state
+is a stop for read-only inspection and may not be blindly rerun; the owner
+must choose the next separately reviewed action from the exact observed state.
+An exact complete draft is the only unpublished state this standing workflow
+can resume after that inspection and choice. Any mismatched, ambiguous,
+duplicated, or corrupt state fails without deletion, replacement, force, or
+blind retry.
 
 After a successful or stopped run, the ordinary task closes its ticket and
 evidence through a separately reviewed records-only change. That closure may
 record hosted facts and statuses only; it performs no tag, Release, asset,
 attestation, registry, provider, or user-home mutation.
 
-## First invocation
+## Invocation history and first successful publication
 
-The first invocation is v0.6.0. Before its tag push, the exact workflow must be
-reviewed and integrated, exact-main CI must pass, v0.6.0 tag/Release state must
-be absent, and repository immutable Releases must be enabled. Publication is
-GitHub-only and contains exactly `buoy_search-0.6.0-py3-none-any.whl` and
-`buoy_search-0.6.0.tar.gz`.
+The first invocation was v0.6.0. Its exact annotated tag remains fixed at
+`701d73ebbf6a8c3b2c664a0295374dcb4283283c`, but both locked test jobs stopped
+on a non-hermetic fixture that assumed an editable checkout always has a
+development version. Build and publication were skipped, leaving zero workflow
+artifacts and no v0.6.0 Release, asset, or attestation. That tag must never be
+deleted, recreated, overwritten, moved, or used by a recovery/manual-dispatch
+path.
+
+The first eligible successful publication is v0.6.1. Its ordinary reviewed
+release-preparation task must correct the public version surfaces and make the
+VCS-version fixture hermetic by constructing controlled post-tag history. The
+fix reaches `develop` through an ordinary task PR and `main` through the normal
+release PR merge commit. Exact-main CI must pass; the v0.6.1 tag and Release
+must be absent; immutable Releases must remain enabled; and the normal
+annotated `v0.6.1` tag push is the sole publication action. Publication is
+GitHub-only and contains exactly
+`buoy_search-0.6.1-py3-none-any.whl` and
+`buoy_search-0.6.1.tar.gz`.
 
 ## Acceptance
 
 - Focused workflow/validator tests and the full locked 3.11/3.13 suites pass.
 - Release readiness retains its four read-only check names and validates the
   exact prospective version.
-- The public v0.6.0 tag is annotated and the Release is immutable/latest with
+- The public v0.6.1 tag is annotated and the Release is immutable/latest with
   exactly two verified assets and build attestations.
-- A clean downloaded-wheel smoke reports 0.6.0.
+- A clean downloaded-wheel smoke reports 0.6.1.
 - No PyPI, provider, model, user-home, or unrelated repository effect occurs.

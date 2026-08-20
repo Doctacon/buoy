@@ -225,9 +225,11 @@ v0.6.0 closure records, `CHANGELOG.md`, `SECURITY.md`, `docs/releasing.md`, and
 the focused release validator/tests. It must date v0.6.0 from GitHub's
 authoritative publication time, retain and validate `| 0.6.0 | Yes |`, require
 published history through v0.6.0 with no staged target, move the active ticket
-to `.10x/tickets/done/2026-08-19-ship-buoy-v0-6-0.md`, mark evidence recorded,
-mark the decision/specification superseded and authority consumed, and add an
-independent final closure review.
+to its terminal successful location, mark evidence recorded, mark the
+decision/specification superseded and authority consumed, and add an
+independent final closure review. That unused manual path never reached this
+step; the actual stopped reusable attempt is preserved at
+`.10x/tickets/cancelled/2026-08-19-ship-buoy-v0-6-0.md`.
 
 After independent review and exact-head ordinary CI, a separate integration
 role squash-merges that closure into frozen develop as `D2`, with the frozen

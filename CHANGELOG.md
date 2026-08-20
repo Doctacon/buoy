@@ -6,7 +6,7 @@ as GitHub Release assets rather than to PyPI.
 
 ## Unreleased
 
-## [0.6.0] - 2026-08-20
+## [0.6.1] - 2026-08-20
 
 ### Added
 
@@ -110,6 +110,14 @@ as GitHub Release assets rather than to PyPI.
   ranking, per-corpus coverage promotion, evidence behavior, JSON, and provider
   calls are unchanged; partial-failure and `assessment_failed` warnings remain
   visible.
+
+### Fixed
+
+- Preserved the annotated `v0.6.0` tag without a GitHub Release after its
+  hosted validation stopped before the build, Release creation, or asset
+  publication because a dynamic-version test assumed an untagged checkout.
+  The version fixtures now create their own post-tag commit and exact annotated
+  tag, and this release publishes the changes originally staged for `v0.6.0`.
 
 ### Security
 
@@ -239,7 +247,7 @@ downloadable package assets.
 
 - The annotated `v0.2.0` tag was preserved without a GitHub Release after its hosted validation failed before artifact construction or publication.
 
-[0.6.0]: https://github.com/Doctacon/buoy/compare/v0.5.1...v0.6.0
+[0.6.1]: https://github.com/Doctacon/buoy/compare/v0.5.1...v0.6.1
 [0.5.1]: https://github.com/Doctacon/buoy/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Doctacon/buoy/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Doctacon/buoy/releases/tag/v0.4.0
