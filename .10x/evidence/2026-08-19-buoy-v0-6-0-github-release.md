@@ -68,6 +68,22 @@ of scope.
   sizes, API digests, downloaded hashes, and build/release attestations.
 - Clean downloaded-wheel version/help/module/telemetry/tokenizer smoke.
 
+## Release-readiness correction
+
+Develop integration PR #137 succeeded and produced exact squash
+`ad57706c10bc16cf71103ef00203b3ea80bfa538`. Release PR #138 then ran exact
+readiness workflow `32327633991`: Policy and both Python jobs passed, while
+Distribution job `96302401935` stopped after clean installation because its
+shell assertion expected `0.6.0` instead of the CLI's governed output
+`buoy 0.6.0`. The same incorrect expectation existed in the tag workflow.
+
+The failure was deterministic, local to two workflow assertions, and occurred
+before any main merge or release-side effect. The bounded repair expects the
+program-name prefix in both locations and adds focused source regression
+coverage. The prior implementation review is superseded by a repair review;
+all earlier full-suite, package, permission, and release-state findings remain
+valid for unchanged bytes.
+
 ## Effect log
 
 No tag, Release, release asset, attestation, registry publication, provider or

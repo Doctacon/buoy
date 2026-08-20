@@ -91,7 +91,7 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           uv venv --python 3.13 "$RUNNER_TEMP/buoy-release-smoke"
           uv pip install --python "$RUNNER_TEMP/buoy-release-smoke/bin/python" dist/*.whl
-          test "$("$RUNNER_TEMP/buoy-release-smoke/bin/buoy" --version)" = "$version"
+          test "$("$RUNNER_TEMP/buoy-release-smoke/bin/buoy" --version)" = "buoy $version"
           "$RUNNER_TEMP/buoy-release-smoke/bin/buoy" --help >/dev/null
           "$RUNNER_TEMP/buoy-release-smoke/bin/python" -m buoy_search --help >/dev/null
           "$RUNNER_TEMP/buoy-release-smoke/bin/buoy" telemetry --help >/dev/null

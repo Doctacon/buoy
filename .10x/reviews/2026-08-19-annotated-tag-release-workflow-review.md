@@ -1,12 +1,23 @@
-Status: pass
+Status: superseded
 Created: 2026-08-19
 Updated: 2026-08-19
 Ticket: .10x/tickets/2026-08-19-ship-buoy-v0-6-0.md
 Evidence: .10x/evidence/2026-08-19-buoy-v0-6-0-github-release.md
 Decision: .10x/decisions/annotated-tag-triggered-github-releases.md
 Specification: .10x/specs/annotated-tag-triggered-github-release.md
+Superseded-By: .10x/reviews/2026-08-19-annotated-tag-release-workflow-smoke-repair-review.md
 
 # Annotated-Tag Release Workflow Review
+
+## Correction
+
+This PASS is superseded only for its claim that the workflow clean-wheel smoke
+was release-ready. Release PR #138 proved that both workflow assertions
+expected bare `0.6.0`, while the governed argparse CLI prints `buoy 0.6.0`.
+The failure happened after installation and before any main merge or release
+write. All review findings about tests, artifacts, permissions, tags, Release
+state, attestations, governance, and privacy remain valid for unchanged bytes.
+Only the later bounded smoke-repair review may authorize renewed handoff.
 
 Target: uncommitted release-preparation candidate based on exact
 `develop@06708ce39e9b5e8c15ce6204c2af4e9c73334ade`.
