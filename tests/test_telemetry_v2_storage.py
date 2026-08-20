@@ -2,16 +2,19 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timedelta
+import hashlib
 import json
+import os
 from pathlib import Path
 import socket
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
 import duckdb
 
-from buoy_search import telemetry_store, telemetry_writer
+from buoy_search import telemetry_queue, telemetry_store, telemetry_writer
 from buoy_search.telemetry_envelope import (
     CommandTraceRows,
     TraceEnvelopeError,
@@ -24,10 +27,14 @@ from buoy_search.telemetry_envelope import (
 )
 from buoy_search.telemetry_queue import (
     QueueSnapshot,
+    TerminalReceipt,
     WriterState,
+    claim_ready_names,
     publish_envelope,
+    publish_terminal_receipt,
     read_terminal_receipt,
     read_writer_state,
+    reconcile_writer_receipts_shared,
     scan_queue_read_only,
     telemetry_paths,
     telemetry_paths_v2,
@@ -239,6 +246,32 @@ def _insert_v1_rows(path: Path, rows: tuple[TraceRows, ...]) -> None:
     with duckdb.connect(str(path), config=_SAFE_CONFIG) as connection:
         for trace in rows:
             telemetry_store._insert_trace_rows(connection, trace)
+
+
+def _publish_claimed_receipt(
+    paths: telemetry_queue.TelemetryPaths,
+    payload: bytes,
+    *,
+    recorded_at_unix_ms: int,
+) -> tuple[str, telemetry_queue.ReceiptPublicationResult]:
+    publication = publish_envelope(payload, paths=paths)
+    assert publication.source_name is not None
+    claimed = claim_ready_names(paths, (publication.source_name,))
+    assert claimed == (publication.source_name,)
+    result = publish_terminal_receipt(
+        paths,
+        TerminalReceipt(
+            schema_version=paths.queue_version,
+            kind="committed",
+            source_name=publication.source_name,
+            envelope_sha256=hashlib.sha256(payload).hexdigest(),
+            digest_complete=True,
+            envelope_bytes=len(payload),
+            recorded_at_unix_ms=recorded_at_unix_ms,
+            reason=None,
+        ),
+    )
+    return publication.source_name, result
 
 
 def _widened_v2_object() -> dict[str, object]:
@@ -633,9 +666,12 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
             "validated_source",
             "scratch_created",
             "scratch_copied",
+            "backup_candidate_copied",
+            "backup_candidate_validated",
             "transaction_committed",
             "scratch_validated",
-            "backup_created",
+            "backup_published",
+            "backup_validated",
             "backup_fsynced",
             "canonical_published",
             "directory_fsynced",
@@ -646,14 +682,17 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
                 paths = telemetry_paths(Path(raw) / "telemetry")
                 _create_v1_store(paths.database_path)
 
+                class InjectedCrash(BaseException):
+                    pass
+
                 def fail(
                     observed: str,
                     selected_phase: str = phase,
                 ) -> None:
                     if observed == selected_phase:
-                        raise RuntimeError("PRIVATE_FAULT_SENTINEL")
+                        raise InjectedCrash
 
-                with self.assertRaises(RuntimeError):
+                with self.assertRaises(InjectedCrash):
                     telemetry_store.migrate_store_v1_to_v2(
                         paths, fault_hook=fail
                     )
@@ -665,12 +704,17 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
                 } else 1
                 self.assertEqual(version, expected)
                 self.assertFalse(paths.database_wal_path.exists())
-                if phase == "backup_created":
-                    retried = telemetry_store.migrate_store_v1_to_v2(paths)
-                    self.assertTrue(retried.backup_present)
-                    self.assertEqual(
-                        telemetry_store.inspect_store_schema_version(paths), 2
-                    )
+                retried = telemetry_migrate_command(
+                    json_output=True, paths=paths
+                )
+                self.assertEqual(retried.exit_code, 0)
+                self.assertIn(
+                    json.loads(retried.output)["outcome"],
+                    {"migrated", "already_current"},
+                )
+                self.assertEqual(
+                    telemetry_store.inspect_store_schema_version(paths), 2
+                )
 
 
 class ReviewRepairTests(unittest.TestCase):
@@ -1125,6 +1169,395 @@ class ReviewRepairTests(unittest.TestCase):
             telemetry_status(paths=self.v1, environment={})["store"]["state"],
             "present_unverified",
         )
+
+
+    def test_backup_published_retry_skips_later_v1_then_flushes_once(self) -> None:
+        _create_v1_store(self.v1.database_path)
+        source = _v1_rows()
+        _insert_v1_rows(self.v1.database_path, (source,))
+
+        class InjectedCrash(BaseException):
+            pass
+
+        def crash(phase: str) -> None:
+            if phase == "backup_published":
+                raise InjectedCrash
+
+        with self.assertRaises(InjectedCrash):
+            telemetry_store.migrate_store_v1_to_v2(
+                self.v1, fault_hook=crash
+            )
+        backup = self.v1.backup_database_path.read_bytes()
+        later = _replace_v1_trace(source, 2)
+        published = publish_envelope(
+            encode_trace_envelope_v1(later), paths=self.v1
+        )
+        migrated = telemetry_migrate_command(json_output=True, paths=self.v1)
+        facts = json.loads(migrated.output)
+        self.assertEqual((migrated.exit_code, facts["outcome"]), (0, "migrated"))
+        self.assertEqual(facts["migrated_v1_runs"], 1)
+        self.assertEqual(scan_queue_read_only(self.v1).ready, 1)
+        self.assertEqual(self.v1.backup_database_path.read_bytes(), backup)
+
+        def start_writer(**_kwargs: object) -> None:
+            with patch.object(telemetry_writer, "IDLE_EXIT_SECONDS", 0):
+                run_writer(self.v1)
+
+        with patch.object(
+            telemetry_writer, "request_writer_start", side_effect=start_writer
+        ):
+            flushed = telemetry_flush(timeout=5, paths=self.v1)
+        self.assertEqual(flushed["outcome"], "flushed")
+        assert published.source_name is not None
+        self.assertEqual(
+            read_terminal_receipt(
+                published.source_name, paths=self.v1
+            ).kind,
+            "committed",
+        )
+        with duckdb.connect(
+            str(self.v1.database_path), read_only=True, config=_SAFE_CONFIG
+        ) as connection:
+            self.assertEqual(
+                connection.execute("SELECT count(*) FROM trace_runs").fetchone()[0],
+                2,
+            )
+        with patch.object(
+            telemetry_writer, "request_writer_start", side_effect=start_writer
+        ):
+            self.assertEqual(
+                telemetry_flush(timeout=1, paths=self.v1)["outcome"], "empty"
+            )
+        self.assertEqual(self.v1.backup_database_path.read_bytes(), backup)
+
+    def test_incomplete_migration_scans_block_before_store_import(self) -> None:
+        _create_v1_store(self.v1.database_path)
+        for incomplete_version in (1, 2):
+            with self.subTest(queue_version=incomplete_version):
+                calls = 0
+
+                def scan(paths: telemetry_queue.TelemetryPaths) -> QueueSnapshot:
+                    nonlocal calls
+                    calls += 1
+                    return QueueSnapshot(
+                        present=True,
+                        scan_incomplete=paths.queue_version == incomplete_version,
+                    )
+
+                with patch.object(
+                    telemetry_writer, "scan_queue_read_only", side_effect=scan
+                ), patch.object(
+                    telemetry_writer,
+                    "_load_store_module",
+                    side_effect=AssertionError("store imported"),
+                ) as load:
+                    result = telemetry_migrate_command(
+                        json_output=True, paths=self.v1
+                    )
+                self.assertEqual(result.exit_code, 2)
+                self.assertEqual(calls, 2)
+                load.assert_not_called()
+
+        calls = 0
+
+        def post_lock_scan(paths: telemetry_queue.TelemetryPaths) -> QueueSnapshot:
+            nonlocal calls
+            calls += 1
+            return QueueSnapshot(
+                present=True,
+                scan_incomplete=calls == 3 and paths.queue_version == 1,
+            )
+
+        with patch.object(
+            telemetry_writer,
+            "scan_queue_read_only",
+            side_effect=post_lock_scan,
+        ), patch.object(
+            telemetry_writer,
+            "_load_store_module",
+            side_effect=AssertionError("store imported"),
+        ) as load:
+            result = telemetry_migrate_command(
+                json_output=True, paths=self.v1
+            )
+        self.assertEqual(result.exit_code, 2)
+        self.assertEqual(calls, 4)
+        load.assert_not_called()
+
+    def test_exact_object_inventory_rejects_all_user_metadata_v1_and_v2(self) -> None:
+        mutations = {
+            "macro": "CREATE MACRO current_database() AS 'shadow'",
+            "sequence": "CREATE SEQUENCE unexpected_sequence",
+            "type": "CREATE TYPE unexpected_type AS ENUM ('x')",
+            "default": (
+                "ALTER TABLE trace_runs ALTER COLUMN outcome "
+                "SET DEFAULT 'success'"
+            ),
+            "comment": "COMMENT ON TABLE trace_runs IS 'private comment'",
+        }
+        for version in (1, 2):
+            for name, statement in mutations.items():
+                with self.subTest(version=version, mutation=name), tempfile.TemporaryDirectory() as raw:
+                    paths = telemetry_paths(Path(raw) / "telemetry")
+                    if version == 1:
+                        _create_v1_store(paths.database_path)
+                    else:
+                        telemetry_store.append_trace(
+                            telemetry_paths_v2(paths.directory), _rows()
+                        )
+                    with duckdb.connect(
+                        str(paths.database_path), config=_SAFE_CONFIG
+                    ) as connection:
+                        connection.execute(statement)
+                    with self.assertRaises(telemetry_store.StoreUnsafeError):
+                        telemetry_store.inspect_store_schema_version(paths)
+
+    def test_exact_v2_content_privacy_and_graph_edits_block(self) -> None:
+        sentinel = "PRIVATE_EDITED_V2_SENTINEL"
+        mutations = {
+            "privacy": (
+                "UPDATE spans SET attributes = ? WHERE parent_span_id IS NULL",
+                (_canonical({"private": sentinel}),),
+            ),
+            "oversized_scalar": (
+                "UPDATE spans SET attributes = ? WHERE parent_span_id IS NULL",
+                (_canonical({"private": "x" * 65_537}),),
+            ),
+            "graph": (
+                "UPDATE spans SET parent_span_id = ? WHERE parent_span_id IS NULL",
+                ("f" * 16,),
+            ),
+        }
+        for name, (statement, parameters) in mutations.items():
+            with self.subTest(mutation=name), tempfile.TemporaryDirectory() as raw:
+                paths = telemetry_paths(Path(raw) / "telemetry")
+                v2 = telemetry_paths_v2(paths.directory)
+                telemetry_store.append_trace(v2, _rows())
+                with duckdb.connect(
+                    str(paths.database_path), config=_SAFE_CONFIG
+                ) as connection:
+                    connection.execute(statement, parameters)
+                with self.assertRaises(telemetry_store.StoreUnsafeError):
+                    telemetry_store.inspect_store_schema_version(paths)
+                result = telemetry_migrate_command(
+                    json_output=True, paths=paths
+                )
+                self.assertEqual(result.exit_code, 2)
+                self.assertNotIn(sentinel, result.output)
+
+        with tempfile.TemporaryDirectory() as raw:
+            paths = telemetry_paths(Path(raw) / "telemetry")
+            v2 = telemetry_paths_v2(paths.directory)
+            telemetry_store.append_trace(v2, _rows())
+            with duckdb.connect(
+                str(paths.database_path), config=_SAFE_CONFIG
+            ) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO spans
+                    SELECT trace_id, lpad(to_hex(i), 16, '0'), root_span_id,
+                           'buoy.retrieve.pipeline', started_at, ended_at,
+                           command_duration_ms, 'OK', '{}'
+                    FROM retrieve_command_runs, range(1, 257) AS values(i)
+                    """
+                )
+            with self.assertRaises(telemetry_store.StoreUnsafeError):
+                telemetry_store.inspect_store_schema_version(paths)
+
+    def test_retained_backup_must_be_valid_and_match_canonical_v1_history(self) -> None:
+        sentinel = "PRIVATE_BACKUP_CONTENT_SENTINEL"
+        mutations = {
+            "privacy": (
+                "UPDATE spans SET attributes = ?",
+                (_canonical({"private": sentinel}),),
+            ),
+            "graph": (
+                "UPDATE spans SET parent_span_id = ?",
+                ("f" * 16,),
+            ),
+            "different_valid_history": (None, ()),
+        }
+        for name, (statement, parameters) in mutations.items():
+            with self.subTest(mutation=name), tempfile.TemporaryDirectory() as raw:
+                paths = telemetry_paths(Path(raw) / "telemetry")
+                v2 = telemetry_paths_v2(paths.directory)
+                _create_v1_store(paths.database_path)
+                _insert_v1_rows(paths.database_path, (_v1_rows(),))
+                telemetry_store.migrate_store_v1_to_v2(paths)
+                with duckdb.connect(
+                    str(paths.backup_database_path), config=_SAFE_CONFIG
+                ) as connection:
+                    if statement is not None:
+                        connection.execute(statement, parameters)
+                    else:
+                        connection.execute(
+                            "UPDATE spans SET trace_id = ?",
+                            ("c" * 32,),
+                        )
+                        connection.execute(
+                            "UPDATE trace_runs SET trace_id = ?",
+                            ("c" * 32,),
+                        )
+                with self.assertRaises(telemetry_store.StoreIncompatibleError):
+                    telemetry_store.append_trace(v2, _rows())
+                with self.assertRaises(telemetry_store.StoreIncompatibleError):
+                    telemetry_store.reconcile_already_current_store(paths)
+                self.assertNotIn(
+                    sentinel,
+                    telemetry_migrate_command(
+                        json_output=True, paths=paths
+                    ).output,
+                )
+
+    def test_orphan_auxiliary_store_state_is_blocked_and_nonmutating(self) -> None:
+        cases = ("backup", "migration", "initialization", "hostile_backup")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as raw:
+                paths = telemetry_paths(Path(raw) / "telemetry")
+                paths.directory.mkdir(mode=0o700)
+                if case == "backup":
+                    paths.backup_database_path.write_bytes(b"safe")
+                    paths.backup_database_path.chmod(0o600)
+                elif case == "migration":
+                    paths.migration_directory.mkdir(mode=0o700)
+                elif case == "initialization":
+                    paths.database_init_directory.mkdir(mode=0o700)
+                else:
+                    target = Path(raw) / "target"
+                    target.write_bytes(b"untouched")
+                    paths.backup_database_path.symlink_to(target)
+                before = sorted(
+                    (item.relative_to(paths.directory).as_posix(), item.is_symlink())
+                    for item in paths.directory.rglob("*")
+                )
+                result = telemetry_migrate_command(
+                    json_output=True, paths=paths
+                )
+                facts = json.loads(result.output)
+                self.assertEqual((result.exit_code, facts["outcome"]), (2, "blocked"))
+                self.assertEqual(facts["backup_present"], case == "backup")
+                after = sorted(
+                    (item.relative_to(paths.directory).as_posix(), item.is_symlink())
+                    for item in paths.directory.rglob("*")
+                )
+                self.assertEqual(after, before)
+
+    def test_receipt_capacity_rotation_and_reconciliation_are_shared(self) -> None:
+        now_ms = int(time.time() * 1_000)
+        first, _ = _publish_claimed_receipt(
+            self.v1, encode_trace_envelope_v1(_v1_rows()), recorded_at_unix_ms=now_ms
+        )
+        second, _ = _publish_claimed_receipt(
+            self.v2, encode_trace_envelope_v2(_rows()), recorded_at_unix_ms=now_ms
+        )
+        third_rows = _replace_v1_trace(_v1_rows(), 3)
+        third_publication = publish_envelope(
+            encode_trace_envelope_v1(third_rows), paths=self.v1
+        )
+        assert third_publication.source_name is not None
+        claim_ready_names(self.v1, (third_publication.source_name,))
+        third_receipt = TerminalReceipt(
+            schema_version=1,
+            kind="committed",
+            source_name=third_publication.source_name,
+            envelope_sha256=hashlib.sha256(
+                encode_trace_envelope_v1(third_rows)
+            ).hexdigest(),
+            digest_complete=True,
+            envelope_bytes=len(encode_trace_envelope_v1(third_rows)),
+            recorded_at_unix_ms=now_ms,
+            reason=None,
+        )
+        with patch.object(telemetry_queue, "RECEIPT_MAX_ENTRIES", 2):
+            with self.assertRaises(telemetry_queue.TelemetryQueueError):
+                publish_terminal_receipt(self.v1, third_receipt)
+            first_path = self.v1.receipts_directory / telemetry_queue.receipt_name_for_source(first)
+            old_ns = (now_ms - 122_000) * 1_000_000
+            os.utime(first_path, ns=(old_ns, old_ns))
+            published = publish_terminal_receipt(self.v1, third_receipt)
+            self.assertIn(
+                telemetry_queue.receipt_name_for_source(first),
+                published.rotated_names,
+            )
+            state = reconcile_writer_receipts_shared(
+                WriterState(
+                    accounted_receipts=tuple(
+                        sorted(
+                            (
+                                telemetry_queue.receipt_name_for_source(first),
+                                telemetry_queue.receipt_name_for_source(second),
+                            )
+                        )
+                    )
+                ),
+                paths=(self.v1, self.v2),
+            )
+            self.assertEqual(len(state.accounted_receipts), 2)
+            self.assertEqual(state.receipts_rotated, 1)
+
+    def test_shared_receipt_byte_and_temporary_boundaries(self) -> None:
+        now_ms = int(time.time() * 1_000)
+        _publish_claimed_receipt(
+            self.v1, encode_trace_envelope_v1(_v1_rows()), recorded_at_unix_ms=now_ms
+        )
+        _publish_claimed_receipt(
+            self.v2, encode_trace_envelope_v2(_rows()), recorded_at_unix_ms=now_ms
+        )
+        existing_bytes = sum(
+            item.stat().st_size
+            for directory in (
+                self.v1.receipts_directory,
+                self.v2.receipts_directory,
+            )
+            for item in directory.iterdir()
+        )
+        later = _replace_trace(_rows(), "8")
+        source = publish_envelope(
+            encode_trace_envelope_v2(later), paths=self.v2
+        ).source_name
+        assert source is not None
+        claim_ready_names(self.v2, (source,))
+        receipt = TerminalReceipt(
+            2,
+            "committed",
+            source,
+            hashlib.sha256(encode_trace_envelope_v2(later)).hexdigest(),
+            True,
+            len(encode_trace_envelope_v2(later)),
+            now_ms,
+            None,
+        )
+        with patch.object(telemetry_queue, "RECEIPT_MAX_ENTRIES", 10), patch.object(
+            telemetry_queue, "RECEIPT_MAX_BYTES", existing_bytes
+        ), self.assertRaises(telemetry_queue.TelemetryQueueError):
+            publish_terminal_receipt(self.v2, receipt)
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "telemetry"
+            v1 = telemetry_paths(root)
+            v2 = telemetry_paths_v2(root)
+            p1 = publish_envelope(encode_trace_envelope_v1(_v1_rows()), paths=v1)
+            p2 = publish_envelope(encode_trace_envelope_v2(_rows()), paths=v2)
+            assert p1.source_name and p2.source_name
+            claim_ready_names(v1, (p1.source_name,))
+            for paths, name in ((v1, "r1-" + "a" * 32 + ".part"), (v2, "r2-" + "b" * 32 + ".part")):
+                path = paths.receipts_directory / name
+                path.write_bytes(b"x")
+                path.chmod(0o600)
+            receipt = TerminalReceipt(
+                1,
+                "committed",
+                p1.source_name,
+                hashlib.sha256(encode_trace_envelope_v1(_v1_rows())).hexdigest(),
+                True,
+                len(encode_trace_envelope_v1(_v1_rows())),
+                now_ms,
+                None,
+            )
+            with patch.object(telemetry_queue, "RECEIPT_MAX_ENTRIES", 2), self.assertRaises(
+                telemetry_queue.TelemetryQueueError
+            ):
+                publish_terminal_receipt(v1, receipt)
 
 
 def _replace_trace(rows: CommandTraceRows, digit: str) -> CommandTraceRows:

@@ -2677,24 +2677,37 @@ def read_claimed_envelope(
 
 
 def _rotate_receipts_for_payload(
-    directories: _QueueDirectoryFds,
+    directories: tuple[_QueueDirectoryFds, ...],
     *,
     payload_bytes: int,
     now_unix_ms: int,
+    creating_temporary: bool = True,
 ) -> tuple[str, ...]:
-    finals, temporaries = _scan_receipt_files(
-        directories.receipts,
-        queue_version=directories.queue_version,
-    )
-    if finals.incomplete or temporaries.incomplete:
-        raise TelemetryQueueError("receipt scan exceeded its bound")
-    if (
-        len(temporaries.entries) >= RECEIPT_MAX_ENTRIES
-        or temporaries.total_bytes + payload_bytes > RECEIPT_MAX_BYTES
-    ):
+    scans: list[tuple[_QueueDirectoryFds, _DirectoryScan, _DirectoryScan]] = []
+    for current in directories:
+        finals, temporaries = _scan_receipt_files(
+            current.receipts,
+            queue_version=current.queue_version,
+        )
+        if finals.incomplete or temporaries.incomplete:
+            raise TelemetryQueueError("receipt scan exceeded its bound")
+        scans.append((current, finals, temporaries))
+    temporary_count = sum(len(item.entries) for _d, _f, item in scans)
+    temporary_bytes = sum(item.total_bytes for _d, _f, item in scans)
+    if creating_temporary:
+        temporary_full = (
+            temporary_count >= RECEIPT_MAX_ENTRIES
+            or temporary_bytes + payload_bytes > RECEIPT_MAX_BYTES
+        )
+    else:
+        temporary_full = (
+            temporary_count > RECEIPT_MAX_ENTRIES
+            or temporary_bytes > RECEIPT_MAX_BYTES
+        )
+    if temporary_full:
         raise TelemetryQueueError("receipt temporary capacity is full")
-    remaining_count = len(finals.entries)
-    remaining_bytes = finals.total_bytes
+    remaining_count = sum(len(item.entries) for _d, item, _t in scans)
+    remaining_bytes = sum(item.total_bytes for _d, item, _t in scans)
     if (
         remaining_count + 1 <= RECEIPT_MAX_ENTRIES
         and remaining_bytes + payload_bytes <= RECEIPT_MAX_BYTES
@@ -2702,17 +2715,24 @@ def _rotate_receipts_for_payload(
         return ()
     cutoff_ns = (now_unix_ms - RECEIPT_MIN_AGE_SECONDS * 1_000) * 1_000_000
     eligible = sorted(
-        (item for item in finals.entries if item.mtime_ns <= cutoff_ns),
-        key=lambda item: (item.mtime_ns, item.name),
+        (
+            (item.mtime_ns, item.name, current, item)
+            for current, finals, _temporaries in scans
+            for item in finals.entries
+            if item.mtime_ns <= cutoff_ns
+        ),
+        key=lambda value: (value[0], value[1]),
     )
     removed: list[str] = []
-    for item in eligible:
+    mutated: set[int] = set()
+    for _mtime_ns, _name, current, item in eligible:
         if (
             remaining_count + 1 <= RECEIPT_MAX_ENTRIES
             and remaining_bytes + payload_bytes <= RECEIPT_MAX_BYTES
         ):
             break
-        safe_unlink_at(directories.receipts, item.name)
+        safe_unlink_at(current.receipts, item.name)
+        mutated.add(current.receipts)
         removed.append(item.name)
         remaining_count -= 1
         remaining_bytes -= item.size
@@ -2721,6 +2741,8 @@ def _rotate_receipts_for_payload(
         or remaining_bytes + payload_bytes > RECEIPT_MAX_BYTES
     ):
         raise TelemetryQueueError("receipt capacity has no eligible rotation")
+    for descriptor in mutated:
+        fsync_directory(descriptor)
     return tuple(removed)
 
 
@@ -2741,8 +2763,21 @@ def publish_terminal_receipt(
     temporary_name = receipt_temp_name_for_source(validated.source_name)
     with queue_lock(paths):
         directories = _open_queue_directories(paths, create=False)
+        other_directories: _QueueDirectoryFds | None = None
         try:
             _strict_queue_scans(directories)
+            other_paths = telemetry_paths(
+                paths.directory,
+                queue_version=2 if paths.queue_version == 1 else 1,
+            )
+            try:
+                other_directories = _open_queue_directories(
+                    other_paths, create=False
+                )
+            except FileNotFoundError:
+                other_directories = None
+            if other_directories is not None:
+                _strict_queue_scans(other_directories)
             stat_private_entry_at(
                 directories.claimed,
                 validated.source_name,
@@ -2755,7 +2790,11 @@ def publish_terminal_receipt(
                     raise InvalidStateError("terminal receipt classification differs")
                 return ReceiptPublicationResult(False, True)
             rotated = _rotate_receipts_for_payload(
-                directories,
+                tuple(
+                    current
+                    for current in (directories, other_directories)
+                    if current is not None
+                ),
                 payload_bytes=len(payload),
                 now_unix_ms=validated.recorded_at_unix_ms,
             )
@@ -2802,6 +2841,8 @@ def publish_terminal_receipt(
                 durability_degraded=durability_degraded,
             )
         finally:
+            if other_directories is not None:
+                other_directories.close()
             directories.close()
 
 
@@ -2901,8 +2942,21 @@ def resolve_receipt_temporary(
         raise ValueError("recognized versioned receipt temporary name required")
     with queue_lock(paths):
         directories = _open_queue_directories(paths, create=False)
+        other_directories: _QueueDirectoryFds | None = None
         try:
             _strict_queue_scans(directories)
+            other_paths = telemetry_paths(
+                paths.directory,
+                queue_version=2 if paths.queue_version == 1 else 1,
+            )
+            try:
+                other_directories = _open_queue_directories(
+                    other_paths, create=False
+                )
+            except FileNotFoundError:
+                other_directories = None
+            if other_directories is not None:
+                _strict_queue_scans(other_directories)
             try:
                 payload = _read_all_verified(
                     directories.receipts,
@@ -2933,6 +2987,16 @@ def resolve_receipt_temporary(
                 and claim_exists
                 and terminal_condition_proven
             ):
+                _rotate_receipts_for_payload(
+                    tuple(
+                        current
+                        for current in (directories, other_directories)
+                        if current is not None
+                    ),
+                    payload_bytes=len(payload),
+                    now_unix_ms=receipt.recorded_at_unix_ms,
+                    creating_temporary=False,
+                )
                 os.rename(
                     temporary_name,
                     final_name,
@@ -2945,6 +3009,8 @@ def resolve_receipt_temporary(
             fsync_directory(directories.receipts)
             return False
         finally:
+            if other_directories is not None:
+                other_directories.close()
             directories.close()
 
 
@@ -3087,6 +3153,60 @@ def reconcile_writer_receipts(
             )
         finally:
             directories.close()
+
+
+def reconcile_writer_receipts_shared(
+    state: WriterState,
+    *,
+    paths: tuple[TelemetryPaths, ...],
+) -> WriterState:
+    """Reconcile the one bounded receipt identity set across both inboxes."""
+
+    if not paths:
+        return state
+    opened: list[_QueueDirectoryFds] = []
+    with queue_lock(paths[0]):
+        try:
+            visible: dict[str, tuple[_QueueDirectoryFds, str]] = {}
+            for selected in paths:
+                try:
+                    directories = _open_queue_directories(
+                        selected, create=False
+                    )
+                except FileNotFoundError:
+                    continue
+                opened.append(directories)
+                finals, temporaries = _scan_receipt_files(
+                    directories.receipts,
+                    queue_version=directories.queue_version,
+                )
+                if finals.incomplete or temporaries.incomplete:
+                    return replace(state, accounting_incomplete=True)
+                for item in finals.entries:
+                    visible[item.name] = (directories, item.name)
+            if len(visible) > RECEIPT_MAX_ENTRIES:
+                return replace(state, accounting_incomplete=True)
+            accounted = set(state.accounted_receipts)
+            visible_names = set(visible)
+            updated = state
+            for _missing in sorted(accounted - visible_names):
+                updated = increment_writer_counter(updated, "receipts_rotated")
+            for receipt_name in sorted(visible_names - accounted):
+                directories, name = visible[receipt_name]
+                receipt = _read_receipt_at(directories.receipts, name)
+                if receipt.kind == "replayed":
+                    updated = increment_writer_counter(updated, "replays")
+                elif receipt.kind == "rejected":
+                    updated = increment_writer_counter(updated, "rejected")
+                elif receipt.kind == "conflict":
+                    updated = increment_writer_counter(updated, "conflicts")
+            return replace(
+                updated,
+                accounted_receipts=tuple(sorted(visible_names)),
+            )
+        finally:
+            for directories in opened:
+                directories.close()
 
 
 def _fresh_writer_state_suppresses_start(

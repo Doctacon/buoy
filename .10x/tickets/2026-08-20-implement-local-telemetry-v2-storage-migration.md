@@ -151,3 +151,16 @@ must not widen this ticket.
   inventory, edited v2 content, retained-backup identity, shared receipts, and
   orphan auxiliary state. The complete accepted findings are recorded at
   `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md`.
+- 2026-08-20: The second bounded repair implements every accepted rereview
+  finding: a proven published-backup retry skips intervening v1 queue work;
+  incomplete scans block before store import; exact database-wide object and
+  v1/v2 content validation is enforced; retained backup identity must match;
+  receipt limits/rotation/reconciliation are shared; orphan auxiliary state is
+  blocked and nonmutating; and all material migration hooks use no-cleanup
+  process-death coverage. The ticket remains active pending fresh exact-commit
+  review.
+- 2026-08-20: Second-repair focused suites passed on Python 3.11 and 3.13 with
+  181 tests and 167 subtests. The filtered full suite passed 1042 tests and 949
+  subtests; the separately owned stale dynamic-version collector remains the
+  sole exclusion. Targeted rereview/privacy/no-network/crash/capacity probes
+  passed 11 tests and 35 subtests.

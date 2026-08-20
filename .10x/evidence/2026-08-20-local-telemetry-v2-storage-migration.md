@@ -295,3 +295,85 @@ hostile or valid-but-mismatching retained backups, split-version receipt
 capacity, or orphan backup/scratch facts. The evidence therefore does not yet
 support ticket closure. A later candidate must record additive tests and exact
 results while preserving both failed-candidate histories.
+
+## Second rereview repair observations
+
+The `0989690` and `80d7562` histories above remain failed-candidate evidence.
+The following observations apply only to the bounded repair of the accepted
+findings in
+`.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md`.
+They do not close the ticket; fresh exact-commit review remains mandatory.
+
+### Finding-to-test mapping
+
+- `test_backup_published_retry_skips_later_v1_then_flushes_once` injects a
+  no-cleanup death after immutable backup publication, publishes a later v1
+  envelope, proves retry migrates only the backup-matching canonical source,
+  preserves the queued envelope and exact backup bytes, then flushes that
+  envelope exactly once into schema v2.
+- `test_incomplete_migration_scans_block_before_store_import` covers v1 and v2
+  incomplete initial scans plus the post-lifetime-lock scan. All return exact
+  blocked output and assert zero store-module loads/connections.
+- `test_exact_object_inventory_rejects_all_user_metadata_v1_and_v2` covers
+  macros/functions, sequences, custom types, column defaults, and comments for
+  both schema versions. The retained v1 shadow-macro test now proves fail-
+  closed behavior while qualified system-catalog queries remain uninvoked and
+  safe.
+- `test_exact_v2_content_privacy_and_graph_edits_block` covers prohibited JSON,
+  over-bound scalar content, graph mismatch, and over-256 span cardinality in
+  exact-layout v2 stores. Existing v1/v2 stores now stream in 128-trace batches
+  through their canonical encoder/graph/privacy validators before compatible,
+  already-current, replay/conflict, or mutation decisions.
+- `test_retained_backup_must_be_valid_and_match_canonical_v1_history` covers
+  prohibited backup content, invalid backup graph, and internally valid but
+  different v1 history. Append and already-current reconciliation compare the
+  backup's bounded v1 content identity with canonical schema-v2 retained v1
+  identity before mutation.
+- `test_receipt_capacity_rotation_and_reconciliation_are_shared` and
+  `test_shared_receipt_byte_and_temporary_boundaries` prove combined v1/v2
+  final and temporary receipt count/byte enforcement, globally ordered age
+  rotation under the shared lock, and a combined writer-state identity set
+  that remains within the single bound.
+- `test_orphan_auxiliary_store_state_is_blocked_and_nonmutating` covers safe
+  orphan backup, migration scratch, initialization scratch, and hostile backup
+  variants. Safe backup presence remains accurately reported; all variants
+  leave the exact directory inventory unchanged.
+- `test_every_migration_fault_keeps_one_provable_canonical_version` now uses an
+  uncaught `BaseException`-style process-death class at every material source,
+  scratch, backup candidate, transaction, backup publication/validation,
+  canonical publication, directory-sync, and state-ready hook, then proves a
+  successful recovery to exact schema v2. Mid-copy and hard-link publication
+  windows retain their separate no-cleanup tests.
+
+### Second-repair commands and exact results
+
+- Focused Python 3.11 telemetry command exited 0: **181 passed, 167 subtests
+  passed**.
+- The identical focused command on Python 3.13 exited 0: **181 passed, 167
+  subtests passed**.
+- `uv run --offline --python 3.13 --with pytest python -m pytest -q
+  --ignore=tests/test_dynamic_version.py` exited 0: **1042 passed, 949
+  subtests passed, 57 preexisting lxml warnings**. The excluded stale collector
+  remains owned by
+  `.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md`;
+  this repair did not restore or change that surface.
+- The exact targeted rereview plus privacy/no-network/crash/shared-capacity
+  command exited 0: **11 passed, 35 subtests passed**.
+- `uv lock --check --offline`, py_compile/compileall, focused Ruff `F,E9`,
+  `git diff --check`, and `python3 scripts/validate_ranking_contract.py` exited
+  0. The dependency lock and ranking inventories were unchanged.
+- `git diff --quiet -- src/buoy_search/cli.py
+  src/buoy_search/retriever.py` exited 0. Production retrieve instrumentation
+  remains outside this ticket.
+- Exact-candidate offline sdist/wheel build, no-dependency Python 3.13 install,
+  required telemetry module inventory, and installed `status`, `flush`, and
+  `migrate` lifecycle in an isolated empty `HOME` exited 0. Outcomes were
+  `disabled`, `empty`, and `absent`; no isolated `.buoy` path was created.
+
+### Second-repair limits
+
+- No-cleanup `BaseException` injection simulates abrupt process death at each
+  material hook but is not hardware power-loss testing.
+- Filesystem and runtime validation remains one macOS arm64 host with DuckDB
+  1.5.4; cross-platform power-loss/filesystem behavior is unverified.
+- Fresh independent exact-commit review and parent closure remain pending.

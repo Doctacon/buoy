@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta
+import json
 import os
 from pathlib import Path
 import shutil
@@ -49,8 +50,8 @@ def _trace_rows(number: int = 1) -> TraceRows:
             1,
             0,
             False,
-            False,
-            None,
+            True,
+            "weak_top1",
             None,
             "custom",
             "custom",
@@ -69,7 +70,28 @@ def _trace_rows(number: int = 1) -> TraceRows:
                 ended_at,
                 5.0,
                 "OK",
-                '{"buoy.observation.schema_version":1}',
+                json.dumps(
+                    {
+                        "buoy.observation.schema_version": 1,
+                        "buoy.version": "0+test",
+                        "buoy.retrieval.mode": "explicit_single",
+                        "buoy.retrieval.outcome": "success",
+                        "buoy.retrieval.hit_count": 1,
+                        "buoy.retrieval.namespace_count": 1,
+                        "buoy.retrieval.initial_fanout": 1,
+                        "buoy.retrieval.final_fanout": 1,
+                        "buoy.retrieval.failure_count": 0,
+                        "buoy.retrieval.incomplete": False,
+                        "buoy.retrieval.widened": True,
+                        "buoy.retrieval.fallback_reason": "weak_top1",
+                        "buoy.embedding.model": "custom",
+                        "buoy.embedding.precision": "custom",
+                        "buoy.retrieval.top_k": 10,
+                        "buoy.retrieval.candidates": 10,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
             ),
             (
                 trace_id,
@@ -80,7 +102,7 @@ def _trace_rows(number: int = 1) -> TraceRows:
                 started_at + timedelta(milliseconds=2),
                 1.0,
                 "OK",
-                '{"buoy.embedding.model":"custom"}',
+                "{}",
             ),
         ),
         events=(
@@ -90,7 +112,15 @@ def _trace_rows(number: int = 1) -> TraceRows:
                 0,
                 "retrieval.widened",
                 started_at + timedelta(milliseconds=3),
-                '{"buoy.retrieval.final_fanout":1}',
+                json.dumps(
+                    {
+                        "buoy.retrieval.initial_fanout": 1,
+                        "buoy.retrieval.final_fanout": 1,
+                        "buoy.retrieval.fallback_reason": "weak_top1",
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
             ),
         ),
     )
@@ -240,7 +270,7 @@ class TelemetryStoreTests(unittest.TestCase):
                 telemetry_store._row_graph(rows),
             )
 
-    def test_orphaned_existing_graph_conflicts_without_mutation(self) -> None:
+    def test_orphaned_existing_graph_blocks_without_mutation(self) -> None:
         rows = _trace_rows()
         telemetry_store.append_trace(self.paths, rows)
         with self._connect() as connection:
@@ -249,9 +279,8 @@ class TelemetryStoreTests(unittest.TestCase):
                 (rows.run[0],),
             )
 
-        result = telemetry_store.append_trace(self.paths, rows)
-
-        self.assertEqual(result.outcome, "conflict")
+        with self.assertRaises(telemetry_store.StoreUnsafeError):
+            telemetry_store.append_trace(self.paths, rows)
         self.assertEqual(self._counts(), (0, 2, 1))
 
     def test_terminal_inspection_proves_replay_or_conflict_without_write(
@@ -349,7 +378,7 @@ class TelemetryStoreTests(unittest.TestCase):
 
         self.assertEqual(self._counts(), (1, 2, 1))
 
-    def test_v1_qualified_catalog_validation_ignores_shadow_macros(self) -> None:
+    def test_v1_qualified_catalog_validation_rejects_shadow_macros(self) -> None:
         self.root.mkdir(mode=0o700)
         with self._connect() as connection:
             telemetry_store._initialize_schema_v1(connection)
@@ -371,10 +400,9 @@ class TelemetryStoreTests(unittest.TestCase):
             for statement in shadow_macros:
                 connection.execute(statement)
 
-        result = telemetry_store.append_trace(self.paths, _trace_rows(2))
-
-        self.assertEqual(result.outcome, "committed")
-        self.assertEqual(self._counts(), (2, 4, 2))
+        with self.assertRaises(telemetry_store.StoreIncompatibleError):
+            telemetry_store.append_trace(self.paths, _trace_rows(2))
+        self.assertEqual(self._counts(), (1, 2, 1))
 
     def test_external_file_view_is_rejected_without_binding_removed_path(
         self,

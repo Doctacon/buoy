@@ -58,7 +58,7 @@ from buoy_search.telemetry_queue import (
     read_terminal_receipt_temporary,
     read_writer_start_lease,
     read_writer_state,
-    reconcile_writer_receipts,
+    reconcile_writer_receipts_shared,
     recover_claim,
     request_writer_start,
     resolve_receipt_temporary,
@@ -610,15 +610,20 @@ def telemetry_migrate(
     except (TelemetryQueueError, OSError, ValueError):
         return _finish_migration_result(base, started_ns)
     if any(
-        queue.unsafe or queue.unreadable for queue in (queue_v1, queue_v2)
+        queue.unsafe or queue.unreadable or queue.scan_incomplete
+        for queue in (queue_v1, queue_v2)
     ):
         return _finish_migration_result(base, started_ns)
     base["pending_v2"] = queue_v2.ready + queue_v2.claimed
+    base["backup_present"] = _migration_backup_present(selected)
     inspection = _inspect_store(selected, None)
     if inspection.state == "absent":
         base["outcome"] = "absent"
         return _finish_migration_result(base, started_ns)
-    if inspection.state in {"unsafe", "unreadable"}:
+    if (
+        inspection.state in {"unsafe", "unreadable"}
+        or (inspection.state == "present_unverified" and inspection.bytes is None)
+    ):
         return _finish_migration_result(base, started_ns)
 
     lifetime = writer_lifetime_lock(selected, timeout_ms=0)
@@ -638,7 +643,8 @@ def telemetry_migrate(
         except (TelemetryQueueError, OSError, ValueError):
             return _finish_migration_result(base, started_ns)
         if any(
-            queue.unsafe or queue.unreadable for queue in (queue_v1, queue_v2)
+            queue.unsafe or queue.unreadable or queue.scan_incomplete
+            for queue in (queue_v1, queue_v2)
         ):
             return _finish_migration_result(base, started_ns)
         base["pending_v2"] = queue_v2.ready + queue_v2.claimed
@@ -702,7 +708,11 @@ def telemetry_migrate(
         if version != 1:
             return _finish_migration_result(base, started_ns)
         try:
-            store.recover_prepublication_migration_scratch(selected)
+            backup_published = store.migration_backup_matches_v1_source(
+                selected
+            )
+            if not backup_published:
+                store.recover_prepublication_migration_scratch(selected)
         except store.StoreBusyError:
             base["outcome"] = "busy"
             return _finish_migration_result(base, started_ns)
@@ -719,30 +729,40 @@ def telemetry_migrate(
             lambda: None,
             enforce_drain_deadline=False,
         )
-        try:
-            runtime._persist_state(force=True)
-            queue_before = scan_queue_read_only(selected)
-            if queue_before.unsafe or queue_before.unreadable:
-                return _finish_migration_result(base, started_ns)
-            if queue_before.present:
-                runtime._recover_receipts_and_claims(selected)
-            pending = snapshot_pending(selected)
-            snapshot_names = tuple(
-                item.source_name for item in pending.items
-            )
-            for offset in range(0, len(snapshot_names), CLAIM_BATCH_SIZE):
-                names = claim_ready_names(
-                    selected,
-                    snapshot_names[offset : offset + CLAIM_BATCH_SIZE],
+        if not backup_published:
+            try:
+                runtime._persist_state(force=True)
+                queue_before = scan_queue_read_only(selected)
+                if (
+                    queue_before.unsafe
+                    or queue_before.unreadable
+                    or queue_before.scan_incomplete
+                ):
+                    return _finish_migration_result(base, started_ns)
+                if queue_before.present:
+                    runtime._recover_receipts_and_claims(selected)
+                pending = snapshot_pending(selected)
+                snapshot_names = tuple(
+                    item.source_name for item in pending.items
                 )
-                for source_name in names:
-                    if not runtime._process_claim(source_name, selected):
-                        return _finish_migration_result(base, started_ns)
-            after = scan_queue_read_only(selected)
-            if after.unsafe or after.unreadable or after.claimed:
+                for offset in range(0, len(snapshot_names), CLAIM_BATCH_SIZE):
+                    names = claim_ready_names(
+                        selected,
+                        snapshot_names[offset : offset + CLAIM_BATCH_SIZE],
+                    )
+                    for source_name in names:
+                        if not runtime._process_claim(source_name, selected):
+                            return _finish_migration_result(base, started_ns)
+                after = scan_queue_read_only(selected)
+                if (
+                    after.unsafe
+                    or after.unreadable
+                    or after.scan_incomplete
+                    or after.claimed
+                ):
+                    return _finish_migration_result(base, started_ns)
+            except (TelemetryQueueError, OSError, ValueError):
                 return _finish_migration_result(base, started_ns)
-        except (TelemetryQueueError, OSError, ValueError):
-            return _finish_migration_result(base, started_ns)
 
         try:
             migrated = store.migrate_store_v1_to_v2(selected)
@@ -1406,12 +1426,11 @@ class _WriterRuntime:
         paths: TelemetryPaths | None = None,
     ) -> None:
         try:
-            selected = self.queue_paths if paths is None else (paths,)
-            for queue_paths in selected:
-                self.state = reconcile_writer_receipts(
-                    self.state,
-                    paths=queue_paths,
-                )
+            selected = self.queue_paths
+            self.state = reconcile_writer_receipts_shared(
+                self.state,
+                paths=selected,
+            )
         except (TelemetryQueueError, OSError, ValueError):
             self.state = replace(self.state, accounting_incomplete=True)
 
@@ -1543,7 +1562,11 @@ def _inspect_store(
     if database is None:
         if scratch.database is not None and scratch.database.st_nlink != 1:
             return _StoreInspection("unsafe", None, None, None, None)
-        if scratch.present and wal is None:
+        if (
+            scratch.present
+            or backup is not None
+            or migration_scratch_present
+        ) and wal is None:
             return _StoreInspection(
                 "present_unverified", None, None, None, None
             )
