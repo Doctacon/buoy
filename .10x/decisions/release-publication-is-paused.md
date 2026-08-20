@@ -1,8 +1,16 @@
-Status: active
+Status: superseded
 Created: 2026-07-30
-Updated: 2026-08-13
+Updated: 2026-08-19
 
 # Release Publication Is Paused
+
+## Supersession
+
+The repository owner explicitly authorized a persistent, narrowly scoped,
+write-capable GitHub Release workflow and immutable Releases on 2026-08-19.
+`.10x/decisions/annotated-tag-triggered-github-releases.md` supersedes this
+pause when its reviewed implementation reaches `main`. Historical paused and
+one-time release records remain preserved; they grant no current authority.
 
 ## Decision
 
@@ -32,9 +40,14 @@ reviewed release design explicitly resumes writes.
 No static-version rollback, target version selection, tag, Release, artifact
 publication, or protected-branch merge is authorized.
 
-## One-time exception
+## One-time exceptions
 
 `.10x/decisions/v0-5-1-one-time-manual-security-release.md` authorizes only the
 reviewed v0.5.1 containment release. That exception was consumed on 2026-08-13;
 it grants no authority for another tag, asset, or Release. Automatic
 publication remains paused.
+
+`.10x/decisions/v0-6-0-one-time-manual-github-release.md` was superseded before
+use. It created no tag, Release, asset, or attestation and grants no current
+authority. The reusable design is governed by
+`.10x/decisions/annotated-tag-triggered-github-releases.md`.

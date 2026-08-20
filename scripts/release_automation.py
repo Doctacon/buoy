@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Read-only validation while Buoy release publication is paused."""
+"""Validate Buoy source trees and GitHub Release distributions."""
 
 from __future__ import annotations
 
 import argparse
+from datetime import date
 import hashlib
 import json
 from pathlib import Path
@@ -17,14 +18,16 @@ import zipfile
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-PAUSED_MESSAGE = (
-    "Automated Buoy release publication remains paused; v0.5.1 is published "
-    "and its one-time manual release authority is consumed."
-)
+LEGACY_MESSAGE = "Legacy release commands are retired; use the tagged GitHub workflow."
 READ_ONLY_WORKFLOWS = (
     ".github/workflows/ci.yml",
     ".github/workflows/release-readiness.yml",
-    ".github/workflows/release.yml",
+)
+RELEASE_WORKFLOW = ".github/workflows/release.yml"
+SEMVER_PATTERN = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+RELEASE_HEADING_PATTERN = re.compile(
+    r"^## \[((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))\] "
+    r"- ([0-9]{4}-[0-9]{2}-[0-9]{2})$"
 )
 BUOY_CONSOLE_TARGET = "buoy_search.entrypoint:main"
 BUOY_CONSOLE_SCRIPTS = {"buoy": BUOY_CONSOLE_TARGET}
@@ -44,6 +47,14 @@ FORBIDDEN_WORKFLOW_MARKERS = (
     "actions/upload-artifact",
     "/releases",
     "/git/refs",
+)
+FORBIDDEN_RELEASE_MARKERS = (
+    "gh release delete",
+    "git push --force",
+    "git tag -f",
+    "--clobber",
+    "uv publish",
+    "pypi",
 )
 REMOVED_PACKAGE_MEMBERS = (
     "buoy_search/catalog_pending.py",
@@ -190,6 +201,117 @@ def _load_read_only_workflow(path: Path) -> dict[str, Any]:
                 f"{path} job {job_name!r} may not escalate workflow permissions"
             )
     return payload
+
+
+def _load_release_workflow(path: Path) -> dict[str, Any]:
+    """Validate the reusable publisher's least-privilege boundary."""
+
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise ReleaseError(f"{path} is not valid workflow YAML") from exc
+    if not isinstance(payload, dict):
+        raise ReleaseError(f"{path} must contain a workflow object")
+    if payload.get("permissions") != {"contents": "read"}:
+        raise ReleaseError(f"{path} must default to contents: read")
+    jobs = payload.get("jobs")
+    if not isinstance(jobs, dict) or "publish" not in jobs:
+        raise ReleaseError(f"{path} must contain a publish job")
+    expected_publish_permissions = {
+        "attestations": "write",
+        "contents": "write",
+        "id-token": "write",
+    }
+    for job_name, job in jobs.items():
+        if not isinstance(job_name, str) or not isinstance(job, dict):
+            raise ReleaseError(f"{path} contains an invalid job")
+        permissions = job.get("permissions")
+        if job_name == "publish":
+            if permissions != expected_publish_permissions:
+                raise ReleaseError(
+                    f"{path} publish job permissions must be exactly "
+                    f"{expected_publish_permissions}"
+                )
+        elif permissions not in (None, {"contents": "read"}):
+            raise ReleaseError(
+                f"{path} job {job_name!r} may not receive write permission"
+            )
+
+    text = path.read_text(encoding="utf-8")
+    required = (
+        '      - "v*"',
+        "cancel-in-progress: false",
+        "actions/attest-build-provenance@",
+        "gh release create",
+        "--draft",
+        "immutable",
+    )
+    missing = [marker for marker in required if marker not in text]
+    if missing:
+        raise ReleaseError(f"{path} is missing release controls: {missing}")
+    marker = next(
+        (item for item in FORBIDDEN_RELEASE_MARKERS if item.casefold() in text.casefold()),
+        None,
+    )
+    if marker is not None:
+        raise ReleaseError(f"{path} contains forbidden release marker {marker!r}")
+    return payload
+
+
+def _semver_tuple(value: str) -> tuple[int, int, int]:
+    match = SEMVER_PATTERN.fullmatch(value)
+    if match is None:
+        raise ReleaseError(f"invalid stable semantic version: {value!r}")
+    return tuple(int(part) for part in match.groups())
+
+
+def _release_changelog(root: Path = ROOT) -> dict[str, object]:
+    changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
+    headings = [line for line in changelog.splitlines() if line.startswith("## ")]
+    if len(headings) < 5 or headings[0] != "## Unreleased":
+        raise ReleaseError("CHANGELOG must begin with an Unreleased section")
+    if " - pending" in changelog:
+        raise ReleaseError("CHANGELOG may not contain a pending public release")
+    latest_match = RELEASE_HEADING_PATTERN.fullmatch(headings[1])
+    previous_match = RELEASE_HEADING_PATTERN.fullmatch(headings[2])
+    if latest_match is None or previous_match is None:
+        raise ReleaseError(
+            "CHANGELOG must place dated stable release headings after Unreleased"
+        )
+    latest, release_date = latest_match.groups()
+    previous = previous_match.group(1)
+    try:
+        date.fromisoformat(release_date)
+    except ValueError as exc:
+        raise ReleaseError("CHANGELOG latest release date is invalid") from exc
+    if _semver_tuple(latest) <= _semver_tuple(previous):
+        raise ReleaseError("CHANGELOG latest release must advance the prior version")
+    unreleased_body = changelog.split("## Unreleased", 1)[1].split(
+        headings[1], 1
+    )[0]
+    if unreleased_body.strip():
+        raise ReleaseError("CHANGELOG Unreleased body must remain empty for release")
+    start = changelog.index(headings[1]) + len(headings[1])
+    end = changelog.index(headings[2], start)
+    notes = changelog[start:end].strip()
+    if not notes:
+        raise ReleaseError("CHANGELOG latest release notes must not be empty")
+    expected_link = (
+        f"[{latest}]: https://github.com/Doctacon/buoy/compare/"
+        f"v{previous}...v{latest}"
+    )
+    links = [
+        line for line in changelog.splitlines() if line.startswith(f"[{latest}]:")
+    ]
+    if links != [expected_link]:
+        raise ReleaseError("CHANGELOG latest comparison link is not canonical")
+    return {
+        "version": latest,
+        "date": release_date,
+        "previous": previous,
+        "notes": notes + "\n",
+        "comparison": f"v{previous}...v{latest}",
+    }
 
 
 def _member_matches(name: str, member: str) -> bool:
@@ -486,8 +608,10 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def validate_distribution(dist: Path) -> dict[str, object]:
-    """Inspect one diagnostic wheel/sdist pair without publishing it."""
+def validate_distribution(
+    dist: Path, *, expected_version: str | None = None
+) -> dict[str, object]:
+    """Inspect one wheel/sdist pair without publishing it."""
 
     dist = Path(dist)
     files = sorted(
@@ -609,6 +733,22 @@ def validate_distribution(dist: Path) -> dict[str, object]:
 
     if wheel_version != sdist_version:
         raise ReleaseError("wheel and sdist metadata versions do not match")
+    if expected_version is not None:
+        _semver_tuple(expected_version)
+        if wheel_version != expected_version:
+            raise ReleaseError(
+                "distribution version mismatch: "
+                f"expected {expected_version!r}, found {wheel_version!r}"
+            )
+        expected_names = {
+            f"buoy_search-{expected_version}-py3-none-any.whl",
+            f"buoy_search-{expected_version}.tar.gz",
+        }
+        if {wheel.name, sdist.name} != expected_names:
+            raise ReleaseError(
+                "release distribution names mismatch: "
+                f"expected {sorted(expected_names)!r}"
+            )
     if wheel_canaries != sdist_canaries:
         raise ReleaseError("wheel and sdist routing canary receipts do not match")
     if wheel_authority != sdist_authority:
@@ -714,21 +854,33 @@ def validate_source(root: Path = ROOT) -> dict[str, object]:
     if "version" in locked_root or locked_root.get("source") != {"editable": "."}:
         raise ReleaseError("uv.lock root package must be editable and versionless")
 
-    changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
-    headings = [line for line in changelog.splitlines() if line.startswith("## ")]
-    if len(headings) < 4 or headings[0] != "## Unreleased":
-        raise ReleaseError("CHANGELOG must begin with an Unreleased section")
-    if headings[1] != "## [0.5.1] - 2026-08-13":
-        raise ReleaseError(
-            "CHANGELOG must retain published v0.5.1 history dated 2026-08-13"
-        )
-    if headings[2:4] != [
-        "## [0.5.0] - 2026-08-01",
-        "## [0.4.0] - 2026-07-21",
-    ]:
-        raise ReleaseError("published changelog history must remain frozen through v0.5.0")
-    if any(" - pending" in heading for heading in headings):
-        raise ReleaseError("CHANGELOG must not contain a pending release heading")
+    release = _release_changelog(root)
+    latest = str(release["version"])
+
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    release_asset_urls = re.findall(
+        r"https://github\.com/Doctacon/buoy/releases/download/[^\s\"')]+",
+        readme,
+    )
+    expected_wheel_url = (
+        "https://github.com/Doctacon/buoy/releases/download/"
+        f"v{latest}/buoy_search-{latest}-py3-none-any.whl"
+    )
+    if release_asset_urls != [expected_wheel_url]:
+        raise ReleaseError("README must contain only the latest release wheel URL")
+
+    security = (root / "SECURITY.md").read_text(encoding="utf-8")
+    try:
+        supported_versions = security.split("## Supported versions\n\n", 1)[1]
+        supported_versions = supported_versions.split("\n\n## ", 1)[0]
+    except IndexError as exc:
+        raise ReleaseError("SECURITY must contain a Supported versions section") from exc
+    rows = [
+        line for line in supported_versions.splitlines()[2:]
+        if line.startswith("|")
+    ]
+    if not rows or rows[0] != f"| {latest} | Yes |":
+        raise ReleaseError("SECURITY must mark the latest release as supported")
 
     for relative in READ_ONLY_WORKFLOWS:
         path = root / relative
@@ -740,20 +892,25 @@ def validate_source(root: Path = ROOT) -> dict[str, object]:
         )
         if marker is not None:
             raise ReleaseError(f"{relative} contains forbidden publication marker {marker!r}")
+    _load_release_workflow(root / RELEASE_WORKFLOW)
 
     return {
         "console_script": BUOY_CONSOLE_TARGET,
         "dynamic_version": True,
         "generated_version_file": "src/buoy_search/_version.py",
-        "published_history_through": "0.5.1",
-        "staged_release": None,
-        "publication_paused": True,
+        "latest_release": latest,
+        "release_date": release["date"],
+        "changelog_comparison": release["comparison"],
+        "installation_asset_url": expected_wheel_url,
+        "security_supported_through": latest,
+        "publication_mode": "annotated-tag-triggered-github-release",
         "routing_canaries": source_canaries,
         "routing_authority": {
             **source_authority,
             **source_runner_receipt,
         },
         "workflows_read_only": list(READ_ONLY_WORKFLOWS),
+        "release_workflow": RELEASE_WORKFLOW,
     }
 
 
@@ -766,13 +923,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     distribution = commands.add_parser(
         "validate-distribution",
-        help="inspect a diagnostic wheel/sdist pair without publication",
+        help="inspect an exact wheel/sdist pair without publication",
     )
     distribution.add_argument("dist", type=Path)
+    distribution.add_argument("--expected-version")
+    commands.add_parser(
+        "release-version",
+        help="print the latest reviewed changelog version",
+    )
+    notes = commands.add_parser(
+        "release-notes",
+        help="write the reviewed changelog section for one release",
+    )
+    notes.add_argument("--version", required=True)
+    notes.add_argument("--output", type=Path, required=True)
     for legacy in ("validate", "artifacts", "state", "github-snapshot", "policy"):
         commands.add_parser(
             legacy,
-            help="disabled while release publication is paused",
+            help="retired legacy command",
             add_help=False,
         )
     return parser
@@ -781,23 +949,34 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     values = list(sys.argv[1:] if argv is None else argv)
     if values and values[0] in {"validate", "artifacts", "state", "github-snapshot", "policy"}:
-        print(PAUSED_MESSAGE, file=sys.stderr)
+        print(LEGACY_MESSAGE, file=sys.stderr)
         return 2
     args = build_parser().parse_args(values)
     try:
-        result = (
-            validate_source()
-            if args.command == "validate-source"
-            else validate_distribution(args.dist)
-        )
+        if args.command == "validate-source":
+            result = validate_source()
+        elif args.command == "validate-distribution":
+            result = validate_distribution(
+                args.dist,
+                expected_version=args.expected_version,
+            )
+        else:
+            release = _release_changelog()
+            version = str(release["version"])
+            if args.command == "release-version":
+                print(version)
+                return 0
+            if args.version != version:
+                raise ReleaseError(
+                    f"requested release notes {args.version!r} do not match {version!r}"
+                )
+            args.output.write_text(str(release["notes"]), encoding="utf-8")
+            return 0
     except (OSError, ReleaseError, tarfile.TarError, tomllib.TOMLDecodeError, zipfile.BadZipFile) as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    if args.command in {"validate-source", "validate-distribution"}:
-        print(json.dumps(result, sort_keys=True))
-        return 0
-    print(PAUSED_MESSAGE, file=sys.stderr)
-    return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
 
 
 if __name__ == "__main__":
