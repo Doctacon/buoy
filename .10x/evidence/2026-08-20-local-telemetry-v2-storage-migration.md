@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-20
 Updated: 2026-08-20
-Relates-To: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/specs/local-telemetry-v2-storage-and-migration.md
+Relates-To: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md
 
 # Local Telemetry V2 Storage and Migration Validation
 
@@ -155,10 +155,15 @@ Every row also asserted no canonical WAL remained.
 
 ## What this supports or challenges
 
-This supports every ticket acceptance criterion at focused source/runtime
-level and supports repository compatibility outside the preexisting
-`test_dynamic_version.py` collection defect. It does not constitute the
-required independent review or parent-ticket closure.
+This records the first implementation candidate's claimed focused command
+results and demonstrates substantial v1/v2 fixture behavior. It does **not**
+support every ticket acceptance criterion. Independent exact-commit review at
+`.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md`
+identified deterministic crash/retry, semantic/privacy, exact-object,
+snapshot-isolation, boundedness, and adversarial-test gaps not exercised by
+these commands and returned FAIL. This evidence remains useful as a baseline;
+a repaired candidate requires additive evidence and fresh review before ticket
+closure.
 
 ## Limits and residual risks
 

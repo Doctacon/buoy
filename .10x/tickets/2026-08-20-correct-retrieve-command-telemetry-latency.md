@@ -101,3 +101,8 @@ for its completion.
   child tickets on the isolated task branch. Targeted header/reference checks
   and `git diff --check` passed. Under the 10x execution gate, implementation
   does not begin in the same turn that opens the first executable tickets.
+- 2026-08-20: Storage/migration candidate `0989690` passed its worker-reported
+  focused suites but failed three independent reviews and parent inspection.
+  Child 1 remains active for the bounded repair set recorded in
+  `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md`;
+  dependent command instrumentation has not started.

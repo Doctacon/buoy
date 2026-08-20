@@ -80,7 +80,17 @@ ranking, evidence, provider calls, live credentials/namespaces, real
 
 ## Blockers
 
-None.
+Independent exact-commit review of `0989690` failed. The candidate requires
+bounded repair of migration backup/scratch recovery, semantic/privacy and exact
+object validation, v2 graph validation, snapshot-isolated flush, preflight
+ordering, state-failure containment, hostile fixed-path handling, aggregate
+capacity status, text parity, documentation, and adversarial evidence before
+closure. See `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md`.
+
+The preexisting missing release-checks test harness separately blocks default
+full-suite collection and is owned by
+`.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md`; it
+must not widen this ticket.
 
 ## Progress and notes
 
@@ -114,3 +124,10 @@ None.
   in the active storage spec. No further output keys or nesting were added.
 - 2026-08-20: Implementation handoff is ready but ticket intentionally remains
   active pending independent exact-commit review and parent closure.
+- 2026-08-20: Three independent fresh-context reviews plus parent inspection
+  returned FAIL for exact commit `0989690`. Deterministic blockers include
+  non-atomic backup creation, unrecovered post-publication scratch, semantic
+  v1-row/privacy gaps, incomplete exact-object validation, invalid v2 graph
+  acceptance, flush snapshot interference, and evidence overclaim. The complete
+  accepted finding set and required repair tests are recorded at
+  `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md`.

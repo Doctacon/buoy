@@ -40,6 +40,8 @@ Version-1 paths remain unchanged. Version 2 adds:
   telemetry.duckdb                 canonical store, schema v1 or v2
   telemetry-v1-backup.duckdb       retained migration backup when migrated
   database-migrate-v2/             private bounded migration scratch
+    telemetry.duckdb               version-2 candidate
+    telemetry-v1-backup.duckdb     version-1 backup candidate
 ```
 
 The backup and scratch names are fixed. Payloads never select a path. Every
@@ -80,7 +82,10 @@ path.
 The producer encodes only after converting completed private spans through the
 version-2 trace allowlist. The writer treats every envelope as untrusted and
 independently canonical-decodes and validates the complete value and graph
-before opening DuckDB.
+before opening DuckDB. A successful live command MUST have one pipeline; the
+pipeline retrieval-mode attribute MUST equal the command retrieval mode. A
+widened operation MUST have one governed non-null fallback reason and matching
+event.
 
 ### Command summary
 
@@ -296,10 +301,13 @@ Schema version 2 appends `command_runs_view_sha256` and
 row identifying schema version 2, creation/migration timestamp, and canonical
 SHA-256 values for all four versioned views. The declared primary-key and
 `CHECK` constraints are the complete index/constraint contract; schema version
-2 adds no secondary indexes. The code owns an exact table/view/object inventory. Unknown
-objects, macros, altered views, columns, constraints, metadata, external
-references, attached databases, unsafe WAL/scratch, or shadowed catalog
-functions make the store incompatible or unsafe under existing rules.
+2 adds no secondary indexes. The code owns an exact database-wide table/view/schema/object inventory.
+Unknown user schemas or objects in any schema, macros/functions, altered views,
+columns, constraints, metadata, external references, attached databases,
+unsafe WAL/scratch, or shadowed catalog functions make the store incompatible
+or unsafe under existing rules. Internal DuckDB catalog objects are excluded
+only by fixed engine-owned identity, never merely because an object is outside
+`main`.
 
 Every version-2 command trace inserts its command row, optional retrieval
 operation, complete span graph, and event in one DuckDB transaction. Readers
@@ -328,7 +336,10 @@ operation tables and shared span/event tables.
 A v2-capable writer encountering schema v1 may continue draining valid v1
 work. It MUST NOT automatically migrate. Once no claim is in flight, it leaves
 v2 work recoverable, writes bounded `upgrade_required` state, and exits or
-idles under existing bounds.
+idles under existing bounds. Before any append, the writer validates the fixed
+migration-scratch and backup entries: the exact safe retained backup may
+coexist, while any hostile/unrecognized backup or any unresolved migration
+scratch blocks mutation until explicit migration recovery proves it safe.
 
 ## Read-only status and flush
 
@@ -356,7 +367,11 @@ the existing canonical display path. It never reads envelope contents.
 `buoy telemetry flush` may drain v1 work against schema v1. If its invocation
 snapshot contains v2 work while the store is v1, that work remains pending and
 the flush outcome is `blocked` with no rejection. Against schema v2, flush
-handles both versions under the existing exact-snapshot terminal rule.
+handles both versions under the existing exact-snapshot terminal rule. Work
+published after the invocation snapshot MUST NOT change that snapshot's
+terminal outcome, including by changing aggregate status to upgrade-required;
+only unsafe/incompatible state that prevents proving a snapshotted item's
+terminal condition may block it.
 
 ## Explicit migration command
 
@@ -389,7 +404,9 @@ Outcomes are exactly `absent`, `already_current`, `migrated`, `busy`, or
 Migration first proves POSIX capability and acquires the same writer lifetime
 authority with a bounded nonblocking attempt. A live writer produces `busy`;
 the command never signals or kills it. The command validates telemetry root,
-canonical store, v1/v2 inboxes, backup, and scratch paths before DuckDB use.
+v1/v2 inboxes, canonical store metadata, backup, and scratch paths before any
+DuckDB import/connection. A hostile inbox therefore blocks without opening the
+database.
 
 - No canonical database returns `absent` without creating any path.
 - Exact schema v2 returns `already_current` without creating a backup.
@@ -409,20 +426,25 @@ snapshot remain queue-recoverable for the v2 writer.
 
 Migration performs these ordered phases:
 
-1. validate the exact closed schema-v1 store and record content-free row/span/
-   event counts;
+1. validate the exact closed schema-v1 store, then stream every stored v1 trace
+   through the canonical v1 semantic/graph/privacy validator before recording
+   content-free row/span/event counts;
 2. safely drain the bounded v1 snapshot or return blocked without migration;
-3. revalidate the exact store and counts;
-4. create a private fixed scratch copy without following links;
-5. open only the scratch with DuckDB's existing hardened configuration;
-6. transactionally add schema-v2 metadata, tables, views, and exact indexes/
-   constraints without changing v1 rows or v1 view definitions;
-7. validate the complete scratch as exact schema v2 and prove v1 counts and
-   ordered row values match the source;
-8. create `telemetry-v1-backup.duckdb` as a private durable byte-for-byte copy
-   of the final exact v1 source;
-9. verify the backup independently by byte count/hash and exact schema-v1
-   validation;
+3. revalidate the exact store, semantics, and counts;
+4. create private fixed scratch candidates for the v2 database and v1 backup
+   without following links;
+5. copy, fsync, hash, and exact-v1-validate the complete backup candidate before
+   any final backup name is created;
+6. open only the v2 scratch candidate with DuckDB's existing hardened
+   configuration;
+7. transactionally add schema-v2 metadata, tables, views, and the declared
+   primary-key/`CHECK` constraints without changing v1 rows or v1 view
+   definitions;
+8. validate the complete v2 scratch as exact schema v2 and prove v1 counts and
+   streamed ordered values/digests match the source;
+9. atomically publish the fully validated backup candidate at
+   `telemetry-v1-backup.duckdb`, never streaming bytes directly into the final
+   backup name;
 10. atomically publish the validated v2 scratch at the canonical database path
     while lifetime authority is held; and
 11. fsync the containing directory and publish exact schema-v2 writer state.
@@ -430,15 +452,23 @@ Migration performs these ordered phases:
 The backup is never modified, migrated, automatically removed, compacted, or
 used as a writer target. If it already exists, migration proceeds only if it
 is a safe regular private file and byte-for-byte identical to the exact final
-v1 source; otherwise it blocks. This makes retry idempotent without overwriting
-history.
+v1 source; otherwise it blocks. A partial backup candidate remains scratch and
+is safely recoverable; it can never poison the fixed final backup name. This
+makes retry idempotent without overwriting history.
 
 Before canonical publication, any failure leaves the original canonical v1
 file authoritative. Safe incomplete scratch is removed only after proving its
 fixed identity; unsafe/unprovable scratch blocks. After canonical publication,
-the exact v2 validator and DuckDB crash/WAL rules determine success; the v1
-backup remains available for manual recovery, but migration never performs an
-automatic rollback.
+the exact v2 validator and DuckDB crash/WAL rules determine database success;
+the v1 backup remains available for manual recovery, but migration never
+performs an automatic rollback. An already-current retry MUST validate and
+remove only a recognized safe stale migration scratch left after canonical
+publication, reconcile writer state, and then return `already_current`.
+
+Failure to publish final writer state never escapes as a raw exception. If the
+canonical v2 store and backup are durable but state publication cannot be
+proven, the command returns exact `blocked` facts; a later already-current retry
+may reconcile state and succeed.
 
 The migration does not automatically drain pending v2 envelopes after success.
 It reports their count; the next producer-started writer or explicit flush
@@ -454,6 +484,14 @@ already-governed local v1 database.
 There is no automatic backup retention or purge. Documentation tells the owner
 what the backup is and that Buoy never deletes it. Adding a safe deletion
 command or policy requires separate authorization.
+
+Migration memory is bounded independently of store size: trace IDs and ordered
+row/value comparisons are consumed in batches of at most 128, no complete
+store/table/view result is retained in Python, every scalar/JSON length is
+preflight-bounded before value materialization, and each trace is independently
+validated. Runtime and I/O are finite and proportional to the explicitly
+selected closed local store; there is no artificial elapsed deadline that
+could strand a valid large history midway through an explicit migration.
 
 ## Acceptance scenarios
 

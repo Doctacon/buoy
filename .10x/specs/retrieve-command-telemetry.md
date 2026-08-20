@@ -150,10 +150,13 @@ root. Stages that do not occur are absent rather than zero-duration synthetic
 spans.
 
 For live execution, exactly one `buoy.retrieve.pipeline` span exists if the
-retriever operation begins. Existing query, namespace, rerank, and evidence
-spans are descendants of that pipeline span. The existing
-`retrieval.widened` event belongs to the pipeline span. Concurrent namespace
-spans retain one trace ID and the correct route-rank-only relationship.
+retriever operation begins, and every successful live command MUST contain
+that pipeline. Its retrieval-mode attribute MUST equal the command retrieval
+mode. Existing query, namespace, rerank, and evidence spans are descendants of
+that pipeline span. The existing `retrieval.widened` event belongs to the
+pipeline span; widening requires one governed non-null fallback reason and a
+matching event. Concurrent namespace spans retain one trace ID and the correct
+route-rank-only relationship.
 
 For preview execution there is no pipeline, query, namespace, rerank, evidence,
 or widening telemetry. Automatic preview MAY contain catalog, routing-model,
