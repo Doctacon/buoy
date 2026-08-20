@@ -105,7 +105,7 @@ jobs:
         run: |
           uv venv --python 3.13 "$RUNNER_TEMP/buoy-wheel-smoke"
           uv pip install --python "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" dist/*.whl
-          test "$("$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" --version)" = "${{ steps.release.outputs.version }}"
+          test "$("$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" --version)" = "buoy ${{ steps.release.outputs.version }}"
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" --help >/dev/null
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" -m buoy_search --help >/dev/null
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" - <<'PY'

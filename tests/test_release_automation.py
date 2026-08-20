@@ -263,6 +263,10 @@ class ReleaseAutomationTests(unittest.TestCase):
         self.assertIn("release_automation.py release-version", distribution)
         self.assertIn("SETUPTOOLS_SCM_PRETEND_VERSION", distribution)
         self.assertIn("--expected-version", distribution)
+        self.assertIn(
+            '= "buoy ${{ steps.release.outputs.version }}"',
+            distribution,
+        )
 
     def test_read_only_workflows_are_pinned_and_have_no_write_path(self) -> None:
         for relative in release_automation.READ_ONLY_WORKFLOWS:
@@ -313,6 +317,7 @@ class ReleaseAutomationTests(unittest.TestCase):
         self.assertIn("-f make_latest=true", publish)
         self.assertIn(".immutable == true", publish)
         self.assertIn("gh attestation verify", publish)
+        self.assertIn('= "buoy $version"', text)
         for _action, revision in re.findall(r"uses:\s*([^@\s]+)@([^\s#]+)", text):
             self.assertRegex(revision, r"^[0-9a-f]{40}$")
 
