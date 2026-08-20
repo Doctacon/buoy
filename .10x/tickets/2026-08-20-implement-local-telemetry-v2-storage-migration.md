@@ -131,3 +131,17 @@ must not widen this ticket.
   acceptance, flush snapshot interference, and evidence overclaim. The complete
   accepted finding set and required repair tests are recorded at
   `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md`.
+- 2026-08-20: Repair implementation addressed every accepted review finding:
+  scratch-backed no-overwrite backup publication and interrupted-copy retry;
+  pre/post-publication scratch reconciliation; bounded 128-trace semantic and
+  privacy validation; database-wide user-object rejection; stricter v2 graph
+  invariants; snapshot-isolated flush; migration preflight ordering; contained
+  state-publication failure; append auxiliary-path checks; aggregate capacity;
+  text/JSON parity; qualified status documentation; and expanded adversarial,
+  replay/conflict, privacy, crash, and path tests. Production retrieve timing
+  remains excluded.
+- 2026-08-20: Repaired focused telemetry suites passed on Python 3.11 and 3.13
+  with 173 tests and 142 subtests. The agreed filtered full suite passed 1034
+  tests and 924 subtests; only obsolete `tests/test_dynamic_version.py` was
+  excluded under its separate preexisting owner. Fresh review remains required,
+  so this ticket stays active.

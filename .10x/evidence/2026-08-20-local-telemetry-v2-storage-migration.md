@@ -178,3 +178,104 @@ closure.
   version-sensitive.
 - Independent exact-commit review and parent closure remain pending, so the
   implementation ticket remains active.
+
+## Repaired candidate observations
+
+The failed `0989690` observations above remain the first-candidate baseline.
+The repair based on
+`.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md`
+produced the following additional source-observed and executed evidence.
+
+### Accepted-finding mapping
+
+- Backup bytes now stream only into fixed private
+  `database-migrate-v2/telemetry-v1-backup.duckdb`; the complete candidate is
+  fsynced, hashed, exact-v1/schema/semantic validated, and atomically published
+  without overwriting an existing final backup. Injected mid-copy process death
+  leaves no final backup, and retry safely removes the recognized partial
+  candidate, drains a newly published v1 envelope, and migrates both traces.
+  A separate injected death in the hard-link publication window proves the
+  same-inode two-link state is recognized and retry restores one-link final
+  history.
+- An exception after canonical v2 publication leaves a provable exact v2 store
+  and recognized empty scratch. Status reports `present_unverified`; append
+  fails closed; already-current migrate removes only that exact scratch,
+  publishes matching state, and subsequent append/flush succeed.
+- Exact-v1 migration preflight and every source/scratch/backup/final comparison
+  now stream trace IDs in batches of at most 128, preflight every base-table
+  scalar/JSON byte length, cap each fetched graph at 256 spans/one event, and
+  canonical-encode each trace through the v1 semantic/graph/privacy validator.
+  No whole-store/table/view result is retained. A 129-trace fixture crosses the
+  batch boundary, while an exact-shape store containing
+  `PRIVATE_RAW_ERROR_CONTENT_SENTINEL` is blocked before backup/scratch creation
+  or canonical mutation and never emits the sentinel.
+- Exact schema validation rejects attached non-internal databases, every user
+  schema outside canonical `main`, unknown tables/views/indexes/constraints,
+  and v2 user functions/macros using qualified, bounded catalog reads. A hidden
+  schema/table blocks both append and migration.
+- The v2 adversarial matrix now directly covers wrong versions/shape/private
+  keys, root/trace/span IDs, duplicates, missing parents/cycles, ordering,
+  containment, duration/summary mismatches, root/pipeline status/outcome,
+  live-success pipeline presence, command/pipeline retrieval-mode equality,
+  error-category consistency, widening fallback, and event owner/interval.
+- Fixed-snapshot flush ignores a later v2 publication that blocks the global
+  writer behind exact schema v1; its original v1 snapshot still returns
+  `flushed` and the v2 envelope remains recoverable.
+- Migration structurally scans both inboxes plus root/store/backup/scratch
+  before loading the store or making any DuckDB connection. Hostile v1/v2
+  inboxes, backup symlinks, and unknown scratch entries all prove zero calls to
+  the patched database connector.
+- Final writer-state failure returns exact `blocked` JSON with source version 1,
+  target version 2, migrated counts, and backup-present facts; no injected raw
+  state error escapes. Canonical v2 remains authoritative and a later
+  already-current invocation reconciles state and succeeds. Healthy repeated
+  already-current migration leaves backup and writer-state bytes unchanged.
+- Normal append rejects every migration scratch and hostile/malformed retained
+  backup before mutation, while allowing an exact safe v1 retained backup next
+  to exact schema v2.
+- Status computes shared entry/byte/temp capacity from aggregate v1+v2
+  occupancy. Exact split entry and byte boundaries report `capacity_full=true`.
+- Migrate text now renders exactly the same eleven facts as JSON, including
+  `schema_version` and `database_path`. Documentation now states the read-only
+  stateless/mismatched-state `present_unverified` limit.
+- Store and writer tests now prove exact v1/v2 replay, valid same-version
+  conflicts, global cross-version conflicts, atomic unchanged graphs, and
+  replay/conflict terminal receipts.
+
+### Repaired validation commands and results
+
+- `uv run --offline --python 3.11 --with pytest python -m pytest
+  tests/test_local_retrieval_telemetry.py tests/test_telemetry_envelope.py
+  tests/test_telemetry_producer.py tests/test_telemetry_queue.py
+  tests/test_telemetry_store.py tests/test_telemetry_writer.py
+  tests/test_telemetry_cli.py tests/test_telemetry_v2_storage.py -q` exited 0:
+  **173 passed, 142 subtests passed**.
+- The same focused command with `--python 3.13` exited 0:
+  **173 passed, 142 subtests passed**.
+- `uv run --offline --python 3.13 --with pytest python -m pytest -q
+  --ignore=tests/test_dynamic_version.py` exited 0:
+  **1034 passed, 924 subtests passed, 57 preexisting lxml warnings**.
+  `scripts/release_checks.py` was intentionally deleted because that release
+  check was unsupported/nonfunctional. Only the obsolete separately owned
+  `tests/test_dynamic_version.py` collector is excluded; this ticket neither
+  restores the script nor alters that test debt.
+- The exact seven-test privacy/no-network/semantic/mid-copy/post-publication/
+  inbox/backup/scratch probe exited 0: **7 passed, 4 subtests passed**.
+- `uv lock --check --offline`, py_compile/compileall, `git diff --check`, focused
+  Ruff `F,E9`, and `python3 scripts/validate_ranking_contract.py` exited 0.
+- Offline sdist/wheel build, no-dependency install in a temporary Python 3.13
+  environment, module inventory, and installed `telemetry status`, `flush`, and
+  `migrate` against an isolated empty `HOME` exited 0 with outcomes
+  `disabled`, `empty`, and `absent`; no isolated `.buoy` was created.
+- `git diff --quiet -- src/buoy_search/cli.py
+  src/buoy_search/retriever.py` exited 0. Dependent production instrumentation
+  remains untouched.
+
+### Repaired evidence limits
+
+- Process-death/failure injection is deterministic exception and filesystem
+  publication-window simulation, not hardware power-loss testing.
+- Python 3.11/3.13 ran on one macOS arm64 host. Fresh independent exact-commit
+  review is still required.
+- DuckDB 1.5.4 canonical view SQL identities remain intentionally
+  version-sensitive.

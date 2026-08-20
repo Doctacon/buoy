@@ -1507,6 +1507,12 @@ def _validate_v2_command(command: dict[str, object]) -> None:
         raise TraceEnvelopeError("invalid_graph")
     if command["execution_mode"] == "preview" and command["pipeline_present"]:
         raise TraceEnvelopeError("invalid_graph")
+    if (
+        command["execution_mode"] == "live"
+        and command["outcome"] == "success"
+        and not command["pipeline_present"]
+    ):
+        raise TraceEnvelopeError("invalid_graph")
 
 
 def _validate_v2_operation(operation: dict[str, object]) -> None:
@@ -1556,6 +1562,8 @@ def _validate_v2_operation(operation: dict[str, object]) -> None:
     _require_exact_integer(operation["observation_schema_version"], 2)
     if bool(operation["failure_count"]) != bool(operation["incomplete"]):
         raise TraceEnvelopeError("invalid_graph")
+    if operation["widened"] and operation["fallback_reason"] is None:
+        raise TraceEnvelopeError("invalid_graph")
     if operation["final_fanout"] > operation["namespace_count"]:
         raise TraceEnvelopeError("invalid_graph")
     if operation["failure_count"] > operation["final_fanout"]:
@@ -1586,6 +1594,15 @@ def _validate_v2_span(span: object) -> None:
         raise TraceEnvelopeError("invalid_shape")
     for key, value in attributes.items():
         _validate_v2_attribute(key, value, span_name=str(span["name"]))
+    if span["name"] not in {
+        V2_COMMAND_ROOT_SPAN_NAME,
+        V2_PIPELINE_SPAN_NAME,
+    }:
+        has_error = "buoy.error.type" in attributes
+        if (span["status_code"] == "ERROR") != has_error:
+            raise TraceEnvelopeError("invalid_graph")
+        if not has_error and span["status_code"] not in {"OK", "UNSET"}:
+            raise TraceEnvelopeError("invalid_graph")
 
 
 def _validate_v2_attribute(key: str, value: object, *, span_name: str) -> None:
@@ -1729,6 +1746,19 @@ def _validate_v2_graph(
             pipeline["attributes"],
             _V2_OPERATION_ATTRIBUTE_FIELDS,
         )
+        if (
+            pipeline["attributes"].get("buoy.retrieval.mode")
+            != command["retrieval_mode"]
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+        expected_pipeline_status = (
+            "ERROR" if operation["outcome"] == "error" else "OK"
+        )
+        if pipeline["status_code"] != expected_pipeline_status:
+            raise TraceEnvelopeError("invalid_graph")
+        pipeline_error = pipeline["attributes"].get("buoy.error.type")
+        if (operation["outcome"] == "error") != (pipeline_error is not None):
+            raise TraceEnvelopeError("invalid_graph")
         for span in span_values:
             if span["name"] in V2_RETRIEVAL_STAGE_NAMES and not _is_descendant(
                 span, pipeline, by_id
@@ -1748,7 +1778,9 @@ def _validate_v2_graph(
         if (
             event["trace_id"] != command["trace_id"]
             or event["span_id"] != pipeline["span_id"]
-            or not root_start <= event["occurred_at_unix_us"] <= root_end
+            or not pipeline["started_at_unix_us"]
+            <= event["occurred_at_unix_us"]
+            <= pipeline["ended_at_unix_us"]
             or event["attributes"]["buoy.retrieval.initial_fanout"]
             != operation["initial_fanout"]
             or event["attributes"]["buoy.retrieval.final_fanout"]

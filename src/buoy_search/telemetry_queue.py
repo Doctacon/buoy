@@ -14,7 +14,6 @@ from dataclasses import dataclass, replace
 import errno
 import hashlib
 import json
-import math
 import os
 from pathlib import Path
 import re
@@ -24,7 +23,7 @@ import subprocess
 import sys
 import time
 import warnings
-from typing import Any, Literal
+from typing import Literal
 
 try:  # The strong queue is intentionally POSIX-only.
     import fcntl
@@ -203,6 +202,7 @@ class TelemetryPaths:
     migration_directory: Path
     migration_database_path: Path
     migration_wal_path: Path
+    migration_backup_candidate_path: Path
     backup_database_path: Path
     queue_version: int = 1
 
@@ -382,6 +382,9 @@ def telemetry_paths(
         migration_directory=migration,
         migration_database_path=migration / "telemetry.duckdb",
         migration_wal_path=migration / "telemetry.duckdb.wal",
+        migration_backup_candidate_path=(
+            migration / "telemetry-v1-backup.duckdb"
+        ),
         backup_database_path=root / "telemetry-v1-backup.duckdb",
         queue_version=queue_version,
     )

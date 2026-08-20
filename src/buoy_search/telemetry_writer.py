@@ -27,6 +27,11 @@ from buoy_search.telemetry_envelope import (
 )
 from buoy_search.telemetry_queue import (
     COUNTER_MAX,
+    PUBLISHED_MAX_BYTES,
+    PUBLISHED_MAX_ENTRIES,
+    PendingItem,
+    TEMP_MAX_BYTES,
+    TEMP_MAX_ENTRIES,
     QueueLockTimeout,
     QueueSnapshot,
     ReceiptKind,
@@ -159,7 +164,18 @@ def telemetry_status(
             ),
             default=None,
         ),
-        capacity_full=queue_v1.capacity_full or queue_v2.capacity_full,
+        capacity_full=(
+            queue_v1.ready
+            + queue_v1.claimed
+            + queue_v2.ready
+            + queue_v2.claimed
+            >= PUBLISHED_MAX_ENTRIES
+            or queue_v1.pending_bytes + queue_v2.pending_bytes
+            >= PUBLISHED_MAX_BYTES
+            or queue_v1.temporary + queue_v2.temporary >= TEMP_MAX_ENTRIES
+            or queue_v1.temporary_bytes + queue_v2.temporary_bytes
+            >= TEMP_MAX_BYTES
+        ),
         scan_incomplete=queue_v1.scan_incomplete or queue_v2.scan_incomplete,
         unsafe=queue_v1.unsafe or queue_v2.unsafe,
         unreadable=queue_v1.unreadable or queue_v2.unreadable,
@@ -453,8 +469,7 @@ def telemetry_flush(
         )
     snapshot_items = snapshot_v1.items + snapshot_v2.items
     total = len(snapshot_items)
-    initial_status = telemetry_status(paths=selected)
-    if initial_status["overall"] == "blocked":
+    if _flush_snapshot_blocked(selected, snapshot_items):
         return _flush_result(
             "blocked", total, {}, total, _elapsed_ms(started_ns)
         )
@@ -498,8 +513,7 @@ def telemetry_flush(
                 0,
                 _elapsed_ms(started_ns),
             )
-        status = telemetry_status(paths=selected)
-        if status["overall"] == "blocked":
+        if _flush_snapshot_blocked(selected, snapshot_items):
             return _flush_result(
                 "blocked",
                 total,
@@ -519,6 +533,31 @@ def telemetry_flush(
         time.sleep(
             min(INBOX_POLL_SECONDS, (deadline_ns - now_ns) / 1_000_000_000)
         )
+
+
+def _flush_snapshot_blocked(
+    paths: TelemetryPaths,
+    items: tuple[PendingItem, ...],
+) -> bool:
+    v2_in_snapshot = any(item.source_name.startswith("v2-") for item in items)
+    for queue_paths in (paths, telemetry_paths_v2(paths.directory)):
+        queue = scan_queue_read_only(queue_paths)
+        if queue.unsafe or queue.unreadable:
+            return True
+    try:
+        state = read_writer_state(paths)
+    except (TelemetryQueueError, OSError, ValueError):
+        return True
+    store = _inspect_store(paths, state)
+    if store.state in {"incompatible", "unreadable", "unsafe"}:
+        return True
+    if v2_in_snapshot and (
+        store.state == "upgrade_required" or store.schema_version == 1
+    ):
+        return True
+    if state is not None and state.phase == "blocked":
+        return state.reason != "upgrade_required" or v2_in_snapshot
+    return False
 
 
 def telemetry_flush_command(
@@ -565,6 +604,16 @@ def telemetry_migrate(
     }
     if not posix_writer_capability().supported:
         return _finish_migration_result(base, started_ns)
+    try:
+        queue_v1 = scan_queue_read_only(selected)
+        queue_v2 = scan_queue_read_only(selected_v2)
+    except (TelemetryQueueError, OSError, ValueError):
+        return _finish_migration_result(base, started_ns)
+    if any(
+        queue.unsafe or queue.unreadable for queue in (queue_v1, queue_v2)
+    ):
+        return _finish_migration_result(base, started_ns)
+    base["pending_v2"] = queue_v2.ready + queue_v2.claimed
     inspection = _inspect_store(selected, None)
     if inspection.state == "absent":
         base["outcome"] = "absent"
@@ -583,6 +632,16 @@ def telemetry_migrate(
             return _finish_migration_result(base, started_ns)
         except (TelemetryQueueError, OSError, ValueError):
             return _finish_migration_result(base, started_ns)
+        try:
+            queue_v1 = scan_queue_read_only(selected)
+            queue_v2 = scan_queue_read_only(selected_v2)
+        except (TelemetryQueueError, OSError, ValueError):
+            return _finish_migration_result(base, started_ns)
+        if any(
+            queue.unsafe or queue.unreadable for queue in (queue_v1, queue_v2)
+        ):
+            return _finish_migration_result(base, started_ns)
+        base["pending_v2"] = queue_v2.ready + queue_v2.claimed
         store = _load_store_module()
         try:
             version = store.inspect_store_schema_version(selected)
@@ -602,20 +661,64 @@ def telemetry_migrate(
         base["source_schema_version"] = version
         base["target_schema_version"] = version
         base["backup_present"] = _migration_backup_present(selected)
-        try:
-            v2_queue = scan_queue_read_only(selected_v2)
-            if v2_queue.unsafe or v2_queue.unreadable:
-                return _finish_migration_result(base, started_ns)
-            base["pending_v2"] = v2_queue.ready + v2_queue.claimed
-        except (TelemetryQueueError, OSError, ValueError):
-            return _finish_migration_result(base, started_ns)
         if version == 2:
+            runtime = _WriterRuntime(
+                selected,
+                lambda: None,
+                enforce_drain_deadline=False,
+            )
+            try:
+                reconciled = store.reconcile_already_current_store(selected)
+            except store.StoreBusyError:
+                base["outcome"] = "busy"
+                return _finish_migration_result(base, started_ns)
+            except (
+                store.StoreIncompatibleError,
+                store.StoreUnsafeError,
+                store.StoreUnreadableError,
+                store.StoreWriteError,
+            ):
+                return _finish_migration_result(base, started_ns)
+            base["backup_present"] = reconciled.backup_present
+            try:
+                current_state = read_writer_state(selected)
+            except (UnsafePathError, UnreadablePathError):
+                return _finish_migration_result(base, started_ns)
+            except (TelemetryQueueError, OSError, ValueError):
+                current_state = None
+            state_matches = _writer_state_matches_snapshot(
+                current_state, reconciled.snapshot
+            )
+            if (
+                reconciled.scratch_recovered or not state_matches
+            ) and not _publish_exact_store_state(
+                runtime,
+                reconciled.snapshot,
+                durability_degraded=reconciled.durability_degraded,
+            ):
+                return _finish_migration_result(base, started_ns)
             base["outcome"] = "already_current"
             return _finish_migration_result(base, started_ns)
         if version != 1:
             return _finish_migration_result(base, started_ns)
+        try:
+            store.recover_prepublication_migration_scratch(selected)
+        except store.StoreBusyError:
+            base["outcome"] = "busy"
+            return _finish_migration_result(base, started_ns)
+        except (
+            store.StoreIncompatibleError,
+            store.StoreUnsafeError,
+            store.StoreUnreadableError,
+            store.StoreWriteError,
+        ):
+            return _finish_migration_result(base, started_ns)
 
-        runtime = _WriterRuntime(selected, lambda: None)
+        runtime = _WriterRuntime(
+            selected,
+            lambda: None,
+            enforce_drain_deadline=False,
+        )
         try:
             runtime._persist_state(force=True)
             queue_before = scan_queue_read_only(selected)
@@ -665,27 +768,72 @@ def telemetry_migrate(
             }
         )
         metadata = _safe_database_metadata(selected)
-        if metadata is not None:
-            runtime.state = replace(
-                runtime.state,
-                phase="stopped",
-                reason=None,
-                store_state="compatible",
-                store_schema_version=2,
-                persisted_runs_snapshot=migrated.runs,
-                database_device=metadata.st_dev,
-                database_inode=metadata.st_ino,
-                database_bytes=metadata.st_size,
-                durability_degraded=(
-                    runtime.state.durability_degraded
-                    or migrated.durability_degraded
-                ),
-            )
-            runtime._persist_state(force=True)
+        if metadata is None:
+            base["outcome"] = "blocked"
+            return _finish_migration_result(base, started_ns)
+        snapshot = store.StoreSnapshot(
+            schema_version=2,
+            persisted_runs_snapshot=migrated.runs,
+            database_device=metadata.st_dev,
+            database_inode=metadata.st_ino,
+            database_bytes=metadata.st_size,
+        )
+        if not _publish_exact_store_state(
+            runtime,
+            snapshot,
+            durability_degraded=migrated.durability_degraded,
+        ):
+            base["outcome"] = "blocked"
         return _finish_migration_result(base, started_ns)
     finally:
         if held:
             lifetime.__exit__(None, None, None)
+
+
+def _writer_state_matches_snapshot(state: WriterState | None, snapshot: Any) -> bool:
+    return state is not None and (
+        state.phase == "stopped"
+        and state.reason is None
+        and state.store_state == "compatible"
+        and state.store_schema_version == 2
+        and state.persisted_runs_snapshot == snapshot.persisted_runs_snapshot
+        and state.database_device == snapshot.database_device
+        and state.database_inode == snapshot.database_inode
+        and state.database_bytes == snapshot.database_bytes
+    )
+
+
+def _publish_exact_store_state(
+    runtime: _WriterRuntime,
+    snapshot: Any,
+    *,
+    durability_degraded: bool,
+) -> bool:
+    state = replace(
+        runtime.state,
+        phase="stopped",
+        reason=None,
+        heartbeat_unix_ms=_time_unix_ms(),
+        store_state="compatible",
+        store_schema_version=2,
+        persisted_runs_snapshot=snapshot.persisted_runs_snapshot,
+        database_device=snapshot.database_device,
+        database_inode=snapshot.database_inode,
+        database_bytes=snapshot.database_bytes,
+        durability_degraded=(
+            runtime.state.durability_degraded or durability_degraded
+        ),
+    )
+    try:
+        if not write_writer_state(state, paths=runtime.paths):
+            return False
+        observed = read_writer_state(runtime.paths)
+    except (TelemetryQueueError, OSError, ValueError):
+        return False
+    if observed != state:
+        return False
+    runtime.state = state
+    return True
 
 
 def _finish_migration_result(
@@ -759,12 +907,15 @@ class _WriterRuntime:
         self,
         paths: TelemetryPaths,
         release_lifetime: Any,
+        *,
+        enforce_drain_deadline: bool = True,
     ) -> None:
         self.paths = telemetry_paths(paths.directory)
         self.paths_v2 = telemetry_paths_v2(paths.directory)
         self.queue_paths = (self.paths, self.paths_v2)
         self.release_lifetime = release_lifetime
         self.elected_ns = time.monotonic_ns()
+        self.enforce_drain_deadline = enforce_drain_deadline
         self.last_heartbeat_ns = 0
         self.receipt_failure = False
         self.state = self._initial_state()
@@ -1208,8 +1359,10 @@ class _WriterRuntime:
         )
 
     def _drain_deadline_reached(self) -> bool:
-        return time.monotonic_ns() - self.elected_ns >= int(
-            DRAIN_DEADLINE_SECONDS * 1_000_000_000
+        return self.enforce_drain_deadline and (
+            time.monotonic_ns() - self.elected_ns >= int(
+                DRAIN_DEADLINE_SECONDS * 1_000_000_000
+            )
         )
 
     def _publish_and_ack(
@@ -1353,13 +1506,14 @@ def _inspect_store(
         scratch = _inspect_initialization_scratch(root_fd)
         migration_scratch_present = _inspect_migration_scratch(root_fd)
         try:
-            stat_private_entry_at(
+            backup = stat_private_entry_at(
                 root_fd,
                 "telemetry-v1-backup.duckdb",
                 kind="file",
+                allowed_nlinks=(1, 2),
             )
         except FileNotFoundError:
-            pass
+            backup = None
         try:
             database = stat_private_entry_at(
                 root_fd,
@@ -1384,6 +1538,8 @@ def _inspect_store(
         return _StoreInspection("unreadable", None, None, None, None)
     finally:
         os.close(root_fd)
+    if backup is not None and backup.st_nlink == 2 and not migration_scratch_present:
+        return _StoreInspection("unsafe", None, None, None, None)
     if database is None:
         if scratch.database is not None and scratch.database.st_nlink != 1:
             return _StoreInspection("unsafe", None, None, None, None)
@@ -1534,10 +1690,35 @@ def _inspect_migration_scratch(root_fd: int) -> bool:
         return False
     try:
         names = set(os.listdir(scratch_fd))
-        if not names <= {"telemetry.duckdb", "telemetry.duckdb.wal"}:
+        if not names <= {
+            "telemetry.duckdb",
+            "telemetry.duckdb.wal",
+            "telemetry-v1-backup.duckdb",
+        }:
             raise UnsafePathError("telemetry migration path is unsafe")
         for name in names:
-            stat_private_entry_at(scratch_fd, name, kind="file")
+            observed = stat_private_entry_at(
+                scratch_fd,
+                name,
+                kind="file",
+                allowed_nlinks=(1, 2)
+                if name == "telemetry-v1-backup.duckdb"
+                else (1,),
+            )
+            if name == "telemetry-v1-backup.duckdb" and observed.st_nlink == 2:
+                final = stat_private_entry_at(
+                    root_fd,
+                    name,
+                    kind="file",
+                    allowed_nlinks=(2,),
+                )
+                if (observed.st_dev, observed.st_ino) != (
+                    final.st_dev,
+                    final.st_ino,
+                ):
+                    raise UnsafePathError(
+                        "telemetry migration backup publication is unsafe"
+                    )
         return True
     finally:
         os.close(scratch_fd)
@@ -1664,6 +1845,8 @@ def _flush_text(value: Mapping[str, object]) -> str:
 def _migration_text(value: Mapping[str, object]) -> str:
     return (
         "Telemetry migrate: "
+        f"schema_version={value['schema_version']} "
+        f"database_path={value['database_path']} "
         f"outcome={value['outcome']} "
         f"source_schema_version={_text(value['source_schema_version'])} "
         f"target_schema_version={_text(value['target_schema_version'])} "

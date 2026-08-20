@@ -47,6 +47,7 @@ DATABASE_INIT_DIRECTORY = "database-init-v1"
 DATABASE_MIGRATION_DIRECTORY = "database-migrate-v2"
 DATABASE_BACKUP_BASENAME = "telemetry-v1-backup.duckdb"
 DATABASE_INIT_MAX_BYTES = 16_777_216
+MIGRATION_BATCH_SIZE = 128
 
 StoreOutcome = Literal["committed", "replayed", "conflict"]
 
@@ -119,6 +120,22 @@ class StoreMigrationResult:
     events: int
     backup_present: bool
     durability_degraded: bool = False
+
+
+@dataclass(frozen=True)
+class StoreReconcileResult:
+    """Verified exact-v2 facts after already-current scratch recovery."""
+
+    snapshot: StoreSnapshot
+    backup_present: bool
+    scratch_recovered: bool = False
+    durability_degraded: bool = False
+
+
+@dataclass(frozen=True)
+class _V1ContentIdentity:
+    counts: tuple[int, int, int]
+    sha256: str
 
 
 class _RowsLike(Protocol):
@@ -545,6 +562,7 @@ def _append_trace_locked(
         raise StoreUnsafeError("telemetry store path is unsafe") from exc
     try:
         durability_degraded = _recover_initialization_scratch(root_fd)
+        backup_present = _validate_append_auxiliary_paths(root_fd)
         database_stat = _optional_private_stat(
             root_fd,
             DATABASE_BASENAME,
@@ -557,14 +575,19 @@ def _append_trace_locked(
             max_bytes=DATABASE_INIT_MAX_BYTES,
         )
         if database_stat is None:
-            if wal_stat is not None:
+            if wal_stat is not None or backup_present:
                 raise StoreUnsafeError("telemetry store path is unsafe")
             result = _initialize_database_atomically(paths, root_fd, rows)
             return _with_degradation(result, durability_degraded)
         _verify_final_database_fd(root_fd)
         if wal_stat is not None:
             durability_degraded |= _recover_final_wal(paths, root_fd)
-        result = _append_existing(paths, root_fd, rows)
+        result = _append_existing(
+            paths,
+            root_fd,
+            rows,
+            backup_present=backup_present,
+        )
         return _with_degradation(result, durability_degraded)
     except TelemetryStoreError:
         raise
@@ -597,6 +620,7 @@ def _inspect_trace_terminal_locked(
 ) -> StoreAppendResult:
     root_fd = open_verified_directory(paths.directory)
     try:
+        backup_present = _validate_append_auxiliary_paths(root_fd)
         if (
             _optional_private_stat(
                 root_fd,
@@ -632,6 +656,12 @@ def _inspect_trace_terminal_locked(
                 read_only=True,
             ) as connection:
                 schema_version = _validate_schema(connection)
+                if backup_present:
+                    if schema_version != 2:
+                        raise StoreIncompatibleError(
+                            "telemetry retained backup is incompatible"
+                        )
+                    _validate_retained_backup(paths, root_fd)
                 existing = _read_trace_graph(connection, _trace_id(rows))
                 if not any(existing):
                     raise StoreTerminalAbsentError(
@@ -683,11 +713,31 @@ def _validate_fixed_paths(paths: TelemetryPaths) -> None:
         "migration_wal_path": (
             directory / DATABASE_MIGRATION_DIRECTORY / DATABASE_WAL_BASENAME
         ),
+        "migration_backup_candidate_path": (
+            directory / DATABASE_MIGRATION_DIRECTORY / DATABASE_BACKUP_BASENAME
+        ),
         "backup_database_path": directory / DATABASE_BACKUP_BASENAME,
     }
     for field, expected_path in expected.items():
         if Path(getattr(paths, field)) != expected_path:
             raise StoreUnsafeError("telemetry store path is unsafe")
+
+
+def _validate_append_auxiliary_paths(root_fd: int) -> bool:
+    if _optional_private_stat(
+        root_fd,
+        DATABASE_MIGRATION_DIRECTORY,
+        kind="directory",
+    ) is not None:
+        raise StoreUnsafeError("telemetry migration path is unresolved")
+    return (
+        _optional_private_stat(
+            root_fd,
+            DATABASE_BACKUP_BASENAME,
+            kind="file",
+        )
+        is not None
+    )
 
 
 def _optional_private_stat(
@@ -967,6 +1017,8 @@ def _append_existing(
     paths: TelemetryPaths,
     root_fd: int,
     rows: _RowsLike,
+    *,
+    backup_present: bool,
 ) -> StoreAppendResult:
     try:
         with _verified_connection(
@@ -975,6 +1027,18 @@ def _append_existing(
             DATABASE_BASENAME,
             read_only=False,
         ) as connection:
+            try:
+                schema_version = _validate_schema(connection)
+            except ValueError as exc:
+                raise StoreIncompatibleError(
+                    "telemetry store schema is incompatible"
+                ) from exc
+            if backup_present:
+                if schema_version != 2:
+                    raise StoreIncompatibleError(
+                        "telemetry retained backup is incompatible"
+                    )
+                _validate_retained_backup(paths, root_fd)
             result = _validate_and_insert_or_classify_transaction(
                 connection,
                 rows,
@@ -1017,6 +1081,28 @@ def _append_existing(
         ),
         durability_degraded=durability_degraded,
     )
+
+
+def _validate_retained_backup(
+    paths: TelemetryPaths,
+    root_fd: int,
+    *,
+    validate_content: bool = False,
+) -> None:
+    try:
+        with _verified_connection(
+            paths.backup_database_path,
+            root_fd,
+            DATABASE_BACKUP_BASENAME,
+            read_only=True,
+        ) as backup:
+            _validate_schema(backup, expected_version=1)
+            if validate_content:
+                _validate_v1_content(backup)
+    except (duckdb.Error, ValueError) as exc:
+        raise StoreIncompatibleError(
+            "telemetry retained backup is incompatible"
+        ) from exc
 
 
 def _persisted_run_count(connection: duckdb.DuckDBPyConnection) -> int:
@@ -1406,6 +1492,29 @@ def _validate_schema(
     connection: duckdb.DuckDBPyConnection,
     expected_version: int | None = None,
 ) -> int:
+    current_database = str(
+        connection.execute("SELECT system.current_database()").fetchone()[0]
+    )
+    attached = connection.execute(
+        """
+        SELECT database_name
+        FROM system.duckdb_databases()
+        WHERE NOT internal AND database_name <> ?
+        LIMIT 1
+        """,
+        (current_database,),
+    ).fetchall()
+    user_schemas = connection.execute(
+        """
+        SELECT schema_name
+        FROM system.duckdb_schemas()
+        WHERE database_name = ? AND schema_name <> 'main'
+        LIMIT 1
+        """,
+        (current_database,),
+    ).fetchall()
+    if attached or user_schemas:
+        raise ValueError("telemetry DuckDB database inventory is incompatible")
     table_names = {
         str(name)
         for (name,) in connection.execute(
@@ -1414,6 +1523,7 @@ def _validate_schema(
             FROM system.duckdb_tables()
             WHERE database_name = system.current_database()
               AND schema_name = 'main'
+            LIMIT 8
             """
         ).fetchall()
     }
@@ -1426,6 +1536,7 @@ def _validate_schema(
             WHERE database_name = system.current_database()
               AND schema_name = 'main'
               AND NOT internal
+            LIMIT 5
             """
         ).fetchall()
     }
@@ -1444,10 +1555,10 @@ def _validate_schema(
     if version == 2:
         user_functions = connection.execute(
             """
-            SELECT function_name
+            SELECT schema_name, function_name
             FROM system.duckdb_functions()
             WHERE database_name = system.current_database()
-              AND schema_name = 'main'
+            LIMIT 1
             """
         ).fetchall()
         if user_functions:
@@ -1456,7 +1567,8 @@ def _validate_schema(
         actual_layout = tuple(
             (str(row[1]), str(row[2]), bool(row[3]), bool(row[5]))
             for row in connection.execute(
-                f"SELECT * FROM system.pragma_table_info('{table_name}')"
+                f"SELECT * FROM system.pragma_table_info('{table_name}') "
+                f"LIMIT {len(expected_layout) + 1}"
             ).fetchall()
         )
         if actual_layout != expected_layout:
@@ -1474,8 +1586,9 @@ def _validate_schema(
                   AND schema_name = 'main'
                   AND table_name = ?
                 ORDER BY column_index
+                LIMIT ?
                 """,
-                (view_name,),
+                (view_name, len(expected_layout) + 1),
             ).fetchall()
         )
         expected_view_layout = tuple(
@@ -1493,6 +1606,7 @@ def _validate_schema(
         SELECT index_name FROM system.duckdb_indexes()
         WHERE database_name = system.current_database()
           AND schema_name = 'main'
+        LIMIT 1
         """
     ).fetchall()
     if indexes:
@@ -1553,6 +1667,7 @@ def _constraint_inventory(
             FROM system.duckdb_constraints()
             WHERE database_name = system.current_database()
               AND schema_name = 'main'
+            LIMIT 257
             """
         ).fetchall()
     ]
@@ -1701,7 +1816,10 @@ def inspect_store_schema_version(paths: TelemetryPaths) -> int | None:
                     DATABASE_BASENAME,
                     read_only=True,
                 ) as connection:
-                    return _validate_schema(connection)
+                    version = _validate_schema(connection)
+                    if version == 1:
+                        _validate_v1_content(connection)
+                    return version
             finally:
                 os.close(root_fd)
     except QueueLockTimeout as exc:
@@ -1762,8 +1880,7 @@ def _migrate_store_locked(
             read_only=True,
         ) as source:
             _validate_schema(source, expected_version=1)
-            source_counts = _v1_counts(source)
-            source_values = _v1_ordered_values(source)
+            source_identity = _validate_v1_content(source)
         hook("validated_source")
 
         scratch_fd = _prepare_migration_scratch(root_fd)
@@ -1775,6 +1892,29 @@ def _migrate_store_locked(
             DATABASE_BASENAME,
         )
         hook("scratch_copied")
+        backup_candidate_hash = _copy_private_file(
+            root_fd,
+            DATABASE_BASENAME,
+            scratch_fd,
+            DATABASE_BACKUP_BASENAME,
+            chunk_hook=lambda: hook("backup_copy_midpoint"),
+        )
+        hook("backup_candidate_copied")
+        if backup_candidate_hash != source_hash:
+            raise StoreWriteError("telemetry migration backup copy failed")
+        with _verified_connection(
+            paths.migration_backup_candidate_path,
+            scratch_fd,
+            DATABASE_BACKUP_BASENAME,
+            read_only=True,
+        ) as backup_candidate:
+            _validate_schema(backup_candidate, expected_version=1)
+            if _validate_v1_content(backup_candidate) != source_identity:
+                raise StoreIncompatibleError(
+                    "telemetry migration backup candidate is incompatible"
+                )
+        hook("backup_candidate_validated")
+
         scratch_stat = stat_private_entry_at(
             scratch_fd, DATABASE_BASENAME, kind="file"
         )
@@ -1798,11 +1938,7 @@ def _migrate_store_locked(
             read_only=True,
         ) as scratch:
             _validate_schema(scratch, expected_version=2)
-            if _v1_counts(scratch) != source_counts:
-                raise StoreIncompatibleError(
-                    "telemetry migration counts are incompatible"
-                )
-            if _v1_ordered_values(scratch) != source_values:
+            if _validate_v1_content(scratch) != source_identity:
                 raise StoreIncompatibleError(
                     "telemetry migration values are incompatible"
                 )
@@ -1814,23 +1950,32 @@ def _migrate_store_locked(
             kind="file",
         )
         if backup is None:
-            backup_hash = _copy_private_file(
-                root_fd,
-                DATABASE_BASENAME,
+            safe_link_at(
+                scratch_fd,
+                DATABASE_BACKUP_BASENAME,
                 root_fd,
                 DATABASE_BACKUP_BASENAME,
             )
             durability_degraded |= not fsync_directory(root_fd)
+            safe_unlink_at(
+                scratch_fd,
+                DATABASE_BACKUP_BASENAME,
+                allowed_nlinks=(2,),
+            )
+            durability_degraded |= not fsync_directory(scratch_fd)
         else:
             if backup.st_size != source_stat.st_size:
                 raise StoreIncompatibleError(
                     "telemetry migration backup is incompatible"
                 )
-            backup_hash = _hash_private_file(root_fd, DATABASE_BACKUP_BASENAME)
-        if backup_hash != source_hash:
-            raise StoreIncompatibleError(
-                "telemetry migration backup is incompatible"
-            )
+            if _hash_private_file(root_fd, DATABASE_BACKUP_BASENAME) != source_hash:
+                raise StoreIncompatibleError(
+                    "telemetry migration backup is incompatible"
+                )
+            safe_unlink_at(scratch_fd, DATABASE_BACKUP_BASENAME)
+            durability_degraded |= not fsync_directory(scratch_fd)
+        hook("backup_published")
+        hook("backup_created")
         with _verified_connection(
             paths.backup_database_path,
             root_fd,
@@ -1838,18 +1983,11 @@ def _migrate_store_locked(
             read_only=True,
         ) as backup_connection:
             _validate_schema(backup_connection, expected_version=1)
-            if _v1_ordered_values(backup_connection) != source_values:
+            if _validate_v1_content(backup_connection) != source_identity:
                 raise StoreIncompatibleError(
                     "telemetry migration backup is incompatible"
                 )
-        hook("backup_created")
-        backup_descriptor = open_private_file_at(
-            root_fd, DATABASE_BACKUP_BASENAME, flags=os.O_RDONLY
-        )
-        try:
-            os.fsync(backup_descriptor)
-        finally:
-            os.close(backup_descriptor)
+        hook("backup_validated")
         hook("backup_fsynced")
 
         current = _verify_final_database_fd(root_fd)
@@ -1878,7 +2016,7 @@ def _migrate_store_locked(
             read_only=True,
         ) as final:
             _validate_schema(final, expected_version=2)
-            if _v1_ordered_values(final) != source_values:
+            if _validate_v1_content(final) != source_identity:
                 raise StoreIncompatibleError(
                     "telemetry migrated store is incompatible"
                 )
@@ -1888,9 +2026,9 @@ def _migrate_store_locked(
         durability_degraded |= not fsync_directory(root_fd)
         hook("state_publication_ready")
         return StoreMigrationResult(
-            runs=source_counts[0],
-            spans=source_counts[1],
-            events=source_counts[2],
+            runs=source_identity.counts[0],
+            spans=source_identity.counts[1],
+            events=source_identity.counts[2],
             backup_present=True,
             durability_degraded=durability_degraded,
         )
@@ -1905,6 +2043,127 @@ def _migrate_store_locked(
         os.close(root_fd)
 
 
+def recover_prepublication_migration_scratch(paths: TelemetryPaths) -> bool:
+    """Remove only recognized scratch after re-proving canonical exact v1."""
+
+    _validate_fixed_paths(paths)
+    try:
+        with database_write_lock(paths, timeout_ms=250):
+            root_fd = open_verified_directory(paths.directory)
+            try:
+                if _optional_private_stat(
+                    root_fd,
+                    DATABASE_MIGRATION_DIRECTORY,
+                    kind="directory",
+                ) is None:
+                    return False
+                with _verified_connection(
+                    paths.database_path,
+                    root_fd,
+                    DATABASE_BASENAME,
+                    read_only=True,
+                ) as connection:
+                    _validate_schema(connection, expected_version=1)
+                    _validate_v1_content(connection)
+                scratch_fd = _prepare_migration_scratch(root_fd)
+                os.close(scratch_fd)
+                safe_rmdir_at(root_fd, DATABASE_MIGRATION_DIRECTORY)
+                fsync_directory(root_fd)
+                return True
+            finally:
+                os.close(root_fd)
+    except QueueLockTimeout as exc:
+        raise StoreBusyError("telemetry store is busy") from exc
+    except TelemetryStoreError:
+        raise
+    except (UnsafePathError, ValueError, PermissionError) as exc:
+        raise StoreUnsafeError("telemetry migration path is unsafe") from exc
+    except duckdb.Error as exc:
+        raise StoreUnreadableError("telemetry store is unreadable") from exc
+    except OSError as exc:
+        raise StoreWriteError("telemetry scratch recovery failed") from exc
+
+
+def reconcile_already_current_store(paths: TelemetryPaths) -> StoreReconcileResult:
+    """Validate exact v2/backup and clean only empty post-publication scratch."""
+
+    _validate_fixed_paths(paths)
+    try:
+        with database_write_lock(paths, timeout_ms=250):
+            root_fd = open_verified_directory(paths.directory)
+            try:
+                scratch_present = False
+                try:
+                    scratch_fd = open_private_directory_at(
+                        root_fd,
+                        DATABASE_MIGRATION_DIRECTORY,
+                        create=False,
+                    )
+                except FileNotFoundError:
+                    scratch_fd = -1
+                if scratch_fd >= 0:
+                    scratch_present = True
+                    try:
+                        names = set(os.listdir(scratch_fd))
+                        if names:
+                            raise StoreUnsafeError(
+                                "telemetry migration path is unresolved"
+                            )
+                    finally:
+                        os.close(scratch_fd)
+                if _optional_private_stat(
+                    root_fd,
+                    DATABASE_WAL_BASENAME,
+                    kind="file",
+                    max_bytes=DATABASE_INIT_MAX_BYTES,
+                ) is not None:
+                    raise StoreUnsafeError("telemetry store path is unsafe")
+                backup_present = _optional_private_stat(
+                    root_fd,
+                    DATABASE_BACKUP_BASENAME,
+                    kind="file",
+                ) is not None
+                with _verified_connection(
+                    paths.database_path,
+                    root_fd,
+                    DATABASE_BASENAME,
+                    read_only=True,
+                ) as connection:
+                    _validate_schema(connection, expected_version=2)
+                    persisted_runs = _persisted_run_count(connection)
+                if backup_present:
+                    _validate_retained_backup(
+                        paths, root_fd, validate_content=True
+                    )
+                durability_degraded = False
+                if scratch_present:
+                    safe_rmdir_at(root_fd, DATABASE_MIGRATION_DIRECTORY)
+                    durability_degraded = not fsync_directory(root_fd)
+                final_stat = _verify_final_database_fd(root_fd)
+                return StoreReconcileResult(
+                    snapshot=_store_snapshot(
+                        persisted_runs,
+                        final_stat,
+                        schema_version=2,
+                    ),
+                    backup_present=backup_present,
+                    scratch_recovered=scratch_present,
+                    durability_degraded=durability_degraded,
+                )
+            finally:
+                os.close(root_fd)
+    except QueueLockTimeout as exc:
+        raise StoreBusyError("telemetry store is busy") from exc
+    except TelemetryStoreError:
+        raise
+    except (UnsafePathError, ValueError, PermissionError) as exc:
+        raise StoreUnsafeError("telemetry migration path is unsafe") from exc
+    except duckdb.Error as exc:
+        raise StoreUnreadableError("telemetry store is unreadable") from exc
+    except OSError as exc:
+        raise StoreWriteError("telemetry store reconciliation failed") from exc
+
+
 def _prepare_migration_scratch(root_fd: int) -> int:
     try:
         scratch_fd = open_private_directory_at(
@@ -1915,17 +2174,38 @@ def _prepare_migration_scratch(root_fd: int) -> int:
             root_fd, DATABASE_MIGRATION_DIRECTORY, create=True
         )
     names = set(os.listdir(scratch_fd))
-    if not names <= {DATABASE_BASENAME, DATABASE_WAL_BASENAME}:
+    allowed = {
+        DATABASE_BASENAME,
+        DATABASE_WAL_BASENAME,
+        DATABASE_BACKUP_BASENAME,
+    }
+    if not names <= allowed:
         os.close(scratch_fd)
         raise StoreUnsafeError("telemetry migration path is unsafe")
     for name in sorted(names):
-        stat_private_entry_at(
+        observed = stat_private_entry_at(
             scratch_fd,
             name,
             kind="file",
-            allowed_nlinks=(1,),
+            allowed_nlinks=(1, 2) if name == DATABASE_BACKUP_BASENAME else (1,),
         )
-        safe_unlink_at(scratch_fd, name)
+        if name == DATABASE_BACKUP_BASENAME and observed.st_nlink == 2:
+            final = stat_private_entry_at(
+                root_fd,
+                DATABASE_BACKUP_BASENAME,
+                kind="file",
+                allowed_nlinks=(2,),
+            )
+            if (observed.st_dev, observed.st_ino) != (final.st_dev, final.st_ino):
+                os.close(scratch_fd)
+                raise StoreUnsafeError("telemetry backup publication is unsafe")
+            safe_unlink_at(
+                scratch_fd,
+                name,
+                allowed_nlinks=(2,),
+            )
+        else:
+            safe_unlink_at(scratch_fd, name)
     fsync_directory(scratch_fd)
     return scratch_fd
 
@@ -1933,7 +2213,12 @@ def _prepare_migration_scratch(root_fd: int) -> int:
 def _remove_safe_migration_scratch(root_fd: int, scratch_fd: int) -> None:
     try:
         names = set(os.listdir(scratch_fd))
-        if not names <= {DATABASE_BASENAME, DATABASE_WAL_BASENAME}:
+        allowed = {
+            DATABASE_BASENAME,
+            DATABASE_WAL_BASENAME,
+            DATABASE_BACKUP_BASENAME,
+        }
+        if not names <= allowed:
             return
         for name in sorted(names):
             stat_private_entry_at(
@@ -1956,6 +2241,8 @@ def _copy_private_file(
     source_name: str,
     destination_parent_fd: int,
     destination_name: str,
+    *,
+    chunk_hook: Callable[[], None] | None = None,
 ) -> str:
     source = open_private_file_at(
         source_parent_fd, source_name, flags=os.O_RDONLY
@@ -1969,6 +2256,7 @@ def _copy_private_file(
         )
         digest = hashlib.sha256()
         written = 0
+        hook_called = False
         try:
             while True:
                 chunk = os.read(source, 1024 * 1024)
@@ -1982,6 +2270,9 @@ def _copy_private_file(
                         raise OSError("short telemetry migration write")
                     written += count
                     view = view[count:]
+                if chunk_hook is not None and not hook_called:
+                    hook_called = True
+                    chunk_hook()
             os.fchmod(destination, 0o600)
             os.fsync(destination)
             observed = verify_private_file_fd(destination)
@@ -2023,41 +2314,100 @@ def _v1_counts(connection: duckdb.DuckDBPyConnection) -> tuple[int, int, int]:
     )
 
 
-def _v1_ordered_values(
+def _validate_v1_content(
     connection: duckdb.DuckDBPyConnection,
-) -> tuple[tuple[tuple[object, ...], ...], ...]:
-    return (
-        tuple(
-            tuple(row)
-            for row in connection.execute(
-                "SELECT * FROM trace_runs ORDER BY trace_id"
-            ).fetchall()
-        ),
-        tuple(
-            tuple(row)
-            for row in connection.execute(
-                "SELECT * FROM spans ORDER BY trace_id, started_at, span_id"
-            ).fetchall()
-        ),
-        tuple(
-            tuple(row)
-            for row in connection.execute(
-                "SELECT * FROM span_events ORDER BY trace_id, event_index"
-            ).fetchall()
-        ),
-        tuple(
-            tuple(row)
-            for row in connection.execute(
-                "SELECT * FROM retrieval_runs_v1 ORDER BY trace_id"
-            ).fetchall()
-        ),
-        tuple(
-            tuple(row)
+) -> _V1ContentIdentity:
+    """Stream exact v1 traces in bounded batches through the canonical validator."""
+
+    from buoy_search.telemetry_envelope import TraceRows, encode_trace_envelope_v1
+
+    _preflight_v1_scalar_lengths(connection)
+    physical_counts = _v1_counts(connection)
+    digest = hashlib.sha256()
+    observed_runs = 0
+    observed_spans = 0
+    observed_events = 0
+    after_trace_id = ""
+    while True:
+        trace_ids = [
+            str(row[0])
             for row in connection.execute(
                 """
-                SELECT * FROM retrieval_stage_latency_v1
-                ORDER BY trace_id, started_at, span_id
-                """
+                SELECT trace_id
+                FROM trace_runs
+                WHERE trace_id > ?
+                ORDER BY trace_id
+                LIMIT ?
+                """,
+                (after_trace_id, MIGRATION_BATCH_SIZE),
             ).fetchall()
-        ),
-    )
+        ]
+        if not trace_ids:
+            break
+        for trace_id in trace_ids:
+            counts = connection.execute(
+                """
+                SELECT
+                    (SELECT count(*) FROM spans WHERE trace_id = ?),
+                    (SELECT count(*) FROM span_events WHERE trace_id = ?)
+                """,
+                (trace_id, trace_id),
+            ).fetchone()
+            if counts is None or not (1 <= counts[0] <= 256) or not (0 <= counts[1] <= 1):
+                raise ValueError("telemetry v1 trace cardinality is incompatible")
+            run_rows = connection.execute(
+                "SELECT * FROM trace_runs WHERE trace_id = ?",
+                (trace_id,),
+            ).fetchall()
+            span_rows = connection.execute(
+                """
+                SELECT * FROM spans
+                WHERE trace_id = ?
+                ORDER BY started_at, span_id
+                """,
+                (trace_id,),
+            ).fetchall()
+            event_rows = connection.execute(
+                """
+                SELECT * FROM span_events
+                WHERE trace_id = ?
+                ORDER BY event_index
+                """,
+                (trace_id,),
+            ).fetchall()
+            if len(run_rows) != 1:
+                raise ValueError("telemetry v1 run cardinality is incompatible")
+            rows = TraceRows(
+                run=tuple(run_rows[0]),
+                spans=tuple(tuple(row) for row in span_rows),
+                events=tuple(tuple(row) for row in event_rows),
+            )
+            payload = encode_trace_envelope_v1(rows)
+            digest.update(len(payload).to_bytes(8, "big"))
+            digest.update(payload)
+            observed_runs += 1
+            observed_spans += len(span_rows)
+            observed_events += len(event_rows)
+        after_trace_id = trace_ids[-1]
+    observed_counts = (observed_runs, observed_spans, observed_events)
+    if observed_counts != physical_counts:
+        raise ValueError("telemetry v1 graph inventory is incompatible")
+    return _V1ContentIdentity(observed_counts, digest.hexdigest())
+
+
+def _preflight_v1_scalar_lengths(
+    connection: duckdb.DuckDBPyConnection,
+) -> None:
+    for table_name in ("trace_runs", "spans", "span_events"):
+        columns = [name for name, _type, _nullable, _key in _V1_TABLE_LAYOUTS[table_name]]
+        expressions = ", ".join(
+            f'max(octet_length(encode(CAST("{column}" AS VARCHAR))))'
+            for column in columns
+        )
+        maxima = connection.execute(
+            f'SELECT {expressions} FROM "{table_name}"'
+        ).fetchone()
+        if maxima is None:
+            raise ValueError("telemetry v1 scalar preflight failed")
+        if any(value is not None and (value < 0 or value > 65_536) for value in maxima):
+            raise ValueError("telemetry v1 scalar value is oversized")

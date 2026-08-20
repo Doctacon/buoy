@@ -89,8 +89,11 @@ retrieval and `status` reports `platform_unsupported`.
 
 A version-2-capable Buoy installation creates new telemetry databases directly
 at schema version 2. It never upgrades an existing schema-version-1 database
-automatically. `buoy telemetry status` reports `upgrade_required`; version-1
-work can still drain, while version-2 envelopes remain pending.
+automatically. When safe matching writer-state metadata proves an existing
+schema-version-1 store, `buoy telemetry status` reports `upgrade_required`;
+without that state proof it intentionally reports `present_unverified` because
+status never opens DuckDB. Version-1 work can still drain, while version-2
+envelopes remain pending.
 
 Run the explicit local migration when you are ready:
 
