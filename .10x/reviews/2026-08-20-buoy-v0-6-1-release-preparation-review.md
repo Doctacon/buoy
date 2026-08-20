@@ -1,7 +1,7 @@
 Status: pass
 Created: 2026-08-20
 Updated: 2026-08-20
-Ticket: .10x/tickets/2026-08-20-ship-buoy-v0-6-1.md
+Ticket: .10x/tickets/done/2026-08-20-ship-buoy-v0-6-1.md
 Evidence: .10x/evidence/2026-08-20-buoy-v0-6-1-github-release.md
 Decision: .10x/decisions/annotated-tag-triggered-github-releases.md
 Specification: .10x/specs/annotated-tag-triggered-github-release.md
@@ -50,7 +50,7 @@ The reviewed candidate's Git blob IDs before adding this review were:
   `7677f5ebcb9c6ba0a8523bd714e7c4ed05f0dd25`;
 - `.10x/specs/buoy-v0-6-0-one-time-github-release.md`:
   `f5a1bbb95b40610d9b82d78ea8f2b52000a94c58`;
-- `.10x/tickets/2026-08-20-ship-buoy-v0-6-1.md`:
+- `.10x/tickets/done/2026-08-20-ship-buoy-v0-6-1.md`:
   `c6fb2d76e6e25580f728dabcc4314cdfbdb49c6f`;
 - `.10x/evidence/2026-08-20-buoy-v0-6-1-github-release.md`:
   `d7ec32e576d8abbf9a8446abf4206d001e087685`;

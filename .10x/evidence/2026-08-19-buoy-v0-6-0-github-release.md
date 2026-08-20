@@ -137,7 +137,7 @@ deleted, recreated, overwritten, moved, or repurposed. No manual dispatch,
 temporary recovery publisher, draft creation, asset upload, or later v0.6.0
 Release is authorized.
 
-The successor is `.10x/tickets/2026-08-20-ship-buoy-v0-6-1.md`. It corrects
+The successor is `.10x/tickets/done/2026-08-20-ship-buoy-v0-6-1.md`. It corrects
 only the public release surfaces and the hermetic VCS-version fixture before
 using the normal reusable tag workflow. Immutable Releases remain enabled.
 No PyPI, provider/model/data, application-behavior, dependency, lockfile,
