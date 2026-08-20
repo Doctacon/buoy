@@ -331,8 +331,9 @@ A version-2-capable writer:
 
 Pending, temporary, and receipt entry/byte limits are shared across both inbox
 versions. Receipt rotation examines both versioned receipt directories while
-the shared queue lock is held, and the combined terminal receipt identity set
-MUST remain within the single writer-state bound of 4,096 names.
+the shared queue lock is held, uses trusted current time rather than receipt
+payload timestamps for age eligibility, and keeps the combined terminal
+receipt identity set within the single writer-state bound of 4,096 names.
 
 On an absent canonical store, the new writer initializes schema version 2 even
 when the first accepted envelope is v1. This avoids creating a store that
@@ -494,8 +495,12 @@ proven, the command returns exact `blocked` facts; a later already-current retry
 may reconcile state and succeed.
 
 The migration does not automatically drain pending v2 envelopes after success.
-It reports their count; the next producer-started writer or explicit flush
-drains them.
+`pending_v2` reports one final complete v2 queue snapshot taken after canonical
+and writer-state publication while lifetime authority remains held; publication
+after that queue-lock snapshot is outside the command fact boundary. If that
+final snapshot is unsafe, unreadable, or incomplete, the command returns
+`blocked` rather than successful stale facts. The next producer-started writer
+or explicit flush drains pending work.
 
 ## Privacy, limits, and no deletion
 
@@ -512,9 +517,12 @@ Migration memory is bounded independently of store size: trace IDs and ordered
 row/value comparisons are consumed in batches of at most 128, no complete
 store/table/view result is retained in Python, every scalar/JSON length is
 preflight-bounded before value materialization, and each trace is independently
-validated. Runtime and I/O are finite and proportional to the explicitly
-selected closed local store; there is no artificial elapsed deadline that
-could strand a valid large history midway through an explicit migration.
+validated. Fixed scratch directory inventories are streamed and reject the
+first unknown or fourth distinct entry without materializing attacker-
+controlled directory contents. Runtime and I/O are finite and proportional to
+the explicitly selected closed local store; there is no artificial elapsed
+deadline that could strand a valid large history midway through an explicit
+migration.
 
 ## Acceptance scenarios
 
@@ -536,8 +544,9 @@ could strand a valid large history midway through an explicit migration.
    canonical v1 or deleting pending work.
 7. **Crash table:** no-cleanup faults before/after scratch creation, transaction
    commit, backup creation/fsync, canonical publication, directory fsync, and
-   state publication leave one provable canonical version and preserve the
-   backup/queue recovery contract. A fault after backup publication followed by
+   actual writer-state temporary durability/rename/directory sync leave one
+   provable canonical version and preserve the backup/queue recovery contract.
+   A fault after backup publication followed by
    new v1 publication retries to v2 without draining or losing that later work;
    subsequent flush commits it exactly once.
 8. **Replay/conflict:** v1 and v2 exact replays acknowledge; same-version or

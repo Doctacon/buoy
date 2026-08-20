@@ -108,7 +108,12 @@ for its completion.
   dependent command instrumentation did not start.
 - 2026-08-20: Repair candidate `80d7562` materially resolved most first-review
   findings and passed expanded worker validation, but three fresh reviewers
-  again returned FAIL. Child 1 remains active for the narrower exact-state
+  again returned FAIL. Child 1 remained active for the narrower exact-state
   repair in
   `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md`;
-  dependent instrumentation remains blocked.
+  dependent instrumentation remained blocked.
+- 2026-08-20: Candidate `bbc1cbc` repaired that complete set and passed further
+  worker validation, but fresh review found a receipt-recovery blocker and five
+  narrower adjacent gaps. Child 1 remains active under
+  `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-final-review.md`;
+  instrumentation is still blocked.

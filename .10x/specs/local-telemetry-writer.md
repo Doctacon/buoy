@@ -388,7 +388,10 @@ and 67,108,864 bytes of their exact envelope bytes. One envelope is at most
 67,108,864 bytes. Receipts are a rotating content-free history bounded to
 4,096 files and 4,194,304 bytes. Before adding another, the writer safely
 removes recognized receipts that are at least 121 seconds old in ascending
-`(mtime_ns, basename)` order until both limits hold. Best-effort idempotent
+`(mtime_ns, basename)` order until both limits hold. Eligibility is computed
+from trusted current time sampled by queue code while `queue.lock` is held;
+`recorded_at_unix_ms` from a new or recovered receipt is never a rotation clock.
+Best-effort idempotent
 state reconciliation later increments `receipts_rotated` once per removed
 receipt. If only younger receipts
 remain at the cap, the classification claim stays pending; valid later claims
@@ -619,10 +622,13 @@ within the 30-second window and then exits with work pending.
 The final idle-exit decision is race-free. While still holding the lifetime
 lock, the writer acquires `writer-start.lock`, performs one final bounded ready
 scan, and either resumes draining or writes phase `stopped`, releases the
-lifetime lock, and only then releases the start lock. Producers publish before
-requesting the start lock. Therefore an envelope published before the final
-scan is observed by that writer, while one published after the scan cannot
-observe the old writer as active and establishes a new lease/spawn.
+lifetime lock, and only then releases the start lock. An incomplete scan is
+unprovable and MUST be handled fail-closed at startup, claim recovery, the main
+loop, and final idle transition; it is never equivalent to an empty queue or
+permission to publish clean stopped state. Producers publish before requesting
+the start lock. Therefore an envelope published before a complete final scan is
+observed by that writer, while one published after the scan cannot observe the
+old writer as active and establishes a new lease/spawn.
 
 ## Drain, transaction, replay, and crash state machine
 

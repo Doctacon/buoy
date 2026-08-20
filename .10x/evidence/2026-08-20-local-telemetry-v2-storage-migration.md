@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-20
 Updated: 2026-08-20
-Relates-To: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md
+Relates-To: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-final-review.md
 
 # Local Telemetry V2 Storage and Migration Validation
 
@@ -373,7 +373,18 @@ They do not close the ticket; fresh exact-commit review remains mandatory.
 ### Second-repair limits
 
 - No-cleanup `BaseException` injection simulates abrupt process death at each
-  material hook but is not hardware power-loss testing.
+  store-layer hook but is not hardware power-loss testing.
 - Filesystem and runtime validation remains one macOS arm64 host with DuckDB
   1.5.4; cross-platform power-loss/filesystem behavior is unverified.
-- Fresh independent exact-commit review and parent closure remain pending.
+
+## Final-review challenge to candidate bbc1cbc
+
+Three fresh reviewers returned FAIL; see
+`.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-final-review.md`.
+They verified the accepted second-review migration findings as materially fixed
+but found that recovered receipt rotation trusts stale/untrusted payload time,
+ordinary writer paths treat incomplete scans as empty, scratch inventories use
+unbounded `listdir`, successful `pending_v2` can be stale, actual writer-state
+publication windows lack no-cleanup coverage, and migration documentation omits
+the backed-up retry exception. Candidate `bbc1cbc` is therefore preserved as a
+failed candidate, not closure evidence.

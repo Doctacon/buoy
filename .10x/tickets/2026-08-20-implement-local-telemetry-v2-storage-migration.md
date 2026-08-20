@@ -80,12 +80,12 @@ ranking, evidence, provider calls, live credentials/namespaces, real
 
 ## Blockers
 
-Independent exact-commit re-review of `80d7562` failed. The remaining bounded
-repair covers backup-published crash retry with later v1 work, incomplete scan
-preflight, complete v1/v2 object and semantic validation, retained-backup
-content identity, shared receipt capacity, orphan auxiliary facts, no-cleanup
-crash coverage, and evidence correction. See
-`.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md`.
+Independent exact-commit review of `bbc1cbc` failed. The final bounded repair
+covers trusted-time receipt rotation/recovery, fail-closed ordinary writer
+incomplete scans, constant-memory scratch inventories, final `pending_v2`
+snapshot facts, actual writer-state publication crash windows, and migration
+documentation. See
+`.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-final-review.md`.
 
 The intentionally stale release-check collector separately blocks unfiltered
 full-suite collection and is owned by
@@ -164,3 +164,10 @@ must not widen this ticket.
   subtests; the separately owned stale dynamic-version collector remains the
   sole exclusion. Targeted rereview/privacy/no-network/crash/capacity probes
   passed 11 tests and 35 subtests.
+- 2026-08-20: Three fresh reviewers returned FAIL for `bbc1cbc`. They verified
+  the second-review migration defects as repaired, then found one receipt
+  recovery blocker plus adjacent fail-closed/boundedness/fact/attestation gaps:
+  untrusted rotation time, ordinary-writer incomplete scans, unbounded scratch
+  listing, stale `pending_v2`, uncovered writer-state publication windows, and
+  stale docs. Full findings:
+  `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-final-review.md`.
