@@ -121,7 +121,7 @@ def active_routing_artifact(
 
 
 class ReleaseAutomationTests(unittest.TestCase):
-    def test_current_dynamic_source_and_workflows_validate_read_only(self) -> None:
+    def test_current_dynamic_source_and_release_workflows_validate(self) -> None:
         result = release_automation.validate_source(ROOT)
 
         self.assertTrue(result["dynamic_version"])
@@ -129,13 +129,24 @@ class ReleaseAutomationTests(unittest.TestCase):
             result["console_script"],
             release_automation.BUOY_CONSOLE_TARGET,
         )
-        self.assertTrue(result["publication_paused"])
-        self.assertEqual(result["published_history_through"], "0.5.1")
-        self.assertIsNone(result["staged_release"])
+        self.assertEqual(result["latest_release"], "0.6.0")
+        self.assertEqual(result["release_date"], "2026-08-20")
+        self.assertEqual(result["changelog_comparison"], "v0.5.1...v0.6.0")
+        self.assertEqual(
+            result["installation_asset_url"],
+            "https://github.com/Doctacon/buoy/releases/download/"
+            "v0.6.0/buoy_search-0.6.0-py3-none-any.whl",
+        )
+        self.assertEqual(result["security_supported_through"], "0.6.0")
+        self.assertEqual(
+            result["publication_mode"],
+            "annotated-tag-triggered-github-release",
+        )
         self.assertEqual(
             result["workflows_read_only"],
             list(release_automation.READ_ONLY_WORKFLOWS),
         )
+        self.assertEqual(result["release_workflow"], release_automation.RELEASE_WORKFLOW)
         self.assertEqual(
             result["routing_canaries"]["members"],
             sorted(release_automation.ROUTING_CANARY_MEMBERS),
@@ -196,6 +207,47 @@ class ReleaseAutomationTests(unittest.TestCase):
         self.assertNotIn("version", root_package)
         self.assertEqual(root_package["source"], {"editable": "."})
 
+    def test_release_version_and_notes_are_derived_from_changelog(self) -> None:
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            result = release_automation.main(["release-version"])
+        self.assertEqual(result, 0)
+        self.assertEqual(stdout.getvalue(), "0.6.0\n")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            notes = Path(tmp) / "notes.md"
+            self.assertEqual(
+                release_automation.main(
+                    [
+                        "release-notes",
+                        "--version",
+                        "0.6.0",
+                        "--output",
+                        str(notes),
+                    ]
+                ),
+                0,
+            )
+            body = notes.read_text(encoding="utf-8")
+            self.assertTrue(body.startswith("### Added\n"))
+            self.assertIn("### Changed\n", body)
+            self.assertIn("### Security\n", body)
+            self.assertNotIn("## [0.5.1]", body)
+
+            stderr = StringIO()
+            with redirect_stderr(stderr):
+                mismatch = release_automation.main(
+                    [
+                        "release-notes",
+                        "--version",
+                        "9.9.9",
+                        "--output",
+                        str(notes),
+                    ]
+                )
+            self.assertEqual(mismatch, 2)
+            self.assertIn("do not match", stderr.getvalue())
+
     def test_release_readiness_preserves_exact_four_check_names(self) -> None:
         text = (ROOT / ".github/workflows/release-readiness.yml").read_text(
             encoding="utf-8"
@@ -207,8 +259,12 @@ class ReleaseAutomationTests(unittest.TestCase):
         policy = text.split("  python-311:", 1)[0]
         self.assertIn("astral-sh/setup-uv@", policy)
         self.assertIn("uv lock --check", policy)
+        distribution = text.split("  distribution:", 1)[1]
+        self.assertIn("release_automation.py release-version", distribution)
+        self.assertIn("SETUPTOOLS_SCM_PRETEND_VERSION", distribution)
+        self.assertIn("--expected-version", distribution)
 
-    def test_release_related_workflows_are_pinned_and_have_no_write_path(self) -> None:
+    def test_read_only_workflows_are_pinned_and_have_no_write_path(self) -> None:
         for relative in release_automation.READ_ONLY_WORKFLOWS:
             with self.subTest(workflow=relative):
                 text = (ROOT / relative).read_text(encoding="utf-8")
@@ -223,12 +279,42 @@ class ReleaseAutomationTests(unittest.TestCase):
                     _action, revision = reference
                     self.assertRegex(revision, r"^[0-9a-f]{40}$")
 
-    def test_main_push_workflow_only_validates_the_pause(self) -> None:
+    def test_release_workflow_is_tag_triggered_and_least_privilege(self) -> None:
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
-        self.assertIn("name: Publication paused", text)
-        self.assertIn("release_automation.py validate-source", text)
-        self.assertNotIn("upload-artifact", text)
-        self.assertNotIn("GITHUB_TOKEN", text)
+        parsed = release_automation._load_release_workflow(
+            ROOT / ".github/workflows/release.yml"
+        )
+        self.assertEqual(parsed["permissions"], {"contents": "read"})
+        self.assertIn('      - "v*"', text)
+        self.assertNotIn("branches:\n      - main", text)
+        self.assertEqual(
+            parsed["jobs"]["publish"]["permissions"],
+            {
+                "attestations": "write",
+                "contents": "write",
+                "id-token": "write",
+            },
+        )
+        self.assertNotIn("gh release delete", text)
+        self.assertNotIn("--clobber", text)
+        self.assertNotIn("uv publish", text)
+        publish = text.split("  publish:", 1)[1]
+        self.assertNotIn("actions/checkout@", publish)
+        self.assertNotIn("astral-sh/setup-uv@", publish)
+        self.assertNotIn("/immutable-releases", publish)
+        self.assertIn("actions/attest-build-provenance@", publish)
+        self.assertIn("gh release create", publish)
+        self.assertIn("--draft", publish)
+        self.assertIn("git/ref/heads/main", text)
+        self.assertIn(".message')\" = \"Buoy $TAG\"", publish)
+        self.assertIn(".digest", publish)
+        self.assertIn(".size", publish)
+        self.assertIn("-F draft=false", publish)
+        self.assertIn("-f make_latest=true", publish)
+        self.assertIn(".immutable == true", publish)
+        self.assertIn("gh attestation verify", publish)
+        for _action, revision in re.findall(r"uses:\s*([^@\s]+)@([^\s#]+)", text):
+            self.assertRegex(revision, r"^[0-9a-f]{40}$")
 
     def test_ci_has_no_frontend_or_command_center_job(self) -> None:
         text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
@@ -263,7 +349,7 @@ class ReleaseAutomationTests(unittest.TestCase):
                 release_automation.validate_source(clone)
 
             pyproject_path.write_text(text, encoding="utf-8")
-            workflow = clone / ".github/workflows/release.yml"
+            workflow = clone / ".github/workflows/ci.yml"
             workflow.write_text(
                 workflow.read_text(encoding="utf-8").replace(
                     "contents: read", "contents: write"
@@ -338,7 +424,7 @@ class ReleaseAutomationTests(unittest.TestCase):
                     where="fixture",
                 )
 
-    def test_source_validator_rejects_consumed_v0_5_1_pending_state(self) -> None:
+    def test_source_validator_requires_dated_advancing_release(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             clone = Path(tmp) / "source"
             shutil.copytree(
@@ -347,16 +433,92 @@ class ReleaseAutomationTests(unittest.TestCase):
                 ignore=shutil.ignore_patterns(".git", ".venv", "__pycache__", "dist"),
             )
             changelog = clone / "CHANGELOG.md"
+            original = changelog.read_text(encoding="utf-8")
+            variants = (
+                original.replace("## [0.6.0] - 2026-08-20", "## [0.6.0] - pending"),
+                original.replace("## [0.6.0] - 2026-08-20", "## [0.5.0] - 2026-08-20"),
+                original.replace("## [0.6.0] - 2026-08-20", "## [01.6.0] - 2026-08-20"),
+            )
+            for candidate in variants:
+                with self.subTest(candidate=candidate):
+                    changelog.write_text(candidate, encoding="utf-8")
+                    with self.assertRaises(release_automation.ReleaseError):
+                        release_automation.validate_source(clone)
+
+    def test_source_validator_requires_exact_release_security_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clone = Path(tmp) / "source"
+            shutil.copytree(
+                ROOT,
+                clone,
+                ignore=shutil.ignore_patterns(".git", ".venv", "__pycache__", "dist"),
+            )
+            security = clone / "SECURITY.md"
+            original = security.read_text(encoding="utf-8")
+            release_row = "| 0.6.0 | Yes |"
+            variants = (
+                original.replace(release_row + "\n", ""),
+                original.replace(release_row, "| 0.6.0 | No |"),
+            )
+            for candidate in variants:
+                with self.subTest(candidate=candidate):
+                    security.write_text(candidate, encoding="utf-8")
+                    with self.assertRaisesRegex(
+                        release_automation.ReleaseError,
+                        "mark the latest release as supported",
+                    ):
+                        release_automation.validate_source(clone)
+
+    def test_source_validator_requires_exact_public_release_surfaces(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            clone = Path(tmp) / "source"
+            shutil.copytree(
+                ROOT,
+                clone,
+                ignore=shutil.ignore_patterns(".git", ".venv", "__pycache__", "dist"),
+            )
+            changelog = clone / "CHANGELOG.md"
+            original_changelog = changelog.read_text(encoding="utf-8")
             changelog.write_text(
-                changelog.read_text(encoding="utf-8").replace(
-                    "## [0.5.1] - 2026-08-13", "## [0.5.1] - pending"
+                original_changelog.replace(
+                    "## Unreleased\n\n## [0.6.0] - 2026-08-20",
+                    "## Unreleased\n\n- not staged\n\n## [0.6.0] - 2026-08-20",
                 ),
                 encoding="utf-8",
             )
-
             with self.assertRaisesRegex(
                 release_automation.ReleaseError,
-                "published v0.5.1 history dated 2026-08-13",
+                "Unreleased body must remain empty",
+            ):
+                release_automation.validate_source(clone)
+
+            changelog.write_text(
+                original_changelog.replace(
+                    "[0.6.0]: https://github.com/Doctacon/buoy/compare/v0.5.1...v0.6.0",
+                    "[0.6.0]: https://example.invalid/v0.6.0",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                release_automation.ReleaseError,
+                "latest comparison link is not canonical",
+            ):
+                release_automation.validate_source(clone)
+
+            changelog.write_text(original_changelog, encoding="utf-8")
+            readme = clone / "README.md"
+            readme.write_text(
+                readme.read_text(encoding="utf-8").replace(
+                    "https://github.com/Doctacon/buoy/releases/download/"
+                    "v0.6.0/buoy_search-0.6.0-py3-none-any.whl",
+                    "https://github.com/Doctacon/buoy/releases/download/"
+                    "v0.5.1/buoy_search-0.5.1-py3-none-any.whl",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                release_automation.ReleaseError,
+                "latest release wheel URL",
             ):
                 release_automation.validate_source(clone)
 
@@ -616,7 +778,7 @@ class ReleaseAutomationTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(
-                release_automation.ReleaseError, "may not escalate"
+                release_automation.ReleaseError, "may not receive write permission"
             ):
                 release_automation.validate_source(clone)
 
@@ -627,16 +789,11 @@ class ReleaseAutomationTests(unittest.TestCase):
                 release_automation.validate_source(clone)
 
             workflow.write_text(
-                original.replace(
-                    "      - name: Validate source-only release state",
-                    "      - uses: actions/upload-artifact@"
-                    "ea165f8d65b6e75b540449e92b4886f43607fa02\n"
-                    "      - name: Validate source-only release state",
-                ),
+                original + "\n# gh release delete forbidden\n",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(
-                release_automation.ReleaseError, "actions/upload-artifact"
+                release_automation.ReleaseError, "gh release delete"
             ):
                 release_automation.validate_source(clone)
 
@@ -650,20 +807,26 @@ class ReleaseAutomationTests(unittest.TestCase):
                 result = release_automation.main([command, "--unparsed", "secret"])
             self.assertEqual(result, 2)
             self.assertEqual(stdout.getvalue(), "")
-            self.assertEqual(stderr.getvalue().strip(), release_automation.PAUSED_MESSAGE)
+            self.assertEqual(stderr.getvalue().strip(), release_automation.LEGACY_MESSAGE)
             self.assertNotIn("Traceback", stderr.getvalue())
 
-    def test_release_docs_and_changelog_state_the_pause_and_recovery_boundary(self) -> None:
+    def test_release_docs_and_changelog_describe_the_automated_boundary(self) -> None:
         docs = (ROOT / "docs/releasing.md").read_text(encoding="utf-8")
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        self.assertIn("Automatic publication remains paused", docs)
-        self.assertIn("No current workflow has write permission", docs)
+        security = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+        self.assertIn("Routine release flow", docs)
+        self.assertIn("The tag is the publication approval", docs)
+        self.assertIn("Releases are immutable", docs)
+        self.assertIn("It does not publish to PyPI", docs)
         self.assertIn("validate-source", docs)
         self.assertIn("## Unreleased", changelog)
+        self.assertIn("## [0.6.0] - 2026-08-20", changelog)
         self.assertIn("## [0.5.1] - 2026-08-13", changelog)
         self.assertIn("## [0.5.0] - 2026-08-01", changelog)
         self.assertIn("## [0.4.0] - 2026-07-21", changelog)
         self.assertEqual(changelog.count(" - pending"), 0)
+        self.assertIn("| 0.6.0 | Yes |", security)
+        self.assertIn("| 0.5.1 | Yes |", security)
 
     def test_focused_package_surface_includes_routing_but_excludes_operator_assets(self) -> None:
         with (ROOT / "pyproject.toml").open("rb") as handle:

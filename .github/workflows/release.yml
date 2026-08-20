@@ -2,32 +2,253 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v*"
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-main
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  paused:
-    name: Publication paused
+  test:
+    name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
     steps:
-      - name: Check out exact main commit
+      - name: Check out tagged source
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Install locked validation environment
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.11.7"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Sync locked dependencies
+        run: uv sync --locked --python ${{ matrix.python-version }}
+      - name: Verify annotated tag and reviewed version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          test "$version" = "$(uv run python scripts/release_automation.py release-version)"
+          SETUPTOOLS_SCM_PRETEND_VERSION="$version" uv run --no-project python scripts/release_checks.py tag --tag "$GITHUB_REF_NAME"
+          tag_object="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}" --jq '.object.sha')"
+          object_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}" --jq '.object.type')"
+          SETUPTOOLS_SCM_PRETEND_VERSION="$version" uv run --no-project python scripts/release_checks.py remote-tag-object --tag "$GITHUB_REF_NAME" --object-type "$object_type"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_object}" --jq '.message')" = "Buoy $GITHUB_REF_NAME"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_object}" --jq '.object.sha')" = "$GITHUB_SHA"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
+      - name: Validate source and frozen contracts
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 uv run python scripts/release_automation.py validate-source
+          PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate_ranking_contract.py
+          PYTHONDONTWRITEBYTECODE=1 uv run python scripts/c6_syntax_forecast.py validate
+          uv lock --check
+      - name: Run complete test suite
+        run: PYTHONDONTWRITEBYTECODE=1 uv run python -W error::ResourceWarning -m unittest discover -s tests -p 'test_*.py' -q
+
+  build:
+    name: Build distributions
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install uv and Python
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: "0.11.7"
           python-version: "3.13"
-      - name: Validate source-only release state
+      - name: Sync locked build environment
+        run: uv sync --locked --python 3.13
+      - name: Build, validate, and prepare reviewed notes
+        env:
+          LC_ALL: C
+          PYTHONHASHSEED: "0"
+          TZ: UTC
         run: |
-          uv sync --locked --python 3.13
-          uv run python scripts/release_automation.py validate-source
+          version="${GITHUB_REF_NAME#v}"
+          export SETUPTOOLS_SCM_PRETEND_VERSION="$version"
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$GITHUB_SHA")"
+          uv build --out-dir dist
+          uv run python scripts/release_automation.py validate-distribution dist --expected-version "$version"
+          uv run python scripts/release_automation.py release-notes --version "$version" --output release-notes.md
+      - name: Smoke a clean wheel installation
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          uv venv --python 3.13 "$RUNNER_TEMP/buoy-release-smoke"
+          uv pip install --python "$RUNNER_TEMP/buoy-release-smoke/bin/python" dist/*.whl
+          test "$("$RUNNER_TEMP/buoy-release-smoke/bin/buoy" --version)" = "$version"
+          "$RUNNER_TEMP/buoy-release-smoke/bin/buoy" --help >/dev/null
+          "$RUNNER_TEMP/buoy-release-smoke/bin/python" -m buoy_search --help >/dev/null
+          "$RUNNER_TEMP/buoy-release-smoke/bin/buoy" telemetry --help >/dev/null
+          "$RUNNER_TEMP/buoy-release-smoke/bin/python" - <<'PY'
+          from buoy_search.treatment_token_budget import exact_token_count, load_pinned_tokenizer
+
+          assert exact_token_count(load_pinned_tokenizer(), "Buoy release tokenizer smoke.") == 9
+          PY
+      - name: Retain validated release inputs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: buoy-search-${{ github.ref_name }}
+          path: |
+            dist/*
+            release-notes.md
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish immutable GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - name: Download validated release inputs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: buoy-search-${{ github.ref_name }}
+          path: release
+      - name: Require immutable Releases and inspect current state
+        id: state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag_object="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq '.object.sha')"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq '.object.type')" = "tag"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_object}" --jq '.message')" = "Buoy $TAG"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_object}" --jq '.object.sha')" = "$GITHUB_SHA"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
+          version="${TAG#v}"
+          test -s "release/dist/buoy_search-${version}-py3-none-any.whl"
+          test -s "release/dist/buoy_search-${version}.tar.gz"
+          test "$(find release/dist -maxdepth 1 -type f | wc -l | tr -d ' ')" = 2
+          test -s release/release-notes.md
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            | jq -sc --arg tag "$TAG" '[.[][] | select(.tag_name == $tag)]' \
+            > "$RUNNER_TEMP/releases.json"
+          count="$(jq 'length' "$RUNNER_TEMP/releases.json")"
+          test "$count" -le 1
+          if test "$count" = 0; then
+            echo "state=absent" >> "$GITHUB_OUTPUT"
+          elif test "$(jq -r '.[0].draft' "$RUNNER_TEMP/releases.json")" = "true"; then
+            echo "state=draft" >> "$GITHUB_OUTPUT"
+          else
+            echo "state=published" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Attest distribution provenance
+        if: steps.state.outputs.state == 'absent'
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        with:
+          subject-path: release/dist/*
+      - name: Create frozen draft Release
+        if: steps.state.outputs.state == 'absent'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: >-
+          gh release create "$TAG" release/dist/*
+          --repo "$GITHUB_REPOSITORY"
+          --verify-tag
+          --target "$GITHUB_SHA"
+          --draft
+          --title "Buoy $TAG"
+          --notes-file release/release-notes.md
+      - name: Verify exact draft or published Release
+        id: verified
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            | jq -sc --arg tag "$TAG" '[.[][] | select(.tag_name == $tag)]' \
+            > "$RUNNER_TEMP/release.json"
+          test "$(jq 'length' "$RUNNER_TEMP/release.json")" = 1
+          jq -e --arg tag "$TAG" --arg title "Buoy $TAG" --arg sha "$GITHUB_SHA" \
+            '.[0].tag_name == $tag and .[0].name == $title and
+             .[0].target_commitish == $sha and .[0].prerelease == false' \
+            "$RUNNER_TEMP/release.json" >/dev/null
+          jq -j '.[0].body // ""' "$RUNNER_TEMP/release.json" > "$RUNNER_TEMP/observed-notes.md"
+          python3 - "$RUNNER_TEMP/observed-notes.md" release/release-notes.md <<'PY'
+          from pathlib import Path
+          import sys
+
+          observed, expected = (Path(value).read_text().rstrip("\n") for value in sys.argv[1:])
+          if observed != expected:
+              raise SystemExit("GitHub Release notes do not match the reviewed changelog")
+          PY
+          find release/dist -maxdepth 1 -type f -exec basename {} \; | sort > "$RUNNER_TEMP/expected-assets"
+          jq -r '.[0].assets[].name' "$RUNNER_TEMP/release.json" | sort > "$RUNNER_TEMP/actual-assets"
+          diff -u "$RUNNER_TEMP/expected-assets" "$RUNNER_TEMP/actual-assets"
+          mkdir "$RUNNER_TEMP/verified-assets"
+          jq -r '.[0].assets[] | [.id, .name, .state, .size, .digest] | @tsv' "$RUNNER_TEMP/release.json" \
+            | while IFS=$'\t' read -r asset_id name state size digest; do
+                test "$state" = "uploaded"
+                test "$size" = "$(wc -c < "release/dist/$name" | tr -d ' ')"
+                test "$digest" = "sha256:$(sha256sum "release/dist/$name" | cut -d ' ' -f 1)"
+                gh api -H "Accept: application/octet-stream" \
+                  "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" \
+                  > "$RUNNER_TEMP/verified-assets/$name"
+                cmp "release/dist/$name" "$RUNNER_TEMP/verified-assets/$name"
+              done
+          echo "release_id=$(jq -r '.[0].id' "$RUNNER_TEMP/release.json")" >> "$GITHUB_OUTPUT"
+          echo "draft=$(jq -r '.[0].draft' "$RUNNER_TEMP/release.json")" >> "$GITHUB_OUTPUT"
+      - name: Verify distribution attestations before publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for asset in release/dist/*; do
+            gh attestation verify "$asset" --repo "$GITHUB_REPOSITORY"
+          done
+      - name: Publish the verified draft
+        if: steps.verified.outputs.draft == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh api --method PATCH
+          "repos/${GITHUB_REPOSITORY}/releases/${{ steps.verified.outputs.release_id }}"
+          -F draft=false
+          -f make_latest=true
+      - name: Verify immutable published state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${{ steps.verified.outputs.release_id }}" > "$RUNNER_TEMP/published.json"
+          jq -e --arg tag "$TAG" --arg sha "$GITHUB_SHA" \
+            '.tag_name == $tag and .target_commitish == $sha and
+             .draft == false and .prerelease == false and .immutable == true' \
+            "$RUNNER_TEMP/published.json" >/dev/null
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.id')" = "${{ steps.verified.outputs.release_id }}"
+          tag_object="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq '.object.sha')"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_object}" --jq '.object.sha')" = "$GITHUB_SHA"
+          mkdir "$RUNNER_TEMP/published-assets"
+          jq -r '.assets[] | [.id, .name] | @tsv' "$RUNNER_TEMP/published.json" \
+            | while IFS=$'\t' read -r asset_id name; do
+                gh api -H "Accept: application/octet-stream" \
+                  "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" \
+                  > "$RUNNER_TEMP/published-assets/$name"
+                cmp "release/dist/$name" "$RUNNER_TEMP/published-assets/$name"
+              done
+          for asset in release/dist/*; do
+            gh attestation verify "$asset" --repo "$GITHUB_REPOSITORY"
+          done

@@ -4,6 +4,7 @@
 
 | Version | Supported |
 | --- | --- |
+| 0.6.0 | Yes |
 | 0.5.1 | Yes |
 | 0.5.0 and earlier | No — affected; upgrade to 0.5.1 or newer |
 
