@@ -90,16 +90,22 @@ jobs:
         with:
           version: "0.11.7"
           python-version: "3.13"
-      - name: Build and inspect diagnostic distributions
+      - name: Sync locked build environment
+        run: uv sync --locked --python 3.13
+      - name: Read reviewed release version
+        id: release
+        run: echo "version=$(uv run python scripts/release_automation.py release-version)" >> "$GITHUB_OUTPUT"
+      - name: Build and inspect exact release distributions
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.release.outputs.version }}
         run: |
-          uv sync --locked --python 3.13
           uv build --out-dir dist
-          uv run python scripts/release_automation.py validate-distribution dist
+          uv run python scripts/release_automation.py validate-distribution dist --expected-version "${{ steps.release.outputs.version }}"
       - name: Smoke a clean wheel installation
         run: |
           uv venv --python 3.13 "$RUNNER_TEMP/buoy-wheel-smoke"
           uv pip install --python "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" dist/*.whl
-          "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" --version
+          test "$("$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" --version)" = "buoy ${{ steps.release.outputs.version }}"
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" --help >/dev/null
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" -m buoy_search --help >/dev/null
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" - <<'PY'

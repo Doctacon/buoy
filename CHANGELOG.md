@@ -6,6 +6,8 @@ as GitHub Release assets rather than to PyPI.
 
 ## Unreleased
 
+## [0.6.0] - 2026-08-20
+
 ### Added
 
 - Added opt-in, local-only retrieval tracing with OpenTelemetry and a private
@@ -237,6 +239,7 @@ downloadable package assets.
 
 - The annotated `v0.2.0` tag was preserved without a GitHub Release after its hosted validation failed before artifact construction or publication.
 
+[0.6.0]: https://github.com/Doctacon/buoy/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/Doctacon/buoy/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Doctacon/buoy/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Doctacon/buoy/releases/tag/v0.4.0

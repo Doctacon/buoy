@@ -1,98 +1,93 @@
 # Releasing Buoy
 
-## Automatic publication remains paused
+Buoy publishes versioned wheels and source archives as GitHub Release assets.
+It does not publish to PyPI.
 
-The write-capable GitHub release workflow remains disabled. The existing
-v0.5.0 lightweight tag and asset-less GitHub Release are preserved as
-historical state and are not repaired or replaced.
+## Routine release flow
 
-No current workflow has write permission. A push to `main` runs a read-only
-source validation and cannot create or change a tag, Release, artifact
-attestation, package publication, or provider resource.
+A routine release has two human actions:
 
-Buoy v0.5.1 was published on 2026-08-13 through the consumed one-time manual
-GitHub-only procedure. Its annotated tag peels to
-`284b309a02546b13a63e709d9afe7f72c557b474`, and GitHub Release `369682440`
-contains the wheel and source archive. The security advisory was published
-only after those assets and a clean installation were verified. That completed
-procedure grants no authority for another tag or Release.
+1. Merge a reviewed release-preparation change through `develop` and then into
+   `main`.
+2. After exact-main CI is green, push one annotated `vMAJOR.MINOR.PATCH` tag at
+   that exact `main` commit.
 
-## Current version authority
+The tag is the publication approval. The reusable `Release` workflow then
+validates the annotated tag, runs the complete locked Python 3.11 and 3.13
+suites, builds the wheel and source archive once, validates and clean-installs
+the wheel, attests both distributions, creates a draft GitHub Release, verifies
+the draft downloads byte-for-byte, and publishes that same Release. Published
+Releases are immutable.
 
-Source metadata remains dynamic:
+Before the first automated release, a repository owner enables GitHub's
+immutable-Releases setting once and verifies it through the administration
+API. The workflow token intentionally has no repository-administration
+permission; every run instead proves that the published Release is immutable.
 
-- `project.dynamic = ["version"]`;
-- Hatch VCS derives versions from Git;
-- Hatch generates `src/buoy_search/_version.py` during build/install;
-- the generated file is ignored;
-- the editable `uv.lock` root is versionless.
+No version-specific release decision, manual artifact upload, or local build-
+wheelhouse ceremony is required. A normal bounded implementation ticket and
+review still govern source changes. After publication, that ticket receives a
+small records-only closure under the repository's ordinary development rules;
+the closure does not alter the GitHub Release.
 
-Development builds therefore report a tag-derived development version. No
-static version should be added just to make the old publisher run.
+## Release-preparation change
 
-The v0.5.1 release build used Python 3.13 and an exact
-`SETUPTOOLS_SCM_PRETEND_VERSION=0.5.1` build override before its tag existed.
-That override is historical evidence, not current version or publication
-authority. New development builds continue to derive their version from Git.
+The release change must:
 
-## Read-only validation
+- leave an empty `## Unreleased` section;
+- move the accumulated notes under `## [X.Y.Z] - YYYY-MM-DD`;
+- add the exact `vPREVIOUS...vX.Y.Z` comparison link;
+- update the README wheel URL to the new GitHub Release asset; and
+- list the new version as supported in `SECURITY.md`.
 
-Run:
+`scripts/release_automation.py validate-source` checks those relationships
+without contacting GitHub or changing state. The `Release readiness` workflow
+retains its four read-only checks on pull requests to `main`; its Distribution
+job builds and inspects the exact reviewed release version.
+
+## Version authority
+
+`pyproject.toml` remains dynamic and uses pinned Hatch-VCS. Development
+checkouts report a tag-derived development version. Release-readiness builds
+use `SETUPTOOLS_SCM_PRETEND_VERSION` only to validate the prospective artifact;
+the public workflow builds from the real annotated tag.
+
+Useful local checks are:
 
 ```bash
-uv sync --locked --python 3.11
-PYTHONDONTWRITEBYTECODE=1 uv run python scripts/release_automation.py validate-source
 uv lock --check
-PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate_ranking_contract.py
-PYTHONDONTWRITEBYTECODE=1 uv run python scripts/c6_syntax_forecast.py validate
-PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*.py' -q
-
-uv sync --locked --python 3.13
-PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate_ranking_contract.py
-PYTHONDONTWRITEBYTECODE=1 uv run python scripts/c6_syntax_forecast.py validate
-PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*.py' -q
-
-uv build --python 3.13 --out-dir dist
-uv run python scripts/release_automation.py validate-distribution dist
+uv run python scripts/release_automation.py validate-source
+uv run python scripts/release_automation.py release-version
+uv run python -m unittest tests.test_release_automation -q
 ```
 
-`validate-source` verifies dynamic metadata, the generated-version import and
-ignore rule, the versionless editable lock root, published changelog history
-through v0.5.1 with no staged release, and parsed workflow permissions.
-`validate-distribution` checks the
-focused archive boundary, entry point, bundled tokenizer, metadata agreement,
-presence of the bounded catalog/routing/evaluation and automatic-evidence
-calibration modules, and absence of the retired remote evidence-snapshot
-control plane, Command Center, frontend, and internal records.
+## Publishing
 
-The legacy `validate`, `artifacts`, `state`, `github-snapshot`, and `policy`
-commands fail cleanly with the paused-publication message. They perform no Git,
-GitHub, network, or filesystem mutation.
+After the release-preparation merge is present on `main` and exact-main CI is
+green, verify that immutable Releases remain enabled and then:
 
-## Protected checks
+```bash
+git fetch origin main --tags
+git switch --detach origin/main
+git tag -a vX.Y.Z -m "Buoy vX.Y.Z"
+git push origin refs/tags/vX.Y.Z
+```
 
-The `develop`-to-`main` pull request retains the existing four check names so
-branch protection is not stranded:
+Do not use a lightweight tag, move an existing tag, force-push, upload assets
+manually, or publish to PyPI. The workflow refuses a mismatched tag, Release,
+notes body, or asset set. An exact completed rerun verifies the immutable
+Release and succeeds without rewriting it; an exact draft can continue to its
+publish step; conflicting or partial state stops for operator inspection.
 
-- `Release readiness / Policy`
-- `Release readiness / Python 3.11`
-- `Release readiness / Python 3.13`
-- `Release readiness / Distribution`
+The build and publication permissions are separated. Every job defaults to
+`contents: read`; only the final publication job receives narrowly scoped
+`contents: write`, `id-token: write`, and `attestations: write` permissions.
+That job cannot delete, replace, or overwrite a public release artifact.
 
-These checks are ordinary read-only validation, testing, and ephemeral
-diagnostic builds. They clean-install the wheel and exercise both help paths
-and the offline tokenizer, but do not upload or retain the archives. Passing
-them does not authorize or trigger publication.
+## Portability
 
-## Current publication boundary
-
-The v0.5.1 changelog is closed with its authoritative 2026-08-13 date, its
-one-time release decision is superseded and consumed, and the security advisory
-is published. `validate-source` therefore requires published history through
-v0.5.1 with no staged release.
-
-Publishing any later version requires a new reviewed release decision and
-workflow. Until then, do not create, move, replace, or delete a tag, GitHub
-Release, asset, or attestation. Do not add write permissions to the paused
-workflow and do not upload Buoy to PyPI. The validation commands above are
-diagnostic only and confer no publication authority.
+The portable contract is conventional Git and Python packaging: an annotated
+version tag, a clean build from that tag, exact wheel/sdist validation, and a
+release containing those two files. GitHub Actions, GitHub Releases, and GitHub
+attestations are the managed-host implementation. A self-hosted forge can use
+the same tag, tests, build commands, release notes, and artifact hashes.
