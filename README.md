@@ -43,7 +43,7 @@ For this example, you need Python 3.11 or newer, `uv`, Git, and a Turbopuffer
 account with an API key. Install the published wheel from GitHub:
 
 ```bash
-uv tool install "https://github.com/Doctacon/buoy/releases/download/v0.6.0/buoy_search-0.6.0-py3-none-any.whl"
+uv tool install "https://github.com/Doctacon/buoy/releases/download/v0.6.1/buoy_search-0.6.1-py3-none-any.whl"
 buoy --version
 ```
 

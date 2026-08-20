@@ -49,6 +49,56 @@ def clone_source(parent: Path) -> Path:
     return source
 
 
+def create_empty_post_tag_commit(source: Path) -> None:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "GIT_AUTHOR_NAME": "Buoy version test",
+            "GIT_AUTHOR_EMAIL": "buoy-version-test@example.invalid",
+            "GIT_AUTHOR_DATE": "2020-01-02T03:04:05+00:00",
+            "GIT_COMMITTER_NAME": "Buoy version test",
+            "GIT_COMMITTER_EMAIL": "buoy-version-test@example.invalid",
+            "GIT_COMMITTER_DATE": "2020-01-02T03:04:05+00:00",
+        }
+    )
+    run(
+        "git",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "--quiet",
+        "--no-verify",
+        "--allow-empty",
+        "--message",
+        "test: controlled post-tag commit",
+        cwd=source,
+        env=environment,
+    )
+
+
+def create_annotated_tag(source: Path, tag: str) -> None:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "GIT_COMMITTER_NAME": "Buoy version test",
+            "GIT_COMMITTER_EMAIL": "buoy-version-test@example.invalid",
+            "GIT_COMMITTER_DATE": "2020-01-02T03:05:06+00:00",
+        }
+    )
+    run(
+        "git",
+        "-c",
+        "tag.gpgSign=false",
+        "tag",
+        "--annotate",
+        tag,
+        "--message",
+        f"test: {tag}",
+        cwd=source,
+        env=environment,
+    )
+
+
 def venv_python(venv: Path) -> Path:
     return venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
@@ -76,6 +126,7 @@ class DynamicVersionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = clone_source(root)
+            create_empty_post_tag_commit(source)
             commit = run("git", "rev-parse", "--short", "HEAD", cwd=source).stdout.strip()
             venv = root / "venv"
             run(
@@ -89,6 +140,10 @@ class DynamicVersionTests(unittest.TestCase):
             )
             environment = os.environ.copy()
             environment.pop("SETUPTOOLS_SCM_PRETEND_VERSION", None)
+            environment.pop(
+                "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_BUOY_SEARCH",
+                None,
+            )
             run(
                 "uv",
                 "pip",
@@ -109,6 +164,61 @@ class DynamicVersionTests(unittest.TestCase):
             self.assertEqual(
                 run(str(venv_buoy(venv)), "--version", cwd=root).stdout.strip(),
                 f"buoy {versions['metadata']}",
+            )
+
+    def test_exact_annotated_tag_derives_stable_version(self) -> None:
+        target = "9.8.7"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = clone_source(root)
+            create_empty_post_tag_commit(source)
+            create_annotated_tag(source, f"v{target}")
+            self.assertEqual(
+                run(
+                    "git",
+                    "cat-file",
+                    "-t",
+                    f"refs/tags/v{target}",
+                    cwd=source,
+                ).stdout.strip(),
+                "tag",
+            )
+
+            venv = root / "venv"
+            run(
+                "uv",
+                "venv",
+                "--python",
+                sys.executable,
+                "--system-site-packages",
+                str(venv),
+                cwd=root,
+            )
+            environment = os.environ.copy()
+            environment.pop("SETUPTOOLS_SCM_PRETEND_VERSION", None)
+            environment.pop(
+                "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_BUOY_SEARCH",
+                None,
+            )
+            run(
+                "uv",
+                "pip",
+                "install",
+                "--python",
+                str(venv_python(venv)),
+                "--editable",
+                str(source),
+                cwd=root,
+                env=environment,
+            )
+
+            self.assertEqual(
+                installed_versions(venv_python(venv), root),
+                {"metadata": target, "module": target},
+            )
+            self.assertEqual(
+                run(str(venv_buoy(venv)), "--version", cwd=root).stdout.strip(),
+                f"buoy {target}",
             )
 
     def test_exact_override_agrees_across_artifacts_install_module_and_cli(self) -> None:
