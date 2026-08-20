@@ -1,7 +1,7 @@
 Status: superseded
 Created: 2026-08-19
 Updated: 2026-08-19
-Ticket: .10x/tickets/2026-08-19-ship-buoy-v0-6-0.md
+Ticket: .10x/tickets/cancelled/2026-08-19-ship-buoy-v0-6-0.md
 Evidence: .10x/evidence/2026-08-19-buoy-v0-6-0-github-release.md
 Decision: .10x/decisions/annotated-tag-triggered-github-releases.md
 Specification: .10x/specs/annotated-tag-triggered-github-release.md

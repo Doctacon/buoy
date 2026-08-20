@@ -1,7 +1,7 @@
-Status: provisional
+Status: recorded
 Created: 2026-08-19
-Updated: 2026-08-19
-Ticket: .10x/tickets/2026-08-19-ship-buoy-v0-6-0.md
+Updated: 2026-08-20
+Ticket: .10x/tickets/cancelled/2026-08-19-ship-buoy-v0-6-0.md
 Decision: .10x/decisions/annotated-tag-triggered-github-releases.md
 Specification: .10x/specs/annotated-tag-triggered-github-release.md
 
@@ -55,7 +55,10 @@ of scope.
   the candidate procedure; the public workflow rebuilds the exact tagged
   source and publishes only its own validated artifact pair.
 
-## Evidence required to complete
+## Evidence that successful publication would have required
+
+The following public-release evidence was never produced because the tagged
+run stopped before build and publication:
 
 - Final candidate path/blob scope and independent review verdict.
 - Task PR, exact-head CI, develop integration, release-readiness PR, ordered
@@ -86,10 +89,60 @@ valid for unchanged bytes.
 
 ## Effect log
 
-No tag, Release, release asset, attestation, registry publication, provider or
-data operation, global installation, real Buoy-home inspection, protection
-change, force push, or unrelated hosted mutation has occurred under this
-ticket at this provisional checkpoint.
+Before the annotated-tag invocation, no tag, Release, release asset,
+attestation, registry publication, provider or data operation, global
+installation, real Buoy-home inspection, protection change, force push, or
+unrelated hosted mutation had occurred under this ticket.
+
+## Exact main, tag, and failed workflow
+
+The refreshed task and release-readiness paths passed after the bounded CLI
+smoke correction. Release PR #138 then produced exact merge commit
+`701d73ebbf6a8c3b2c664a0295374dcb4283283c`, tree
+`cc619214f5eff4585e6a4df2394d6f45a37a9d5f`, with ordered parents
+`caed68fdce3ef91e41c11f5d586a6166837d0392` and
+`788c377c57bc1b4f1bfd4aba05d39ad67fe48ead`. Exact-main CI passed.
+
+The repository owner enabled immutable Releases; that administrative setting
+remains enabled. After fresh v0.6.0 tag and Release absence checks, one
+annotated tag was created and pushed:
+
+- ref: `refs/tags/v0.6.0`;
+- tag object: `1ffb70f5656f48c782defbe252dab44426134343`;
+- tagger: `Doctacon <61797492+Doctacon@users.noreply.github.com>`;
+- message: `Buoy v0.6.0`;
+- peeled commit: `701d73ebbf6a8c3b2c664a0295374dcb4283283c`.
+
+The push started exact Release workflow run `32329737394`. Both matrix jobs,
+`Python 3.11` and `Python 3.13`, passed tag, version, source, ranking, C6, and
+lock validation before failing the same complete-suite fixture:
+`DynamicVersionTests.test_clean_editable_install_derives_development_version_from_vcs`.
+That test expected every clean editable checkout to derive a development
+version. At an exact release tag, package metadata and module version both
+correctly derived stable `0.6.0`, so `parsed.is_devrelease` was false in both
+jobs. The fixture had not created controlled post-tag history and therefore
+was not hermetic across branch and tag contexts.
+
+The two test-job failures caused `Build distributions` and
+`Publish immutable GitHub release` to be skipped. Run `32329737394` retained
+zero workflow artifacts. Complete authenticated inspection found no v0.6.0
+GitHub Release, including drafts, and therefore no release ID, asset, asset
+digest, download, or build attestation exists.
+
+## Final disposition
+
+The owner selected v0.6.1 rather than authorizing a recovery workflow. The
+annotated v0.6.0 tag and failed run are preserved exactly and must never be
+deleted, recreated, overwritten, moved, or repurposed. No manual dispatch,
+temporary recovery publisher, draft creation, asset upload, or later v0.6.0
+Release is authorized.
+
+The successor is `.10x/tickets/2026-08-20-ship-buoy-v0-6-1.md`. It corrects
+only the public release surfaces and the hermetic VCS-version fixture before
+using the normal reusable tag workflow. Immutable Releases remain enabled.
+No PyPI, provider/model/data, application-behavior, dependency, lockfile,
+real-home, global-install, protection, force-push, or unrelated hosted effect
+occurred in the failed invocation.
 
 This record is evidence, not a reusable credential or an instruction to bypass
 the workflow's reviewed tag boundary.
