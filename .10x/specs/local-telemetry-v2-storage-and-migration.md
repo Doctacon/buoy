@@ -301,13 +301,15 @@ Schema version 2 appends `command_runs_view_sha256` and
 row identifying schema version 2, creation/migration timestamp, and canonical
 SHA-256 values for all four versioned views. The declared primary-key and
 `CHECK` constraints are the complete index/constraint contract; schema version
-2 adds no secondary indexes. The code owns an exact database-wide table/view/schema/object inventory.
-Unknown user schemas or objects in any schema, macros/functions, altered views,
-columns, constraints, metadata, external references, attached databases,
-unsafe WAL/scratch, or shadowed catalog functions make the store incompatible
-or unsafe under existing rules. Internal DuckDB catalog objects are excluded
-only by fixed engine-owned identity, never merely because an object is outside
-`main`.
+2 adds no secondary indexes. The code owns an exact database-wide table/view/
+schema/object inventory for both schema versions. Unknown user schemas or
+objects in any schema, functions/macros, sequences, non-internal custom types,
+altered defaults/comments/tags, altered views, columns, constraints, metadata,
+external references, attached databases, unsafe WAL/scratch, or shadowed
+catalog functions make the store incompatible or unsafe under existing rules.
+Internal DuckDB catalog objects are excluded only by fixed engine-owned
+identity, never merely because an object is outside `main` or because the store
+is schema version 1.
 
 Every version-2 command trace inserts its command row, optional retrieval
 operation, complete span graph, and event in one DuckDB transaction. Readers
@@ -327,6 +329,11 @@ A version-2-capable writer:
 7. retains the established bounded retries, deadlines, lifetime election,
    receipts, crash recovery, accounting, and no-network child boundary.
 
+Pending, temporary, and receipt entry/byte limits are shared across both inbox
+versions. Receipt rotation examines both versioned receipt directories while
+the shared queue lock is held, and the combined terminal receipt identity set
+MUST remain within the single writer-state bound of 4,096 names.
+
 On an absent canonical store, the new writer initializes schema version 2 even
 when the first accepted envelope is v1. This avoids creating a store that
 immediately requires migration. A v1 envelope is inserted only into the
@@ -340,6 +347,11 @@ idles under existing bounds. Before any append, the writer validates the fixed
 migration-scratch and backup entries: the exact safe retained backup may
 coexist, while any hostile/unrecognized backup or any unresolved migration
 scratch blocks mutation until explicit migration recovery proves it safe.
+When a backup exists beside schema v2, append and reconciliation MUST stream-
+validate the backup's complete v1 semantics/privacy and prove its v1 content
+identity equals the canonical v2 store's retained v1 history before mutation.
+Existing schema-v1 and schema-v2 rows are likewise semantically/privacy
+validated before an existing store is treated as compatible or mutated.
 
 ## Read-only status and flush
 
@@ -405,10 +417,14 @@ Migration first proves POSIX capability and acquires the same writer lifetime
 authority with a bounded nonblocking attempt. A live writer produces `busy`;
 the command never signals or kills it. The command validates telemetry root,
 v1/v2 inboxes, canonical store metadata, backup, and scratch paths before any
-DuckDB import/connection. A hostile inbox therefore blocks without opening the
+DuckDB import/connection. A hostile, unreadable, or incomplete bounded inbox
+scan therefore blocks without importing the store module or opening the
 database.
 
-- No canonical database returns `absent` without creating any path.
+- No canonical database and no auxiliary store artifacts returns `absent`
+  without creating any path. A missing canonical database with a backup, WAL,
+  initialization scratch, or migration scratch is unprovable and returns
+  `blocked`; `backup_present` still reports the exact safe backup fact.
 - Exact schema v2 returns `already_current` without creating a backup.
 - Unsafe, unreadable, incompatible, unknown-version, or unprovable state
   returns `blocked` without changing canonical data.
@@ -420,7 +436,12 @@ envelopes; migration never snapshots or deletes them. Before copying the v1
 store, migration drains already-published valid v1 work under existing writer
 rules so the backup and migrated store contain every v1 envelope accepted
 before migration's bounded v1 snapshot. New v1 publications after that
-snapshot remain queue-recoverable for the v2 writer.
+snapshot remain queue-recoverable for the v2 writer. If retry finds a final
+exact backup already published beside the matching exact canonical v1 source,
+it MUST NOT drain later v1 queue work first: it completes publication of v2
+from that proven source/backup, then leaves the later v1 work recoverable for
+schema-v2 draining. This prevents a crash between backup and canonical
+publication from wedging migration or rewriting retained history.
 
 ### Backup and atomic upgrade
 
@@ -454,7 +475,9 @@ used as a writer target. If it already exists, migration proceeds only if it
 is a safe regular private file and byte-for-byte identical to the exact final
 v1 source; otherwise it blocks. A partial backup candidate remains scratch and
 is safely recoverable; it can never poison the fixed final backup name. This
-makes retry idempotent without overwriting history.
+makes retry idempotent without overwriting history. Once schema v2 is
+canonical, the backup's streamed v1 content identity MUST equal the canonical
+store's retained v1 content identity; internal validity alone is insufficient.
 
 Before canonical publication, any failure leaves the original canonical v1
 file authoritative. Safe incomplete scratch is removed only after proving its
@@ -511,10 +534,12 @@ could strand a valid large history midway through an explicit migration.
    owner/mode, path replacement, unsafe WAL, unknown object, altered view,
    forged metadata, or mismatching preexisting backup blocks without changing
    canonical v1 or deleting pending work.
-7. **Crash table:** faults before/after scratch creation, transaction commit,
-   backup creation/fsync, canonical publication, directory fsync, and state
-   publication leave one provable canonical version and preserve the backup/
-   queue recovery contract.
+7. **Crash table:** no-cleanup faults before/after scratch creation, transaction
+   commit, backup creation/fsync, canonical publication, directory fsync, and
+   state publication leave one provable canonical version and preserve the
+   backup/queue recovery contract. A fault after backup publication followed by
+   new v1 publication retries to v2 without draining or losing that later work;
+   subsequent flush commits it exactly once.
 8. **Replay/conflict:** v1 and v2 exact replays acknowledge; same-version or
    cross-version conflicting trace IDs never overwrite or partially insert.
 9. **View compatibility:** old v1 SQL returns exactly the pre-migration rows and

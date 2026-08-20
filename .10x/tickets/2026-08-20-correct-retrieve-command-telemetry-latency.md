@@ -103,6 +103,12 @@ for its completion.
   does not begin in the same turn that opens the first executable tickets.
 - 2026-08-20: Storage/migration candidate `0989690` passed its worker-reported
   focused suites but failed three independent reviews and parent inspection.
-  Child 1 remains active for the bounded repair set recorded in
+  Child 1 remained active for the bounded repair set recorded in
   `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md`;
-  dependent command instrumentation has not started.
+  dependent command instrumentation did not start.
+- 2026-08-20: Repair candidate `80d7562` materially resolved most first-review
+  findings and passed expanded worker validation, but three fresh reviewers
+  again returned FAIL. Child 1 remains active for the narrower exact-state
+  repair in
+  `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md`;
+  dependent instrumentation remains blocked.

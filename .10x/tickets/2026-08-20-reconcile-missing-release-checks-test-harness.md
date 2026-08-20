@@ -9,13 +9,14 @@ Relates-To: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migrati
 
 ## Scope
 
-Determine and implement the smallest record-backed reconciliation for current
-`develop@0c669c5ea52a7dd1adf060c9197a395a2d05e21d`, which deleted
-`scripts/release_checks.py` and the release automation while retaining
-`tests/test_dynamic_version.py`'s unconditional `from scripts import
-release_checks`. Restore a collectable truthful test suite without recreating
-unapproved release automation or weakening still-active dynamic-version
-behavior.
+Remove the stale test surface left on current
+`develop@0c669c5ea52a7dd1adf060c9197a395a2d05e21d`, which intentionally deleted
+`scripts/release_checks.py` and its unsupported release automation while
+retaining `tests/test_dynamic_version.py`'s unconditional import and assertions
+for that deleted code. Restore collectable truthful tests without recreating
+release automation. Retain a test from that file only if it independently
+exercises live package-version behavior without reconstructing the deleted
+helper.
 
 This is an independent regression introduced by the release-cleanup commit. It
 must be executed on its own `work/*` branch/worktree and integrated separately;
@@ -23,10 +24,10 @@ it is not part of telemetry v2 implementation.
 
 ## Acceptance criteria
 
-- Inspect the cleanup commit, active release/package specifications and
-  decisions, current package configuration, terminal release records, and the
-  complete dynamic-version test file before choosing deletion, replacement, or
-  a narrowed retained helper.
+- Inspect the cleanup commit, active package/version authority, current package
+  configuration, and the complete dynamic-version test file; remove every test
+  and import whose only subject was the intentionally deleted release-check
+  helper.
 - No removed release workflow/automation, package publication, tag, Release,
   installed-tool replacement, or hosted mutation is recreated without explicit
   authority.
@@ -44,9 +45,9 @@ main mutation, tags, packages, and installed tools.
 
 ## Blockers
 
-The intended post-cleanup dynamic-version/release-check boundary is not yet
-classified from active records. This ticket begins in shaping/research state
-and is not executable until that authority is resolved without guessing.
+None. The user confirmed in the 2026-08-20 workstream that the release-check
+module was intentionally deleted because it was unsupported/nonfunctional and
+must not be restored. This ratifies removal of its stale dependent tests.
 
 ## Progress and notes
 
@@ -55,3 +56,7 @@ and is not executable until that authority is resolved without guessing.
   `scripts/release_automation.py`; current `tests/test_dynamic_version.py`
   still imports `scripts.release_checks`, so unmodified pytest exits during
   collection before telemetry tests run.
+- 2026-08-20: User ratified that the deleted release-check implementation was
+  unsupported/nonfunctional and must not be restored. The executable outcome
+  is deletion of stale helper-dependent tests/imports while preserving only
+  independently live package-version coverage, if any.

@@ -80,14 +80,14 @@ ranking, evidence, provider calls, live credentials/namespaces, real
 
 ## Blockers
 
-Independent exact-commit review of `0989690` failed. The candidate requires
-bounded repair of migration backup/scratch recovery, semantic/privacy and exact
-object validation, v2 graph validation, snapshot-isolated flush, preflight
-ordering, state-failure containment, hostile fixed-path handling, aggregate
-capacity status, text parity, documentation, and adversarial evidence before
-closure. See `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md`.
+Independent exact-commit re-review of `80d7562` failed. The remaining bounded
+repair covers backup-published crash retry with later v1 work, incomplete scan
+preflight, complete v1/v2 object and semantic validation, retained-backup
+content identity, shared receipt capacity, orphan auxiliary facts, no-cleanup
+crash coverage, and evidence correction. See
+`.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md`.
 
-The preexisting missing release-checks test harness separately blocks default
+The intentionally stale release-check collector separately blocks unfiltered
 full-suite collection and is owned by
 `.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md`; it
 must not widen this ticket.
@@ -131,7 +131,7 @@ must not widen this ticket.
   acceptance, flush snapshot interference, and evidence overclaim. The complete
   accepted finding set and required repair tests are recorded at
   `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md`.
-- 2026-08-20: Repair implementation addressed every accepted review finding:
+- 2026-08-20: Repair candidate `80d7562` attempted every accepted review finding:
   scratch-backed no-overwrite backup publication and interrupted-copy retry;
   pre/post-publication scratch reconciliation; bounded 128-trace semantic and
   privacy validation; database-wide user-object rejection; stricter v2 graph
@@ -143,5 +143,11 @@ must not widen this ticket.
 - 2026-08-20: Repaired focused telemetry suites passed on Python 3.11 and 3.13
   with 173 tests and 142 subtests. The agreed filtered full suite passed 1034
   tests and 924 subtests; only obsolete `tests/test_dynamic_version.py` was
-  excluded under its separate preexisting owner. Fresh review remains required,
-  so this ticket stays active.
+  excluded under its separate preexisting owner. The ticket stayed active for
+  exact-commit re-review.
+- 2026-08-20: Three fresh reviewers returned FAIL for `80d7562`. Most first-
+  review defects were verified repaired, but backup-published retry can wedge
+  on later v1 work, and fail-closed gaps remain for incomplete scans, v1/object
+  inventory, edited v2 content, retained-backup identity, shared receipts, and
+  orphan auxiliary state. The complete accepted findings are recorded at
+  `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md`.

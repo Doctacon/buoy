@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-20
 Updated: 2026-08-20
-Relates-To: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md
+Relates-To: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md
 
 # Local Telemetry V2 Storage and Migration Validation
 
@@ -169,9 +169,12 @@ closure.
 
 - Python 3.11/3.13 were exercised on one macOS arm64 host, not CI's complete OS
   matrix.
-- The complete suite cannot collect until the independently missing
-  `scripts/release_checks.py` harness is restored by its owning release scope;
-  1016 other tests pass when that one collector is excluded.
+- The complete suite cannot collect until the independently stale
+  `tests/test_dynamic_version.py` release-check surface is removed by its
+  separate owner; the user confirmed `scripts/release_checks.py` was
+  intentionally deleted as unsupported/nonfunctional. The telemetry candidate
+  did not restore it, and 1016 other tests passed when that collector was
+  excluded.
 - Crash injection is process-exception simulation around each publication
   phase, not power-loss or filesystem-fault hardware testing.
 - Exact schema/view hashes are DuckDB-1.5.4 identities and remain intentionally
@@ -182,6 +185,8 @@ closure.
 ## Repaired candidate observations
 
 The failed `0989690` observations above remain the first-candidate baseline.
+The following are worker-observed results for candidate `80d7562`; they are not
+closure claims and are qualified by the failed exact-commit re-review below.
 The repair based on
 `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md`
 produced the following additional source-observed and executed evidence.
@@ -275,7 +280,18 @@ produced the following additional source-observed and executed evidence.
 
 - Process-death/failure injection is deterministic exception and filesystem
   publication-window simulation, not hardware power-loss testing.
-- Python 3.11/3.13 ran on one macOS arm64 host. Fresh independent exact-commit
-  review is still required.
+- Python 3.11/3.13 ran on one macOS arm64 host.
 - DuckDB 1.5.4 canonical view SQL identities remain intentionally
   version-sensitive.
+
+## Exact-commit re-review challenge
+
+Three fresh reviewers returned FAIL for `80d7562`; see
+`.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md`.
+They found that the successful commands above do not exercise a backup-
+published crash followed by later v1 work, incomplete queue scans, schema-v1
+macros plus sequences/types, edited v2 semantic/privacy content, semantically
+hostile or valid-but-mismatching retained backups, split-version receipt
+capacity, or orphan backup/scratch facts. The evidence therefore does not yet
+support ticket closure. A later candidate must record additive tests and exact
+results while preserving both failed-candidate histories.
