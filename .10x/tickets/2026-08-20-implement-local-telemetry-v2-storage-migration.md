@@ -80,11 +80,11 @@ ranking, evidence, provider calls, live credentials/namespaces, real
 
 ## Blockers
 
-Independent acceptance review of `18b3a56` verified all prior findings repaired
-but found one remaining moderate blocker: the final `pending_v2` scan is not
-held under shared queue authority. The narrow correction and interleaving test
-are defined in
-`.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-acceptance-review.md`.
+Review of `2c7e5ed` verified the final runtime queue-authority blocker closed
+and found no implementation regression. One evidence concern remains: the
+interleaving test signals before actual lock contention and does not yet prove
+the claimed deterministic ordering. See
+`.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-post-fix-review.md`.
 
 The intentionally stale release-check collector separately blocks unfiltered
 full-suite collection and is owned by
@@ -188,9 +188,13 @@ must not widen this ticket.
   `.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-acceptance-review.md`.
 - 2026-08-21: The narrow acceptance correction now holds the shared bounded
   `queue.lock` across the complete final v2 observation and ready/claimed scan.
-  Timeout or unsafe/unreadable/incomplete results block; one deterministic
-  producer/migration interleaving proves the final scan waits for an in-lock
-  temporary-to-ready transition and includes that publication. The focused
-  suites passed 188 tests and 185 subtests on Python 3.11 and 3.13; the filtered
-  full suite passed 1049 tests and 967 subtests. Ticket remains active pending
-  fresh exact-commit acceptance review.
+  Timeout or unsafe/unreadable/incomplete results block. Worker validation
+  passed 188 focused tests and 185 subtests on Python 3.11 and 3.13; the
+  filtered full suite passed 1049 tests and 967 subtests. Ticket remained
+  active for exact-commit acceptance review.
+- 2026-08-21: Fresh review verified the runtime blocker closed and no prior
+  regression, but returned CONCERNS because the concurrency test releases the
+  producer after a pre-lock signal rather than observed failed `flock`
+  contention. Closure is now blocked only on deterministic test/evidence repair
+  recorded at
+  `.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-post-fix-review.md`.

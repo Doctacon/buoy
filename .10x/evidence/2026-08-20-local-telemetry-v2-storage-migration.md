@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-20
 Updated: 2026-08-21
-Relates-To: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-final-review.md, .10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-acceptance-review.md
+Relates-To: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-final-review.md, .10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-acceptance-review.md, .10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-post-fix-review.md
 
 # Local Telemetry V2 Storage and Migration Validation
 
@@ -491,11 +491,11 @@ it is implementation evidence pending fresh exact-commit review.
   unlocked final-success path was found.
 - `test_final_pending_v2_snapshot_is_queue_lock_linearized` pauses a real v2
   producer at the last descriptor/name verification before its atomic
-  temporary-to-ready rename, while the producer holds `queue.lock`. A concurrent
-  already-current migration records its final lock attempt but cannot acquire
-  the lock or begin its final scan. After producer release, the ready rename
-  and publication finish before migration acquires the lock; the one locked
-  scan reports `pending_v2=1`.
+  temporary-to-ready rename, while the producer holds `queue.lock`. Candidate
+  `2c7e5ed` signals immediately before the migration's real lock call, not after
+  observed contention; therefore the current ordering assertion is not yet
+  deterministic and is challenged by
+  `.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-post-fix-review.md`.
 - `test_final_pending_v2_snapshot_blocks_on_timeout_or_incomplete` retains both
   required failure cases: final bounded lock timeout and final incomplete tree
   scan each return content-free `blocked` with exit 2.
@@ -522,9 +522,12 @@ it is implementation evidence pending fresh exact-commit review.
 
 ### Limits
 
-- Fresh independent exact-commit acceptance review remains required.
-- The interleaving deterministically exercises process/thread queue authority,
-  not hardware power loss or non-macOS filesystem behavior.
+- Static review verified the runtime queue-authority blocker closed and found no
+  implementation regression, but deterministic acceptance evidence remains
+  blocked until the test observes an actual failed nonblocking `flock` attempt
+  before producer release.
+- The interleaving exercises process/thread queue authority, not hardware power
+  loss or non-macOS filesystem behavior.
 - Offline exact-candidate sdist/wheel build, no-dependency Python 3.13 install,
   required telemetry module inventory, and installed `status`, `flush`, and
   `migrate` lifecycle in an isolated empty `HOME` exited 0. Outcomes were

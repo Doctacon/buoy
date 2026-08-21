@@ -119,5 +119,7 @@ for its completion.
   instrumentation stayed blocked.
 - 2026-08-21: Candidate `18b3a56` repaired those findings; acceptance review
   verified them and found only one remaining moderate queue-authority gap in
-  final `pending_v2` reporting. Child 1 remains active under
-  `.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-acceptance-review.md`.
+  final `pending_v2` reporting. Candidate `2c7e5ed` closed that runtime gap;
+  review now withholds Child 1 closure only for a synchronization gap in the
+  deterministic interleaving test, recorded at
+  `.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-post-fix-review.md`.
