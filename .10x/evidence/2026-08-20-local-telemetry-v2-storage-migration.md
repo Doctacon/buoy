@@ -388,3 +388,80 @@ unbounded `listdir`, successful `pending_v2` can be stale, actual writer-state
 publication windows lack no-cleanup coverage, and migration documentation omits
 the backed-up retry exception. Candidate `bbc1cbc` is therefore preserved as a
 failed candidate, not closure evidence.
+
+## Final-review repair observations
+
+The `0989690`, `80d7562`, and `bbc1cbc` sections remain failed-candidate
+history. The observations below apply only to the bounded repair of
+`.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-final-review.md`.
+They are implementation evidence, not ticket closure; fresh exact-commit review
+is still required.
+
+### Final-finding mapping
+
+- `test_receipt_recovery_uses_trusted_time_for_split_capacity` fills combined
+  v1/v2 final count and byte capacity, then recovers canonical receipt
+  temporaries carrying future and ancient payload timestamps. Queue rotation
+  samples `time.time_ns()` while the shared lock is held: future payload time
+  cannot remove fresh receipts, while two currently old equal-mtime receipts
+  rotate by basename and recovery publishes the terminal receipt. The retained
+  receipt remains directly readable as flush evidence.
+- `test_writer_lifecycle_blocks_every_incomplete_scan_phase` injects bounded
+  incomplete v1 and v2 scans at startup, receipt/claim recovery, main work
+  selection, and final idle-stop. Every path publishes `blocked/queue_unsafe`,
+  never clean `stopped`; accepted ready/claimed work remains visible, and a
+  fresh blocked state explicitly suppresses redundant start rather than
+  silently claiming an empty queue.
+- `test_large_hostile_scratch_inventory_is_bounded_and_nonmutating` places 512
+  hostile fixed-mode files in migration scratch and exercises writer status,
+  migrate preflight, store already-current reconciliation, preparation, and
+  cleanup. The shared descriptor-relative helper retains at most the three
+  governed names, rejects the first unknown/fourth distinct entry, opens no
+  DuckDB connection, emits no sentinel, and changes no entry.
+- `test_final_pending_v2_snapshot_includes_only_preboundary_publications`
+  publishes v2 work immediately before and after the final queue-lock snapshot
+  for migrated success and before already-current success. Pre-boundary work is
+  reported; post-boundary work is correctly outside the fact. An incomplete
+  final scan changes the outcome to blocked.
+- `test_writer_state_publication_no_cleanup_crashes_reconcile` injects uncaught
+  process death after actual writer-state temporary fsync/verification, final
+  rename, and directory fsync. Canonical schema v2 and backup remain exact,
+  exception sentinels reach no file, and already-current retry removes a safe
+  temporary or re-fsyncs the final rename. A caught temporary-durability
+  `OSError` returns content-free blocked source/target/backup facts and retries
+  successfully.
+- `docs/telemetry.md` now documents the proven published-backup retry exception:
+  v2 completes before later v1 work is drained, and that work stays queued for
+  the v2 writer without modifying retained history.
+
+### Final-repair commands and exact results
+
+- Focused telemetry suites on Python 3.11 exited 0: **186 passed, 185 subtests
+  passed**.
+- The identical focused command on Python 3.13 exited 0: **186 passed, 185
+  subtests passed**.
+- `uv run --offline --python 3.13 --with pytest python -m pytest -q
+  --ignore=tests/test_dynamic_version.py` exited 0: **1047 passed, 967
+  subtests passed, 57 preexisting lxml warnings**. Only the independently owned
+  stale dynamic-version collector was excluded; this ticket did not change it.
+- The exact targeted receipt/incomplete-scan/scratch/pending/state-crash/
+  privacy/no-network command exited 0: **7 passed, 18 subtests passed**.
+- `uv lock --check --offline`, py_compile/compileall, focused Ruff `F,E9`,
+  `git diff --check`, and `python3 scripts/validate_ranking_contract.py` exited
+  0. The dependency lock and ranking identities were unchanged.
+- `git diff --quiet -- src/buoy_search/cli.py
+  src/buoy_search/retriever.py` exited 0. Production retrieve instrumentation
+  remains untouched.
+
+### Final-repair limits
+
+- The writer-state and store faults are deterministic process-death simulation,
+  not hardware power-loss testing.
+- Validation remains on one macOS arm64 host with DuckDB 1.5.4; other OS and
+  filesystem behavior remains unverified.
+- Fresh independent exact-commit review remains pending.
+
+Exact-candidate offline sdist/wheel build, no-dependency Python 3.13 install,
+required telemetry module inventory, and installed `status`, `flush`, and
+`migrate` lifecycle in an isolated empty `HOME` exited 0. Outcomes were
+`disabled`, `empty`, and `absent`; no isolated `.buoy` path was created.

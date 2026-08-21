@@ -47,6 +47,7 @@ from buoy_search.telemetry_queue import (
     claim_ready_names,
     cleanup_stale_envelope_temporaries,
     clear_writer_start_lease,
+    fsync_writer_state_directory,
     inspect_receipt_temporaries,
     open_private_directory_at,
     open_verified_directory,
@@ -62,6 +63,7 @@ from buoy_search.telemetry_queue import (
     recover_claim,
     request_writer_start,
     resolve_receipt_temporary,
+    scan_fixed_private_inventory,
     scan_queue_read_only,
     snapshot_pending,
     stat_private_entry_at,
@@ -69,6 +71,7 @@ from buoy_search.telemetry_queue import (
     telemetry_paths_v2,
     terminal_kind_for_snapshot_item,
     write_writer_state,
+    writer_state_temporary_present,
     writer_lifetime_lock,
     writer_start_lock,
 )
@@ -84,6 +87,13 @@ WRITER_STALE_SECONDS = 35.0
 START_LEASE_SECONDS = 30.0
 CLAIM_BATCH_SIZE = 128
 DATABASE_WAL_MAX_BYTES = 16_777_216
+_MIGRATION_SCRATCH_NAMES = frozenset(
+    {
+        "telemetry.duckdb",
+        "telemetry.duckdb.wal",
+        "telemetry-v1-backup.duckdb",
+    }
+)
 DATABASE_PATH_DISPLAY = "~/.buoy/telemetry/telemetry.duckdb"
 
 
@@ -542,7 +552,7 @@ def _flush_snapshot_blocked(
     v2_in_snapshot = any(item.source_name.startswith("v2-") for item in items)
     for queue_paths in (paths, telemetry_paths_v2(paths.directory)):
         queue = scan_queue_read_only(queue_paths)
-        if queue.unsafe or queue.unreadable:
+        if queue.unsafe or queue.unreadable or queue.scan_incomplete:
             return True
     try:
         state = read_writer_state(paths)
@@ -695,16 +705,39 @@ def telemetry_migrate(
             state_matches = _writer_state_matches_snapshot(
                 current_state, reconciled.snapshot
             )
-            if (
-                reconciled.scratch_recovered or not state_matches
-            ) and not _publish_exact_store_state(
-                runtime,
-                reconciled.snapshot,
-                durability_degraded=reconciled.durability_degraded,
-            ):
+            try:
+                state_temporary_present = writer_state_temporary_present(
+                    selected
+                )
+            except (TelemetryQueueError, OSError, ValueError):
                 return _finish_migration_result(base, started_ns)
-            base["outcome"] = "already_current"
-            return _finish_migration_result(base, started_ns)
+            needs_state_publication = (
+                reconciled.scratch_recovered
+                or not state_matches
+                or state_temporary_present
+            )
+            if needs_state_publication:
+                if not _publish_exact_store_state(
+                    runtime,
+                    reconciled.snapshot,
+                    durability_degraded=reconciled.durability_degraded,
+                ):
+                    return _finish_migration_result(base, started_ns)
+            else:
+                try:
+                    state_directory_durable = fsync_writer_state_directory(
+                        selected
+                    )
+                except (TelemetryQueueError, OSError, ValueError):
+                    return _finish_migration_result(base, started_ns)
+                if not state_directory_durable:
+                    return _finish_migration_result(base, started_ns)
+            return _finish_successful_migration(
+                base,
+                selected_v2,
+                outcome="already_current",
+                started_ns=started_ns,
+            )
         if version != 1:
             return _finish_migration_result(base, started_ns)
         try:
@@ -804,10 +837,36 @@ def telemetry_migrate(
             durability_degraded=migrated.durability_degraded,
         ):
             base["outcome"] = "blocked"
-        return _finish_migration_result(base, started_ns)
+            return _finish_migration_result(base, started_ns)
+        return _finish_successful_migration(
+            base,
+            selected_v2,
+            outcome="migrated",
+            started_ns=started_ns,
+        )
     finally:
         if held:
             lifetime.__exit__(None, None, None)
+
+
+def _finish_successful_migration(
+    base: dict[str, object],
+    paths_v2: TelemetryPaths,
+    *,
+    outcome: str,
+    started_ns: int,
+) -> dict[str, object]:
+    try:
+        final_v2 = scan_queue_read_only(paths_v2)
+    except (TelemetryQueueError, OSError, ValueError):
+        base["outcome"] = "blocked"
+        return _finish_migration_result(base, started_ns)
+    if final_v2.unsafe or final_v2.unreadable or final_v2.scan_incomplete:
+        base["outcome"] = "blocked"
+        return _finish_migration_result(base, started_ns)
+    base["pending_v2"] = final_v2.ready + final_v2.claimed
+    base["outcome"] = outcome
+    return _finish_migration_result(base, started_ns)
 
 
 def _writer_state_matches_snapshot(state: WriterState | None, snapshot: Any) -> bool:
@@ -958,7 +1017,11 @@ class _WriterRuntime:
             self._clear_start_lease()
             for queue_paths in self.queue_paths:
                 queue_snapshot = scan_queue_read_only(queue_paths)
-                if queue_snapshot.unsafe or queue_snapshot.unreadable:
+                if (
+                    queue_snapshot.unsafe
+                    or queue_snapshot.unreadable
+                    or queue_snapshot.scan_incomplete
+                ):
                     raise UnsafePathError("telemetry queue is unsafe")
                 if not queue_snapshot.present:
                     continue
@@ -977,7 +1040,9 @@ class _WriterRuntime:
                     for queue_paths in self.queue_paths
                 )
                 if any(
-                    snapshot.unsafe or snapshot.unreadable
+                    snapshot.unsafe
+                    or snapshot.unreadable
+                    or snapshot.scan_incomplete
                     for snapshot in snapshots
                 ):
                     self._block("queue_unsafe", "unsafe")
@@ -1100,7 +1165,7 @@ class _WriterRuntime:
             self._persist_state()
 
         snapshot = scan_queue_read_only(paths)
-        if snapshot.unsafe or snapshot.unreadable:
+        if snapshot.unsafe or snapshot.unreadable or snapshot.scan_incomplete:
             raise UnsafePathError("telemetry queue is unsafe")
         for source_name in snapshot.claimed_names:
             receipt = read_terminal_receipt(source_name, paths=paths)
@@ -1113,7 +1178,7 @@ class _WriterRuntime:
                 self.receipt_failure = True
             self._persist_state()
         remaining = scan_queue_read_only(paths)
-        if remaining.unsafe or remaining.unreadable:
+        if remaining.unsafe or remaining.unreadable or remaining.scan_incomplete:
             raise UnsafePathError("telemetry queue is unsafe")
         for source_name in remaining.claimed_names:
             if recover_claim(paths, source_name):
@@ -1494,12 +1559,17 @@ class _WriterRuntime:
                 for queue_paths in self.queue_paths
             )
             if any(
-                snapshot.unsafe or snapshot.unreadable
+                snapshot.unsafe
+                or snapshot.unreadable
+                or snapshot.scan_incomplete
                 for snapshot in snapshots
             ):
                 self._block("queue_unsafe", "unsafe")
                 return True
-            if any(snapshot.ready for snapshot in snapshots):
+            if any(
+                snapshot.ready or snapshot.claimed
+                for snapshot in snapshots
+            ):
                 return False
             self.state = replace(self.state, phase="stopped", reason=None)
             self._persist_state(force=True)
@@ -1712,13 +1782,10 @@ def _inspect_migration_scratch(root_fd: int) -> bool:
     except FileNotFoundError:
         return False
     try:
-        names = set(os.listdir(scratch_fd))
-        if not names <= {
-            "telemetry.duckdb",
-            "telemetry.duckdb.wal",
-            "telemetry-v1-backup.duckdb",
-        }:
-            raise UnsafePathError("telemetry migration path is unsafe")
+        names = scan_fixed_private_inventory(
+            scratch_fd,
+            allowed_names=_MIGRATION_SCRATCH_NAMES,
+        )
         for name in names:
             observed = stat_private_entry_at(
                 scratch_fd,

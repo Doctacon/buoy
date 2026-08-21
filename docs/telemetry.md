@@ -102,7 +102,7 @@ buoy telemetry migrate
 buoy telemetry migrate --json
 ```
 
-Migration first drains its bounded version-1 queue snapshot, validates the
+Migration normally drains its bounded version-1 queue snapshot, validates the
 exact closed database, builds and validates a private scratch copy, and keeps a
 byte-for-byte version-1 backup at:
 
@@ -110,7 +110,11 @@ byte-for-byte version-1 backup at:
 ~/.buoy/telemetry/telemetry-v1-backup.duckdb
 ```
 
-Buoy then atomically publishes the validated schema-version-2 database. The
+Buoy then atomically publishes the validated schema-version-2 database. If a
+retry proves that an already-published immutable backup exactly matches the
+still-canonical version-1 database, it completes version 2 before draining any
+later version-1 publications; those envelopes stay queued for the version-2
+writer and are not added to or allowed to rewrite the retained backup. The
 migration accepts no alternate path, force, repair, or delete option; it does
 not contact a provider, model, catalog, Collector, or network service. A
 mismatching or unsafe preexisting backup blocks the migration rather than

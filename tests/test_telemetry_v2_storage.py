@@ -274,6 +274,21 @@ def _publish_claimed_receipt(
     return publication.source_name, result
 
 
+def _write_receipt_temporary(
+    paths: telemetry_queue.TelemetryPaths,
+    receipt: TerminalReceipt,
+) -> str:
+    name = telemetry_queue.receipt_temp_name_for_source(receipt.source_name)
+    payload = telemetry_queue._canonical_json_bytes(
+        telemetry_queue._receipt_object(receipt),
+        maximum=telemetry_queue.RECEIPT_MAX_FILE_BYTES,
+    )
+    target = paths.receipts_directory / name
+    target.write_bytes(payload)
+    target.chmod(0o600)
+    return name
+
+
 def _widened_v2_object() -> dict[str, object]:
     value = json.loads(encode_trace_envelope_v2(_rows()))
     operation = value["retrieval_operation"]
@@ -1558,6 +1573,411 @@ class ReviewRepairTests(unittest.TestCase):
                 telemetry_queue.TelemetryQueueError
             ):
                 publish_terminal_receipt(v1, receipt)
+
+
+    def test_receipt_recovery_uses_trusted_time_for_split_capacity(self) -> None:
+        def setup_case(raw: str) -> tuple[
+            telemetry_queue.TelemetryPaths,
+            telemetry_queue.TelemetryPaths,
+            str,
+            str,
+            str,
+        ]:
+            v1 = telemetry_paths(Path(raw) / "telemetry")
+            v2 = telemetry_paths_v2(v1.directory)
+            now_ms = int(time.time() * 1_000)
+            first, _ = _publish_claimed_receipt(
+                v1,
+                encode_trace_envelope_v1(_v1_rows()),
+                recorded_at_unix_ms=now_ms,
+            )
+            second, _ = _publish_claimed_receipt(
+                v2,
+                encode_trace_envelope_v2(_rows()),
+                recorded_at_unix_ms=now_ms,
+            )
+            later = _replace_v1_trace(_v1_rows(), 9)
+            publication = publish_envelope(
+                encode_trace_envelope_v1(later), paths=v1
+            )
+            assert publication.source_name is not None
+            claim_ready_names(v1, (publication.source_name,))
+            return v1, v2, first, second, publication.source_name
+
+        with tempfile.TemporaryDirectory() as raw:
+            v1, v2, first, second, source = setup_case(raw)
+            future = TerminalReceipt(
+                1,
+                "committed",
+                source,
+                hashlib.sha256(
+                    encode_trace_envelope_v1(_replace_v1_trace(_v1_rows(), 9))
+                ).hexdigest(),
+                True,
+                len(encode_trace_envelope_v1(_replace_v1_trace(_v1_rows(), 9))),
+                telemetry_queue.COUNTER_MAX,
+                None,
+            )
+            temporary = _write_receipt_temporary(v1, future)
+            total_bytes = sum(
+                item.stat().st_size
+                for directory in (v1.receipts_directory, v2.receipts_directory)
+                for item in directory.iterdir()
+                if item.suffix == ".json"
+            )
+            with patch.object(telemetry_queue, "RECEIPT_MAX_ENTRIES", 2), patch.object(
+                telemetry_queue, "RECEIPT_MAX_BYTES", total_bytes
+            ), self.assertRaises(telemetry_queue.TelemetryQueueError):
+                telemetry_queue.resolve_receipt_temporary(
+                    v1,
+                    temporary,
+                    terminal_condition_proven=True,
+                )
+            self.assertIsNotNone(read_terminal_receipt(first, paths=v1))
+            self.assertIsNotNone(read_terminal_receipt(second, paths=v2))
+            self.assertTrue((v1.receipts_directory / temporary).exists())
+
+        with tempfile.TemporaryDirectory() as raw:
+            v1, v2, first, second, source = setup_case(raw)
+            first_name = telemetry_queue.receipt_name_for_source(first)
+            second_name = telemetry_queue.receipt_name_for_source(second)
+            old_ns = time.time_ns() - 122 * 1_000_000_000
+            for paths, name in (
+                (v1, first_name),
+                (v2, second_name),
+            ):
+                os.utime(
+                    paths.receipts_directory / name,
+                    ns=(old_ns, old_ns),
+                )
+            ancient = TerminalReceipt(
+                1,
+                "committed",
+                source,
+                hashlib.sha256(
+                    encode_trace_envelope_v1(_replace_v1_trace(_v1_rows(), 9))
+                ).hexdigest(),
+                True,
+                len(encode_trace_envelope_v1(_replace_v1_trace(_v1_rows(), 9))),
+                0,
+                None,
+            )
+            temporary = _write_receipt_temporary(v1, ancient)
+            total_bytes = sum(
+                item.stat().st_size
+                for directory in (v1.receipts_directory, v2.receipts_directory)
+                for item in directory.iterdir()
+                if item.suffix == ".json"
+            )
+            with patch.object(telemetry_queue, "RECEIPT_MAX_ENTRIES", 2), patch.object(
+                telemetry_queue, "RECEIPT_MAX_BYTES", total_bytes
+            ):
+                self.assertTrue(
+                    telemetry_queue.resolve_receipt_temporary(
+                        v1,
+                        temporary,
+                        terminal_condition_proven=True,
+                    )
+                )
+            self.assertFalse((v1.receipts_directory / first_name).exists())
+            self.assertTrue((v2.receipts_directory / second_name).exists())
+            self.assertIsNotNone(read_terminal_receipt(second, paths=v2))
+            self.assertIsNotNone(read_terminal_receipt(source, paths=v1))
+
+    def test_writer_lifecycle_blocks_every_incomplete_scan_phase(self) -> None:
+        phases = {"startup": 1, "recovery": 2, "main": 4, "final_idle": 5}
+        for version in (1, 2):
+            for phase, incomplete_call in phases.items():
+                with self.subTest(version=version, phase=phase), tempfile.TemporaryDirectory() as raw:
+                    v1 = telemetry_paths(Path(raw) / "telemetry")
+                    target = v1 if version == 1 else telemetry_paths_v2(v1.directory)
+                    payload = (
+                        encode_trace_envelope_v1(_v1_rows())
+                        if version == 1
+                        else encode_trace_envelope_v2(_rows())
+                    )
+                    publication = publish_envelope(payload, paths=target)
+                    assert publication.source_name is not None
+                    if phase == "recovery":
+                        claim_ready_names(target, (publication.source_name,))
+                    elif phase == "final_idle":
+                        target.ready_directory.joinpath(
+                            publication.source_name
+                        ).unlink()
+                    real_scan = telemetry_writer.scan_queue_read_only
+                    target_calls = 0
+
+                    def scan(paths: telemetry_queue.TelemetryPaths) -> QueueSnapshot:
+                        nonlocal target_calls
+                        if paths.queue_version == version:
+                            target_calls += 1
+                            if target_calls == incomplete_call:
+                                return QueueSnapshot(
+                                    present=True,
+                                    scan_incomplete=True,
+                                )
+                        return real_scan(paths)
+
+                    with patch.object(
+                        telemetry_writer,
+                        "scan_queue_read_only",
+                        side_effect=scan,
+                    ), patch.object(telemetry_writer, "IDLE_EXIT_SECONDS", 0):
+                        self.assertEqual(
+                            run_writer(v1),
+                            0 if phase == "final_idle" else 1,
+                        )
+                    state = read_writer_state(v1)
+                    assert state is not None
+                    self.assertEqual((state.phase, state.reason), ("blocked", "queue_unsafe"))
+                    self.assertNotEqual(state.phase, "stopped")
+                    if phase != "final_idle":
+                        snapshot = scan_queue_read_only(target)
+                        self.assertEqual(snapshot.ready + snapshot.claimed, 1)
+                    start = telemetry_queue.request_writer_start(paths=v1)
+                    self.assertTrue(start.suppressed)
+
+    def test_large_hostile_scratch_inventory_is_bounded_and_nonmutating(self) -> None:
+        for operation in ("status", "migrate", "reconcile", "prepare", "cleanup"):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as raw:
+                paths = telemetry_paths(Path(raw) / "telemetry")
+                paths.directory.mkdir(mode=0o700)
+                paths.migration_directory.mkdir(mode=0o700)
+                for index in range(512):
+                    entry = paths.migration_directory / f"hostile-{index:04d}"
+                    entry.write_bytes(b"PRIVATE_SCRATCH_SENTINEL")
+                    entry.chmod(0o600)
+                before = tuple(sorted(item.name for item in paths.migration_directory.iterdir()))
+                with patch.object(
+                    telemetry_store,
+                    "_connect_database",
+                    side_effect=AssertionError("DuckDB opened"),
+                ) as connect:
+                    if operation == "status":
+                        result = telemetry_status(paths=paths, environment={})
+                        self.assertEqual(result["overall"], "blocked")
+                    elif operation == "migrate":
+                        with patch.object(
+                            telemetry_writer,
+                            "_load_store_module",
+                            side_effect=AssertionError("store imported"),
+                        ) as load:
+                            result = telemetry_migrate_command(
+                                json_output=True, paths=paths
+                            )
+                            self.assertEqual(result.exit_code, 2)
+                            self.assertNotIn("PRIVATE_SCRATCH_SENTINEL", result.output)
+                            load.assert_not_called()
+                    elif operation == "reconcile":
+                        with self.assertRaises(telemetry_store.StoreUnsafeError):
+                            telemetry_store.reconcile_already_current_store(paths)
+                    else:
+                        root_fd = telemetry_queue.open_verified_directory(
+                            paths.directory
+                        )
+                        try:
+                            if operation == "prepare":
+                                with self.assertRaises(telemetry_store.StoreUnsafeError):
+                                    telemetry_store._prepare_migration_scratch(root_fd)
+                            else:
+                                scratch_fd = telemetry_queue.open_private_directory_at(
+                                    root_fd,
+                                    telemetry_store.DATABASE_MIGRATION_DIRECTORY,
+                                    create=False,
+                                )
+                                telemetry_store._remove_safe_migration_scratch(
+                                    root_fd, scratch_fd
+                                )
+                        finally:
+                            os.close(root_fd)
+                    connect.assert_not_called()
+                after = tuple(sorted(item.name for item in paths.migration_directory.iterdir()))
+                self.assertEqual(after, before)
+
+    def test_final_pending_v2_snapshot_includes_only_preboundary_publications(self) -> None:
+        for publication_position, expected in (("before", 1), ("after", 0)):
+            with self.subTest(position=publication_position), tempfile.TemporaryDirectory() as raw:
+                paths = telemetry_paths(Path(raw) / "telemetry")
+                v2 = telemetry_paths_v2(paths.directory)
+                _create_v1_store(paths.database_path)
+                real_scan = telemetry_writer.scan_queue_read_only
+                v2_calls = 0
+
+                def scan(selected: telemetry_queue.TelemetryPaths) -> QueueSnapshot:
+                    nonlocal v2_calls
+                    if selected.queue_version != 2:
+                        return real_scan(selected)
+                    v2_calls += 1
+                    if v2_calls == 3 and publication_position == "before":
+                        publish_envelope(
+                            encode_trace_envelope_v2(_rows()), paths=v2
+                        )
+                    result = real_scan(selected)
+                    if v2_calls == 3 and publication_position == "after":
+                        publish_envelope(
+                            encode_trace_envelope_v2(_rows()), paths=v2
+                        )
+                    return result
+
+                with patch.object(
+                    telemetry_writer, "scan_queue_read_only", side_effect=scan
+                ):
+                    result = telemetry_migrate_command(
+                        json_output=True, paths=paths
+                    )
+                facts = json.loads(result.output)
+                self.assertEqual((result.exit_code, facts["outcome"]), (0, "migrated"))
+                self.assertEqual(facts["pending_v2"], expected)
+                self.assertEqual(scan_queue_read_only(v2).ready, 1)
+
+        with tempfile.TemporaryDirectory() as raw:
+            paths = telemetry_paths(Path(raw) / "telemetry")
+            v2 = telemetry_paths_v2(paths.directory)
+            _create_v1_store(paths.database_path)
+            self.assertEqual(
+                telemetry_migrate_command(
+                    json_output=True, paths=paths
+                ).exit_code,
+                0,
+            )
+            real_scan = telemetry_writer.scan_queue_read_only
+            v2_calls = 0
+
+            def publish_before_current_snapshot(
+                selected: telemetry_queue.TelemetryPaths,
+            ) -> QueueSnapshot:
+                nonlocal v2_calls
+                if selected.queue_version == 2:
+                    v2_calls += 1
+                    if v2_calls == 3:
+                        publish_envelope(
+                            encode_trace_envelope_v2(_rows()), paths=v2
+                        )
+                return real_scan(selected)
+
+            with patch.object(
+                telemetry_writer,
+                "scan_queue_read_only",
+                side_effect=publish_before_current_snapshot,
+            ):
+                current = telemetry_migrate_command(
+                    json_output=True, paths=paths
+                )
+            current_facts = json.loads(current.output)
+            self.assertEqual(
+                (current.exit_code, current_facts["outcome"]),
+                (0, "already_current"),
+            )
+            self.assertEqual(current_facts["pending_v2"], 1)
+
+        with tempfile.TemporaryDirectory() as raw:
+            paths = telemetry_paths(Path(raw) / "telemetry")
+            _create_v1_store(paths.database_path)
+            real_scan = telemetry_writer.scan_queue_read_only
+            v2_calls = 0
+
+            def incomplete_final(selected: telemetry_queue.TelemetryPaths) -> QueueSnapshot:
+                nonlocal v2_calls
+                result = real_scan(selected)
+                if selected.queue_version == 2:
+                    v2_calls += 1
+                    if v2_calls == 3:
+                        return QueueSnapshot(
+                            present=result.present,
+                            scan_incomplete=True,
+                        )
+                return result
+
+            with patch.object(
+                telemetry_writer,
+                "scan_queue_read_only",
+                side_effect=incomplete_final,
+            ):
+                result = telemetry_migrate_command(
+                    json_output=True, paths=paths
+                )
+            self.assertEqual(
+                (result.exit_code, json.loads(result.output)["outcome"]),
+                (2, "blocked"),
+            )
+
+    def test_writer_state_publication_no_cleanup_crashes_reconcile(self) -> None:
+        phases = ("temporary_durable", "renamed", "directory_synced")
+        sentinel = b"PRIVATE_STATE_CRASH_SENTINEL"
+        for phase in phases:
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as raw:
+                paths = telemetry_paths(Path(raw) / "telemetry")
+                _create_v1_store(paths.database_path)
+
+                class InjectedCrash(BaseException):
+                    pass
+
+                calls = 0
+
+                def crash(observed: str) -> None:
+                    nonlocal calls
+                    if observed == phase:
+                        calls += 1
+                        if calls == 2:
+                            raise InjectedCrash(sentinel.decode())
+
+                with patch.object(
+                    telemetry_queue,
+                    "_writer_state_fault_hook",
+                    crash,
+                ), self.assertRaises(InjectedCrash):
+                    telemetry_writer.telemetry_migrate(paths=paths)
+                self.assertEqual(
+                    telemetry_store.inspect_store_schema_version(paths), 2
+                )
+                self.assertTrue(paths.backup_database_path.is_file())
+                for item in paths.directory.rglob("*"):
+                    if item.is_file() and not item.is_symlink():
+                        self.assertNotIn(sentinel, item.read_bytes())
+                retried = telemetry_migrate_command(
+                    json_output=True, paths=paths
+                )
+                self.assertEqual(
+                    (retried.exit_code, json.loads(retried.output)["outcome"]),
+                    (0, "already_current"),
+                )
+                self.assertFalse(paths.writer_state_temp_path.exists())
+
+        with tempfile.TemporaryDirectory() as raw:
+            paths = telemetry_paths(Path(raw) / "telemetry")
+            _create_v1_store(paths.database_path)
+            calls = 0
+
+            def fail(observed: str) -> None:
+                nonlocal calls
+                if observed == "temporary_durable":
+                    calls += 1
+                    if calls == 2:
+                        raise OSError("PRIVATE_STATE_FAILURE_SENTINEL")
+
+            with patch.object(
+                telemetry_queue,
+                "_writer_state_fault_hook",
+                fail,
+            ):
+                blocked = telemetry_migrate_command(
+                    json_output=True, paths=paths
+                )
+            facts = json.loads(blocked.output)
+            self.assertEqual((blocked.exit_code, facts["outcome"]), (2, "blocked"))
+            self.assertEqual(
+                (facts["source_schema_version"], facts["target_schema_version"]),
+                (1, 2),
+            )
+            self.assertTrue(facts["backup_present"])
+            self.assertNotIn("PRIVATE_STATE_FAILURE_SENTINEL", blocked.output)
+            retried = telemetry_migrate_command(
+                json_output=True, paths=paths
+            )
+            self.assertEqual(
+                (retried.exit_code, json.loads(retried.output)["outcome"]),
+                (0, "already_current"),
+            )
 
 
 def _replace_trace(rows: CommandTraceRows, digit: str) -> CommandTraceRows:

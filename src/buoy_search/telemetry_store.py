@@ -31,6 +31,7 @@ from buoy_search.telemetry_queue import (
     safe_link_at,
     safe_rmdir_at,
     safe_unlink_at,
+    scan_fixed_private_inventory,
     stat_private_entry_at,
     verify_private_file_fd,
 )
@@ -46,6 +47,16 @@ DATABASE_WAL_BASENAME = "telemetry.duckdb.wal"
 DATABASE_INIT_DIRECTORY = "database-init-v1"
 DATABASE_MIGRATION_DIRECTORY = "database-migrate-v2"
 DATABASE_BACKUP_BASENAME = "telemetry-v1-backup.duckdb"
+_INITIALIZATION_SCRATCH_NAMES = frozenset(
+    {DATABASE_BASENAME, DATABASE_WAL_BASENAME}
+)
+_MIGRATION_SCRATCH_NAMES = frozenset(
+    {
+        DATABASE_BASENAME,
+        DATABASE_WAL_BASENAME,
+        DATABASE_BACKUP_BASENAME,
+    }
+)
 DATABASE_INIT_MAX_BYTES = 16_777_216
 MIGRATION_BATCH_SIZE = 128
 
@@ -802,10 +813,10 @@ def _recover_initialization_scratch(root_fd: int) -> bool:
         create=False,
     )
     try:
-        entries = set(os.listdir(scratch_fd))
-        allowed = {DATABASE_BASENAME, DATABASE_WAL_BASENAME}
-        if not entries <= allowed:
-            raise StoreUnsafeError("telemetry initialization path is unsafe")
+        scan_fixed_private_inventory(
+            scratch_fd,
+            allowed_names=_INITIALIZATION_SCRATCH_NAMES,
+        )
         scratch_database = _optional_private_stat(
             scratch_fd,
             DATABASE_BASENAME,
@@ -2240,7 +2251,10 @@ def reconcile_already_current_store(paths: TelemetryPaths) -> StoreReconcileResu
                 if scratch_fd >= 0:
                     scratch_present = True
                     try:
-                        names = set(os.listdir(scratch_fd))
+                        names = scan_fixed_private_inventory(
+                            scratch_fd,
+                            allowed_names=_MIGRATION_SCRATCH_NAMES,
+                        )
                         if names:
                             raise StoreUnsafeError(
                                 "telemetry migration path is unresolved"
@@ -2312,15 +2326,14 @@ def _prepare_migration_scratch(root_fd: int) -> int:
         return open_private_directory_at(
             root_fd, DATABASE_MIGRATION_DIRECTORY, create=True
         )
-    names = set(os.listdir(scratch_fd))
-    allowed = {
-        DATABASE_BASENAME,
-        DATABASE_WAL_BASENAME,
-        DATABASE_BACKUP_BASENAME,
-    }
-    if not names <= allowed:
+    try:
+        names = scan_fixed_private_inventory(
+            scratch_fd,
+            allowed_names=_MIGRATION_SCRATCH_NAMES,
+        )
+    except UnsafePathError:
         os.close(scratch_fd)
-        raise StoreUnsafeError("telemetry migration path is unsafe")
+        raise StoreUnsafeError("telemetry migration path is unsafe") from None
     for name in sorted(names):
         observed = stat_private_entry_at(
             scratch_fd,
@@ -2351,13 +2364,13 @@ def _prepare_migration_scratch(root_fd: int) -> int:
 
 def _remove_safe_migration_scratch(root_fd: int, scratch_fd: int) -> None:
     try:
-        names = set(os.listdir(scratch_fd))
-        allowed = {
-            DATABASE_BASENAME,
-            DATABASE_WAL_BASENAME,
-            DATABASE_BACKUP_BASENAME,
-        }
-        if not names <= allowed:
+        try:
+            names = scan_fixed_private_inventory(
+                scratch_fd,
+                allowed_names=_MIGRATION_SCRATCH_NAMES,
+            )
+        except UnsafePathError:
+            os.close(scratch_fd)
             return
         for name in sorted(names):
             stat_private_entry_at(

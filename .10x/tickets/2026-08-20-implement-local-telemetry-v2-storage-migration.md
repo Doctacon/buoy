@@ -171,3 +171,13 @@ must not widen this ticket.
   listing, stale `pending_v2`, uncovered writer-state publication windows, and
   stale docs. Full findings:
   `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-final-review.md`.
+- 2026-08-20: The final bounded repair uses queue-lock-held trusted current time
+  for rotation; blocks incomplete ordinary-writer scans at startup, recovery,
+  drain, and idle release; streams every fixed scratch inventory in constant
+  memory; refreshes successful `pending_v2` after durable state publication;
+  injects actual state temporary/rename/directory-sync deaths; and documents
+  the backed-up retry ordering. The ticket remains active for fresh review.
+- 2026-08-20: Final-repair focused suites passed on Python 3.11 and 3.13 with
+  186 tests and 185 subtests. The filtered full suite passed 1047 tests and 967
+  subtests; the targeted receipt/incomplete-scan/scratch/pending/state-crash/
+  privacy/no-network command passed 7 tests and 18 subtests.

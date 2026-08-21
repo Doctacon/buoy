@@ -23,7 +23,7 @@ import subprocess
 import sys
 import time
 import warnings
-from typing import Literal
+from typing import Callable, Literal
 
 try:  # The strong queue is intentionally POSIX-only.
     import fcntl
@@ -42,6 +42,7 @@ RECEIPT_MAX_ENTRIES = 4_096
 RECEIPT_MAX_BYTES = 4_194_304
 RECEIPT_MAX_FILE_BYTES = 1_024
 RECEIPT_MIN_AGE_SECONDS = 121
+_writer_state_fault_hook: Callable[[str], None] | None = None
 STALE_ENVELOPE_TEMP_SECONDS = 86_400
 STATE_MAX_BYTES = 262_144
 ACCOUNTING_MAX_BYTES = 4_096
@@ -751,6 +752,25 @@ def safe_link_at(
         raise UnsafePathError("private hard-link publication is inconsistent")
 
 
+def scan_fixed_private_inventory(
+    directory_fd: int,
+    *,
+    allowed_names: frozenset[str],
+) -> tuple[str, ...]:
+    """Stream one fixed tiny directory inventory without attacker-sized storage."""
+
+    observed: list[str] = []
+    with os.scandir(directory_fd) as iterator:
+        for entry in iterator:
+            name = entry.name
+            if name not in allowed_names or len(observed) >= len(allowed_names):
+                raise UnsafePathError("private directory inventory is unsafe")
+            if name in observed:
+                raise UnsafePathError("private directory inventory is unsafe")
+            observed.append(name)
+    return tuple(observed)
+
+
 def fsync_directory(descriptor: int) -> bool:
     """Synchronize a directory; return False only for recognized unsupported fs."""
 
@@ -1143,6 +1163,7 @@ def _write_fixed_json_at(
     temporary_name: str,
     payload: bytes,
     maximum: int,
+    fault_hook: Callable[[str], None] | None = None,
 ) -> bool:
     """Atomically replace one fixed canonical state file.
 
@@ -1177,6 +1198,8 @@ def _write_fixed_json_at(
         if observed.st_size != len(payload):
             raise UnsafePathError("state temporary size changed")
         _require_open_name_matches_fd(parent_fd, temporary_name, descriptor)
+        if fault_hook is not None:
+            fault_hook("temporary_durable")
     finally:
         os.close(descriptor)
     os.rename(
@@ -1185,7 +1208,12 @@ def _write_fixed_json_at(
         src_dir_fd=parent_fd,
         dst_dir_fd=parent_fd,
     )
-    return fsync_directory(parent_fd)
+    if fault_hook is not None:
+        fault_hook("renamed")
+    durable = fsync_directory(parent_fd)
+    if fault_hook is not None:
+        fault_hook("directory_synced")
+    return durable
 
 
 def _require_exact_keys(value: Mapping[str, object], expected: set[str]) -> None:
@@ -1611,7 +1639,44 @@ def write_writer_state(
             temporary_name=".writer-state-v1.tmp",
             payload=payload,
             maximum=STATE_MAX_BYTES,
+            fault_hook=_writer_state_fault_hook,
         )
+    finally:
+        os.close(root_fd)
+
+
+def writer_state_temporary_present(
+    paths: TelemetryPaths | None = None,
+) -> bool:
+    """Return whether the one safe fixed writer-state temporary remains."""
+
+    selected = paths or telemetry_paths()
+    root_fd = _open_telemetry_root(selected, create=False, repair_mode=False)
+    try:
+        return _existing_private_file(
+            root_fd,
+            ".writer-state-v1.tmp",
+            maximum=STATE_MAX_BYTES,
+        )
+    finally:
+        os.close(root_fd)
+
+
+def fsync_writer_state_directory(
+    paths: TelemetryPaths | None = None,
+) -> bool:
+    """Re-attest the final writer-state rename by syncing its directory."""
+
+    selected = paths or telemetry_paths()
+    root_fd = _open_telemetry_root(selected, create=False, repair_mode=False)
+    try:
+        stat_private_entry_at(
+            root_fd,
+            "writer-state-v1.json",
+            kind="file",
+            max_bytes=STATE_MAX_BYTES,
+        )
+        return fsync_directory(root_fd)
     finally:
         os.close(root_fd)
 
@@ -2680,7 +2745,6 @@ def _rotate_receipts_for_payload(
     directories: tuple[_QueueDirectoryFds, ...],
     *,
     payload_bytes: int,
-    now_unix_ms: int,
     creating_temporary: bool = True,
 ) -> tuple[str, ...]:
     scans: list[tuple[_QueueDirectoryFds, _DirectoryScan, _DirectoryScan]] = []
@@ -2713,7 +2777,7 @@ def _rotate_receipts_for_payload(
         and remaining_bytes + payload_bytes <= RECEIPT_MAX_BYTES
     ):
         return ()
-    cutoff_ns = (now_unix_ms - RECEIPT_MIN_AGE_SECONDS * 1_000) * 1_000_000
+    cutoff_ns = time.time_ns() - RECEIPT_MIN_AGE_SECONDS * 1_000_000_000
     eligible = sorted(
         (
             (item.mtime_ns, item.name, current, item)
@@ -2796,7 +2860,6 @@ def publish_terminal_receipt(
                     if current is not None
                 ),
                 payload_bytes=len(payload),
-                now_unix_ms=validated.recorded_at_unix_ms,
             )
             if _name_exists(directories.receipts, temporary_name):
                 raise TelemetryQueueError("terminal receipt temporary already exists")
@@ -2884,11 +2947,11 @@ def inspect_receipt_temporaries(
 
     directories = _open_queue_directories(paths, create=False)
     try:
-        _finals, temporaries = _scan_receipt_files(
+        finals, temporaries = _scan_receipt_files(
             directories.receipts,
             queue_version=directories.queue_version,
         )
-        if temporaries.incomplete:
+        if finals.incomplete or temporaries.incomplete:
             raise TelemetryQueueError("receipt temporary scan exceeded its bound")
         return tuple(item.name for item in temporaries.entries)
     finally:
@@ -2994,7 +3057,6 @@ def resolve_receipt_temporary(
                         if current is not None
                     ),
                     payload_bytes=len(payload),
-                    now_unix_ms=receipt.recorded_at_unix_ms,
                     creating_temporary=False,
                 )
                 os.rename(
