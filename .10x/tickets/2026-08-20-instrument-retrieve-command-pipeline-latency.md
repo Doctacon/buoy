@@ -1,4 +1,4 @@
-Status: open
+Status: active
 Created: 2026-08-20
 Updated: 2026-08-20
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -89,3 +89,7 @@ None. The storage dependency is done with passing exact-commit review at
 - 2026-08-21: Storage/migration dependency closed with passing review at exact
   commit `3119375`; command/pipeline instrumentation is unblocked and remains
   the sole implementation scope of this ticket.
+- 2026-08-21: Execution assigned sequentially from clean governing commit
+  `8113fb6` on the isolated task branch. Production retrieve instrumentation,
+  focused tests, and retrieve telemetry documentation are the only permitted
+  behavior changes; storage repair requires a proven integration defect.
