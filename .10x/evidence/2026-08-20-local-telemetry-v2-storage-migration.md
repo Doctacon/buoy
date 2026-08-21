@@ -474,3 +474,58 @@ Exact-candidate offline sdist/wheel build, no-dependency Python 3.13 install,
 required telemetry module inventory, and installed `status`, `flush`, and
 `migrate` lifecycle in an isolated empty `HOME` exited 0. Outcomes were
 `disabled`, `empty`, and `absent`; no isolated `.buoy` path was created.
+
+## Acceptance-review queue-authority correction
+
+Candidates `0989690`, `80d7562`, `bbc1cbc`, and `18b3a56` remain preserved as
+failed history. This narrow correction addresses only the sole blocker in
+`.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-acceptance-review.md`;
+it is implementation evidence pending fresh exact-commit review.
+
+### Finding-to-test mapping
+
+- `_finish_successful_migration` now acquires the shared bounded `queue.lock`
+  before calling the complete read-only v2 tree scanner and holds it through
+  unsafe/unreadable/incomplete validation and ready-plus-claimed capture. Both
+  migrated and already-current success paths call this one helper; no duplicate
+  unlocked final-success path was found.
+- `test_final_pending_v2_snapshot_is_queue_lock_linearized` pauses a real v2
+  producer at the last descriptor/name verification before its atomic
+  temporary-to-ready rename, while the producer holds `queue.lock`. A concurrent
+  already-current migration records its final lock attempt but cannot acquire
+  the lock or begin its final scan. After producer release, the ready rename
+  and publication finish before migration acquires the lock; the one locked
+  scan reports `pending_v2=1`.
+- `test_final_pending_v2_snapshot_blocks_on_timeout_or_incomplete` retains both
+  required failure cases: final bounded lock timeout and final incomplete tree
+  scan each return content-free `blocked` with exit 2.
+- `test_publication_after_final_snapshot_release_is_outside_fact` publishes
+  immediately after the final snapshot context releases `queue.lock`; migrated
+  success correctly reports `pending_v2=0`, while the publication remains ready
+  for later writer processing.
+
+### Validation observations
+
+- The exact three final-boundary tests on Python 3.11 exited 0: **3 passed, 2
+  subtests passed**.
+- Focused telemetry suites on Python 3.11 exited 0: **188 passed, 185 subtests
+  passed**. The identical Python 3.13 command exited 0 with the same totals.
+- `uv run --offline --python 3.13 --with pytest python -m pytest -q
+  --ignore=tests/test_dynamic_version.py` exited 0: **1049 passed, 967 subtests
+  passed, 57 preexisting lxml warnings**. The independently owned stale
+  dynamic-version collector was the sole exclusion.
+- The final-boundary tests plus exact-byte privacy and no-network probes exited
+  0: **5 passed, 2 subtests passed**.
+- `uv lock --check --offline`, py_compile/compileall, focused Ruff `F,E9`,
+  `git diff --check`, `python3 scripts/validate_ranking_contract.py`, and the
+  production retrieve-file diff check exited 0.
+
+### Limits
+
+- Fresh independent exact-commit acceptance review remains required.
+- The interleaving deterministically exercises process/thread queue authority,
+  not hardware power loss or non-macOS filesystem behavior.
+- Offline exact-candidate sdist/wheel build, no-dependency Python 3.13 install,
+  required telemetry module inventory, and installed `status`, `flush`, and
+  `migrate` lifecycle in an isolated empty `HOME` exited 0. Outcomes were
+  `disabled`, `empty`, and `absent`; no isolated `.buoy` path was created.

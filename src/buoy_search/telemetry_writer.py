@@ -53,6 +53,7 @@ from buoy_search.telemetry_queue import (
     open_verified_directory,
     posix_writer_capability,
     publish_terminal_receipt,
+    queue_lock,
     read_claimed_envelope,
     read_producer_accounting,
     read_terminal_receipt,
@@ -857,14 +858,19 @@ def _finish_successful_migration(
     started_ns: int,
 ) -> dict[str, object]:
     try:
-        final_v2 = scan_queue_read_only(paths_v2)
+        with queue_lock(paths_v2):
+            final_v2 = scan_queue_read_only(paths_v2)
+            if (
+                final_v2.unsafe
+                or final_v2.unreadable
+                or final_v2.scan_incomplete
+            ):
+                base["outcome"] = "blocked"
+                return _finish_migration_result(base, started_ns)
+            base["pending_v2"] = final_v2.ready + final_v2.claimed
     except (TelemetryQueueError, OSError, ValueError):
         base["outcome"] = "blocked"
         return _finish_migration_result(base, started_ns)
-    if final_v2.unsafe or final_v2.unreadable or final_v2.scan_incomplete:
-        base["outcome"] = "blocked"
-        return _finish_migration_result(base, started_ns)
-    base["pending_v2"] = final_v2.ready + final_v2.claimed
     base["outcome"] = outcome
     return _finish_migration_result(base, started_ns)
 

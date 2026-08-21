@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timedelta
 import hashlib
@@ -8,6 +9,7 @@ import os
 from pathlib import Path
 import socket
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import patch
@@ -1794,42 +1796,7 @@ class ReviewRepairTests(unittest.TestCase):
                 after = tuple(sorted(item.name for item in paths.migration_directory.iterdir()))
                 self.assertEqual(after, before)
 
-    def test_final_pending_v2_snapshot_includes_only_preboundary_publications(self) -> None:
-        for publication_position, expected in (("before", 1), ("after", 0)):
-            with self.subTest(position=publication_position), tempfile.TemporaryDirectory() as raw:
-                paths = telemetry_paths(Path(raw) / "telemetry")
-                v2 = telemetry_paths_v2(paths.directory)
-                _create_v1_store(paths.database_path)
-                real_scan = telemetry_writer.scan_queue_read_only
-                v2_calls = 0
-
-                def scan(selected: telemetry_queue.TelemetryPaths) -> QueueSnapshot:
-                    nonlocal v2_calls
-                    if selected.queue_version != 2:
-                        return real_scan(selected)
-                    v2_calls += 1
-                    if v2_calls == 3 and publication_position == "before":
-                        publish_envelope(
-                            encode_trace_envelope_v2(_rows()), paths=v2
-                        )
-                    result = real_scan(selected)
-                    if v2_calls == 3 and publication_position == "after":
-                        publish_envelope(
-                            encode_trace_envelope_v2(_rows()), paths=v2
-                        )
-                    return result
-
-                with patch.object(
-                    telemetry_writer, "scan_queue_read_only", side_effect=scan
-                ):
-                    result = telemetry_migrate_command(
-                        json_output=True, paths=paths
-                    )
-                facts = json.loads(result.output)
-                self.assertEqual((result.exit_code, facts["outcome"]), (0, "migrated"))
-                self.assertEqual(facts["pending_v2"], expected)
-                self.assertEqual(scan_queue_read_only(v2).ready, 1)
-
+    def test_final_pending_v2_snapshot_is_queue_lock_linearized(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             paths = telemetry_paths(Path(raw) / "telemetry")
             v2 = telemetry_paths_v2(paths.directory)
@@ -1840,66 +1807,226 @@ class ReviewRepairTests(unittest.TestCase):
                 ).exit_code,
                 0,
             )
-            real_scan = telemetry_writer.scan_queue_read_only
-            v2_calls = 0
 
-            def publish_before_current_snapshot(
+            producer_before_rename = threading.Event()
+            release_producer = threading.Event()
+            snapshot_lock_attempted = threading.Event()
+            snapshot_lock_acquired = threading.Event()
+            final_scan_started = threading.Event()
+            order: list[str] = []
+            producer_results: list[telemetry_queue.PublicationResult] = []
+            migration_results: list[telemetry_writer.CommandResult] = []
+            thread_errors: list[BaseException] = []
+            real_require_name = telemetry_queue._require_open_name_matches_fd
+            real_queue_lock = telemetry_writer.queue_lock
+            real_scan = telemetry_writer.scan_queue_read_only
+
+            def pause_before_ready_rename(
+                parent_fd: int,
+                name: str,
+                descriptor: int,
+            ) -> None:
+                real_require_name(parent_fd, name, descriptor)
+                if name.startswith("v2-") and name.endswith(".part"):
+                    order.append("producer_holds_queue_lock_before_rename")
+                    producer_before_rename.set()
+                    if not release_producer.wait(5):
+                        raise AssertionError("producer release timed out")
+                    order.append("producer_ready_rename_resumed")
+
+            @contextmanager
+            def observe_final_queue_lock(
+                selected: telemetry_queue.TelemetryPaths,
+                *args: object,
+                **kwargs: object,
+            ) -> object:
+                order.append("snapshot_queue_lock_attempt")
+                snapshot_lock_attempted.set()
+                with real_queue_lock(selected, *args, **kwargs) as descriptor:
+                    order.append("snapshot_queue_lock_acquired")
+                    snapshot_lock_acquired.set()
+                    yield descriptor
+
+            def observe_scan(
                 selected: telemetry_queue.TelemetryPaths,
             ) -> QueueSnapshot:
-                nonlocal v2_calls
-                if selected.queue_version == 2:
-                    v2_calls += 1
-                    if v2_calls == 3:
+                if (
+                    threading.current_thread().name
+                    == "migration-final-snapshot"
+                    and snapshot_lock_attempted.is_set()
+                ):
+                    order.append("final_v2_scan")
+                    final_scan_started.set()
+                return real_scan(selected)
+
+            def run_producer() -> None:
+                try:
+                    producer_results.append(
                         publish_envelope(
                             encode_trace_envelope_v2(_rows()), paths=v2
                         )
-                return real_scan(selected)
+                    )
+                except BaseException as exc:
+                    thread_errors.append(exc)
 
-            with patch.object(
-                telemetry_writer,
-                "scan_queue_read_only",
-                side_effect=publish_before_current_snapshot,
-            ):
-                current = telemetry_migrate_command(
-                    json_output=True, paths=paths
-                )
-            current_facts = json.loads(current.output)
+            def run_migration() -> None:
+                try:
+                    migration_results.append(
+                        telemetry_migrate_command(
+                            json_output=True, paths=paths
+                        )
+                    )
+                except BaseException as exc:
+                    thread_errors.append(exc)
+
+            producer = threading.Thread(
+                target=run_producer,
+                name="paused-v2-producer",
+                daemon=True,
+            )
+            migration = threading.Thread(
+                target=run_migration,
+                name="migration-final-snapshot",
+                daemon=True,
+            )
+            migration_started = False
+            try:
+                with patch.object(
+                    telemetry_queue,
+                    "_require_open_name_matches_fd",
+                    side_effect=pause_before_ready_rename,
+                ), patch.object(
+                    telemetry_writer,
+                    "queue_lock",
+                    side_effect=observe_final_queue_lock,
+                ), patch.object(
+                    telemetry_writer,
+                    "scan_queue_read_only",
+                    side_effect=observe_scan,
+                ):
+                    producer.start()
+                    self.assertTrue(producer_before_rename.wait(5))
+                    migration.start()
+                    migration_started = True
+                    self.assertTrue(snapshot_lock_attempted.wait(5))
+                    self.assertFalse(snapshot_lock_acquired.is_set())
+                    self.assertFalse(final_scan_started.is_set())
+                    release_producer.set()
+                    producer.join(5)
+                    migration.join(5)
+            finally:
+                release_producer.set()
+                producer.join(5)
+                if migration_started:
+                    migration.join(5)
+
+            self.assertFalse(producer.is_alive())
+            self.assertFalse(migration.is_alive())
+            self.assertEqual(thread_errors, [])
+            self.assertEqual(len(producer_results), 1)
+            self.assertTrue(producer_results[0].published)
+            self.assertEqual(len(migration_results), 1)
+            migration_facts = json.loads(migration_results[0].output)
             self.assertEqual(
-                (current.exit_code, current_facts["outcome"]),
+                (migration_results[0].exit_code, migration_facts["outcome"]),
                 (0, "already_current"),
             )
-            self.assertEqual(current_facts["pending_v2"], 1)
+            self.assertEqual(migration_facts["pending_v2"], 1)
+            self.assertLess(
+                order.index("producer_ready_rename_resumed"),
+                order.index("snapshot_queue_lock_acquired"),
+            )
+            self.assertLess(
+                order.index("snapshot_queue_lock_acquired"),
+                order.index("final_v2_scan"),
+            )
 
+    def test_final_pending_v2_snapshot_blocks_on_timeout_or_incomplete(self) -> None:
+        for failure in ("timeout", "incomplete"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as raw:
+                paths = telemetry_paths(Path(raw) / "telemetry")
+                _create_v1_store(paths.database_path)
+                real_scan = telemetry_writer.scan_queue_read_only
+                v2_calls = 0
+
+                def incomplete_final(
+                    selected: telemetry_queue.TelemetryPaths,
+                ) -> QueueSnapshot:
+                    nonlocal v2_calls
+                    result = real_scan(selected)
+                    if selected.queue_version == 2:
+                        v2_calls += 1
+                        if v2_calls == 3:
+                            return QueueSnapshot(
+                                present=result.present,
+                                scan_incomplete=True,
+                            )
+                    return result
+
+                @contextmanager
+                def timeout_lock(*args: object, **kwargs: object) -> object:
+                    raise telemetry_queue.QueueLockTimeout("busy")
+                    yield
+
+                if failure == "timeout":
+                    patches = patch.object(
+                        telemetry_writer,
+                        "queue_lock",
+                        side_effect=timeout_lock,
+                    )
+                else:
+                    patches = patch.object(
+                        telemetry_writer,
+                        "scan_queue_read_only",
+                        side_effect=incomplete_final,
+                    )
+                with patches:
+                    result = telemetry_migrate_command(
+                        json_output=True, paths=paths
+                    )
+                self.assertEqual(
+                    (result.exit_code, json.loads(result.output)["outcome"]),
+                    (2, "blocked"),
+                )
+
+    def test_publication_after_final_snapshot_release_is_outside_fact(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             paths = telemetry_paths(Path(raw) / "telemetry")
+            v2 = telemetry_paths_v2(paths.directory)
             _create_v1_store(paths.database_path)
-            real_scan = telemetry_writer.scan_queue_read_only
-            v2_calls = 0
+            real_queue_lock = telemetry_writer.queue_lock
+            publication: list[telemetry_queue.PublicationResult] = []
 
-            def incomplete_final(selected: telemetry_queue.TelemetryPaths) -> QueueSnapshot:
-                nonlocal v2_calls
-                result = real_scan(selected)
-                if selected.queue_version == 2:
-                    v2_calls += 1
-                    if v2_calls == 3:
-                        return QueueSnapshot(
-                            present=result.present,
-                            scan_incomplete=True,
-                        )
-                return result
+            @contextmanager
+            def publish_after_release(
+                selected: telemetry_queue.TelemetryPaths,
+                *args: object,
+                **kwargs: object,
+            ) -> object:
+                with real_queue_lock(selected, *args, **kwargs) as descriptor:
+                    yield descriptor
+                publication.append(
+                    publish_envelope(
+                        encode_trace_envelope_v2(_rows()), paths=v2
+                    )
+                )
 
             with patch.object(
                 telemetry_writer,
-                "scan_queue_read_only",
-                side_effect=incomplete_final,
+                "queue_lock",
+                side_effect=publish_after_release,
             ):
                 result = telemetry_migrate_command(
                     json_output=True, paths=paths
                 )
+            facts = json.loads(result.output)
             self.assertEqual(
-                (result.exit_code, json.loads(result.output)["outcome"]),
-                (2, "blocked"),
+                (result.exit_code, facts["outcome"], facts["pending_v2"]),
+                (0, "migrated", 0),
             )
+            self.assertEqual(len(publication), 1)
+            self.assertTrue(publication[0].published)
+            self.assertEqual(scan_queue_read_only(v2).ready, 1)
 
     def test_writer_state_publication_no_cleanup_crashes_reconcile(self) -> None:
         phases = ("temporary_durable", "renamed", "directory_synced")

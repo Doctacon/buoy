@@ -186,3 +186,11 @@ must not widen this ticket.
   fact boundary during concurrent v2 publication. No other blocking or
   significant finding remained. Review:
   `.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-acceptance-review.md`.
+- 2026-08-21: The narrow acceptance correction now holds the shared bounded
+  `queue.lock` across the complete final v2 observation and ready/claimed scan.
+  Timeout or unsafe/unreadable/incomplete results block; one deterministic
+  producer/migration interleaving proves the final scan waits for an in-lock
+  temporary-to-ready transition and includes that publication. The focused
+  suites passed 188 tests and 185 subtests on Python 3.11 and 3.13; the filtered
+  full suite passed 1049 tests and 967 subtests. Ticket remains active pending
+  fresh exact-commit acceptance review.
