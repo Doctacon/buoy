@@ -1,4 +1,4 @@
-Status: active
+Status: blocked
 Created: 2026-08-20
 Updated: 2026-08-20
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -80,8 +80,17 @@ replacement, release, `main`, or publication.
 
 ## Blockers
 
-None. The storage dependency is done with passing exact-commit review at
+The storage dependency is done with passing exact-commit review at
 `.10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-migration.md`.
+
+The active command telemetry spec requires every command summary to contain an
+integer `exit_code`, including when an unexpected exception escapes the
+retrieve handler unchanged, but it does not define the stored value when no
+handler return code exists. The v2 validator permits zero, while the
+recommended user-legible contract is `1`, matching generic process failure.
+This telemetry semantic requires owner ratification before source or tests can
+encode it. Render failures that are converted to a returned code would retain
+that actual returned code; only escaping exceptions are blocked.
 
 ## Progress and notes
 
@@ -93,3 +102,8 @@ None. The storage dependency is done with passing exact-commit review at
   `8113fb6` on the isolated task branch. Production retrieve instrumentation,
   focused tests, and retrieve telemetry documentation are the only permitted
   behavior changes; storage repair requires a proven integration defect.
+- 2026-08-21: Source/spec inspection found one unratified command-summary
+  semantic: the stored integer exit code for an exception that escapes without
+  a handler return. Supervisor recommends `1` but correctly withheld authority
+  pending owner confirmation. Ticket marked blocked before source/test edits;
+  the worktree otherwise remains at the governing implementation state.
