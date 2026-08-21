@@ -127,3 +127,7 @@ for its completion.
   is closed at
   `.10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-migration.md`;
   Child 2 command/pipeline instrumentation is now unblocked.
+- 2026-08-21: Child 2 inspection exposed one undefined command-summary value.
+  The owner ratified `exit_code=1` when an exception escapes retrieve without a
+  handler return; the original exception must still escape unchanged. The
+  active command telemetry spec now records this exact semantic.

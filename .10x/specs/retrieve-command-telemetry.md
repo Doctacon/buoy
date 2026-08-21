@@ -120,7 +120,11 @@ or stderr and MUST NOT add a stream flush solely to improve timing.
 
 An unexpected exception escaping the handler ends the root as an error,
 records only a governed generic category, republishes best effort, and
-re-raises the original exception unchanged.
+re-raises the original exception unchanged. Because no handler return code
+exists in this path, the command summary MUST record `exit_code=1`, matching
+generic Python process failure. This is observation semantics only and MUST NOT
+catch, convert, replace, or otherwise change the escaping exception. A failure
+that the handler converts into a returned exit code records that actual code.
 
 ## Version-2 trace graph
 

@@ -1,4 +1,4 @@
-Status: blocked
+Status: active
 Created: 2026-08-20
 Updated: 2026-08-20
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -80,17 +80,8 @@ replacement, release, `main`, or publication.
 
 ## Blockers
 
-The storage dependency is done with passing exact-commit review at
-`.10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-migration.md`.
-
-The active command telemetry spec requires every command summary to contain an
-integer `exit_code`, including when an unexpected exception escapes the
-retrieve handler unchanged, but it does not define the stored value when no
-handler return code exists. The v2 validator permits zero, while the
-recommended user-legible contract is `1`, matching generic process failure.
-This telemetry semantic requires owner ratification before source or tests can
-encode it. Render failures that are converted to a returned code would retain
-that actual returned code; only escaping exceptions are blocked.
+None. The storage dependency passed exact-commit review, and the owner ratified
+`exit_code=1` for an exception escaping retrieve without a handler return.
 
 ## Progress and notes
 
@@ -104,6 +95,9 @@ that actual returned code; only escaping exceptions are blocked.
   behavior changes; storage repair requires a proven integration defect.
 - 2026-08-21: Source/spec inspection found one unratified command-summary
   semantic: the stored integer exit code for an exception that escapes without
-  a handler return. Supervisor recommends `1` but correctly withheld authority
-  pending owner confirmation. Ticket marked blocked before source/test edits;
-  the worktree otherwise remains at the governing implementation state.
+  a handler return. Supervisor recommended `1` and correctly withheld source
+  edits pending owner confirmation.
+- 2026-08-21: The owner explicitly ratified stored `exit_code=1` for every
+  exception escaping retrieve unchanged. Returned failures retain their actual
+  code. The active spec now records that this is observation semantics only and
+  cannot catch, convert, or replace the exception. Ticket reactivated.
