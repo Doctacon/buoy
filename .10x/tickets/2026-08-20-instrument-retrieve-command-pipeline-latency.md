@@ -1,4 +1,4 @@
-Status: active
+Status: blocked
 Created: 2026-08-20
 Updated: 2026-08-20
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -80,8 +80,21 @@ replacement, release, `main`, or publication.
 
 ## Blockers
 
-None. The storage dependency passed exact-commit review, and the owner ratified
+The storage dependency passed exact-commit review, and the owner ratified
 `exit_code=1` for an exception escaping retrieve without a handler return.
+
+Automatic routing's active certified artifact binds the exact raw-byte SHA-256
+of `src/buoy_search/cli.py`. Any command instrumentation changes that file, so
+the strict loader rejects the existing artifact before credentials/catalog as
+required by `.10x/decisions/buoy-activates-certified-bounded-prototype-routing.md`
+and `.10x/specs/bounded-prototype-routing-activation.md`. The current bounded
+candidate CLI hash is
+`cd571184fd013a7731cec55ab8ee9f2b7a26cc6333a0311f1a96b3dc9a6b5d72`;
+the certified artifact records
+`92c49e943ed5918df7fe65294ff89717e2654a8e9d76317979b63198f1b98ee9`.
+Updating or bypassing that frozen receipt requires explicit owner
+supersession/recertification authority. Implementation is paused with the
+candidate preserved and the artifact untouched.
 
 ## Progress and notes
 
@@ -101,3 +114,16 @@ None. The storage dependency passed exact-commit review, and the owner ratified
   exception escaping retrieve unchanged. Returned failures retain their actual
   code. The active spec now records that this is observation semantics only and
   cannot catch, convert, or replace the exception. Ticket reactivated.
+- 2026-08-21: The first bounded producer/CLI candidate compiled and 143 focused
+  tests plus 41 subtests passed, but five existing automatic-routing tests
+  failed because the active loader correctly rejected changed `cli.py` bytes.
+  Governing authority is the active routing decision/spec above; the exact
+  packaged receipt is at
+  `src/buoy_search/data/automatic_routing_confidence_calibration.json:57`, and
+  runtime enforcement is at `src/buoy_search/routing_quality.py:2226-2235`.
+  Failed tests were
+  `MultiNamespaceCliTests::{test_missing_cli_namespace_enters_auto_mode_and_key_failure_precedes_client,test_environment_namespace_is_ignored_and_does_not_bypass_auto_credentials}`
+  and
+  `AutomaticRoutingCliTests::{test_catalog_resource_failure_cannot_leak_credentials,test_invalid_evidence_artifact_fails_before_provider_work,test_missing_key_fails_before_client_even_if_ambient_namespace_is_set}`.
+  No artifact/hash boundary was altered or bypassed. Ticket blocked pending
+  owner supersession/recertification authorization.

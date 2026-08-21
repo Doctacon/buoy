@@ -1312,6 +1312,192 @@ _V2_SPAN_ATTRIBUTE_KEYS = {
 }
 
 
+def sanitize_v2_span_attributes(
+    name: str,
+    attributes: Mapping[object, object],
+) -> dict[str, str | bool | int | float]:
+    """Return only exact version-2 attributes allowed for one governed span."""
+
+    allowed = _V2_SPAN_ATTRIBUTE_KEYS.get(name)
+    if allowed is None:
+        return {}
+    sanitized: dict[str, str | bool | int | float] = {}
+    for key, value in attributes.items():
+        if type(key) is not str or key not in allowed or value is None:
+            continue
+        normalized: object
+        if key == "buoy.observation.schema_version":
+            normalized = value if value == 2 and type(value) is int else None
+        elif key in {
+            "buoy.command.name",
+            "buoy.command.execution_mode",
+            "buoy.command.outcome",
+            "buoy.command.exit_code",
+            "buoy.retrieval.pipeline_present",
+        } or (
+            key == "buoy.error.type"
+            and name in {V2_COMMAND_ROOT_SPAN_NAME, *V2_COMMAND_STAGE_NAMES}
+        ):
+            normalized = value
+        else:
+            normalized = sanitize_attribute(key, value)
+        if normalized is None:
+            continue
+        try:
+            _validate_v2_attribute(key, normalized, span_name=name)
+        except TraceEnvelopeError:
+            continue
+        if type(normalized) in {str, bool, int, float}:
+            sanitized[key] = normalized
+    return sanitized
+
+
+def command_trace_rows_from_spans(
+    spans: Sequence[ReadableSpan],
+    *,
+    root_span_id: int,
+) -> CommandTraceRows:
+    """Construct validated DuckDB-v2 rows from one private command trace."""
+
+    allowed = [span for span in spans if span.name in V2_SPAN_NAMES]
+    root = next(
+        (
+            span
+            for span in allowed
+            if span.name == V2_COMMAND_ROOT_SPAN_NAME
+            and span.context is not None
+            and span.context.span_id == root_span_id
+        ),
+        None,
+    )
+    if root is None or root.context is None or root.end_time is None:
+        raise TraceEnvelopeError("invalid_graph")
+
+    trace_id = f"{root.context.trace_id:032x}"
+    root_attributes = sanitize_v2_span_attributes(
+        V2_COMMAND_ROOT_SPAN_NAME,
+        root.attributes or {},
+    )
+    command = (
+        trace_id,
+        f"{root.context.span_id:016x}",
+        _timestamp_from_ns(root.start_time),
+        _timestamp_from_ns(root.end_time),
+        _duration_ms_from_ns(root.start_time, root.end_time),
+        root_attributes.get("buoy.command.execution_mode"),
+        root_attributes.get("buoy.retrieval.mode"),
+        root_attributes.get("buoy.command.outcome"),
+        root_attributes.get("buoy.command.exit_code"),
+        root_attributes.get("buoy.error.type"),
+        root_attributes.get("buoy.retrieval.pipeline_present", False),
+        root_attributes.get("buoy.version"),
+        root_attributes.get("buoy.observation.schema_version"),
+    )
+
+    pipeline = next(
+        (
+            span
+            for span in allowed
+            if span.name == V2_PIPELINE_SPAN_NAME
+            and span.context is not None
+            and span.context.trace_id == root.context.trace_id
+        ),
+        None,
+    )
+    operation: tuple[object, ...] | None = None
+    if pipeline is not None:
+        if pipeline.context is None or pipeline.end_time is None:
+            raise TraceEnvelopeError("invalid_graph")
+        attributes = sanitize_v2_span_attributes(
+            V2_PIPELINE_SPAN_NAME,
+            pipeline.attributes or {},
+        )
+        operation = (
+            trace_id,
+            f"{pipeline.context.span_id:016x}",
+            _timestamp_from_ns(pipeline.start_time),
+            _timestamp_from_ns(pipeline.end_time),
+            _duration_ms_from_ns(pipeline.start_time, pipeline.end_time),
+            attributes.get("buoy.retrieval.outcome"),
+            attributes.get("buoy.retrieval.hit_count", 0),
+            attributes.get("buoy.retrieval.namespace_count", 0),
+            attributes.get("buoy.retrieval.initial_fanout", 0),
+            attributes.get("buoy.retrieval.final_fanout", 0),
+            attributes.get("buoy.retrieval.failure_count", 0),
+            attributes.get("buoy.retrieval.incomplete", False),
+            attributes.get("buoy.retrieval.widened", False),
+            attributes.get("buoy.retrieval.fallback_reason"),
+            attributes.get("buoy.evidence.status"),
+            attributes.get("buoy.embedding.model"),
+            attributes.get("buoy.embedding.precision"),
+            attributes.get("buoy.retrieval.top_k", 0),
+            attributes.get("buoy.retrieval.candidates", 0),
+            attributes.get("buoy.version"),
+            attributes.get("buoy.observation.schema_version"),
+        )
+
+    span_rows: list[tuple[object, ...]] = []
+    event_rows: list[tuple[object, ...]] = []
+    for readable in allowed:
+        if (
+            readable.context is None
+            or readable.context.trace_id != root.context.trace_id
+            or readable.end_time is None
+        ):
+            continue
+        span_id = f"{readable.context.span_id:016x}"
+        parent_id = (
+            f"{readable.parent.span_id:016x}"
+            if readable.parent is not None and readable.parent.span_id
+            else None
+        )
+        attributes = sanitize_v2_span_attributes(
+            readable.name,
+            readable.attributes or {},
+        )
+        span_rows.append(
+            (
+                trace_id,
+                span_id,
+                parent_id,
+                readable.name,
+                _timestamp_from_ns(readable.start_time),
+                _timestamp_from_ns(readable.end_time),
+                _duration_ms_from_ns(readable.start_time, readable.end_time),
+                readable.status.status_code.name,
+                _canonical_json_text(attributes),
+            )
+        )
+        if readable.name != V2_PIPELINE_SPAN_NAME:
+            continue
+        for event_index, event in enumerate(
+            event
+            for event in readable.events or ()
+            if event.name == WIDENED_EVENT_NAME and event.timestamp is not None
+        ):
+            event_attributes = {
+                key: value
+                for key, value in sanitize_attributes(event.attributes or {}).items()
+                if key in EVENT_ATTRIBUTE_KEYS
+            }
+            event_rows.append(
+                (
+                    trace_id,
+                    span_id,
+                    event_index,
+                    event.name,
+                    _timestamp_from_ns(event.timestamp),
+                    _canonical_json_text(event_attributes),
+                )
+            )
+
+    span_rows.sort(key=lambda row: (row[4], row[1]))
+    event_rows.sort(key=lambda row: row[2])
+    rows = CommandTraceRows(command, operation, tuple(span_rows), tuple(event_rows))
+    _validate_v2_envelope_object(_v2_envelope_object_from_rows(rows))
+    return rows
+
+
 def encode_trace_envelope_v2(rows: CommandTraceRows) -> bytes:
     """Validate and canonically encode one exact command trace envelope."""
 
