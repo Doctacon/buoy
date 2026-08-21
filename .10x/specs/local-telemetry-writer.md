@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-08-19
-Updated: 2026-08-20
+Updated: 2026-08-21
 Decision: .10x/decisions/buoy-uses-a-private-local-telemetry-writer.md
 Supersedes: .10x/specs/local-retrieval-telemetry.md
 Amended-By: .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md

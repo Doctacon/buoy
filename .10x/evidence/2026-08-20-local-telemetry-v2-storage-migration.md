@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-20
-Updated: 2026-08-20
-Relates-To: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-final-review.md
+Updated: 2026-08-21
+Relates-To: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-final-review.md, .10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-acceptance-review.md
 
 # Local Telemetry V2 Storage and Migration Validation
 
@@ -459,7 +459,16 @@ is still required.
   not hardware power-loss testing.
 - Validation remains on one macOS arm64 host with DuckDB 1.5.4; other OS and
   filesystem behavior remains unverified.
-- Fresh independent exact-commit review remains pending.
+
+## Acceptance-review challenge to candidate 18b3a56
+
+Two fresh reviewers verified every prior final-review finding as repaired but
+returned FAIL for one moderate acceptance blocker; see
+`.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-acceptance-review.md`.
+The final `pending_v2` count uses the non-locking read-only scanner, so its
+claimed queue-lock snapshot boundary is unsupported under an in-progress v2
+publication. Candidate `18b3a56` remains failed evidence pending the narrow
+queue-authority correction and fresh review.
 
 Exact-candidate offline sdist/wheel build, no-dependency Python 3.13 install,
 required telemetry module inventory, and installed `status`, `flush`, and

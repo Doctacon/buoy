@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-08-20
-Updated: 2026-08-20
+Updated: 2026-08-21
 Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md
 Trace: .10x/specs/retrieve-command-telemetry.md
 Amends: .10x/specs/local-telemetry-writer.md

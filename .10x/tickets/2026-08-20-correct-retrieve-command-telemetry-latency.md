@@ -1,6 +1,6 @@
 Status: open
 Created: 2026-08-20
-Updated: 2026-08-20
+Updated: 2026-08-21
 Parent: None
 Depends-On: None
 Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md
@@ -114,6 +114,10 @@ for its completion.
   dependent instrumentation remained blocked.
 - 2026-08-20: Candidate `bbc1cbc` repaired that complete set and passed further
   worker validation, but fresh review found a receipt-recovery blocker and five
-  narrower adjacent gaps. Child 1 remains active under
+  narrower adjacent gaps. Child 1 remained active under
   `.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-final-review.md`;
-  instrumentation is still blocked.
+  instrumentation stayed blocked.
+- 2026-08-21: Candidate `18b3a56` repaired those findings; acceptance review
+  verified them and found only one remaining moderate queue-authority gap in
+  final `pending_v2` reporting. Child 1 remains active under
+  `.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-acceptance-review.md`.

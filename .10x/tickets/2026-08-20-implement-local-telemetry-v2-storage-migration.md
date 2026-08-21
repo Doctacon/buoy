@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-08-20
-Updated: 2026-08-20
+Updated: 2026-08-21
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
 Depends-On: None
 Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md
@@ -80,12 +80,11 @@ ranking, evidence, provider calls, live credentials/namespaces, real
 
 ## Blockers
 
-Independent exact-commit review of `bbc1cbc` failed. The final bounded repair
-covers trusted-time receipt rotation/recovery, fail-closed ordinary writer
-incomplete scans, constant-memory scratch inventories, final `pending_v2`
-snapshot facts, actual writer-state publication crash windows, and migration
-documentation. See
-`.10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-final-review.md`.
+Independent acceptance review of `18b3a56` verified all prior findings repaired
+but found one remaining moderate blocker: the final `pending_v2` scan is not
+held under shared queue authority. The narrow correction and interleaving test
+are defined in
+`.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-acceptance-review.md`.
 
 The intentionally stale release-check collector separately blocks unfiltered
 full-suite collection and is owned by
@@ -181,3 +180,9 @@ must not widen this ticket.
   186 tests and 185 subtests. The filtered full suite passed 1047 tests and 967
   subtests; the targeted receipt/incomplete-scan/scratch/pending/state-crash/
   privacy/no-network command passed 7 tests and 18 subtests.
+- 2026-08-21: Two fresh reviewers verified all prior findings repaired but
+  returned FAIL for one remaining moderate acceptance blocker: final
+  `pending_v2` uses a non-locking scan and cannot prove its ratified queue-lock
+  fact boundary during concurrent v2 publication. No other blocking or
+  significant finding remained. Review:
+  `.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-acceptance-review.md`.
