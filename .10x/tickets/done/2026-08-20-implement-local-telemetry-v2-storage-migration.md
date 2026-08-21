@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-20
 Updated: 2026-08-21
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -80,16 +80,12 @@ ranking, evidence, provider calls, live credentials/namespaces, real
 
 ## Blockers
 
-Review of `2c7e5ed` verified the final runtime queue-authority blocker closed
-and found no implementation regression. One evidence concern remains: the
-interleaving test signals before actual lock contention and does not yet prove
-the claimed deterministic ordering. See
-`.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-post-fix-review.md`.
+None. Final independent exact-commit review passed at
+`.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-final-acceptance-review.md`.
 
-The intentionally stale release-check collector separately blocks unfiltered
-full-suite collection and is owned by
-`.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md`; it
-must not widen this ticket.
+The intentionally stale release-check collector remains separately owned by
+`.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md` and
+did not widen or block this ticket's bounded filtered validation.
 
 ## Progress and notes
 
@@ -204,4 +200,25 @@ must not widen this ticket.
   actual ready rename and proves contention, rename, migration lock acquisition,
   and final scan in that order, with no pre-release acquisition or scan. The
   exact test passed 25 consecutive isolated runs; focused Python 3.11/3.13 and
-  the filtered full suite remain green. Ticket stays active for final review.
+  the filtered full suite remain green. Ticket stayed active for final review.
+- 2026-08-21: Fresh exact-commit review returned PASS for `3119375`, tree
+  `501d6313`; parent independently observed the exact test pass and a clean
+  tree. Criteria 1-8 map to the recorded positive/adversarial envelope suite,
+  v1 equivalence, exact v2 fixtures/schema, status/flush matrix, migration and
+  crash/retry matrix, exact-byte privacy, no-external-call hooks, dual-runtime
+  focused suites, filtered full suite, compilation, distribution lifecycle,
+  and diff hygiene in
+  `.10x/evidence/2026-08-20-local-telemetry-v2-storage-migration.md`.
+  The active storage and writer specs remain coherent with implementation.
+  Ticket closed and moved to `tickets/done/`.
+
+## Retrospective
+
+The repeated reviews exposed real durability and evidence gaps and materially
+strengthened the result; no accepted finding was waived. The reusable testing
+lesson is captured at
+`.10x/knowledge/concurrency-tests-observe-real-lock-boundaries.md`: a pre-lock
+signal proves intent, not contention, so deterministic tests must observe the
+real lower-level lock result and causal mutation boundary. Remaining platform
+and hardware limits are recorded evidence boundaries, not unfinished ticket
+work. No additional follow-up is required from this storage slice.

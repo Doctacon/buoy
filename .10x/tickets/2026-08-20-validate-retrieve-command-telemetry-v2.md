@@ -2,7 +2,7 @@ Status: open
 Created: 2026-08-20
 Updated: 2026-08-20
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
-Depends-On: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md
+Depends-On: .10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md
 Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md
 Specifications: .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md
 

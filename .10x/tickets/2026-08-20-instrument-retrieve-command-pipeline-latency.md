@@ -2,7 +2,7 @@ Status: open
 Created: 2026-08-20
 Updated: 2026-08-20
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
-Depends-On: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md
+Depends-On: .10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-migration.md
 Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md
 Specification: .10x/specs/retrieve-command-telemetry.md
 Storage: .10x/specs/local-telemetry-v2-storage-and-migration.md
@@ -80,9 +80,12 @@ replacement, release, `main`, or publication.
 
 ## Blockers
 
-Depends on the storage ticket reaching done with evidence and coherent active
-specs.
+None. The storage dependency is done with passing exact-commit review at
+`.10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-migration.md`.
 
 ## Progress and notes
 
 - 2026-08-20: Opened after user ratification and source/record inspection.
+- 2026-08-21: Storage/migration dependency closed with passing review at exact
+  commit `3119375`; command/pipeline instrumentation is unblocked and remains
+  the sole implementation scope of this ticket.

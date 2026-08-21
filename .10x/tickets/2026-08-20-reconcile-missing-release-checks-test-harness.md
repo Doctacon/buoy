@@ -3,7 +3,7 @@ Created: 2026-08-20
 Updated: 2026-08-21
 Parent: None
 Depends-On: None
-Relates-To: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md
+Relates-To: .10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-migration.md
 
 # Reconcile Missing Release Checks Test Harness
 

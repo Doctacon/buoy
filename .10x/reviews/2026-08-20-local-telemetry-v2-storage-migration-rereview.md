@@ -3,7 +3,7 @@ Created: 2026-08-20
 Updated: 2026-08-20
 Target: 80d75620eb49283d957586930db419ac68165ebb
 Verdict: fail
-Ticket: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md
+Ticket: .10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-migration.md
 Prior-Review: .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md
 Evidence: .10x/evidence/2026-08-20-local-telemetry-v2-storage-migration.md
 

@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-20
 Updated: 2026-08-21
-Relates-To: .10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-final-review.md, .10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-acceptance-review.md, .10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-post-fix-review.md
+Relates-To: .10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-review.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-rereview.md, .10x/reviews/2026-08-20-local-telemetry-v2-storage-migration-final-review.md, .10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-acceptance-review.md, .10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-post-fix-review.md, .10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-final-acceptance-review.md
 
 # Local Telemetry V2 Storage and Migration Validation
 
@@ -566,6 +566,33 @@ lock acquisition, final v2 scan. The migration then returns already-current with
 
 ### Post-fix limits
 
-- Fresh final exact-commit review remains required.
 - The test proves process/thread flock ordering on this macOS arm64 host; it is
   not hardware power-loss or cross-filesystem evidence.
+
+## Final exact-commit acceptance
+
+A fresh independent reviewer returned PASS for exact commit
+`3119375bc7125331b8b18c6f670815bb2c560c03`, tree
+`501d6313a3f168a9529209f23666b14dfaf3acb1`. The reviewer verified the real
+contention handshake, preserved bounded retry, real rename observation, causal
+ordering, fixture lock inventory, context-scoped monkeypatches, and the
+continued applicability of prior runtime acceptance. No blocker or other
+finding remains. Review:
+`.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-final-acceptance-review.md`.
+
+The parent independently ran the exact repaired interleaving test under Python
+3.13 with bytecode/cache writes disabled: **1 passed in 1.28 seconds**. Git
+identity/status inspection confirmed the exact commit/tree, clean worktree, and
+no runtime-source change since accepted candidate `2c7e5ed`.
+
+One initial parent verification command omitted the intended temporary-worktree
+`cd`; `uv` consequently recreated the ignored `.venv` in the clean `develop`
+checkout and then failed to find the test. No tracked file, branch, remote,
+credential, provider, network service, or real telemetry home changed. The
+environment is derived and functional at Python 3.13, so no compensating
+mutation was attempted. The test was rerun from the required worktree and
+passed. This operational error contributes no acceptance evidence.
+
+Residual limits remain one macOS arm64 host, DuckDB 1.5.4, deterministic crash
+injection rather than hardware power loss, and no claim for unrelated
+filesystem implementations.

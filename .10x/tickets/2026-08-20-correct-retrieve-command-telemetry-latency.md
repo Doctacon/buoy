@@ -22,7 +22,7 @@ operation, failure isolation, and direct-library compatibility.
 
 ## Child sequence
 
-1. `.10x/tickets/2026-08-20-implement-local-telemetry-v2-storage-migration.md`
+1. `.10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-migration.md`
    implements the envelope/inbox/store/status/flush/migrate substrate using
    deterministic fixture traces. It is the first dependency and owns no CLI
    retrieval instrumentation.
@@ -120,6 +120,10 @@ for its completion.
 - 2026-08-21: Candidate `18b3a56` repaired those findings; acceptance review
   verified them and found only one remaining moderate queue-authority gap in
   final `pending_v2` reporting. Candidate `2c7e5ed` closed that runtime gap;
-  review now withholds Child 1 closure only for a synchronization gap in the
-  deterministic interleaving test, recorded at
-  `.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-post-fix-review.md`.
+  review then isolated one synchronization gap in its deterministic test.
+- 2026-08-21: Candidate `3119375` observes actual failed nonblocking `flock`
+  contention before producer release and preserves the real rename/retry/scan
+  sequence. Fresh exact-commit review returned PASS with no findings. Child 1
+  is closed at
+  `.10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-migration.md`;
+  Child 2 command/pipeline instrumentation is now unblocked.
