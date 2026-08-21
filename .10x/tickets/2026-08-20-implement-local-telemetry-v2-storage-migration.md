@@ -198,3 +198,10 @@ must not widen this ticket.
   contention. Closure is now blocked only on deterministic test/evidence repair
   recorded at
   `.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-post-fix-review.md`.
+- 2026-08-21: The interleaving test now releases the producer only after the
+  migration thread's real nonblocking `flock` raises `BlockingIOError`, and
+  re-raises so the production bounded retry loop continues. It observes the
+  actual ready rename and proves contention, rename, migration lock acquisition,
+  and final scan in that order, with no pre-release acquisition or scan. The
+  exact test passed 25 consecutive isolated runs; focused Python 3.11/3.13 and
+  the filtered full suite remain green. Ticket stays active for final review.

@@ -532,3 +532,40 @@ it is implementation evidence pending fresh exact-commit review.
   required telemetry module inventory, and installed `status`, `flush`, and
   `migrate` lifecycle in an isolated empty `HOME` exited 0. Outcomes were
   `disabled`, `empty`, and `absent`; no isolated `.buoy` path was created.
+
+## Post-fix deterministic contention evidence
+
+The prior `2c7e5ed` runtime implementation remains statically accepted, but its
+pre-context-manager event did not prove actual contention. This additive section
+corrects that overclaim without changing runtime source.
+
+`test_final_pending_v2_snapshot_is_queue_lock_linearized` now wraps the real
+low-level `fcntl.flock`. Only after the migration thread's actual
+`LOCK_EX | LOCK_NB` call raises `BlockingIOError` does the wrapper record
+`snapshot_queue_lock_contended` and release the producer; the exception is
+re-raised so the real bounded queue-lock loop remains under test. Before release,
+the test proves neither migration lock acquisition nor final scan occurred. It
+also wraps the real descriptor-relative `os.rename` and proves this exact order:
+failed migration flock, producer temporary-to-ready rename, successful migration
+lock acquisition, final v2 scan. The migration then returns already-current with
+`pending_v2=1`.
+
+### Post-fix validation observations
+
+- A shell loop executed the exact interleaving test in 25 separate Python 3.11
+  pytest invocations: **25/25 passed**, with no sleep-based synchronization.
+- Focused telemetry suites on Python 3.11 and Python 3.13 each exited 0:
+  **188 passed, 185 subtests passed**.
+- The filtered Python 3.13 full suite excluding only the separately owned stale
+  `tests/test_dynamic_version.py` collector exited 0: **1049 passed, 967
+  subtests passed, 57 preexisting lxml warnings**.
+- py_compile/compileall, `uv lock --check --offline`, focused Ruff `F,E9`,
+  `git diff --check`, and the runtime-source diff check exited 0. Runtime
+  telemetry source, retrieve instrumentation, and release-check scope are
+  unchanged.
+
+### Post-fix limits
+
+- Fresh final exact-commit review remains required.
+- The test proves process/thread flock ordering on this macOS arm64 host; it is
+  not hardware power-loss or cross-filesystem evidence.

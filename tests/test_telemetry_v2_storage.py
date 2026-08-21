@@ -12,7 +12,7 @@ import tempfile
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import duckdb
 
@@ -1810,7 +1810,7 @@ class ReviewRepairTests(unittest.TestCase):
 
             producer_before_rename = threading.Event()
             release_producer = threading.Event()
-            snapshot_lock_attempted = threading.Event()
+            snapshot_lock_contended = threading.Event()
             snapshot_lock_acquired = threading.Event()
             final_scan_started = threading.Event()
             order: list[str] = []
@@ -1819,7 +1819,13 @@ class ReviewRepairTests(unittest.TestCase):
             thread_errors: list[BaseException] = []
             real_require_name = telemetry_queue._require_open_name_matches_fd
             real_queue_lock = telemetry_writer.queue_lock
+            real_rename = telemetry_queue.os.rename
             real_scan = telemetry_writer.scan_queue_read_only
+            assert telemetry_queue.fcntl is not None
+            real_flock = telemetry_queue.fcntl.flock
+            exclusive_nonblocking = (
+                telemetry_queue.fcntl.LOCK_EX | telemetry_queue.fcntl.LOCK_NB
+            )
 
             def pause_before_ready_rename(
                 parent_fd: int,
@@ -1832,7 +1838,34 @@ class ReviewRepairTests(unittest.TestCase):
                     producer_before_rename.set()
                     if not release_producer.wait(5):
                         raise AssertionError("producer release timed out")
-                    order.append("producer_ready_rename_resumed")
+
+            def observe_rename(
+                source: str,
+                destination: str,
+                *args: object,
+                **kwargs: object,
+            ) -> None:
+                real_rename(source, destination, *args, **kwargs)
+                if (
+                    threading.current_thread().name == "paused-v2-producer"
+                    and source.startswith("v2-")
+                    and source.endswith(".part")
+                    and destination.endswith(".json")
+                ):
+                    order.append("producer_ready_rename")
+
+            def observe_flock(descriptor: int, operation: int) -> None:
+                try:
+                    real_flock(descriptor, operation)
+                except BlockingIOError:
+                    if (
+                        threading.current_thread().name
+                        == "migration-final-snapshot"
+                        and operation == exclusive_nonblocking
+                    ):
+                        order.append("snapshot_queue_lock_contended")
+                        snapshot_lock_contended.set()
+                    raise
 
             @contextmanager
             def observe_final_queue_lock(
@@ -1840,8 +1873,6 @@ class ReviewRepairTests(unittest.TestCase):
                 *args: object,
                 **kwargs: object,
             ) -> object:
-                order.append("snapshot_queue_lock_attempt")
-                snapshot_lock_attempted.set()
                 with real_queue_lock(selected, *args, **kwargs) as descriptor:
                     order.append("snapshot_queue_lock_acquired")
                     snapshot_lock_acquired.set()
@@ -1853,7 +1884,7 @@ class ReviewRepairTests(unittest.TestCase):
                 if (
                     threading.current_thread().name
                     == "migration-final-snapshot"
-                    and snapshot_lock_attempted.is_set()
+                    and snapshot_lock_contended.is_set()
                 ):
                     order.append("final_v2_scan")
                     final_scan_started.set()
@@ -1889,12 +1920,27 @@ class ReviewRepairTests(unittest.TestCase):
                 name="migration-final-snapshot",
                 daemon=True,
             )
+            rename_mock = Mock(side_effect=observe_rename)
+            supported_dir_fd = set(telemetry_queue.os.supports_dir_fd)
+            supported_dir_fd.add(rename_mock)
             migration_started = False
             try:
                 with patch.object(
                     telemetry_queue,
                     "_require_open_name_matches_fd",
                     side_effect=pause_before_ready_rename,
+                ), patch.object(
+                    telemetry_queue.os,
+                    "rename",
+                    rename_mock,
+                ), patch.object(
+                    telemetry_queue.os,
+                    "supports_dir_fd",
+                    supported_dir_fd,
+                ), patch.object(
+                    telemetry_queue.fcntl,
+                    "flock",
+                    side_effect=observe_flock,
                 ), patch.object(
                     telemetry_writer,
                     "queue_lock",
@@ -1905,10 +1951,13 @@ class ReviewRepairTests(unittest.TestCase):
                     side_effect=observe_scan,
                 ):
                     producer.start()
-                    self.assertTrue(producer_before_rename.wait(5))
+                    self.assertTrue(
+                        producer_before_rename.wait(5),
+                        thread_errors or producer_results,
+                    )
                     migration.start()
                     migration_started = True
-                    self.assertTrue(snapshot_lock_attempted.wait(5))
+                    self.assertTrue(snapshot_lock_contended.wait(5))
                     self.assertFalse(snapshot_lock_acquired.is_set())
                     self.assertFalse(final_scan_started.is_set())
                     release_producer.set()
@@ -1933,7 +1982,11 @@ class ReviewRepairTests(unittest.TestCase):
             )
             self.assertEqual(migration_facts["pending_v2"], 1)
             self.assertLess(
-                order.index("producer_ready_rename_resumed"),
+                order.index("snapshot_queue_lock_contended"),
+                order.index("producer_ready_rename"),
+            )
+            self.assertLess(
+                order.index("producer_ready_rename"),
                 order.index("snapshot_queue_lock_acquired"),
             )
             self.assertLess(
