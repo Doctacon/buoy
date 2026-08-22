@@ -150,3 +150,10 @@ for its completion.
   frozen anchor. The owner selected local CLI receipt recertification and no
   card backfill. Current authority is
   `.10x/decisions/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md`.
+- 2026-08-22: Candidate `40ef5f74` locally reactivated the exact schema-v3
+  artifact with only the final CLI receipt changed and passed worker-reported
+  dual-runtime/full/package validation. Three fresh reviews nevertheless
+  returned FAIL for independent writer graph/exit validation, one broken-
+  stderr regression, and incomplete deterministic scenario/privacy/failure
+  evidence. Child 2 remains active under
+  `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md`.

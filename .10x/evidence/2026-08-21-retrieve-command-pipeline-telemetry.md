@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-21
 Updated: 2026-08-22
-Relates-To: .10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md, .10x/specs/retrieve-command-telemetry.md, .10x/decisions/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-for-command-telemetry.md
+Relates-To: .10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md, .10x/specs/retrieve-command-telemetry.md, .10x/decisions/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-for-command-telemetry.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md
 
 # Retrieve Command and Pipeline Telemetry Implementation
 
@@ -218,3 +218,16 @@ identify the validated working tree before its final governance commit; exact-
 commit archive reproduction belongs to independent review. The stopped
 collector produced no report and no quality result. Final exact-commit review
 remains required before this ticket can close.
+
+## Independent-review challenge
+
+Three fresh reviewers returned FAIL for exact candidate `40ef5f74`. The
+reported passing commands remain useful implementation observations, but they
+do not support ticket closure. Independent inspection found that writer-side
+v2 validation accepts incomplete/reordered success graphs and error commands
+with exit code zero; retrieve-specific broken-stderr behavior regressed for
+caught `RuntimeConfigError`; exact timing/graph/equivalence/failure-injection
+coverage is incomplete; the privacy sentinel test does not exercise all claimed
+seams/artifacts; and one documentation sentence omits previews. The accepted
+findings and bounded repair requirements are recorded at
+`.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md`.

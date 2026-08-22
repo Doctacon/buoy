@@ -47,8 +47,10 @@ catalog change.
 
 ## Acceptance criteria
 
-1. All eleven acceptance scenarios in
-   `.10x/specs/retrieve-command-telemetry.md` pass with deterministic tests.
+1. Scenarios 1-9 and 11 plus scenario 10's exact fake-clock and controlled-
+   delay implementation tests pass here. The dependent validation ticket owns
+   scenario 10's five-run parent-observed reference-host measurement and final
+   external shell representativeness claim before parent closure.
 2. Explicit/automatic live success and failure produce exact command plus
    nullable/non-null pipeline rows and governed parentage.
 3. Explicit/automatic previews produce command observations only when enabled,
@@ -60,9 +62,9 @@ catalog change.
    calls emit exactly one v2 envelope.
 6. Sentinel and ambient-context tests prove the complete privacy and isolation
    boundary.
-7. Fake-clock tests prove exact start/end semantics; controlled delayed
-   subprocesses are implemented for the child validation ticket without live
-   provider work.
+7. Fake-clock tests prove exact start/end and delay-attribution semantics;
+   controlled delayed subprocess seams are implemented for the child validation
+   ticket without live provider work.
 8. Existing CLI, routing, retrieval, evidence, telemetry, full-suite,
    compilation, distribution, clean-wheel, and diff checks pass.
 9. The exact final instrumented CLI receipt is the sole active-artifact field
@@ -98,9 +100,14 @@ catalog read is historical evidence; no further live run is authorized.
 
 ## Blockers
 
-None. The owner selected local CLI-receipt recertification under the newer
-provisional-routing authority. No live card repair, report, or further provider
-run is required or authorized.
+Exact candidate `40ef5f74` failed three independent reviews. Accepted blockers
+are incomplete writer graph/exit-code enforcement, regressed broken-stderr
+handling for retrieve `RuntimeConfigError`, incomplete deterministic scenario
+and failure-injection coverage, incomplete/partly tautological privacy proof,
+and one preview-growth documentation error. Required repair is bounded at
+`.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md`.
+
+No live card repair, report, or further provider run is required or authorized.
 
 ## Progress and notes
 
@@ -182,4 +189,11 @@ run is required or authorized.
   checks passed. No production Python byte changed after dormant `369c5d4` and
   no external/provider operation occurred. Evidence is additive at
   `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`; ticket
-  remains active for independent exact-commit review.
+  remained active for independent exact-commit review.
+- 2026-08-22: Three fresh reviewers returned FAIL for exact commit `40ef5f74`.
+  Routing receipt compatibility and the core command/pipeline architecture were
+  accepted, but writer validation admits impossible graphs and error+zero,
+  broken stderr regressed for caught runtime configuration failures, and the
+  scenario/privacy/failure evidence matrix is incomplete. The complete bounded
+  repair set and timing-phase allocation are recorded at
+  `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md`.
