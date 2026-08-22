@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-21
 Updated: 2026-08-22
-Relates-To: .10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md, .10x/specs/retrieve-command-telemetry.md, .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-for-command-telemetry.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-rereview.md
+Relates-To: .10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md, .10x/specs/retrieve-command-telemetry.md, .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-for-command-telemetry.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-rereview.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-final-review.md
 
 # Retrieve Command and Pipeline Telemetry Implementation
 
@@ -445,5 +445,20 @@ No provider, catalog, content, credential, model, live collector, real telemetry
 home, installed tool, remote Git, integration, release, or publication action
 occurred. All homes, builds, installs, package extractions, old-receipt copies,
 and test environments were temporary and isolated. Fresh independent review of
-immutable implementation commit `5945b04` remains mandatory; this evidence does
+immutable implementation commit `5945b04` remained mandatory; this evidence did
 not close the ticket or claim the dependent external timing gate.
+
+## Final-review challenge
+
+Fresh final review of immutable `5945b047` returned FAIL. Source inspection
+showed that weak-evidence widening truthfully emits two evidence-assessment
+spans while the decoder permits at most one, so that valid observation is
+silently dropped. Conversely, the decoder accepts extra namespace spans and
+duplicate/gapped route ranks without reconciling them to `final_fanout`.
+Controlled subprocesses now include routing but run no zero-delay baseline, so
+the fixed 30 ms floor does not prove the injected sleep increased command
+scope. Parent inspection proved the records-only split and reran the four second-
+repair tests (`4 passed in 52.28s`), but parent has not independently reproduced
+the package build/install claims. Accepted repairs and the final parent evidence
+gate are recorded at
+`.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-final-review.md`.

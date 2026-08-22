@@ -161,5 +161,12 @@ for its completion.
   retained exact one-field routing receipt compatibility, but fresh rereview
   found command-success/error-pipeline inconsistency, missing controlled
   routing-delay coverage, missing filename privacy scans, and non-durable
-  exact-commit package evidence. Child 2 remains active under
+  exact-commit package evidence. Child 2 remained active under
   `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-rereview.md`.
+- 2026-08-22: Second repair implementation `5945b047` closed those rereview
+  findings and added clean exact-commit package records, but final review found
+  one truthful weak-evidence widening graph rejected, namespace count/rank
+  disagreement accepted, and delayed subprocesses lacking zero-delay baselines.
+  Parent package reproduction remains pending final source. Child 2 remains
+  active under
+  `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-final-review.md`.

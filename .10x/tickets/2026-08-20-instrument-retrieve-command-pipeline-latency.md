@@ -100,11 +100,12 @@ catalog read is historical evidence; no further live run is authorized.
 
 ## Blockers
 
-The bounded second repair and durable exact-commit package verification are
-complete at immutable implementation commit `5945b047`, tree `c38e5cd2`.
-Fresh independent exact-commit review remains required before closure. Repair
-scope and the prior failed candidate remain recorded at
-`.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-rereview.md`.
+Immutable implementation `5945b047` failed fresh final review: independent
+validation rejects truthful two-assessment weak-evidence widening, accepts
+namespace-stage cardinality/rank disagreement, and the delayed subprocess cases
+lack zero-delay baselines. Parent-observed final package reproduction also
+remains required after source repair. The bounded findings are recorded at
+`.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-final-review.md`.
 
 No live card repair, report, or further provider run is required or authorized.
 
@@ -215,15 +216,17 @@ No live card repair, report, or further provider run is required or authorized.
   repairs passed static adversarial inspection. The second bounded repair set
   is `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-rereview.md`.
 - 2026-08-22: Immutable implementation `5945b047`, tree `c38e5cd2`, closes the
-  three remaining code/test findings: success plus error pipeline is rejected
-  before writer mutation; the local-only subprocess probe covers truthful
-  automatic routing delay; and the real privacy path scans every observed
-  relative name/component. Focused suites passed 404 tests/370 subtests and
-  filtered full suites passed 1069 tests/1017 subtests on both Python 3.11 and
-  3.13. Clean exact-commit offline wheel/sdist/install reproduction, one-field
-  artifact equality, old/new receipt behavior, runtime versions including
-  DuckDB 1.5.4/1.5.5, and post-run clean status are recorded in
-  `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`. This
-  records-only follow-up changes no packaged/runtime/test bytes because `.10x`
-  is excluded from both distributions. Ticket remains active for fresh review;
-  the five-run reference-host timing gate remains with the dependent ticket.
+  three rereview findings: success plus error pipeline is rejected before writer
+  mutation; the local-only subprocess probe includes automatic routing delay;
+  and the real privacy path scans every observed relative name/component.
+  Focused suites passed 404 tests/370 subtests and filtered full suites passed
+  1069 tests/1017 subtests on both Python 3.11 and 3.13. Clean exact-commit
+  offline package evidence is recorded additively. Parent independently reran
+  the four repaired tests, which passed in 52.28 seconds.
+- 2026-08-22: Fresh final review of `5945b047` returned FAIL. The decoder rejects
+  truthful two-assessment weak-evidence widening, accepts namespace count/rank
+  disagreement, and the subprocess test does not compare delayed observations
+  to zero-delay baselines. Worker package evidence is durable but still requires
+  parent reproduction after final repair. Findings are bounded at
+  `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-final-review.md`;
+  the separate five-run reference-host gate remains with the dependent ticket.
