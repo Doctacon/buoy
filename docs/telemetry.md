@@ -18,24 +18,41 @@ The opt-in is the named `local` mode rather than a boolean switch.
 `BUOY_TELEMETRY=1`, `true`, and other values do not enable recording.
 `OTEL_SDK_DISABLED=true` overrides the Buoy setting and disables telemetry.
 
-This first version records live retrieval only. Dry-run and plan operations do
-not create telemetry.
+When enabled, version 2 records successfully parsed `retrieve` commands in
+explicit-single, explicit-multi, and automatic modes. Live commands record both
+Buoy command duration and the nested retrieval pipeline duration. `--dry-run`
+and `--plan` previews record command duration with a null pipeline duration;
+they do not add content retrieval or provider/model work beyond the preview's
+established behavior. Help, parser failures, and other commands are not
+observations.
 
 ## What is stored
 
-When enabled, Buoy publishes a sanitized private envelope beneath
-`~/.buoy/telemetry/inbox-v1/`. One short-lived Buoy writer drains those
-envelopes into:
+When enabled, Buoy publishes a sanitized private command envelope beneath
+`~/.buoy/telemetry/inbox-v2/`. Direct Python retriever calls outside a Buoy
+command retain the version-1 pipeline envelope in `inbox-v1`. One short-lived
+Buoy writer drains those envelopes into:
 
 ```text
 ~/.buoy/telemetry/telemetry.duckdb
 ```
 
-The database contains one row per retrieval plus OpenTelemetry spans for
-query embedding, namespace queries, reranking, and evidence assessment when
-those stages occur. Recorded fields are limited to operational metadata such
-as timing, retrieval mode, fanout, hit and failure counts, widening and
-fallback outcomes, model family, precision, and generic error categories.
+The version-2 database contains one row per observed command plus an optional
+nested retrieval operation. `command_duration_ms` is the near-shell **Buoy
+command duration** from the lightweight entry point before provider-facing CLI
+import through the handler's final output attempt. It excludes Python work
+before Buoy's entry point and process teardown after return, so it is not exact
+shell duration. `pipeline_duration_ms` retains the inner retrieval meaning:
+query embedding through namespace queries, reranking, evidence assessment, and
+fallback completion. It excludes CLI bootstrap, route selection, retriever
+construction, and output rendering, and is null for previews or failures before
+the pipeline begins.
+
+Recorded fields are limited to operational metadata such as execution/retrieval
+mode, timing, fanout, hit and failure counts, widening and fallback outcomes,
+model family, precision, and generic error categories. Governed stage spans
+separate bootstrap, preparation, automatic catalog/model/selection, pipeline,
+and rendering work when those operations actually occur.
 
 Buoy does not store the query, returned content, citations, URLs, file paths,
 namespace or source identifiers, document identifiers, vectors, credentials,
@@ -122,9 +139,9 @@ overwriting history. Repeating a completed migration is a successful
 read-only no-op. Buoy never deletes the retained backup automatically.
 
 Schema version 2 preserves `retrieval_runs_v1` and
-`retrieval_stage_latency_v1` exactly. The separate version-2 command views are
-populated only by version-2 command envelopes; production command timing is a
-separate instrumentation change from this storage upgrade.
+`retrieval_stage_latency_v1` exactly. Version-2 command envelopes populate
+`retrieval_command_runs_v2` and `retrieval_stage_latency_v2`; the former exposes
+separate `command_duration_ms` and nullable `pipeline_duration_ms` columns.
 
 ## Query the database
 
@@ -176,9 +193,22 @@ GROUP BY ALL
 ORDER BY retrievals DESC;
 ```
 
+Compare command and pipeline scope without adding nested stage durations:
+
+```sql
+SELECT
+    retrieval_mode,
+    execution_mode,
+    round(avg(command_duration_ms), 1) AS average_command_ms,
+    round(avg(pipeline_duration_ms), 1) AS average_pipeline_ms
+FROM retrieval_command_runs_v2
+GROUP BY ALL
+ORDER BY retrieval_mode, execution_mode;
+```
+
 The underlying `spans` and `span_events` tables are available for deeper local
-analysis, but their JSON attributes are implementation details. Prefer
-`retrieval_runs_v1` and `retrieval_stage_latency_v1` for saved queries.
+analysis, but their JSON attributes are implementation details. Prefer the
+versioned views for saved queries.
 Buoy validates the versioned schema and view definitions in the writer;
 editing those database objects makes the store incompatible and leaves later
 envelopes pending rather than modifying an unknown layout.

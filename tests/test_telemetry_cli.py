@@ -163,18 +163,25 @@ assert "buoy_search.cli" not in sys.modules
 
     def test_nontelemetry_dispatch_lazily_delegates_to_legacy_cli(self) -> None:
         fake_cli = ModuleType("buoy_search.cli")
-        calls: list[list[str]] = []
+        calls: list[tuple[list[str], int | None]] = []
 
-        def legacy(argv: list[str]) -> int:
-            calls.append(argv)
+        def legacy(
+            argv: list[str], *, entry_started_at_ns: int | None = None
+        ) -> int:
+            calls.append((argv, entry_started_at_ns))
             return 7
 
         fake_cli.main = legacy  # type: ignore[attr-defined]
-        with patch.dict(sys.modules, {"buoy_search.cli": fake_cli}):
+        with patch.dict(sys.modules, {"buoy_search.cli": fake_cli}), patch(
+            "buoy_search.entrypoint.time.time_ns", return_value=123_456
+        ):
             result = entrypoint_main(["retrieve", "question", "--dry-run"])
 
         self.assertEqual(result, 7)
-        self.assertEqual(calls, [["retrieve", "question", "--dry-run"]])
+        self.assertEqual(
+            calls,
+            [(["retrieve", "question", "--dry-run"], 123_456)],
+        )
 
     def test_nontelemetry_dispatch_preserves_removed_environment_gate(self) -> None:
         stdout = StringIO()

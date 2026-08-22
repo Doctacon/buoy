@@ -23,14 +23,10 @@ from buoy_search.telemetry_envelope import (
     EVENT_ATTRIBUTE_KEYS as _EVENT_ATTRIBUTE_KEYS,
     EVIDENCE_SPAN_NAME,
     NAMESPACE_QUERY_SPAN_NAME,
-    OBSERVATION_SCHEMA_VERSION,
     QUERY_EMBED_SPAN_NAME,
     RERANK_SPAN_NAME,
     ROOT_SPAN_NAME,
-    TraceRows as _TraceRows,
     V2_COMMAND_ROOT_SPAN_NAME,
-    V2_COMMAND_STAGE_NAMES,
-    V2_OBSERVATION_SCHEMA_VERSION,
     V2_PIPELINE_SPAN_NAME,
     V2_SPAN_NAMES,
     WIDENED_EVENT_NAME,
@@ -56,6 +52,22 @@ if TYPE_CHECKING:
 TELEMETRY_ENV = "BUOY_TELEMETRY"
 LOCAL_TELEMETRY_VALUE = "local"
 OTEL_SDK_DISABLED_ENV = "OTEL_SDK_DISABLED"
+
+__all__ = [
+    "EVIDENCE_SPAN_NAME",
+    "NAMESPACE_QUERY_SPAN_NAME",
+    "QUERY_EMBED_SPAN_NAME",
+    "RERANK_SPAN_NAME",
+    "WIDENED_EVENT_NAME",
+    "CommandTelemetry",
+    "TelemetrySpan",
+    "copied_context_callable",
+    "local_telemetry_enabled",
+    "retrieval_trace",
+    "retrieve_command_trace",
+    "safe_time_ns",
+    "telemetry_span",
+]
 
 CLI_BOOTSTRAP_SPAN_NAME = "buoy.cli.bootstrap"
 RETRIEVE_PREPARE_SPAN_NAME = "buoy.retrieve.prepare"
@@ -277,9 +289,6 @@ class CommandTelemetry:
         self._root.mark_error_type(self.error_type or "unexpected_error")
 
 
-_NOOP_COMMAND = CommandTelemetry()
-
-
 def local_telemetry_enabled(
     environment: Mapping[str, str] | None = None,
 ) -> bool:
@@ -362,7 +371,7 @@ def retrieve_command_trace(
         or bootstrap_ended_at_ns < started_at_ns
         or _ACTIVE_SESSION.get() is not None
     ):
-        yield _NOOP_COMMAND
+        yield CommandTelemetry()
         return
 
     session: _TraceSession | None = None
@@ -411,7 +420,7 @@ def retrieve_command_trace(
                 session.provider.shutdown()
         except Exception:
             pass
-        yield _NOOP_COMMAND
+        yield CommandTelemetry()
         return
 
     assert session is not None and span is not None

@@ -145,3 +145,15 @@ before artifact reactivation, not authority to skip or predict that gate.
   records the choice, alternatives, exact effects, and stop conditions. Ticket
   reactivated for final source completion under the collect-only dormant phase;
   independent report audit remains mandatory before artifact reactivation.
+- 2026-08-21: Final dormant source now implements the entry/bootstrap command
+  boundary, exact v2 producer conversion, nested live pipeline, all governed
+  CLI stages/error categories, preview null-pipeline behavior, direct-v1
+  compatibility, privacy/failure isolation, documentation, and deterministic
+  acceptance tests. The exact certified collect artifact was restored. Focused
+  suites passed 199 tests/197 subtests on Python 3.11 and 3.13; established
+  suites passed 240/200; filtered full suites passed 1060/979 on both; compile,
+  lock, Ruff, ranking, diff, and isolated wheel lifecycle passed. Evidence:
+  `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`.
+  Production source is ready for one clean dormant commit and MUST NOT change
+  after that commit. The next authorized action is only the exact source-only
+  65-case collector, followed by the mandatory independent report-audit stop.

@@ -28,6 +28,7 @@ from buoy_search.config import (
     DEFAULT_EMBEDDING_PRECISION,
     DEFAULT_REGION,
     EMBEDDING_PRECISIONS,
+    RuntimeConfig,
     RuntimeConfigError,
     load_config,
     removed_embedding_environment_error,
@@ -98,7 +99,6 @@ from buoy_search.retriever import (
     MultiNamespaceRetrievalPlan,
     MultiNamespaceRetrievalResult,
     MultiNamespaceRetriever,
-    ProviderCallError,
     RetrievalOptions,
     RetrievalPlan,
     RetrievalResult,
@@ -1701,6 +1701,13 @@ def _run_retrieve(
                         "billing": list(snapshot.metrics.billing),
                     },
                 }
+                def load_routing_reranker_for_command():
+                    with command.stage(
+                        ROUTING_MODEL_SPAN_NAME,
+                        error_type="model_error",
+                    ):
+                        return ROUTING_RERANKER_FACTORY()
+
                 try:
                     with command.stage(
                         ROUTING_SELECT_SPAN_NAME,
@@ -1711,7 +1718,7 @@ def _run_retrieve(
                                 query,
                                 snapshot.eligible_cards,
                                 calibration=routing_confidence,
-                                reranker_loader=ROUTING_RERANKER_FACTORY,
+                                reranker_loader=load_routing_reranker_for_command,
                                 **route_kwargs,
                             )
                         else:
@@ -1750,6 +1757,18 @@ def _run_retrieve(
                         evidence=automatic_evidence_plan(evidence_calibration),
                     )
                 else:
+                    top_route_entry = routing.entries[0]
+                    retrieval_kwargs: dict[str, object] = {
+                        "initial_fanout": routing.initial_fanout,
+                        "evidence_assessor": CalibratedEvidenceAssessor(
+                            evidence_calibration
+                        ),
+                        "evidence_route_context": EvidenceRouteContext(
+                            selection_reason=routing.selection_reason,
+                            semantic_score=top_route_entry.semantic_score,
+                            semantic_margin=routing.semantic_margin,
+                        ),
+                    }
                     try:
                         with suppress_model_progress_bars():
                             retriever = MultiNamespaceRetriever.from_configs(configs)
@@ -1763,18 +1782,6 @@ def _run_retrieve(
                         raise _RetrieveCommandFailure(
                             f"Multi-corpus retrieval failed: {exc}", category
                         ) from exc
-                    top_route_entry = routing.entries[0]
-                    retrieval_kwargs: dict[str, object] = {
-                        "initial_fanout": routing.initial_fanout,
-                        "evidence_assessor": CalibratedEvidenceAssessor(
-                            evidence_calibration
-                        ),
-                        "evidence_route_context": EvidenceRouteContext(
-                            selection_reason=routing.selection_reason,
-                            semantic_score=top_route_entry.semantic_score,
-                            semantic_margin=routing.semantic_margin,
-                        ),
-                    }
                     live_failure_prefix = "Multi-corpus retrieval failed"
                     live_call = lambda: RoutedRetrievalResult(
                         result=retriever.retrieve(
@@ -1807,9 +1814,10 @@ def _run_retrieve(
             result = live_call()
     except RuntimeError as exc:
         command.set_error_type("provider_call_error")
+        message = f"{live_failure_prefix}: {exc}"
         _render_retrieve(
             command,
-            lambda: print(f"{live_failure_prefix}: {exc}", file=sys.stderr),
+            lambda: print(message, file=sys.stderr),
         )
         return 2
     _render_retrieve(
@@ -2512,10 +2520,11 @@ def main(
                 result = _run_retrieve(args, command)
             except RuntimeConfigError as exc:
                 command.set_error_type("configuration_error", replace=True)
+                message = str(exc)
                 try:
                     _render_retrieve(
                         command,
-                        lambda: print(str(exc), file=sys.stderr),
+                        lambda: print(message, file=sys.stderr),
                     )
                 except OSError:
                     raise

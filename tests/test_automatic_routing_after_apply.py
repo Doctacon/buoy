@@ -26,8 +26,8 @@ from buoy_search.cli import main
 from buoy_search.config import RuntimeConfig
 from buoy_search.plan_artifacts import write_plan_artifacts
 from buoy_search.remote_catalog import REMOTE_CATALOG_NAMESPACE, REMOTE_SCHEMA_V3
-from buoy_search.routing_quality import load_routing_confidence_calibration
 from tests.test_apply_cli import build_for_current_state, write_page
+from tests.test_automatic_routing import anchored_routing_calibration
 from tests.test_remote_catalog import (
     FakeClient,
     NamespacePage,
@@ -314,7 +314,9 @@ class AutomaticRoutingAfterApplyAcceptanceTests(unittest.TestCase):
             route_embedder = QueryEmbedder()
             route_reranker = ContentAwareReranker()
             retrieval_reranker = ContentAwareReranker()
-            confidence = load_routing_confidence_calibration()
+            # Dormant recertification keeps packaged authority collect-only;
+            # this acceptance fixture injects exact active semantics directly.
+            confidence = anchored_routing_calibration()
 
             with patch.dict(
                 os.environ,
@@ -384,6 +386,7 @@ class AutomaticRoutingAfterApplyAcceptanceTests(unittest.TestCase):
                         ]
                     )
 
+            self.assertEqual(result, 0, stderr.getvalue())
             payload = json.loads(stdout.getvalue())
             state = load_applied_state(
                 site_id=artifacts.manifest.site_id,
