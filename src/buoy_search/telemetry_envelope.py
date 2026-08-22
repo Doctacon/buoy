@@ -1951,6 +1951,8 @@ def _validate_v2_graph(
         pipeline_error = pipeline["attributes"].get("buoy.error.type")
         if (operation["outcome"] == "error") != (pipeline_error is not None):
             raise TraceEnvelopeError("invalid_graph")
+        if command["outcome"] == "success" and operation["outcome"] == "error":
+            raise TraceEnvelopeError("invalid_graph")
         for span in span_values:
             if span["name"] in V2_RETRIEVAL_STAGE_NAMES and not _is_descendant(
                 span, pipeline, by_id

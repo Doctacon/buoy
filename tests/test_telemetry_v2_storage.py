@@ -238,6 +238,26 @@ def _rows(
     )
 
 
+def _success_command_error_pipeline_rows() -> CommandTraceRows:
+    rows = _rows()
+    assert rows.retrieval_operation is not None
+    operation = list(rows.retrieval_operation)
+    operation[5] = "error"
+    spans = []
+    for span in rows.spans:
+        if span[3] != V2_PIPELINE_SPAN_NAME:
+            spans.append(span)
+            continue
+        changed = list(span)
+        changed[7] = "ERROR"
+        attributes = json.loads(changed[8])
+        attributes["buoy.retrieval.outcome"] = "error"
+        attributes["buoy.error.type"] = "provider_call_error"
+        changed[8] = _canonical(attributes)
+        spans.append(tuple(changed))
+    return CommandTraceRows(rows.command, tuple(operation), tuple(spans), rows.events)
+
+
 def _create_v1_store(path: Path) -> None:
     path.parent.mkdir(mode=0o700, exist_ok=True)
     with duckdb.connect(str(path), config=_SAFE_CONFIG) as connection:
@@ -595,6 +615,55 @@ class Version2EnvelopeTests(unittest.TestCase):
                 self.assertEqual(raised.exception.reason, reason)
                 self.assertNotIn("PRIVATE", str(raised.exception))
 
+    def test_command_success_rejects_internally_consistent_error_pipeline(self) -> None:
+        inconsistent = _success_command_error_pipeline_rows()
+        with self.assertRaises(TraceEnvelopeError) as raised:
+            encode_trace_envelope_v2(inconsistent)
+        self.assertEqual(raised.exception.reason, "invalid_graph")
+
+        value = json.loads(encode_trace_envelope_v2(_rows()))
+        operation = value["retrieval_operation"]
+        assert isinstance(operation, dict)
+        operation["outcome"] = "error"
+        pipeline = _json_span(value, V2_PIPELINE_SPAN_NAME)
+        pipeline["status_code"] = "ERROR"
+        pipeline["attributes"]["buoy.retrieval.outcome"] = "error"
+        pipeline["attributes"]["buoy.error.type"] = "provider_call_error"
+        with self.assertRaises(TraceEnvelopeError) as raised:
+            decode_trace_envelope_v2(
+                json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+            )
+        self.assertEqual(raised.exception.reason, "invalid_graph")
+
+        partial = json.loads(encode_trace_envelope_v2(_rows()))
+        partial["retrieval_operation"]["outcome"] = "partial"
+        _json_span(partial, V2_PIPELINE_SPAN_NAME)["attributes"][
+            "buoy.retrieval.outcome"
+        ] = "partial"
+        decode_trace_envelope_v2(
+            json.dumps(partial, sort_keys=True, separators=(",", ":")).encode()
+        )
+
+        render_error = json.loads(encode_trace_envelope_v2(_rows()))
+        render_error["command"].update(
+            {"outcome": "error", "exit_code": 1, "error_type": "render_error"}
+        )
+        root = _json_span(render_error, V2_COMMAND_ROOT_SPAN_NAME)
+        root["status_code"] = "ERROR"
+        root["attributes"].update(
+            {
+                "buoy.command.outcome": "error",
+                "buoy.command.exit_code": 1,
+                "buoy.error.type": "render_error",
+            }
+        )
+        render = _json_span(render_error, "buoy.output.render")
+        render["status_code"] = "ERROR"
+        render["attributes"]["buoy.error.type"] = "render_error"
+        decode_trace_envelope_v2(
+            json.dumps(render_error, sort_keys=True, separators=(",", ":")).encode()
+        )
+
     def test_mode_outcome_cardinality_parentage_and_order_are_independent(self) -> None:
         valid = json.loads(encode_trace_envelope_v2(_rows()))
         automatic = _automatic_v2_object()
@@ -774,8 +843,14 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
         )
         error_zero["command"]["exit_code"] = 0
         error_zero["spans"][0]["attributes"]["buoy.command.exit_code"] = 0
+        success_with_error_pipeline = json.loads(encode_trace_envelope_v2(_rows()))
+        success_with_error_pipeline["retrieval_operation"]["outcome"] = "error"
+        pipeline = _json_span(success_with_error_pipeline, V2_PIPELINE_SPAN_NAME)
+        pipeline["status_code"] = "ERROR"
+        pipeline["attributes"]["buoy.retrieval.outcome"] = "error"
+        pipeline["attributes"]["buoy.error.type"] = "provider_call_error"
         publications = []
-        for value in (invalid_graph, error_zero):
+        for value in (invalid_graph, error_zero, success_with_error_pipeline):
             publications.append(
                 publish_envelope(
                     json.dumps(value, sort_keys=True, separators=(",", ":")).encode(),
@@ -791,7 +866,12 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
         ]
         self.assertEqual(
             [(receipt.kind, receipt.reason) for receipt in receipts],
-            [("rejected", "invalid_graph"), ("rejected", "invalid_graph"), ("committed", None)],
+            [
+                ("rejected", "invalid_graph"),
+                ("rejected", "invalid_graph"),
+                ("rejected", "invalid_graph"),
+                ("committed", None),
+            ],
         )
         with duckdb.connect(
             str(self.v2.database_path), read_only=True, config=_SAFE_CONFIG

@@ -760,7 +760,19 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
         self.assertEqual(observations, [("worker-default", False)] * 2)
         paths_v1 = telemetry_paths()
         paths_v2 = telemetry_paths_v2(paths_v1.directory)
+        prohibited_text = tuple(sentinels.values())
+        for sentinel in prohibited_text:
+            self.assertNotIn(sentinel, str(paths_v1.directory))
+        observed_relative_names: set[str] = set()
+
+        def capture_relative_names() -> None:
+            for path in paths_v1.directory.rglob("*"):
+                relative = path.relative_to(paths_v1.directory)
+                observed_relative_names.add(relative.as_posix())
+                observed_relative_names.update(relative.parts)
+
         self.assertEqual(scan_queue_read_only(paths_v2).ready, 1)
+        capture_relative_names()
         ready_payloads = [path.read_bytes() for path in paths_v2.ready_directory.iterdir()]
         rows = decode_trace_envelope_v2(ready_payloads[0])
         self.assertEqual(
@@ -799,6 +811,7 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
         ), redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             self.assertEqual(entrypoint_main(), 2)
         self.assertEqual(scan_queue_read_only(paths_v2).ready, 2)
+        capture_relative_names()
 
         prohibited = tuple(value.encode("ascii") for value in sentinels.values())
         for path in paths_v2.ready_directory.iterdir():
@@ -816,6 +829,7 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
             json_output=True, paths=paths_v1
         ).output.encode()
         artifact_bytes = [status_bytes, migrate_bytes]
+        capture_relative_names()
         for path in paths_v1.directory.rglob("*"):
             if path.is_file():
                 artifact_bytes.append(path.read_bytes())
@@ -834,7 +848,11 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
             ):
                 database_values.extend(connection.execute(f"SELECT * FROM {table}").fetchall())
         artifact_bytes.append(repr(database_values).encode("ascii"))
-        for sentinel in prohibited:
+        for sentinel_text, sentinel in zip(
+            prohibited_text, prohibited, strict=True
+        ):
+            for relative_name in observed_relative_names:
+                self.assertNotIn(sentinel_text, relative_name)
             for artifact in artifact_bytes:
                 self.assertNotIn(sentinel, artifact)
 
@@ -1222,7 +1240,7 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
     def test_controlled_subprocess_probe_attributes_pre_pipeline_and_render_delay(self) -> None:
         probe = Path(__file__).parent / "fixtures" / "retrieve_command_timing_probe.py"
         observations = {}
-        for stage in ("initialize", "render"):
+        for stage in ("initialize", "routing", "render"):
             completed = subprocess.run(
                 [
                     sys.executable,
@@ -1247,7 +1265,25 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
             self.assertEqual(observation["exit_code"], 0)
             self.assertEqual(observation["stage"], stage)
             self.assertGreaterEqual(observation["command_duration_ms"], 30.0)
+            self.assertGreaterEqual(
+                observation["command_duration_ms"]
+                - observation["pipeline_duration_ms"],
+                30.0,
+            )
             self.assertLess(observation["pipeline_duration_ms"], 10.0)
+            if stage == "routing":
+                self.assertTrue(observation["routing_before_pipeline"])
+                self.assertEqual(
+                    set(observation["routing_stages"]),
+                    {
+                        "buoy.routing.catalog",
+                        "buoy.routing.model",
+                        "buoy.routing.select",
+                    },
+                )
+            else:
+                self.assertFalse(observation["routing_before_pipeline"])
+                self.assertEqual(observation["routing_stages"], [])
 
 
 if __name__ == "__main__":
