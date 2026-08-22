@@ -326,3 +326,124 @@ are not durable evidence and the committed record explicitly identifies its
 package build as dirty-tree diagnostic output. The accepted findings and
 required parent-observed exact-commit verification are bounded at
 `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-rereview.md`.
+
+## Second repair and immutable implementation acceptance
+
+The bounded second repair is immutable implementation commit
+`5945b047d525658d0db55dd74cee8010cf5b27b3`, tree
+`c38e5cd25da9104ce2545c6fd38835357a69d18b`. Its only changed paths relative
+to governing `082290b6` are:
+
+- `src/buoy_search/telemetry_envelope.py`;
+- `tests/fixtures/retrieve_command_timing_probe.py`;
+- `tests/test_retrieve_command_telemetry.py`; and
+- `tests/test_telemetry_v2_storage.py`.
+
+The independent encoder/decoder now rejects command success paired with an
+internally consistent error pipeline. Direct encoder and decoder cases use
+`error/ERROR/provider_call_error` operation/span state; the writer case proves
+three malformed envelopes receive `invalid_graph` receipts before one later
+valid envelope alone reaches DuckDB. Positive controls retain success with a
+partial operation and error-after-successful-pipeline render failure.
+
+The no-provider subprocess probe now performs automatic live routing entirely
+through local fakes, delays the governed route-selection call, emits model,
+catalog, model, and select stages before the fake pipeline, and reports both
+scope durations. The test covers initialization, routing, and rendering delays,
+requires at least 30 ms outside the pipeline for each, requires pipeline duration
+below 10 ms, and checks the automatic routing-stage set and ordering. This is
+only controlled delay attribution; the dependent ticket's five-run parent-
+observed reference-host gate was not run or claimed.
+
+The real entrypoint privacy case now records every extant relative path and each
+path component under the isolated telemetry root before and after writer/store
+processing, including v2 ready names, queue directories, terminal receipts,
+state/lock artifacts, and DuckDB. Every prohibited sentinel is absent from those
+names as well as the existing envelope/file/status/migration/database scalar and
+JSON scans. The test first proves its random telemetry-root path contains none
+of the sentinels, so the assertion does not sanitize or select the root around
+sentinel input.
+
+### Dual-runtime validation
+
+Temporary project environments used locked offline dependencies with DuckDB
+1.5.4. Commands and observed results were:
+
+- four exact repaired cases: `4 passed` on Python 3.11.5, including one rerun
+  from clean immutable `5945b04`;
+- affected command/storage/writer/routing suite (15 named test modules): `404
+  passed, 370 subtests passed` independently on Python 3.11.5 and Python 3.13.0;
+- full suite excluding only separately owned `tests/test_dynamic_version.py`:
+  `1069 passed, 1017 subtests passed, 57 warnings` independently on both
+  runtimes; all warnings are the existing lxml `strip_cdata` deprecation in
+  `tests/test_crawler_exact_host.py`;
+- `uv lock --check --offline`: 157 packages resolved;
+- Python 3.11 targeted `py_compile`, Python 3.13 `compileall`, changed-file Ruff
+  `--select F,E9`, `git diff --check`, and ranking validation passed;
+- ranking retained 13 datasets, 369 judgments, 90 composite identities, and
+  dataset bundle SHA-256
+  `5a79f58aaca87a2d4f7cbec68fdcfbbcbf041131821587f8aba74a86daca99d9`.
+
+A broader non-gating Ruff diagnostic over all `src` and `tests` reported 21
+existing F401/F402 findings in files untouched by this repair. Changed-file
+Ruff passed; no unrelated cleanup was made because this ticket does not own
+those baseline findings.
+
+### Clean exact-commit package and receipt reproduction
+
+All following checks ran after the implementation commit with clean status
+before and after. Host/runtime identity was macOS 26.5.1 build 25F80, arm64;
+Python 3.11.5 and 3.13.0; uv 0.11.7; pinned build backend hatchling 1.31.0 and
+hatch-vcs 0.5.0. The locked test environments used DuckDB 1.5.4. The isolated
+wheel install resolved offline with DuckDB 1.5.5 and OpenTelemetry API/SDK
+1.44.0.
+
+Measured source hashes are:
+
+- CLI: `90e7b2ddf7bbde2daaf0ccd78aa2a779d9e61946a8b7f7ae8f3512dec431ebf9`;
+- v2 envelope module:
+  `21e87573c04161f52cdbcb86b5899f53730c24941fee46008b3ba59bbee2d47b`;
+- active routing artifact:
+  `62ec1fe8cb7e49247c24b633379a6b2553475bc0e25ce846998ea5dd77df8cf5`.
+
+Compared with `6fd5595`, parsed deep equality and unified text diff found
+exactly one scalar/line changed:
+`/receipts/cli_module_sha256`, from
+`92c49e943ed5918df7fe65294ff89717e2654a8e9d76317979b63198f1b98ee9`
+to the measured CLI hash above. The clean source loader accepted schema 3,
+mode `active`, revision `active-anchor-e559a8aa-v1`; an isolated source copy
+with the old receipt failed specifically as an incompatible source receipt.
+
+`uv build --offline` at exact `5945b04` produced:
+
+- 720,613-byte wheel
+  `buoy_search-0.5.2.dev70+g5945b047d-py3-none-any.whl`, SHA-256
+  `0c8790a4520ae04ac5a809fb8e6f4f052e6fbf3ad8702e57c3b6c29e27755bd0`;
+- 1,261,638-byte source distribution
+  `buoy_search-0.5.2.dev70+g5945b047d.tar.gz`, SHA-256
+  `9ef63dafc0bf3ab06bb0922cbae851855a3a46ee55478ff5a52c56988d1819f8`.
+
+Source, wheel, source distribution, and isolated installed wheel reproduced the
+three exact file hashes above. The installed package reported
+`0.5.2.dev70+g5945b047d`, loaded the active routing artifact, and completed a
+disabled explicit preview in an isolated empty home without creating `.buoy`.
+The source distribution excludes `.10x/**` by the pinned build configuration;
+therefore this evidence/ticket-only follow-up changes no package, runtime,
+fixture, or test bytes relative to the accepted implementation commit.
+
+Private raw logs remain outside the repository at
+`/private/tmp/buoy-v2-accept-5945b04.QtcE8Y/`, mode 0600:
+
+- `acceptance.log`: 2,115 bytes, SHA-256
+  `e8996277ebf33eff910137473fdeb8f2c72022da0f38b7fc8d0d0ccc8980ae2d`;
+- `build.log`: 1,115 bytes, SHA-256
+  `b32f7c2f3448b872a0a609da3d8e375a2d6b9f720e7efb1d8ee3d72e8daa1172`;
+- `package-byte-install.log`: 1,855 bytes, SHA-256
+  `5a671d3e6b2105a598bd35fbe0235124e6a2e7fbbdee2fb3f94f8cdb99af4ee3`.
+
+No provider, catalog, content, credential, model, live collector, real telemetry
+home, installed tool, remote Git, integration, release, or publication action
+occurred. All homes, builds, installs, package extractions, old-receipt copies,
+and test environments were temporary and isolated. Fresh independent review of
+immutable implementation commit `5945b04` remains mandatory; this evidence does
+not close the ticket or claim the dependent external timing gate.
