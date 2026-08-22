@@ -462,3 +462,93 @@ repair tests (`4 passed in 52.28s`), but parent has not independently reproduced
 the package build/install claims. Accepted repairs and the final parent evidence
 gate are recorded at
 `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-final-review.md`.
+
+## Final-review repair candidate
+
+Immutable implementation commit
+`d4c336c8289f5eda4cfadbc0b2bbe255349e62dc`, tree
+`08863bae239f0ae442912b288bcc38e834572a0c`, changes only the v2 envelope
+validator and three focused test files. `cli.py` and the active schema-v3
+artifact remain byte-identical to governing `9d55881`: CLI SHA-256
+`90e7b2ddf7bbde2daaf0ccd78aa2a779d9e61946a8b7f7ae8f3512dec431ebf9`
+and artifact SHA-256
+`62ec1fe8cb7e49247c24b633379a6b2553475bc0e25ce846998ea5dd77df8cf5`.
+The repaired envelope module SHA-256 is
+`1f28f1eedaeaf26ad92931561c6e285662ae3b1f8c81cbc88821173dc09d2eb8`.
+
+### Source-backed retrieval-stage cardinality
+
+| Command mode and pipeline outcome | Query embed | Namespace query | Rerank | Evidence assess |
+| --- | --- | --- | --- | --- |
+| `explicit_single`, any pipeline outcome | exactly 1 | exactly `final_fanout`, ranks exactly `1..final_fanout` | 0 | 0 |
+| `explicit_multi`, `success`/`partial` | exactly 1 | exact fanout/ranks | exactly 1 | 0 |
+| `explicit_multi`, `error` | exactly 1 | exact fanout/ranks, including zero before fanout | 0 or 1 according to reached work | 0 |
+| `automatic`, `success`/`partial` | exactly 1 | exact fanout/ranks | exactly 1 | 0 through 2 |
+| `automatic`, `error` | exactly 1 | exact fanout/ranks, including zero before fanout | 0 or 1 according to reached work | 0 through 2 |
+
+Two evidence spans are accepted only for an automatic operation whose summary
+says `widened=true` and `fallback_reason=weak_top1`; more than two, two without
+that exact widening state, or any evidence in explicit modes is rejected. This
+matches current retriever execution: the initial weak top-one assessment is
+followed by a final reassessment after widening. Namespace stage count equals
+attempted final fanout even when a target fails; embedding failure retains
+`final_fanout=0` and no namespace stage.
+
+A real automatic CLI test uses three local fake namespaces, an injected active
+assessor returning weak then supported decisions, and a local ordinal reranker.
+It observes two assessor calls, weak-top-one widening, three namespace calls and
+route ranks, one rerank, two evidence spans, one widening event, and one decoded
+published v2 envelope. Independent object and writer tests accept explicit
+single/multi, automatic widening, partial namespace failure, and pre-fanout
+embed failure while rejecting missing/extra namespace spans, duplicate/gapped/
+out-of-range route ranks, impossible rerank/evidence cardinalities, and malformed
+work before any invalid row reaches DuckDB.
+
+### Controlled subprocess delta observations
+
+The local no-provider probe now emits the source-backed automatic rerank stage.
+For each initialization, routing, and rendering case, the test executes separate
+zero-delay and 500 ms delayed subprocesses, requires command delta between 375
+and 750 ms, and bounds absolute pipeline delta to 25 ms. One recorded run was:
+
+| Stage | Baseline command/pipeline ms | Delayed command/pipeline ms | Command delta ms | Pipeline delta ms |
+| --- | ---: | ---: | ---: | ---: |
+| initialization | 106.436 / 0.090 | 616.500 / 1.036 | 510.064 | 0.946 |
+| routing | 111.315 / 0.124 | 617.988 / 1.099 | 506.673 | 0.975 |
+| rendering | 104.764 / 0.087 | 614.251 / 0.097 | 509.487 | 0.010 |
+
+Routing observations contained model/catalog/model/select stages ending before
+the pipeline. Three additional isolated reruns of the complete subprocess test
+passed in 4.47, 5.14, and 3.70 seconds. This proves controlled attribution only;
+the dependent five-run reference-host gate was not run or claimed.
+
+### Validation
+
+- Exact repaired cases: `4 passed, 14 subtests passed` on Python 3.11.
+- Full command plus v2 storage modules: `64 passed, 145 subtests passed` on
+  Python 3.11.
+- Fifteen affected command/envelope/producer/queue/writer/store/CLI/retriever/
+  evidence/routing modules: `411 passed, 383 subtests passed` on Python 3.11.5
+  in 47.59 s and independently on Python 3.13.0 in 97.37 s.
+- Full suite excluding only separately owned `tests/test_dynamic_version.py`:
+  `1071 passed, 1031 subtests passed, 57 warnings` on Python 3.11.5 in 134.05 s
+  and Python 3.13.0 in 136.79 s. All warnings were the existing lxml
+  `strip_cdata` deprecation.
+- `uv lock --check --offline` resolved 157 packages. Python 3.11 changed-file
+  compilation, Python 3.13 full `compileall`, changed-file Ruff `F,E9`,
+  `git diff --check`, and ranking validation passed. Ranking retained 13
+  datasets, 369 judgments, 90 composite identities, and bundle SHA-256
+  `5a79f58aaca87a2d4f7cbec68fdcfbbcbf041131821587f8aba74a86daca99d9`.
+
+Two initial harness invocations failed before tests: system Python lacked the
+project OpenTelemetry dependency, and direct `pytest` under an isolated home did
+not put repository `tests`/`scripts` on its import path. Re-running through the
+locked environment with `python -m pytest` corrected only the harness and
+produced the passing results above.
+
+All tests used temporary homes, local fakes, and offline dependencies. No
+provider, live catalog, content, credential, model, collector, real telemetry
+home, installed tool, remote Git, integration, release, or publication action
+occurred. Fresh independent review remains mandatory. Exact package/archive/
+installed-byte reproduction for `d4c336c` is explicitly parent-unverified and
+remains a blocker; this worker did not run or claim it.

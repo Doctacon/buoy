@@ -100,12 +100,11 @@ catalog read is historical evidence; no further live run is authorized.
 
 ## Blockers
 
-Immutable implementation `5945b047` failed fresh final review: independent
-validation rejects truthful two-assessment weak-evidence widening, accepts
-namespace-stage cardinality/rank disagreement, and the delayed subprocess cases
-lack zero-delay baselines. Parent-observed final package reproduction also
-remains required after source repair. The bounded findings are recorded at
-`.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-final-review.md`.
+The final-review source/test findings are repaired at immutable implementation
+`d4c336c8`, tree `08863bae`. Fresh independent exact-commit review and parent-
+observed offline wheel/sdist/archive/isolated-install reproduction remain
+required before closure. The dependent ticket still owns the separate five-run
+reference-host timing gate.
 
 No live card repair, report, or further provider run is required or authorized.
 
@@ -230,3 +229,18 @@ No live card repair, report, or further provider run is required or authorized.
   parent reproduction after final repair. Findings are bounded at
   `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-final-review.md`;
   the separate five-run reference-host gate remains with the dependent ticket.
+- 2026-08-22: Immutable implementation `d4c336c8`, tree `08863bae`, repairs the
+  final source/test findings. Independent validation now accepts the truthful
+  automatic two-assessment `weak_top1` widening graph, enforces exact namespace
+  count/ranks and source-backed rerank/evidence cardinalities, and rejects the
+  same malformed envelopes before writer mutation. The real automatic CLI
+  regression performs three local namespace calls, one rerank, two assessments,
+  widening, publication, and decoding. Controlled initialization/routing/render
+  subprocesses compare zero to 500 ms delay; observed command deltas were
+  510.064/506.673/509.487 ms while pipeline deltas were at most 0.975 ms.
+  Fifteen affected modules passed 411 tests/383 subtests and the filtered full
+  suite passed 1071 tests/1031 subtests on both Python 3.11 and 3.13; offline
+  lock, compile, changed-file Ruff, ranking, and diff checks passed. CLI and
+  routing artifact hashes remain `90e7b2dd...` and `62ec1fe8...`. Additive
+  evidence is in `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`.
+  Ticket remains active for parent package reproduction and fresh review.
