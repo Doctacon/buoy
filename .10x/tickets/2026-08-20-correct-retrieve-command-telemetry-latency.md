@@ -28,7 +28,10 @@ operation, failure isolation, and direct-library compatibility.
    retrieval instrumentation.
 2. `.10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md`
    depends on child 1 and wires entry-point, CLI-stage, and nested pipeline
-   traces into that substrate.
+   traces into that substrate. Because the CLI is an active routing receipt,
+   this child also executes the existing clean dormant-source certification,
+   independent report audit, and measured artifact reactivation protocol
+   without changing routing semantics.
 3. `.10x/tickets/2026-08-20-validate-retrieve-command-telemetry-v2.md` depends
    on both implementation children and owns independent end-to-end acceptance,
    migration rehearsal, documentation reconciliation, and final review input.
@@ -50,6 +53,9 @@ writers may edit the same worktree.
   flush, and explicit migration orchestration.
 - `src/buoy_search/cli.py` and `src/buoy_search/retriever.py` own command-stage
   and pipeline boundaries without behavior changes.
+- The active bounded-routing artifact owns exact CLI source authority; final
+  instrumented bytes must pass the unchanged dormant-report and measured-
+  receipt protocol before automatic routing is accepted.
 
 ## Aggregate acceptance criteria
 
@@ -70,10 +76,12 @@ writers may edit the same worktree.
 
 ## Explicit exclusions
 
-Plan/apply/crawl/eval/catalog telemetry, ranking/evidence changes, query or argv
-collection, Collector/OTLP/network export, automatic migration, automatic
-backup deletion, installed-tool replacement, release/publication, and live
-provider validation are outside this plan.
+Plan/apply/crawl/eval/catalog telemetry, ranking/evidence/routing semantic
+changes, query or argv collection, Collector/OTLP export, automatic migration,
+automatic backup deletion, installed-tool replacement, release/publication,
+and live content-provider validation are outside this plan. The sole live
+routing-validation exception is the owner-authorized 65-case source-only
+certification with its exact no-content/no-write accounting and stop gates.
 
 ## Dependencies
 
@@ -131,3 +139,9 @@ for its completion.
   The owner ratified `exit_code=1` when an exception escapes retrieve without a
   handler return; the original exception must still escape unchanged. The
   active command telemetry spec now records this exact semantic.
+- 2026-08-21: The first command producer candidate correctly tripped automatic
+  routing's exact CLI-source receipt. After the conflict and alternatives were
+  disclosed, the owner chose to retain the safety boundary and re-certify the
+  final instrumented CLI through the existing dormant 65-case protocol. No
+  hash was bypassed; the bounded recertification choice is recorded at
+  `.10x/decisions/buoy-recertifies-routing-cli-for-command-telemetry.md`.

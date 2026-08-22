@@ -242,6 +242,29 @@ call counts, and provider/model behavior remain unchanged. Instrumentation
 wrappers MUST be no-op compatible and MUST not force model loading earlier than
 established behavior.
 
+## Routing certification compatibility
+
+Command instrumentation changes the exact `src/buoy_search/cli.py` bytes bound
+by the active bounded-routing artifact. The implementation MUST NOT bypass,
+weaken, or merely rewrite that receipt. It MUST execute the ordered dormant
+source, read-only 65-case certification, independent report audit, measured
+artifact reactivation, distribution validation, and final review protocol in
+`.10x/specs/bounded-prototype-routing-activation.md`, as authorized by
+`.10x/decisions/buoy-recertifies-routing-cli-for-command-telemetry.md`.
+
+The newly certified report MUST reproduce every frozen routing semantic,
+quality, catalog-projection, threshold, suite, privacy, and call-accounting
+value. Only the clean dormant commit/tree/report and measured source receipts
+may change. Expected certification effects are the governed complete catalog
+read, 65 routing-query inferences, and 65 bounded local reranker calls, with
+zero content queries, content-resource acquisitions, provider writes, and
+model downloads. Any drift, dirty source, unexpected call class, source change
+after certification, or failed audit blocks activation.
+
+This recertification changes no route, threshold, fanout, evidence, provider,
+or content behavior. Explicit retrieval remains independent, and invalid
+routing authority continues to stop automatic retrieval before content access.
+
 ## Stable query contract
 
 After store migration, `retrieval_command_runs_v2` exposes one row per

@@ -1,4 +1,4 @@
-Status: blocked
+Status: active
 Created: 2026-08-20
 Updated: 2026-08-20
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -6,6 +6,8 @@ Depends-On: .10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-mi
 Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md
 Specification: .10x/specs/retrieve-command-telemetry.md
 Storage: .10x/specs/local-telemetry-v2-storage-and-migration.md
+Routing-Decision: .10x/decisions/buoy-recertifies-routing-cli-for-command-telemetry.md
+Routing-Specification: .10x/specs/bounded-prototype-routing-activation.md
 
 # Instrument Retrieve Command and Pipeline Latency
 
@@ -20,6 +22,10 @@ Owned modules are the lightweight entry point, CLI retrieve orchestration,
 retriever/telemetry session integration, focused command/retrieval tests, and
 retrieve telemetry user documentation. Storage changes are limited to repairs
 required by proven integration defects and must remain inside the storage spec.
+Because the active routing artifact certifies exact CLI bytes, this ticket also
+owns the existing routing specification's dormant-source recertification and
+artifact-only reactivation phases for the final instrumented CLI. It owns no
+routing semantic change.
 
 ## Required work
 
@@ -34,6 +40,11 @@ required by proven integration defects and must remain inside the storage spec.
   separately.
 - Preserve output, validation order, call counts, exceptions, routing,
   ranking, evidence, preview safety, private context, and no-network behavior.
+- Restore the exact collect-only routing artifact while final source is made
+  clean, run and independently audit the exact 65-case read-only dormant
+  certification, then reactivate only with measured source receipts.
+- Preserve every frozen routing value and fail closed on drift, dirty source,
+  unexpected call class, model download, content access, or provider mutation.
 
 ## Acceptance criteria
 
@@ -55,20 +66,30 @@ required by proven integration defects and must remain inside the storage spec.
    provider work.
 8. Existing CLI, routing, retrieval, evidence, telemetry, full-suite,
    compilation, distribution, clean-wheel, and diff checks pass.
+9. The exact final instrumented CLI is certified through the active routing
+   specification's clean dormant report and independent audit; the reactivated
+   artifact contains only measured receipts, and source/wheel/sdist/installed
+   bytes reproduce them without changing any frozen routing result.
 
 ## Evidence expectations
 
 Record exact changed boundaries, trace graphs for each mode/outcome, enabled
 and disabled output/call equivalence, privacy scan, focused/full commands and
-results, and any residual timing limitation. Do not claim external shell
-representativeness until the dependent validation ticket observes it.
+results, and any residual timing limitation. Also record dormant/final
+commit/tree identities, report and artifact hashes, exact source receipts,
+frozen-result equality, call accounting, no-mutation audit, and independent
+report/final reviews. Do not claim external shell representativeness until the
+dependent validation ticket observes it.
 
 ## Explicit exclusions
 
 No plan/apply/crawl/eval/catalog telemetry, schema redesign beyond the active
-storage spec, live provider/credential/namespace use, query/argv collection,
-Collector/OTLP/network export, ranking/evidence changes, installed-tool
-replacement, release, `main`, or publication.
+storage spec, content-provider query/write or provider mutation, query/argv
+collection, Collector/OTLP export, ranking/evidence/routing semantic changes,
+installed-tool replacement, release, `main`, or publication. The sole live
+exception is the owner-authorized, source-only 65-case routing certification:
+complete routing-catalog reads and bounded routing-model inference under the
+exact call accounting and stop gates in the active routing specification.
 
 ## Assumption provenance
 
@@ -80,21 +101,11 @@ replacement, release, `main`, or publication.
 
 ## Blockers
 
-The storage dependency passed exact-commit review, and the owner ratified
-`exit_code=1` for an exception escaping retrieve without a handler return.
-
-Automatic routing's active certified artifact binds the exact raw-byte SHA-256
-of `src/buoy_search/cli.py`. Any command instrumentation changes that file, so
-the strict loader rejects the existing artifact before credentials/catalog as
-required by `.10x/decisions/buoy-activates-certified-bounded-prototype-routing.md`
-and `.10x/specs/bounded-prototype-routing-activation.md`. The current bounded
-candidate CLI hash is
-`cd571184fd013a7731cec55ab8ee9f2b7a26cc6333a0311f1a96b3dc9a6b5d72`;
-the certified artifact records
-`92c49e943ed5918df7fe65294ff89717e2654a8e9d76317979b63198f1b98ee9`.
-Updating or bypassing that frozen receipt requires explicit owner
-supersession/recertification authority. Implementation is paused with the
-candidate preserved and the artifact untouched.
+None before the dormant-source phase. The storage dependency passed review,
+the escaping-exception value is ratified, and the owner explicitly chose the
+existing clean recertification protocol after the CLI receipt conflict was
+disclosed. Independent audit of the new dormant report is a mandatory stop gate
+before artifact reactivation, not authority to skip or predict that gate.
 
 ## Progress and notes
 
@@ -127,3 +138,10 @@ candidate preserved and the artifact untouched.
   `AutomaticRoutingCliTests::{test_catalog_resource_failure_cannot_leak_credentials,test_invalid_evidence_artifact_fails_before_provider_work,test_missing_key_fails_before_client_even_if_ambient_namespace_is_set}`.
   No artifact/hash boundary was altered or bypassed. Ticket blocked pending
   owner supersession/recertification authorization.
+- 2026-08-21: The owner selected “Re-certify CLI” after disclosure that this
+  retains the exact safety gate and requires the governed 65-case catalog/model
+  read with zero content queries and zero writes. Decision
+  `.10x/decisions/buoy-recertifies-routing-cli-for-command-telemetry.md`
+  records the choice, alternatives, exact effects, and stop conditions. Ticket
+  reactivated for final source completion under the collect-only dormant phase;
+  independent report audit remains mandatory before artifact reactivation.
