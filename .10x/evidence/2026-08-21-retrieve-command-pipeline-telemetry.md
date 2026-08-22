@@ -95,10 +95,46 @@ Final pre-certification source hashes are:
 - collect artifact:
   `23fb14c49263933a2adb2299a9c04089888fb2ec734b790d9eadda2df295cbed`.
 
+## Dormant source identity and certification stop
+
+Final production bytes and the exact collect-only artifact were committed at
+clean dormant commit
+`369c5d461f616e89df492b497175312f36b5dcc9`, tree
+`ba5c3933d835e5b9d2c7f3664f4847721e880c78`. The source hashes match the
+pre-commit values above. No production source changed after that commit.
+
+The owner-authorized source-only collector was invoked from that exact clean
+state with the opaque runtime credential present, offline dependency
+resolution, a private mode-0700 temporary directory, mode-0077 umask, and an
+absent `report.json` target. It stopped before route inference and before report
+publication because the complete stable catalog read found one live namespace
+without a matching card: `site-docs-aurelio-ai-v1`. The governed message was:
+
+```text
+Routing quality evaluation failed: automatic routing requires complete live namespace-card coverage; missing cards: 'site-docs-aurelio-ai-v1' (repair with reviewed buoy catalog upsert site-docs-aurelio-ai-v1 ... --approve)
+```
+
+This is an explicit certification drift/coverage stop under
+`.10x/specs/bounded-prototype-routing-activation.md`; no repair, catalog write,
+content query, content-resource acquisition, model inference/download, artifact
+edit, or retry was attempted. Because collection stopped before serialization,
+`/private/tmp/buoy-command-telemetry-dormant-369c5d4.zlHpM1/report.json` does
+not exist and has no byte size or SHA-256. The preserved private collector log
+is `/private/tmp/buoy-command-telemetry-dormant-369c5d4.zlHpM1/collector.log`,
+mode `0600`, 223 bytes, SHA-256
+`c57edb5c4b3d2d2ef85ad5cfc348dfc2ad40856a4be7136fd3ab134620c41180`.
+No credential value appears in output or records.
+
+A first mechanical invocation used a pre-created empty output file and was
+rejected locally before collection because reports are no-overwrite. That empty
+file was removed and contributes no certification evidence; the clean second
+invocation above reached the authoritative catalog stop.
+
 ## Limits
 
 This evidence does not claim the reference-host parent-observed timing gate;
-that belongs to the dependent validation ticket. It also does not activate a
-new routing artifact. The exact dormant commit/tree and 65-case report
-identity/results are appended only after committing clean final source and
-running the owner-authorized read-only collector from that exact state.
+that belongs to the dependent validation ticket. It does not activate a new
+routing artifact or provide a dormant report for audit. Certification cannot
+continue until the separately governed live catalog/card mismatch is resolved
+with explicit provider-write authority and the collector is rerun from an
+approved exact clean source state.

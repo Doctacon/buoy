@@ -1,4 +1,4 @@
-Status: active
+Status: blocked
 Created: 2026-08-20
 Updated: 2026-08-20
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -101,11 +101,14 @@ exact call accounting and stop gates in the active routing specification.
 
 ## Blockers
 
-None before the dormant-source phase. The storage dependency passed review,
-the escaping-exception value is ratified, and the owner explicitly chose the
-existing clean recertification protocol after the CLI receipt conflict was
-disclosed. Independent audit of the new dormant report is a mandatory stop gate
-before artifact reactivation, not authority to skip or predict that gate.
+The clean dormant source checkpoint is complete at `369c5d4`, but the
+authorized collector stopped before inference/report publication because the
+live namespace inventory contains `site-docs-aurelio-ai-v1` without a matching
+routing card. The active routing specification requires complete stable
+catalog coverage and explicitly stops on this drift. Resolving it requires a
+separately reviewed catalog upsert/provider-write authorization that this
+ticket does not grant. No report exists to audit, and artifact reactivation
+remains prohibited.
 
 ## Progress and notes
 
@@ -157,3 +160,13 @@ before artifact reactivation, not authority to skip or predict that gate.
   Production source is ready for one clean dormant commit and MUST NOT change
   after that commit. The next authorized action is only the exact source-only
   65-case collector, followed by the mandatory independent report-audit stop.
+- 2026-08-21: Final production source and exact collect artifact committed clean
+  at `369c5d461f616e89df492b497175312f36b5dcc9`, tree
+  `ba5c3933d835e5b9d2c7f3664f4847721e880c78`. The authorized collector then
+  stopped on complete-catalog drift before any of 65 query/reranker inferences
+  and before report publication: live namespace `site-docs-aurelio-ai-v1` has
+  no matching card. No content/provider write, content query/resource, model
+  download, artifact change, or source change occurred. Evidence and private
+  log identity are recorded at
+  `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`. Ticket is
+  blocked; independent report audit cannot begin because no report exists.
