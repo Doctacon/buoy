@@ -394,6 +394,35 @@ def _row_span(rows: CommandTraceRows, name: str) -> tuple[object, ...]:
     return next(span for span in rows.spans if span[3] == name)
 
 
+def _append_v2_span(
+    value: dict[str, object],
+    *,
+    name: str,
+    span_id: str,
+    parent_span_id: str,
+    started_at_unix_us: int,
+    ended_at_unix_us: int,
+    attributes: dict[str, object] | None = None,
+    status_code: str = "OK",
+) -> dict[str, object]:
+    span = {
+        "trace_id": value["command"]["trace_id"],
+        "span_id": span_id,
+        "parent_span_id": parent_span_id,
+        "name": name,
+        "started_at_unix_us": started_at_unix_us,
+        "ended_at_unix_us": ended_at_unix_us,
+        "duration_ms": (ended_at_unix_us - started_at_unix_us) / 1_000,
+        "status_code": status_code,
+        "attributes": attributes or {},
+    }
+    value["spans"].append(span)
+    value["spans"].sort(
+        key=lambda item: (item["started_at_unix_us"], item["span_id"])
+    )
+    return span
+
+
 def _automatic_v2_object() -> dict[str, object]:
     value = json.loads(encode_trace_envelope_v2(_rows()))
     value["command"]["retrieval_mode"] = "automatic"
@@ -450,14 +479,130 @@ def _automatic_v2_object() -> dict[str, object]:
         },
     ]
     value["spans"].extend(routing_spans)
+    _append_v2_span(
+        value,
+        name="buoy.rerank",
+        span_id="d" * 16,
+        parent_span_id=pipeline["span_id"],
+        started_at_unix_us=pipeline["ended_at_unix_us"] - 800,
+        ended_at_unix_us=pipeline["ended_at_unix_us"] - 600,
+    )
     value["spans"].sort(
         key=lambda span: (span["started_at_unix_us"], span["span_id"])
     )
     return value
 
 
-def _widened_v2_object() -> dict[str, object]:
+def _explicit_multi_v2_object() -> dict[str, object]:
+    value = _automatic_v2_object()
+    value["command"]["retrieval_mode"] = "explicit_multi"
+    root = _json_span(value, V2_COMMAND_ROOT_SPAN_NAME)
+    root["attributes"]["buoy.retrieval.mode"] = "explicit_multi"
+    pipeline = _json_span(value, V2_PIPELINE_SPAN_NAME)
+    pipeline["attributes"].update(
+        {
+            "buoy.retrieval.mode": "explicit_multi",
+            "buoy.retrieval.namespace_count": 2,
+            "buoy.retrieval.initial_fanout": 2,
+            "buoy.retrieval.final_fanout": 2,
+        }
+    )
+    operation = value["retrieval_operation"]
+    assert isinstance(operation, dict)
+    operation.update({"namespace_count": 2, "initial_fanout": 2, "final_fanout": 2})
+    value["spans"] = [
+        span
+        for span in value["spans"]
+        if span["name"]
+        not in {"buoy.routing.catalog", "buoy.routing.model", "buoy.routing.select"}
+    ]
+    namespace = _json_span(value, "buoy.namespace.query")
+    _append_v2_span(
+        value,
+        name="buoy.namespace.query",
+        span_id="e" * 16,
+        parent_span_id=pipeline["span_id"],
+        started_at_unix_us=namespace["started_at_unix_us"] + 100,
+        ended_at_unix_us=namespace["ended_at_unix_us"],
+        attributes={
+            "buoy.namespace.hit_count": 1,
+            "buoy.namespace.status": "ok",
+            "buoy.route.rank": 2,
+        },
+    )
+    return value
+
+
+def _namespace_failure_v2_object() -> dict[str, object]:
+    value = _explicit_multi_v2_object()
+    operation = value["retrieval_operation"]
+    assert isinstance(operation, dict)
+    operation.update({"outcome": "partial", "failure_count": 1, "incomplete": True})
+    pipeline = _json_span(value, V2_PIPELINE_SPAN_NAME)
+    pipeline["attributes"].update(
+        {
+            "buoy.retrieval.outcome": "partial",
+            "buoy.retrieval.failure_count": 1,
+            "buoy.retrieval.incomplete": True,
+        }
+    )
+    namespaces = [span for span in value["spans"] if span["name"] == "buoy.namespace.query"]
+    failed = namespaces[1]
+    failed["status_code"] = "ERROR"
+    failed["attributes"] = {
+        "buoy.error.type": "provider_call_error",
+        "buoy.namespace.status": "failed",
+        "buoy.route.rank": 2,
+    }
+    return value
+
+
+def _embed_failure_v2_object() -> dict[str, object]:
     value = json.loads(encode_trace_envelope_v2(_rows()))
+    value["command"].update(
+        {"outcome": "error", "exit_code": 2, "error_type": "provider_call_error"}
+    )
+    root = _json_span(value, V2_COMMAND_ROOT_SPAN_NAME)
+    root["status_code"] = "ERROR"
+    root["attributes"].update(
+        {
+            "buoy.command.outcome": "error",
+            "buoy.command.exit_code": 2,
+            "buoy.error.type": "provider_call_error",
+        }
+    )
+    operation = value["retrieval_operation"]
+    assert isinstance(operation, dict)
+    operation.update(
+        {
+            "outcome": "error",
+            "hit_count": 0,
+            "final_fanout": 0,
+            "evidence_status": None,
+        }
+    )
+    pipeline = _json_span(value, V2_PIPELINE_SPAN_NAME)
+    pipeline["status_code"] = "ERROR"
+    pipeline["attributes"].update(
+        {
+            "buoy.retrieval.outcome": "error",
+            "buoy.retrieval.hit_count": 0,
+            "buoy.retrieval.final_fanout": 0,
+            "buoy.error.type": "runtime_error",
+        }
+    )
+    pipeline["attributes"].pop("buoy.evidence.status")
+    embed = _json_span(value, "buoy.query.embed")
+    embed["status_code"] = "ERROR"
+    embed["attributes"] = {"buoy.error.type": "runtime_error"}
+    value["spans"] = [
+        span for span in value["spans"] if span["name"] != "buoy.namespace.query"
+    ]
+    return value
+
+
+def _widened_v2_object() -> dict[str, object]:
+    value = _automatic_v2_object()
     operation = value["retrieval_operation"]
     assert isinstance(operation, dict)
     operation.update(
@@ -477,13 +622,51 @@ def _widened_v2_object() -> dict[str, object]:
             "buoy.retrieval.fallback_reason": "weak_top1",
         }
     )
+    _append_v2_span(
+        value,
+        name="buoy.namespace.query",
+        span_id="e" * 16,
+        parent_span_id=pipeline["span_id"],
+        started_at_unix_us=pipeline["started_at_unix_us"] + 5_200,
+        ended_at_unix_us=pipeline["started_at_unix_us"] + 5_400,
+        attributes={
+            "buoy.namespace.hit_count": 1,
+            "buoy.namespace.status": "ok",
+            "buoy.route.rank": 2,
+        },
+    )
+    _append_v2_span(
+        value,
+        name="buoy.evidence.assess",
+        span_id="f" * 16,
+        parent_span_id=pipeline["span_id"],
+        started_at_unix_us=pipeline["started_at_unix_us"] + 5_000,
+        ended_at_unix_us=pipeline["started_at_unix_us"] + 5_100,
+        attributes={"buoy.evidence.mode": "active", "buoy.evidence.status": "no_relevant_evidence"},
+    )
+    rerank = _json_span(value, "buoy.rerank")
+    rerank["started_at_unix_us"] = pipeline["started_at_unix_us"] + 5_400
+    rerank["ended_at_unix_us"] = pipeline["started_at_unix_us"] + 5_600
+    rerank["duration_ms"] = 0.2
+    _append_v2_span(
+        value,
+        name="buoy.evidence.assess",
+        span_id="1" * 15 + "2",
+        parent_span_id=pipeline["span_id"],
+        started_at_unix_us=pipeline["started_at_unix_us"] + 5_600,
+        ended_at_unix_us=pipeline["started_at_unix_us"] + 5_700,
+        attributes={"buoy.evidence.mode": "active", "buoy.evidence.status": "supported"},
+    )
+    value["spans"].sort(
+        key=lambda span: (span["started_at_unix_us"], span["span_id"])
+    )
     value["events"] = [
         {
             "trace_id": value["command"]["trace_id"],
             "span_id": pipeline["span_id"],
             "event_index": 0,
             "name": "retrieval.widened",
-            "occurred_at_unix_us": pipeline["started_at_unix_us"] + 1_000,
+            "occurred_at_unix_us": pipeline["started_at_unix_us"] + 5_150,
             "attributes": {
                 "buoy.retrieval.initial_fanout": 1,
                 "buoy.retrieval.final_fanout": 2,
@@ -663,6 +846,124 @@ class Version2EnvelopeTests(unittest.TestCase):
         decode_trace_envelope_v2(
             json.dumps(render_error, sort_keys=True, separators=(",", ":")).encode()
         )
+
+    def test_source_backed_retrieval_stage_cardinalities(self) -> None:
+        positives = {
+            "explicit single": json.loads(encode_trace_envelope_v2(_rows())),
+            "explicit multi": _explicit_multi_v2_object(),
+            "automatic weak widening": _widened_v2_object(),
+            "partial namespace failure": _namespace_failure_v2_object(),
+            "embed failure before fanout": _embed_failure_v2_object(),
+        }
+        for name, value in positives.items():
+            with self.subTest(positive=name):
+                decode_trace_envelope_v2(
+                    json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+                )
+
+        valid_multi = _explicit_multi_v2_object()
+        cases: dict[str, dict[str, object]] = {}
+
+        missing = deepcopy(valid_multi)
+        missing["spans"] = [
+            span
+            for span in missing["spans"]
+            if not (
+                span["name"] == "buoy.namespace.query"
+                and span["attributes"]["buoy.route.rank"] == 2
+            )
+        ]
+        cases["missing namespace"] = missing
+
+        extra = deepcopy(valid_multi)
+        first_namespace = deepcopy(_json_span(extra, "buoy.namespace.query"))
+        first_namespace["span_id"] = "1" * 15 + "3"
+        first_namespace["attributes"]["buoy.route.rank"] = 3
+        extra["spans"].append(first_namespace)
+        extra["spans"].sort(
+            key=lambda span: (span["started_at_unix_us"], span["span_id"])
+        )
+        cases["extra namespace"] = extra
+
+        duplicate = deepcopy(valid_multi)
+        duplicate_namespaces = [
+            span for span in duplicate["spans"] if span["name"] == "buoy.namespace.query"
+        ]
+        duplicate_namespaces[1]["attributes"]["buoy.route.rank"] = 1
+        cases["duplicate route rank"] = duplicate
+
+        gapped = deepcopy(valid_multi)
+        gapped_namespaces = [
+            span for span in gapped["spans"] if span["name"] == "buoy.namespace.query"
+        ]
+        gapped_namespaces[1]["attributes"]["buoy.route.rank"] = 3
+        cases["gapped out-of-range route rank"] = gapped
+
+        no_rerank = deepcopy(valid_multi)
+        no_rerank["spans"] = [
+            span for span in no_rerank["spans"] if span["name"] != "buoy.rerank"
+        ]
+        cases["successful multi without rerank"] = no_rerank
+
+        single_rerank = json.loads(encode_trace_envelope_v2(_rows()))
+        single_pipeline = _json_span(single_rerank, V2_PIPELINE_SPAN_NAME)
+        _append_v2_span(
+            single_rerank,
+            name="buoy.rerank",
+            span_id="d" * 16,
+            parent_span_id=single_pipeline["span_id"],
+            started_at_unix_us=single_pipeline["ended_at_unix_us"] - 500,
+            ended_at_unix_us=single_pipeline["ended_at_unix_us"] - 400,
+        )
+        cases["explicit single rerank"] = single_rerank
+
+        explicit_evidence = deepcopy(valid_multi)
+        explicit_pipeline = _json_span(explicit_evidence, V2_PIPELINE_SPAN_NAME)
+        _append_v2_span(
+            explicit_evidence,
+            name="buoy.evidence.assess",
+            span_id="f" * 16,
+            parent_span_id=explicit_pipeline["span_id"],
+            started_at_unix_us=explicit_pipeline["ended_at_unix_us"] - 300,
+            ended_at_unix_us=explicit_pipeline["ended_at_unix_us"] - 200,
+            attributes={"buoy.evidence.mode": "active", "buoy.evidence.status": "supported"},
+        )
+        cases["explicit multi evidence"] = explicit_evidence
+
+        automatic_two_evidence = _automatic_v2_object()
+        automatic_pipeline = _json_span(automatic_two_evidence, V2_PIPELINE_SPAN_NAME)
+        for index, span_id in enumerate(("f" * 16, "1" * 15 + "2")):
+            _append_v2_span(
+                automatic_two_evidence,
+                name="buoy.evidence.assess",
+                span_id=span_id,
+                parent_span_id=automatic_pipeline["span_id"],
+                started_at_unix_us=automatic_pipeline["ended_at_unix_us"] - 500 + index * 100,
+                ended_at_unix_us=automatic_pipeline["ended_at_unix_us"] - 450 + index * 100,
+                attributes={"buoy.evidence.mode": "active", "buoy.evidence.status": "supported"},
+            )
+        cases["two evidence assessments without weak widening"] = automatic_two_evidence
+
+        three_evidence = _widened_v2_object()
+        widened_pipeline = _json_span(three_evidence, V2_PIPELINE_SPAN_NAME)
+        _append_v2_span(
+            three_evidence,
+            name="buoy.evidence.assess",
+            span_id="1" * 15 + "4",
+            parent_span_id=widened_pipeline["span_id"],
+            started_at_unix_us=widened_pipeline["ended_at_unix_us"] - 200,
+            ended_at_unix_us=widened_pipeline["ended_at_unix_us"] - 100,
+            attributes={"buoy.evidence.mode": "active", "buoy.evidence.status": "supported"},
+        )
+        cases["three evidence assessments"] = three_evidence
+
+        for name, value in cases.items():
+            with self.subTest(invalid=name):
+                with self.assertRaises(TraceEnvelopeError) as raised:
+                    decode_trace_envelope_v2(
+                        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+                    )
+                self.assertEqual(raised.exception.reason, "invalid_graph")
 
     def test_mode_outcome_cardinality_parentage_and_order_are_independent(self) -> None:
         valid = json.loads(encode_trace_envelope_v2(_rows()))
@@ -849,8 +1150,61 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
         pipeline["status_code"] = "ERROR"
         pipeline["attributes"]["buoy.retrieval.outcome"] = "error"
         pipeline["attributes"]["buoy.error.type"] = "provider_call_error"
+
+        valid_multi = _explicit_multi_v2_object()
+        missing_namespace = deepcopy(valid_multi)
+        missing_namespace["spans"] = [
+            span
+            for span in missing_namespace["spans"]
+            if not (
+                span["name"] == "buoy.namespace.query"
+                and span["attributes"]["buoy.route.rank"] == 2
+            )
+        ]
+        extra_namespace = deepcopy(valid_multi)
+        extra_span = deepcopy(_json_span(extra_namespace, "buoy.namespace.query"))
+        extra_span["span_id"] = "1" * 15 + "3"
+        extra_span["attributes"]["buoy.route.rank"] = 3
+        extra_namespace["spans"].append(extra_span)
+        extra_namespace["spans"].sort(
+            key=lambda span: (span["started_at_unix_us"], span["span_id"])
+        )
+        duplicate_rank = deepcopy(valid_multi)
+        duplicate_namespaces = [
+            span for span in duplicate_rank["spans"] if span["name"] == "buoy.namespace.query"
+        ]
+        duplicate_namespaces[1]["attributes"]["buoy.route.rank"] = 1
+        gapped_rank = deepcopy(valid_multi)
+        gapped_namespaces = [
+            span for span in gapped_rank["spans"] if span["name"] == "buoy.namespace.query"
+        ]
+        gapped_namespaces[1]["attributes"]["buoy.route.rank"] = 3
+
+        impossible_evidence = _automatic_v2_object()
+        evidence_pipeline = _json_span(impossible_evidence, V2_PIPELINE_SPAN_NAME)
+        for index, span_id in enumerate(("f" * 16, "1" * 15 + "2")):
+            _append_v2_span(
+                impossible_evidence,
+                name="buoy.evidence.assess",
+                span_id=span_id,
+                parent_span_id=evidence_pipeline["span_id"],
+                started_at_unix_us=evidence_pipeline["ended_at_unix_us"] - 500 + index * 100,
+                ended_at_unix_us=evidence_pipeline["ended_at_unix_us"] - 450 + index * 100,
+                attributes={"buoy.evidence.mode": "active", "buoy.evidence.status": "supported"},
+            )
+
+        invalid_values = (
+            invalid_graph,
+            error_zero,
+            success_with_error_pipeline,
+            missing_namespace,
+            extra_namespace,
+            duplicate_rank,
+            gapped_rank,
+            impossible_evidence,
+        )
         publications = []
-        for value in (invalid_graph, error_zero, success_with_error_pipeline):
+        for value in invalid_values:
             publications.append(
                 publish_envelope(
                     json.dumps(value, sort_keys=True, separators=(",", ":")).encode(),
@@ -866,12 +1220,8 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
         ]
         self.assertEqual(
             [(receipt.kind, receipt.reason) for receipt in receipts],
-            [
-                ("rejected", "invalid_graph"),
-                ("rejected", "invalid_graph"),
-                ("rejected", "invalid_graph"),
-                ("committed", None),
-            ],
+            [("rejected", "invalid_graph")] * len(invalid_values)
+            + [("committed", None)],
         )
         with duckdb.connect(
             str(self.v2.database_path), read_only=True, config=_SAFE_CONFIG
@@ -1357,23 +1707,12 @@ class ReviewRepairTests(unittest.TestCase):
         v2 = _rows()
         self.assertEqual(telemetry_store.append_trace(self.v2, v2).outcome, "committed")
         self.assertEqual(telemetry_store.append_trace(self.v2, v2).outcome, "replayed")
-        changed_command = list(v2.command)
-        changed_command[6] = "explicit_multi"
-        changed_spans = []
-        for span in v2.spans:
-            changed_span = list(span)
-            if span[3] in {V2_COMMAND_ROOT_SPAN_NAME, V2_PIPELINE_SPAN_NAME}:
-                attributes = json.loads(changed_span[8])
-                attributes["buoy.retrieval.mode"] = "explicit_multi"
-                changed_span[8] = _canonical(attributes)
-            changed_spans.append(tuple(changed_span))
-        v2_conflict = CommandTraceRows(
-            tuple(changed_command),
-            v2.retrieval_operation,
-            tuple(changed_spans),
-            v2.events,
+        explicit_multi = _explicit_multi_v2_object()
+        v2_conflict = decode_trace_envelope_v2(
+            json.dumps(
+                explicit_multi, sort_keys=True, separators=(",", ":")
+            ).encode()
         )
-        encode_trace_envelope_v2(v2_conflict)
         self.assertEqual(
             telemetry_store.append_trace(self.v2, v2_conflict).outcome,
             "conflict",

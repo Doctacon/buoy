@@ -1961,7 +1961,7 @@ def _validate_v2_graph(
     elif any(span["name"] in V2_RETRIEVAL_STAGE_NAMES for span in span_values):
         raise TraceEnvelopeError("invalid_graph")
 
-    _validate_v2_stage_graph(command, span_values, root, pipeline, by_id)
+    _validate_v2_stage_graph(command, operation, span_values, root, pipeline, by_id)
 
     if events != sorted(events, key=lambda event: event["event_index"]):
         raise TraceEnvelopeError("invalid_graph")
@@ -2004,6 +2004,7 @@ def _require_summary_attributes(
 
 def _validate_v2_stage_graph(
     command: dict[str, object],
+    operation: dict[str, object] | None,
     spans: list[dict[str, object]],
     root: dict[str, object],
     pipeline: dict[str, object] | None,
@@ -2125,17 +2126,41 @@ def _validate_v2_stage_graph(
     if command["execution_mode"] == "preview" and retrieval_spans:
         raise TraceEnvelopeError("invalid_graph")
     if pipeline is not None:
+        assert operation is not None
         embeds = named(QUERY_EMBED_SPAN_NAME)
         namespaces = named(NAMESPACE_QUERY_SPAN_NAME)
+        reranks = named(RERANK_SPAN_NAME)
+        evidence = named(EVIDENCE_SPAN_NAME)
         if len(embeds) != 1:
             raise TraceEnvelopeError("invalid_graph")
-        if (
-            command["outcome"] == "success"
-            and not namespaces
+        final_fanout = operation["final_fanout"]
+        assert type(final_fanout) is int
+        route_ranks = [
+            span["attributes"].get("buoy.route.rank") for span in namespaces
+        ]
+        if len(namespaces) != final_fanout or set(route_ranks) != set(
+            range(1, final_fanout + 1)
         ):
             raise TraceEnvelopeError("invalid_graph")
-        if len(named(RERANK_SPAN_NAME)) > 1 or len(named(EVIDENCE_SPAN_NAME)) > 1:
-            raise TraceEnvelopeError("invalid_graph")
+        mode = command["retrieval_mode"]
+        if mode == "explicit_single":
+            if reranks or evidence:
+                raise TraceEnvelopeError("invalid_graph")
+        else:
+            if len(reranks) > 1:
+                raise TraceEnvelopeError("invalid_graph")
+            if operation["outcome"] in {"success", "partial"} and len(reranks) != 1:
+                raise TraceEnvelopeError("invalid_graph")
+            if mode == "explicit_multi" and evidence:
+                raise TraceEnvelopeError("invalid_graph")
+            if mode == "automatic":
+                if len(evidence) > 2:
+                    raise TraceEnvelopeError("invalid_graph")
+                if len(evidence) == 2 and not (
+                    operation["widened"]
+                    and operation["fallback_reason"] == "weak_top1"
+                ):
+                    raise TraceEnvelopeError("invalid_graph")
         if any(not _is_descendant(span, pipeline, by_id) for span in retrieval_spans):
             raise TraceEnvelopeError("invalid_graph")
 

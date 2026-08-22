@@ -17,6 +17,7 @@ from buoy_search.cli import main
 from buoy_search.telemetry import (
     NAMESPACE_QUERY_SPAN_NAME,
     QUERY_EMBED_SPAN_NAME,
+    RERANK_SPAN_NAME,
     retrieval_trace,
     telemetry_span,
 )
@@ -56,6 +57,9 @@ class ControlledRetriever:
                     }
                 )
                 span.mark_ok()
+            if self.mode != "explicit_single":
+                with telemetry_span(RERANK_SPAN_NAME) as span:
+                    span.mark_ok()
             pipeline.set_attributes(
                 {
                     "buoy.retrieval.outcome": "success",

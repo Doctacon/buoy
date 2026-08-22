@@ -27,14 +27,17 @@ from buoy_search.entrypoint import main as entrypoint_main
 from buoy_search.remote_catalog import RemoteCatalogError
 from buoy_search.routing import AutomaticRoutingError
 from buoy_search.retriever import (
+    EvidenceRouteContext,
     HybridRetriever,
     MultiNamespaceRetriever,
     ProviderCallError,
     RetrievalOptions,
 )
 from buoy_search.telemetry import (
+    EVIDENCE_SPAN_NAME,
     NAMESPACE_QUERY_SPAN_NAME,
     QUERY_EMBED_SPAN_NAME,
+    RERANK_SPAN_NAME,
     retrieval_trace,
     telemetry_span,
 )
@@ -115,13 +118,13 @@ class _BrokenStream:
 
 
 class _FakeRouting:
-    def __init__(self) -> None:
+    def __init__(self, namespace_count: int = 1) -> None:
         self.initial_fanout = 1
         self.selection_reason = "high_confidence_semantic"
         self.semantic_margin = 0.2
         self.selected_cards = [
             SimpleNamespace(
-                namespace="site-auto-v1",
+                namespace=f"site-auto-{index}-v1",
                 region="gcp-us-central1",
                 embedding_model="BAAI/bge-small-en-v1.5",
                 embedding_precision="float32",
@@ -130,6 +133,7 @@ class _FakeRouting:
                 ranking_pool=20,
                 ranking_aggregation="max",
             )
+            for index in range(1, namespace_count + 1)
         ]
         self.entries = [SimpleNamespace(semantic_score=0.9)]
 
@@ -154,6 +158,39 @@ class _FakeRouting:
             "semantic_margin": self.semantic_margin,
             "selected": [],
         }
+
+
+class _EvidenceDecision:
+    def __init__(self, status: str, is_weak: bool) -> None:
+        self.status = status
+        self.is_weak = is_weak
+
+    def to_dict(self) -> dict[str, object]:
+        return {"status": self.status}
+
+
+class _SequenceEvidenceAssessor:
+    mode = "active"
+
+    def __init__(self) -> None:
+        self._decisions = [
+            _EvidenceDecision("no_relevant_evidence", True),
+            _EvidenceDecision("supported", False),
+        ]
+        self.calls: list[dict[str, object]] = []
+
+    def assess(self, **kwargs: object) -> _EvidenceDecision:
+        self.calls.append(dict(kwargs))
+        return self._decisions.pop(0)
+
+
+class _OrdinalReranker:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def score(self, _query: str, passages: list[str]) -> list[float]:
+        self.calls += 1
+        return [float(len(passages) - index) for index in range(len(passages))]
 
 
 class _AutomaticRetriever:
@@ -196,6 +233,9 @@ class _AutomaticRetriever:
                 child.mark_ok()
             if self.failure:
                 raise ProviderCallError("sanitized provider failure")
+            if self.mode != "explicit_single":
+                with telemetry_span(RERANK_SPAN_NAME) as child:
+                    child.mark_ok()
             pipeline.set_attributes(
                 {
                     "buoy.retrieval.outcome": "success",
@@ -484,6 +524,69 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
                 for routing_call in started[:7]:
                     self.assertEqual(routing_call.call_count, 1)
                 self.assertEqual(retriever.calls, 0 if preview else 1)
+
+    def test_automatic_weak_evidence_widening_publishes_truthful_v2_graph(self) -> None:
+        os.environ["TURBOPUFFER_API_KEY"] = "private-key"
+        namespaces = [_Namespace() for _ in range(3)]
+        embedder = _Embedder()
+        reranker = _OrdinalReranker()
+        retriever = MultiNamespaceRetriever(
+            retrievers=[
+                HybridRetriever(
+                    namespace=namespace,
+                    embedder=embedder,
+                    config=RuntimeConfig(namespace=f"site-auto-{index}-v1"),
+                )
+                for index, namespace in enumerate(namespaces, start=1)
+            ],
+            embedder=embedder,
+            reranker_loader=lambda: reranker,
+        )
+        assessor = _SequenceEvidenceAssessor()
+        patches = self._automatic_patches(retriever)
+        patches[6] = patch(
+            "buoy_search.cli.hybrid_route", return_value=_FakeRouting(3)
+        )
+        with ExitStack() as stack:
+            for item in patches:
+                stack.enter_context(item)
+            stack.enter_context(
+                patch(
+                    "buoy_search.cli.CalibratedEvidenceAssessor",
+                    return_value=assessor,
+                )
+            )
+            stack.enter_context(redirect_stdout(StringIO()))
+            self.assertEqual(main(["retrieve", "private query", "--json"]), 0)
+
+        rows = self._rows()
+        operation = rows.retrieval_operation
+        self.assertIsNotNone(operation)
+        assert operation is not None
+        self.assertEqual(operation[7:10], (3, 1, 3))
+        self.assertTrue(operation[12])
+        self.assertEqual(operation[13], "weak_top1")
+        names = [span[3] for span in rows.spans]
+        self.assertEqual(names.count(NAMESPACE_QUERY_SPAN_NAME), 3)
+        self.assertEqual(names.count(RERANK_SPAN_NAME), 1)
+        self.assertEqual(names.count(EVIDENCE_SPAN_NAME), 2)
+        namespace_ranks = sorted(
+            json.loads(span[8])["buoy.route.rank"]
+            for span in rows.spans
+            if span[3] == NAMESPACE_QUERY_SPAN_NAME
+        )
+        self.assertEqual(namespace_ranks, [1, 2, 3])
+        self.assertEqual(len(rows.events), 1)
+        self.assertEqual(rows.events[0][3], "retrieval.widened")
+        self.assertEqual(len(assessor.calls), 2)
+        self.assertIsInstance(
+            assessor.calls[0]["route_context"], EvidenceRouteContext
+        )
+        self.assertEqual([namespace.calls for namespace in namespaces], [1, 1, 1])
+        self.assertEqual(reranker.calls, 1)
+        self._assert_exact_graph(
+            rows, pipeline=True, automatic=True, namespace_minimum=3
+        )
 
     def test_configuration_and_pipeline_failures_keep_output_and_categories(self) -> None:
         stderr = StringIO()
@@ -1239,51 +1342,61 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
 
     def test_controlled_subprocess_probe_attributes_pre_pipeline_and_render_delay(self) -> None:
         probe = Path(__file__).parent / "fixtures" / "retrieve_command_timing_probe.py"
-        observations = {}
+        injected_delay_ms = 500
+        observations: dict[str, dict[int, dict[str, object]]] = {}
         for stage in ("initialize", "routing", "render"):
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(probe),
-                    "--stage",
-                    stage,
-                    "--delay-ms",
-                    "30",
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-                env={
-                    "PYTHONPATH": str(Path(__file__).parents[1] / "src"),
-                    "BUOY_TELEMETRY": "local",
-                },
-                timeout=30,
-            )
-            self.assertEqual(completed.stderr, "")
-            observations[stage] = json.loads(completed.stdout)
-        for stage, observation in observations.items():
-            self.assertEqual(observation["exit_code"], 0)
-            self.assertEqual(observation["stage"], stage)
-            self.assertGreaterEqual(observation["command_duration_ms"], 30.0)
-            self.assertGreaterEqual(
-                observation["command_duration_ms"]
-                - observation["pipeline_duration_ms"],
-                30.0,
-            )
-            self.assertLess(observation["pipeline_duration_ms"], 10.0)
-            if stage == "routing":
-                self.assertTrue(observation["routing_before_pipeline"])
-                self.assertEqual(
-                    set(observation["routing_stages"]),
-                    {
-                        "buoy.routing.catalog",
-                        "buoy.routing.model",
-                        "buoy.routing.select",
+            observations[stage] = {}
+            for delay_ms in (0, injected_delay_ms):
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        str(probe),
+                        "--stage",
+                        stage,
+                        "--delay-ms",
+                        str(delay_ms),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    env={
+                        "PYTHONPATH": str(Path(__file__).parents[1] / "src"),
+                        "BUOY_TELEMETRY": "local",
                     },
+                    timeout=30,
                 )
-            else:
-                self.assertFalse(observation["routing_before_pipeline"])
-                self.assertEqual(observation["routing_stages"], [])
+                self.assertEqual(completed.stderr, "")
+                observations[stage][delay_ms] = json.loads(completed.stdout)
+        for stage, pair in observations.items():
+            baseline = pair[0]
+            delayed = pair[injected_delay_ms]
+            for observation in (baseline, delayed):
+                self.assertEqual(observation["exit_code"], 0)
+                self.assertEqual(observation["stage"], stage)
+                if stage == "routing":
+                    self.assertTrue(observation["routing_before_pipeline"])
+                    self.assertEqual(
+                        set(observation["routing_stages"]),
+                        {
+                            "buoy.routing.catalog",
+                            "buoy.routing.model",
+                            "buoy.routing.select",
+                        },
+                    )
+                else:
+                    self.assertFalse(observation["routing_before_pipeline"])
+                    self.assertEqual(observation["routing_stages"], [])
+            command_delta = (
+                float(delayed["command_duration_ms"])
+                - float(baseline["command_duration_ms"])
+            )
+            pipeline_delta = abs(
+                float(delayed["pipeline_duration_ms"])
+                - float(baseline["pipeline_duration_ms"])
+            )
+            self.assertGreaterEqual(command_delta, injected_delay_ms * 0.75)
+            self.assertLessEqual(command_delta, injected_delay_ms * 1.5)
+            self.assertLessEqual(pipeline_delta, 25.0)
 
 
 if __name__ == "__main__":
