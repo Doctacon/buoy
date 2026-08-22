@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-08-20
-Updated: 2026-08-20
+Updated: 2026-08-22
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
 Depends-On: .10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-migration.md
 Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md
@@ -171,3 +171,15 @@ run is required or authorized.
   `.10x/decisions/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md`
   supersedes the inapplicable full-live-report path. Ticket reactivated for the
   one-field artifact update, package/behavior validation, and final review.
+- 2026-08-22: Reactivated the exact schema-v3 artifact with only
+  `receipts.cli_module_sha256` changed to measured final CLI hash `6a92ec38...`;
+  parsed equality proves every other field identical to pre-instrumentation
+  authority. The new artifact hash is `c66d0beb...`; old receipt rejection and
+  new receipt acceptance passed. Combined focused suites passed 417 tests/374
+  subtests and filtered full suites passed 1060 tests/979 subtests on both
+  Python 3.11 and 3.13. Offline lock/compile/Ruff/ranking/diff, source equality,
+  wheel/sdist byte agreement, and isolated installed-wheel authority/preview
+  checks passed. No production Python byte changed after dormant `369c5d4` and
+  no external/provider operation occurred. Evidence is additive at
+  `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`; ticket
+  remains active for independent exact-commit review.

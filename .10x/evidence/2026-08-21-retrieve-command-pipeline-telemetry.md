@@ -1,6 +1,6 @@
 Status: recorded
 Created: 2026-08-21
-Updated: 2026-08-21
+Updated: 2026-08-22
 Relates-To: .10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md, .10x/specs/retrieve-command-telemetry.md, .10x/decisions/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-for-command-telemetry.md
 
 # Retrieve Command and Pipeline Telemetry Implementation
@@ -149,10 +149,72 @@ authorized. Current execution authority is
 The live stop remains valid evidence of zero mutation and no report; it is not a
 routing-quality failure or permission to backfill.
 
+## Local schema-v3 CLI receipt reactivation
+
+The schema-v3 active artifact from pre-instrumentation authority `6fd5595` has
+raw SHA-256
+`745cdb76c894ef1770f6daf3d303f2b6d0ba6905098924f1cb1a8fa40e738fea`.
+The reactivated artifact changes exactly one JSON scalar and one text line:
+`receipts.cli_module_sha256` changes from
+`92c49e943ed5918df7fe65294ff89717e2654a8e9d76317979b63198f1b98ee9`
+to measured final CLI receipt
+`6a92ec38f39574a598befdf841855ed669535ff6b45a10bb1869785596e2fe75`.
+Its new raw SHA-256 is
+`c66d0bebecdda87e5d2db98f30fd9cca0885e1bf036bf0d3132e9f8357bfb2e3`.
+A parsed deep-equality probe proved every other schema, revision, binding,
+certified namespace, provisional policy, threshold, calibration,
+certification, report, evaluator, routing, evidence, and collect-artifact
+value exact. The no-argument loader accepted schema 3 / active /
+`active-anchor-e559a8aa-v1`; substituting the old CLI receipt failed with the
+content-free incompatible-source-receipt error.
+
+`git diff 369c5d4 -- 'src/buoy_search/*.py'` is empty. All production Python
+bytes remain identical to the clean dormant commit after the stopped collector;
+only the packaged authority JSON is reactivated under the owner-selected local
+receipt policy.
+
+### Reactivated-artifact validation
+
+- One combined command-telemetry, v1/v2 telemetry, CLI, automatic-routing,
+  after-apply, routing-quality, activation, evidence, and multi-namespace suite
+  passed **417 tests and 374 subtests** on Python 3.13 and independently the
+  same **417 tests and 374 subtests** on Python 3.11.
+- The filtered full suite, excluding only the separately owned stale
+  `tests/test_dynamic_version.py` collector, passed **1060 tests and 979
+  subtests** with 57 preexisting lxml warnings on Python 3.13 and independently
+  the same result on Python 3.11.
+- Exact privacy, ambient isolation, disabled equivalence, render/unexpected
+  exception identity, clock/session/envelope/publication/writer failure, old
+  source-receipt rejection, and new source-receipt acceptance cases are part of
+  those passing focused suites.
+- `uv lock --check --offline` resolved 157 packages. Python 3.13 compileall,
+  targeted py_compile, focused Ruff `F,E9`, `git diff --check`, production-
+  source equality, and the ranking validator passed. Ranking retained 13
+  datasets, 369 judgments, 90 composite identities, and bundle SHA-256
+  `5a79f58aaca87a2d4f7cbec68fdcfbbcbf041131821587f8aba74a86daca99d9`.
+- An offline diagnostic working-tree build produced a 719,468-byte 77-file
+  wheel at SHA-256
+  `b28981b46d94a08e3e573a3b5d3144314bcd74db1ea41e1657c0cb953ad8898a`
+  and a 1,251,740-byte 156-file source distribution at SHA-256
+  `5a2e395ec41ae77bb074fe11dbe687fff86ab5fbc24d7ce546110b0d1d252ced`.
+  Source, wheel, and source distribution each reproduced exact CLI receipt
+  `6a92ec38...` and artifact receipt `c66d0beb...`.
+- Offline installation of that wheel and its cached dependencies into a new
+  temporary Python 3.13 environment reproduced the same installed CLI and
+  artifact hashes, loaded schema 3 / active / `active-anchor-e559a8aa-v1`,
+  passed version output, and ran one disabled explicit preview from an isolated
+  empty home. The preview created no `.buoy` path.
+
+All build/install/pytest homes and outputs were temporary. Commands used offline
+resolution and made no provider, catalog, content, credential, live collector,
+real telemetry-home, installed-tool replacement, remote Git, integration,
+release, or publication operation.
+
 ## Limits
 
 This evidence does not claim the reference-host parent-observed timing gate;
-that belongs to the dependent validation ticket. It does not yet activate the
-schema-v3 artifact or prove final source/wheel/sdist/installed CLI receipt
-agreement; those are pending local validation and independent review. The
-stopped collector produced no report and no quality result.
+that belongs to the dependent validation ticket. The diagnostic archive hashes
+identify the validated working tree before its final governance commit; exact-
+commit archive reproduction belongs to independent review. The stopped
+collector produced no report and no quality result. Final exact-commit review
+remains required before this ticket can close.
