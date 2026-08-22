@@ -155,5 +155,11 @@ for its completion.
   dual-runtime/full/package validation. Three fresh reviews nevertheless
   returned FAIL for independent writer graph/exit validation, one broken-
   stderr regression, and incomplete deterministic scenario/privacy/failure
-  evidence. Child 2 remains active under
+  evidence. Child 2 remained active under
   `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md`.
+- 2026-08-22: First repair candidate `d8e0008c` closed most review findings and
+  retained exact one-field routing receipt compatibility, but fresh rereview
+  found command-success/error-pipeline inconsistency, missing controlled
+  routing-delay coverage, missing filename privacy scans, and non-durable
+  exact-commit package evidence. Child 2 remains active under
+  `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-rereview.md`.

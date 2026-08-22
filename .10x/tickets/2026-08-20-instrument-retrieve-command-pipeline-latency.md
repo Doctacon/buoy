@@ -100,11 +100,12 @@ catalog read is historical evidence; no further live run is authorized.
 
 ## Blockers
 
-Exact candidate `40ef5f74` failed three independent reviews. The bounded repair
-candidate implements all accepted findings and passes worker validation, but
-fresh independent exact-commit review remains a closure blocker. Repair scope
-and the failed historical candidate remain recorded at
-`.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md`.
+Exact candidate `d8e0008c` failed fresh rereview. It still accepts a successful
+command with an error pipeline, omits the required controlled routing-delay
+subprocess case, does not scan filename/path components in the real privacy
+test, and lacks durable parent-observed exact-commit package evidence. The
+bounded second repair and verification set is recorded at
+`.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-rereview.md`.
 
 No live card repair, report, or further provider run is required or authorized.
 
@@ -206,5 +207,11 @@ No live card repair, report, or further provider run is required or authorized.
   installed-preview checks passed. Final CLI/artifact hashes are `90e7b2dd...`
   and `62ec1fe8...`. Additive evidence is at
   `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`. Ticket
-  remains active for fresh independent exact-commit review; the dependent
+  remained active for fresh independent exact-commit review; the dependent
   validation ticket still owns the five-run parent-observed timing gate.
+- 2026-08-22: Fresh rereview of exact commit `d8e0008c` returned FAIL. Accepted
+  remaining gaps are command-success/error-pipeline inconsistency, missing
+  controlled routing-delay subprocess coverage, filename/path privacy scans,
+  and durable parent-observed exact-commit package evidence. Most first-round
+  repairs passed static adversarial inspection. The second bounded repair set
+  is `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-rereview.md`.

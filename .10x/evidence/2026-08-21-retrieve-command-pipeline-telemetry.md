@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-21
 Updated: 2026-08-22
-Relates-To: .10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md, .10x/specs/retrieve-command-telemetry.md, .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-for-command-telemetry.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md
+Relates-To: .10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md, .10x/specs/retrieve-command-telemetry.md, .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-for-command-telemetry.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-rereview.md
 
 # Retrieve Command and Pipeline Telemetry Implementation
 
@@ -312,3 +312,17 @@ are final and commit-independent. Fresh exact-commit review MUST rebuild from
 the committed candidate before closure. The five-run parent-observed timing
 gate remains deliberately unclaimed and belongs to the dependent validation
 child.
+
+## Rereview challenge
+
+Fresh independent rereview of exact candidate `d8e0008c` accepted most first-
+round repairs but returned FAIL. Static adversarial inspection demonstrated that
+the decoder still accepts command `success/0/OK` paired with an internally
+consistent `error/ERROR/provider_call_error` pipeline. The controlled
+subprocess probe covers initialization and render delay but not required routing
+delay. The real privacy test scans artifact contents but not relative filenames
+or path components. Finally, the worker-reported exact-commit package hashes
+are not durable evidence and the committed record explicitly identifies its
+package build as dirty-tree diagnostic output. The accepted findings and
+required parent-observed exact-commit verification are bounded at
+`.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-rereview.md`.
