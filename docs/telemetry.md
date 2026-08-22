@@ -216,8 +216,9 @@ envelopes pending rather than modifying an unknown layout.
 ## Storage lifecycle
 
 Local telemetry has no database retention or purge policy. The database grows with
-each recorded live retrieval until you manage the file yourself. Content-free
-terminal receipts rotate within a fixed bound; pending envelopes are never
+each recorded live retrieval and each enabled recorded preview command until you
+manage the file yourself. Content-free terminal receipts rotate within a fixed
+bound; pending envelopes are never
 evicted to make room for newer ones. Disable new records by unsetting
 `BUOY_TELEMETRY`, setting it to a value other than `local`, or setting
 `OTEL_SDK_DISABLED=true`. Use `buoy telemetry flush` before inspecting or

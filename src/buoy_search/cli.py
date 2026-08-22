@@ -2527,7 +2527,7 @@ def main(
                         lambda: print(message, file=sys.stderr),
                     )
                 except OSError:
-                    raise
+                    pass
                 result = 2
             command.finish(result)
             return result

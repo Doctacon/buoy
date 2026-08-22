@@ -231,3 +231,84 @@ coverage is incomplete; the privacy sentinel test does not exercise all claimed
 seams/artifacts; and one documentation sentence omits previews. The accepted
 findings and bounded repair requirements are recorded at
 `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md`.
+
+## Review-repair candidate
+
+The bounded repair working tree based on governing commit `828680d6` addresses
+every accepted finding without routing or provider work:
+
+- the independent v2 validator now requires exact bootstrap/preparation,
+  returned-render, pipeline/retrieval, and mode-conditional routing graph
+  cardinality, direct parentage/ancestry, truthful ordering, and success/error
+  exit agreement before writer database access;
+- adversarial decoder/writer tests reject missing, duplicate, reordered,
+  misparented, explicit-routing, incomplete automatic success, successful live
+  without embed/namespace, escaping-successful-render, and error-plus-zero
+  envelopes while a later valid trace commits;
+- caught retrieve `RuntimeConfigError` once again suppresses broken-stderr
+  `OSError` and returns 2 in both enabled and disabled modes; exact object,
+  write-attempt, result, and output behavior match;
+- deterministic tests now cover explicit-multi preview under both aliases,
+  exact span counts/IDs/parents/ancestry/order, automatic call equivalence,
+  all governed error classes, exact fake-clock boundaries, controlled
+  initialization/routing/render attribution, and a reusable no-provider
+  subprocess probe for the dependent timing ticket;
+- the private synchronous span processor contains exporter failures without the
+  SDK writing recursive diagnostics to command stderr; provider/tracer/start,
+  attribute/status/end/export/context/envelope/publication/writer/stream faults
+  retain exact command behavior;
+- one real entrypoint invocation uses `sys.argv`, a live fake two-namespace
+  executor, unique prohibited-data and ambient-context sentinels, the real v2
+  queue/writer/schema-v2 store/status/migrate paths, and exact queue/file/
+  DuckDB scalar/JSON scans. Worker threads observed only the unrelated
+  `ContextVar` default and no ambient OpenTelemetry current span; two governed
+  namespace spans remained under the private pipeline; and
+- documentation now says enabled preview command observations also grow the
+  database.
+
+No card, catalog, provider, content service, credential, model, live collector,
+real telemetry home, installed tool, remote Git, integration, release, or
+publication operation occurred. All retrieval/provider behavior in tests used
+local fakes and temporary homes.
+
+### Repair validation
+
+Host remained Darwin arm64. Dual-runtime validation used Python 3.11.5 and
+3.13.0 with offline dependency resolution.
+
+- Combined affected command, v1/v2 telemetry, queue, writer, store, CLI,
+  multi-namespace, automatic-routing, after-apply, routing-quality, and
+  activation suites passed **403 tests** on Python 3.11 and independently
+  **403 tests** on Python 3.13.
+- Filtered full suites excluding only separately owned
+  `tests/test_dynamic_version.py` passed **1068 tests** on Python 3.11 and
+  independently **1068 tests** on Python 3.13. The only displayed library
+  diagnostic was the preexisting lxml `strip_cdata` deprecation warning.
+- `uv lock --check --offline` resolved 157 packages. Python 3.11 targeted
+  compilation, Python 3.13 full `compileall`, Ruff `F,E9`, `git diff --check`,
+  and ranking validation passed. Ranking retained 13 datasets, 369 judgments,
+  90 composite identities, and bundle SHA-256
+  `5a79f58aaca87a2d4f7cbec68fdcfbbcbf041131821587f8aba74a86daca99d9`.
+- Final CLI SHA-256 is
+  `90e7b2ddf7bbde2daaf0ccd78aa2a779d9e61946a8b7f7ae8f3512dec431ebf9`.
+  The artifact restored from `6fd5595` differs at exactly
+  `receipts.cli_module_sha256`, changing old receipt `92c49e94...` to that
+  measured hash; parsed deep equality found no other field. Final artifact
+  SHA-256 is
+  `62ec1fe8cb7e49247c24b633379a6b2553475bc0e25ce846998ea5dd77df8cf5`.
+  The active loader accepted the new artifact, while a temporary source copy
+  with the old receipt rejected it as an incompatible source receipt.
+- The offline diagnostic build produced a 720,733-byte wheel at SHA-256
+  `e44ba11f95849a63cf9c12978f4c2eacd207e4f21ea2f9bdf26725e063c64185`
+  and a 1,260,741-byte source distribution at SHA-256
+  `620cda378de51b4f24c347c737ad148207fa37d1a99a41795a1ab82a2d1c1ffa`.
+  Source, wheel, source distribution, and isolated installed wheel reproduced
+  the exact CLI/artifact hashes and active routing mode. A disabled installed
+  preview under a temporary home created no `.buoy` path.
+
+The build version reflects governing clean HEAD `828680d6` because it was
+produced from the bounded dirty repair tree; source and artifact byte receipts
+are final and commit-independent. Fresh exact-commit review MUST rebuild from
+the committed candidate before closure. The five-run parent-observed timing
+gate remains deliberately unclaimed and belongs to the dependent validation
+child.

@@ -100,11 +100,10 @@ catalog read is historical evidence; no further live run is authorized.
 
 ## Blockers
 
-Exact candidate `40ef5f74` failed three independent reviews. Accepted blockers
-are incomplete writer graph/exit-code enforcement, regressed broken-stderr
-handling for retrieve `RuntimeConfigError`, incomplete deterministic scenario
-and failure-injection coverage, incomplete/partly tautological privacy proof,
-and one preview-growth documentation error. Required repair is bounded at
+Exact candidate `40ef5f74` failed three independent reviews. The bounded repair
+candidate implements all accepted findings and passes worker validation, but
+fresh independent exact-commit review remains a closure blocker. Repair scope
+and the failed historical candidate remain recorded at
 `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md`.
 
 No live card repair, report, or further provider run is required or authorized.
@@ -197,3 +196,15 @@ No live card repair, report, or further provider run is required or authorized.
   scenario/privacy/failure evidence matrix is incomplete. The complete bounded
   repair set and timing-phase allocation are recorded at
   `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md`.
+- 2026-08-22: Bounded review repairs now independently reject impossible v2
+  graphs and error-plus-zero before writer mutation, restore broken-stderr
+  result behavior, contain private exporter diagnostics, and expand exact
+  graph/timing/equivalence/failure/privacy coverage through real isolated
+  queue/writer/store seams. Dual-runtime focused suites passed 403 tests each;
+  filtered full suites passed 1068 each; lock, compilation, Ruff, ranking,
+  one-field artifact, old/new receipt, source/wheel/sdist/install, and disabled
+  installed-preview checks passed. Final CLI/artifact hashes are `90e7b2dd...`
+  and `62ec1fe8...`. Additive evidence is at
+  `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`. Ticket
+  remains active for fresh independent exact-commit review; the dependent
+  validation ticket still owns the five-run parent-observed timing gate.

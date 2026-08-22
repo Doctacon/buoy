@@ -111,6 +111,35 @@ class _BufferingSpanExporter:
             return tuple(self._spans)
 
 
+class _BufferingSpanProcessor:
+    """Synchronously buffer private spans without SDK diagnostic logging."""
+
+    def __init__(self, exporter: _BufferingSpanExporter) -> None:
+        self._exporter = exporter
+
+    def on_start(self, span: Span, parent_context: Context | None = None) -> None:
+        del span, parent_context
+
+    def _on_ending(self, span: Span) -> None:
+        del span
+
+    def on_end(self, span: ReadableSpan) -> None:
+        try:
+            self._exporter.export((span,))
+        except Exception:
+            return
+
+    def shutdown(self) -> None:
+        try:
+            self._exporter.shutdown()
+        except Exception:
+            return
+
+    def force_flush(self, timeout_millis: int = 30_000) -> bool:
+        del timeout_millis
+        return True
+
+
 @dataclass
 class _TraceSession:
     provider: TracerProvider
@@ -716,7 +745,7 @@ def _retrieval_attributes(
 def _new_trace_session(*, schema_version: int) -> _TraceSession:
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import SpanLimits, TracerProvider
-    from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExportResult
+    from opentelemetry.sdk.trace.export import SpanExportResult
     from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 
     exporter = _BufferingSpanExporter(SpanExportResult.SUCCESS)
@@ -737,7 +766,7 @@ def _new_trace_session(*, schema_version: int) -> _TraceSession:
         ),
         shutdown_on_exit=False,
     )
-    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    provider.add_span_processor(_BufferingSpanProcessor(exporter))
     tracer = provider.get_tracer("buoy_search.telemetry", __version__)
     return _TraceSession(provider, tracer, exporter, schema_version)
 

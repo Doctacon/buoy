@@ -1172,14 +1172,20 @@ def _require_exact_integer(value: object, expected: int) -> None:
 # from version 1 so neither contract can be weakened by the other.
 V2_COMMAND_ROOT_SPAN_NAME = "buoy.retrieve.command"
 V2_PIPELINE_SPAN_NAME = "buoy.retrieve.pipeline"
+V2_BOOTSTRAP_SPAN_NAME = "buoy.cli.bootstrap"
+V2_PREPARE_SPAN_NAME = "buoy.retrieve.prepare"
+V2_ROUTING_CATALOG_SPAN_NAME = "buoy.routing.catalog"
+V2_ROUTING_MODEL_SPAN_NAME = "buoy.routing.model"
+V2_ROUTING_SELECT_SPAN_NAME = "buoy.routing.select"
+V2_RENDER_SPAN_NAME = "buoy.output.render"
 V2_COMMAND_STAGE_NAMES = frozenset(
     {
-        "buoy.cli.bootstrap",
-        "buoy.retrieve.prepare",
-        "buoy.routing.catalog",
-        "buoy.routing.model",
-        "buoy.routing.select",
-        "buoy.output.render",
+        V2_BOOTSTRAP_SPAN_NAME,
+        V2_PREPARE_SPAN_NAME,
+        V2_ROUTING_CATALOG_SPAN_NAME,
+        V2_ROUTING_MODEL_SPAN_NAME,
+        V2_ROUTING_SELECT_SPAN_NAME,
+        V2_RENDER_SPAN_NAME,
     }
 )
 V2_RETRIEVAL_STAGE_NAMES = frozenset(
@@ -1689,7 +1695,7 @@ def _validate_v2_command(command: dict[str, object]) -> None:
     if command["outcome"] == "success":
         if exit_code != 0 or command["error_type"] is not None:
             raise TraceEnvelopeError("invalid_graph")
-    elif command["error_type"] is None:
+    elif exit_code == 0 or command["error_type"] is None:
         raise TraceEnvelopeError("invalid_graph")
     if command["execution_mode"] == "preview" and command["pipeline_present"]:
         raise TraceEnvelopeError("invalid_graph")
@@ -1953,6 +1959,8 @@ def _validate_v2_graph(
     elif any(span["name"] in V2_RETRIEVAL_STAGE_NAMES for span in span_values):
         raise TraceEnvelopeError("invalid_graph")
 
+    _validate_v2_stage_graph(command, span_values, root, pipeline, by_id)
+
     if events != sorted(events, key=lambda event: event["event_index"]):
         raise TraceEnvelopeError("invalid_graph")
     widened = bool(operation and operation["widened"])
@@ -1989,6 +1997,144 @@ def _require_summary_attributes(
             if attribute in attributes:
                 raise TraceEnvelopeError("invalid_graph")
         elif attributes.get(attribute) != value:
+            raise TraceEnvelopeError("invalid_graph")
+
+
+def _validate_v2_stage_graph(
+    command: dict[str, object],
+    spans: list[dict[str, object]],
+    root: dict[str, object],
+    pipeline: dict[str, object] | None,
+    by_id: dict[object, dict[str, object]],
+) -> None:
+    """Enforce the command-mode graph independently of producer behavior."""
+
+    def named(name: str) -> list[dict[str, object]]:
+        return [span for span in spans if span["name"] == name]
+
+    def exactly_one(name: str) -> dict[str, object]:
+        matches = named(name)
+        if len(matches) != 1:
+            raise TraceEnvelopeError("invalid_graph")
+        return matches[0]
+
+    def direct_child(span: dict[str, object], parent: dict[str, object]) -> bool:
+        return span["parent_span_id"] == parent["span_id"]
+
+    def ends_before(
+        first: dict[str, object], second: dict[str, object]
+    ) -> bool:
+        return first["ended_at_unix_us"] <= second["started_at_unix_us"]
+
+    bootstrap = exactly_one(V2_BOOTSTRAP_SPAN_NAME)
+    prepare = exactly_one(V2_PREPARE_SPAN_NAME)
+    renders = named(V2_RENDER_SPAN_NAME)
+    expected_render_count = 0 if command["exit_code"] == 1 else 1
+    if command["exit_code"] == 1:
+        if len(renders) > 1:
+            raise TraceEnvelopeError("invalid_graph")
+    elif len(renders) != expected_render_count:
+        raise TraceEnvelopeError("invalid_graph")
+    render = renders[0] if renders else None
+
+    if not direct_child(bootstrap, root) or not direct_child(prepare, root):
+        raise TraceEnvelopeError("invalid_graph")
+    if bootstrap["started_at_unix_us"] != root["started_at_unix_us"]:
+        raise TraceEnvelopeError("invalid_graph")
+    if bootstrap["status_code"] != "OK" or not ends_before(bootstrap, prepare):
+        raise TraceEnvelopeError("invalid_graph")
+    if render is not None:
+        if not direct_child(render, root) or not ends_before(prepare, render):
+            raise TraceEnvelopeError("invalid_graph")
+        if pipeline is not None and not ends_before(pipeline, render):
+            raise TraceEnvelopeError("invalid_graph")
+        if command["exit_code"] == 1 and (
+            render["status_code"] != "ERROR"
+            or render["attributes"].get("buoy.error.type") != "render_error"
+            or command["error_type"] != "render_error"
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+
+    if pipeline is not None and (
+        not direct_child(pipeline, root) or not ends_before(prepare, pipeline)
+    ):
+        raise TraceEnvelopeError("invalid_graph")
+
+    routing_names = {
+        V2_ROUTING_CATALOG_SPAN_NAME,
+        V2_ROUTING_MODEL_SPAN_NAME,
+        V2_ROUTING_SELECT_SPAN_NAME,
+    }
+    routing_spans = [span for span in spans if span["name"] in routing_names]
+    if command["retrieval_mode"] != "automatic" and routing_spans:
+        raise TraceEnvelopeError("invalid_graph")
+    if command["retrieval_mode"] == "automatic":
+        catalogs = named(V2_ROUTING_CATALOG_SPAN_NAME)
+        models = named(V2_ROUTING_MODEL_SPAN_NAME)
+        selections = named(V2_ROUTING_SELECT_SPAN_NAME)
+        if len(catalogs) > 1 or len(models) > 3 or len(selections) > 1:
+            raise TraceEnvelopeError("invalid_graph")
+        if command["outcome"] == "success" and (
+            len(catalogs) != 1 or not 1 <= len(models) <= 3 or len(selections) != 1
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+        for span in catalogs + selections:
+            if not direct_child(span, prepare):
+                raise TraceEnvelopeError("invalid_graph")
+        for span in models:
+            parent = by_id.get(span["parent_span_id"])
+            if parent not in (prepare, *selections):
+                raise TraceEnvelopeError("invalid_graph")
+        if not catalogs:
+            if len(models) > 1 or selections:
+                raise TraceEnvelopeError("invalid_graph")
+        else:
+            catalog = catalogs[0]
+            if not any(
+                direct_child(model, prepare) and ends_before(model, catalog)
+                for model in models
+            ):
+                raise TraceEnvelopeError("invalid_graph")
+        if selections:
+            if not catalogs or not models:
+                raise TraceEnvelopeError("invalid_graph")
+            catalog = catalogs[0]
+            selection = selections[0]
+            direct_models = [
+                model
+                for model in models
+                if direct_child(model, prepare)
+                and ends_before(catalog, model)
+                and ends_before(model, selection)
+            ]
+            if not direct_models or not ends_before(catalog, selection):
+                raise TraceEnvelopeError("invalid_graph")
+        for span in routing_spans:
+            if not _is_descendant(span, prepare, by_id):
+                raise TraceEnvelopeError("invalid_graph")
+            if pipeline is not None and not ends_before(span, pipeline):
+                raise TraceEnvelopeError("invalid_graph")
+            if render is not None and not ends_before(span, render):
+                raise TraceEnvelopeError("invalid_graph")
+
+    retrieval_spans = [
+        span for span in spans if span["name"] in V2_RETRIEVAL_STAGE_NAMES
+    ]
+    if command["execution_mode"] == "preview" and retrieval_spans:
+        raise TraceEnvelopeError("invalid_graph")
+    if pipeline is not None:
+        embeds = named(QUERY_EMBED_SPAN_NAME)
+        namespaces = named(NAMESPACE_QUERY_SPAN_NAME)
+        if len(embeds) != 1:
+            raise TraceEnvelopeError("invalid_graph")
+        if (
+            command["outcome"] == "success"
+            and not namespaces
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+        if len(named(RERANK_SPAN_NAME)) > 1 or len(named(EVIDENCE_SPAN_NAME)) > 1:
+            raise TraceEnvelopeError("invalid_graph")
+        if any(not _is_descendant(span, pipeline, by_id) for span in retrieval_spans):
             raise TraceEnvelopeError("invalid_graph")
 
 

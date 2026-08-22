@@ -55,6 +55,11 @@ _START = datetime(2026, 8, 20, 12, 0, 0)
 _TRACE = "1" * 32
 _ROOT = "2" * 16
 _PIPELINE = "3" * 16
+_BOOTSTRAP = "4" * 16
+_PREPARE = "5" * 16
+_EMBED = "6" * 16
+_NAMESPACE = "7" * 16
+_RENDER = "8" * 16
 _SAFE_CONFIG = telemetry_store._SAFE_DUCKDB_CONFIG
 
 
@@ -108,8 +113,43 @@ def _rows(
         "OK" if outcome == "success" else "ERROR",
         _canonical(root_attributes),
     )
+    bootstrap = (
+        _TRACE,
+        _BOOTSTRAP,
+        _ROOT,
+        "buoy.cli.bootstrap",
+        _START,
+        _START + timedelta(milliseconds=1),
+        1.0,
+        "OK",
+        "{}",
+    )
+    prepare = (
+        _TRACE,
+        _PREPARE,
+        _ROOT,
+        "buoy.retrieve.prepare",
+        _START + timedelta(milliseconds=1),
+        _START + timedelta(milliseconds=2),
+        1.0,
+        "OK" if outcome == "success" or pipeline else "ERROR",
+        "{}" if outcome == "success" or pipeline else _canonical(
+            {"buoy.error.type": "configuration_error"}
+        ),
+    )
+    render = (
+        _TRACE,
+        _RENDER,
+        _ROOT,
+        "buoy.output.render",
+        _START + timedelta(milliseconds=8),
+        _START + timedelta(milliseconds=9),
+        1.0,
+        "OK",
+        "{}",
+    )
     if not pipeline:
-        return CommandTraceRows(command, None, (root,), ())
+        return CommandTraceRows(command, None, (root, bootstrap, prepare, render), ())
     operation = (
         _TRACE,
         _PIPELINE,
@@ -162,7 +202,40 @@ def _rows(
         "OK",
         _canonical(pipeline_attributes),
     )
-    return CommandTraceRows(command, operation, (root, pipeline_span), ())
+    embed = (
+        _TRACE,
+        _EMBED,
+        _PIPELINE,
+        "buoy.query.embed",
+        _START + timedelta(milliseconds=3),
+        _START + timedelta(milliseconds=4),
+        1.0,
+        "OK",
+        "{}",
+    )
+    namespace = (
+        _TRACE,
+        _NAMESPACE,
+        _PIPELINE,
+        "buoy.namespace.query",
+        _START + timedelta(milliseconds=4),
+        _START + timedelta(milliseconds=7),
+        3.0,
+        "OK",
+        _canonical(
+            {
+                "buoy.namespace.hit_count": 1,
+                "buoy.namespace.status": "ok",
+                "buoy.route.rank": 1,
+            }
+        ),
+    )
+    return CommandTraceRows(
+        command,
+        operation,
+        (root, bootstrap, prepare, pipeline_span, embed, namespace, render),
+        (),
+    )
 
 
 def _create_v1_store(path: Path) -> None:
@@ -291,6 +364,78 @@ def _write_receipt_temporary(
     return name
 
 
+def _json_span(value: dict[str, object], name: str) -> dict[str, object]:
+    spans = value["spans"]
+    assert isinstance(spans, list)
+    return next(span for span in spans if span["name"] == name)
+
+
+def _row_span(rows: CommandTraceRows, name: str) -> tuple[object, ...]:
+    return next(span for span in rows.spans if span[3] == name)
+
+
+def _automatic_v2_object() -> dict[str, object]:
+    value = json.loads(encode_trace_envelope_v2(_rows()))
+    value["command"]["retrieval_mode"] = "automatic"
+    value["command"]["execution_mode"] = "live"
+    value["spans"][0]["attributes"]["buoy.retrieval.mode"] = "automatic"
+    pipeline = _json_span(value, V2_PIPELINE_SPAN_NAME)
+    pipeline["attributes"]["buoy.retrieval.mode"] = "automatic"
+    prepare = _json_span(value, "buoy.retrieve.prepare")
+    start = prepare["started_at_unix_us"]
+    routing_spans = [
+        {
+            "trace_id": value["command"]["trace_id"],
+            "span_id": "c" * 16,
+            "parent_span_id": prepare["span_id"],
+            "name": "buoy.routing.model",
+            "started_at_unix_us": start,
+            "ended_at_unix_us": start + 100,
+            "duration_ms": 0.1,
+            "status_code": "OK",
+            "attributes": {},
+        },
+        {
+            "trace_id": value["command"]["trace_id"],
+            "span_id": "9" * 16,
+            "parent_span_id": prepare["span_id"],
+            "name": "buoy.routing.catalog",
+            "started_at_unix_us": start + 100,
+            "ended_at_unix_us": start + 200,
+            "duration_ms": 0.1,
+            "status_code": "OK",
+            "attributes": {},
+        },
+        {
+            "trace_id": value["command"]["trace_id"],
+            "span_id": "a" * 16,
+            "parent_span_id": prepare["span_id"],
+            "name": "buoy.routing.model",
+            "started_at_unix_us": start + 200,
+            "ended_at_unix_us": start + 300,
+            "duration_ms": 0.1,
+            "status_code": "OK",
+            "attributes": {},
+        },
+        {
+            "trace_id": value["command"]["trace_id"],
+            "span_id": "b" * 16,
+            "parent_span_id": prepare["span_id"],
+            "name": "buoy.routing.select",
+            "started_at_unix_us": start + 300,
+            "ended_at_unix_us": start + 400,
+            "duration_ms": 0.1,
+            "status_code": "OK",
+            "attributes": {},
+        },
+    ]
+    value["spans"].extend(routing_spans)
+    value["spans"].sort(
+        key=lambda span: (span["started_at_unix_us"], span["span_id"])
+    )
+    return value
+
+
 def _widened_v2_object() -> dict[str, object]:
     value = json.loads(encode_trace_envelope_v2(_rows()))
     operation = value["retrieval_operation"]
@@ -303,7 +448,7 @@ def _widened_v2_object() -> dict[str, object]:
             "fallback_reason": "weak_top1",
         }
     )
-    pipeline = value["spans"][1]
+    pipeline = _json_span(value, V2_PIPELINE_SPAN_NAME)
     pipeline["attributes"].update(
         {
             "buoy.retrieval.namespace_count": 2,
@@ -379,37 +524,53 @@ class Version2EnvelopeTests(unittest.TestCase):
         ] = 5.0
         changed("root id mismatch")["command"]["root_span_id"] = "4" * 16
         duplicate = changed("duplicate span id")
-        duplicate["spans"][1]["span_id"] = duplicate["spans"][0]["span_id"]
-        changed("missing parent")["spans"][1]["parent_span_id"] = "5" * 16
+        _json_span(duplicate, "buoy.cli.bootstrap")["span_id"] = duplicate[
+            "spans"
+        ][0]["span_id"]
+        _json_span(changed("missing parent"), "buoy.cli.bootstrap")[
+            "parent_span_id"
+        ] = "9" * 16
         cycle = changed("cycle")
-        cycle["spans"][1]["parent_span_id"] = cycle["spans"][1]["span_id"]
+        bootstrap = _json_span(cycle, "buoy.cli.bootstrap")
+        bootstrap["parent_span_id"] = bootstrap["span_id"]
         changed("span ordering")["spans"].reverse()
-        changed("child outside root")["spans"][1]["ended_at_unix_us"] = (
+        outside = changed("child outside root")
+        _json_span(outside, "buoy.cli.bootstrap")["ended_at_unix_us"] = (
             original["command"]["ended_at_unix_us"] + 1
         )
         changed("summary mismatch")["retrieval_operation"]["hit_count"] = 0
         changed("root status mismatch")["spans"][0]["status_code"] = "ERROR"
-        changed("pipeline status mismatch")["spans"][1]["status_code"] = "ERROR"
-        changed("pipeline mode mismatch")["spans"][1]["attributes"][
-            "buoy.retrieval.mode"
-        ] = "automatic"
+        _json_span(changed("pipeline status mismatch"), V2_PIPELINE_SPAN_NAME)[
+            "status_code"
+        ] = "ERROR"
+        _json_span(changed("pipeline mode mismatch"), V2_PIPELINE_SPAN_NAME)[
+            "attributes"
+        ]["buoy.retrieval.mode"] = "automatic"
         no_pipeline = changed("live success without pipeline")
         no_pipeline["command"]["pipeline_present"] = False
         no_pipeline["spans"][0]["attributes"][
             "buoy.retrieval.pipeline_present"
         ] = False
         no_pipeline["retrieval_operation"] = None
-        no_pipeline["spans"] = no_pipeline["spans"][:1]
+        no_pipeline["spans"] = [
+            span
+            for span in no_pipeline["spans"]
+            if span["name"]
+            not in {
+                V2_PIPELINE_SPAN_NAME,
+                "buoy.query.embed",
+                "buoy.namespace.query",
+            }
+        ]
         pipeline_error = changed("pipeline error without category")
         pipeline_error["retrieval_operation"]["outcome"] = "error"
-        pipeline_error["spans"][1]["attributes"][
-            "buoy.retrieval.outcome"
-        ] = "error"
-        pipeline_error["spans"][1]["status_code"] = "ERROR"
+        pipeline_span = _json_span(pipeline_error, V2_PIPELINE_SPAN_NAME)
+        pipeline_span["attributes"]["buoy.retrieval.outcome"] = "error"
+        pipeline_span["status_code"] = "ERROR"
 
         widened_null = _widened_v2_object()
         widened_null["retrieval_operation"]["fallback_reason"] = None
-        widened_null["spans"][1]["attributes"].pop(
+        _json_span(widened_null, V2_PIPELINE_SPAN_NAME)["attributes"].pop(
             "buoy.retrieval.fallback_reason"
         )
         cases.append(("widened null fallback", widened_null, "invalid_graph"))
@@ -433,6 +594,141 @@ class Version2EnvelopeTests(unittest.TestCase):
                     decode_trace_envelope_v2(payload)
                 self.assertEqual(raised.exception.reason, reason)
                 self.assertNotIn("PRIVATE", str(raised.exception))
+
+    def test_mode_outcome_cardinality_parentage_and_order_are_independent(self) -> None:
+        valid = json.loads(encode_trace_envelope_v2(_rows()))
+        automatic = _automatic_v2_object()
+        decode_trace_envelope_v2(
+            json.dumps(automatic, sort_keys=True, separators=(",", ":")).encode()
+        )
+        escaping = json.loads(
+            encode_trace_envelope_v2(_rows(outcome="error", pipeline=False))
+        )
+        escaping["command"]["exit_code"] = 1
+        escaping["spans"][0]["attributes"]["buoy.command.exit_code"] = 1
+        escaping["spans"] = [
+            span for span in escaping["spans"] if span["name"] != "buoy.output.render"
+        ]
+        decode_trace_envelope_v2(
+            json.dumps(escaping, sort_keys=True, separators=(",", ":")).encode()
+        )
+
+        cases: list[tuple[str, dict[str, object]]] = []
+
+        def without(name: str, span_name: str) -> None:
+            value = deepcopy(valid)
+            value["spans"] = [
+                span for span in value["spans"] if span["name"] != span_name
+            ]
+            cases.append((name, value))
+
+        without("missing bootstrap", "buoy.cli.bootstrap")
+        without("missing prepare", "buoy.retrieve.prepare")
+        without("missing returned render", "buoy.output.render")
+        without("missing live embed", "buoy.query.embed")
+        without("missing successful namespace", "buoy.namespace.query")
+
+        duplicate = deepcopy(valid)
+        duplicate_bootstrap = deepcopy(_json_span(duplicate, "buoy.cli.bootstrap"))
+        duplicate_bootstrap["span_id"] = "c" * 16
+        duplicate["spans"].append(duplicate_bootstrap)
+        duplicate["spans"].sort(
+            key=lambda span: (span["started_at_unix_us"], span["span_id"])
+        )
+        cases.append(("duplicate bootstrap", duplicate))
+
+        duplicate_embed = deepcopy(valid)
+        second_embed = deepcopy(_json_span(duplicate_embed, "buoy.query.embed"))
+        second_embed["span_id"] = "d" * 16
+        duplicate_embed["spans"].append(second_embed)
+        duplicate_embed["spans"].sort(
+            key=lambda span: (span["started_at_unix_us"], span["span_id"])
+        )
+        cases.append(("duplicate embed", duplicate_embed))
+
+        misparented = deepcopy(valid)
+        _json_span(misparented, V2_PIPELINE_SPAN_NAME)["parent_span_id"] = _json_span(
+            misparented, "buoy.retrieve.prepare"
+        )["span_id"]
+        cases.append(("misparented pipeline", misparented))
+
+        reordered = deepcopy(valid)
+        render = _json_span(reordered, "buoy.output.render")
+        render["started_at_unix_us"] = (
+            _json_span(reordered, "buoy.retrieve.prepare")["started_at_unix_us"] + 100
+        )
+        render["ended_at_unix_us"] = render["started_at_unix_us"] + 100
+        render["duration_ms"] = 0.1
+        reordered["spans"].sort(
+            key=lambda span: (span["started_at_unix_us"], span["span_id"])
+        )
+        cases.append(("render before pipeline", reordered))
+
+        explicit_routing = deepcopy(automatic)
+        explicit_routing["command"]["retrieval_mode"] = "explicit_single"
+        explicit_routing["spans"][0]["attributes"][
+            "buoy.retrieval.mode"
+        ] = "explicit_single"
+        _json_span(explicit_routing, V2_PIPELINE_SPAN_NAME)["attributes"][
+            "buoy.retrieval.mode"
+        ] = "explicit_single"
+        cases.append(("explicit routing stages", explicit_routing))
+
+        for span_name in (
+            "buoy.routing.catalog",
+            "buoy.routing.model",
+            "buoy.routing.select",
+        ):
+            missing = deepcopy(automatic)
+            missing["spans"] = [
+                span for span in missing["spans"] if span["name"] != span_name
+            ]
+            cases.append((f"automatic missing {span_name}", missing))
+
+        duplicate_catalog = deepcopy(automatic)
+        catalog = deepcopy(_json_span(duplicate_catalog, "buoy.routing.catalog"))
+        catalog["span_id"] = "d" * 16
+        duplicate_catalog["spans"].append(catalog)
+        duplicate_catalog["spans"].sort(
+            key=lambda span: (span["started_at_unix_us"], span["span_id"])
+        )
+        cases.append(("automatic duplicate catalog", duplicate_catalog))
+
+        bad_order = deepcopy(automatic)
+        catalog = _json_span(bad_order, "buoy.routing.catalog")
+        selection = _json_span(bad_order, "buoy.routing.select")
+        catalog["started_at_unix_us"] = selection["ended_at_unix_us"]
+        catalog["ended_at_unix_us"] = catalog["started_at_unix_us"] + 100
+        catalog["duration_ms"] = 0.1
+        bad_order["spans"].sort(
+            key=lambda span: (span["started_at_unix_us"], span["span_id"])
+        )
+        cases.append(("automatic catalog after select", bad_order))
+
+        error_zero = json.loads(
+            encode_trace_envelope_v2(_rows(outcome="error", pipeline=False))
+        )
+        error_zero["command"]["exit_code"] = 0
+        error_zero["spans"][0]["attributes"]["buoy.command.exit_code"] = 0
+        cases.append(("error outcome with zero exit", error_zero))
+
+        escaping_render_ok = deepcopy(escaping)
+        render = deepcopy(_json_span(valid, "buoy.output.render"))
+        escaping_render_ok["spans"].append(render)
+        escaping_render_ok["spans"].sort(
+            key=lambda span: (span["started_at_unix_us"], span["span_id"])
+        )
+        cases.append(("escaping exception with successful render", escaping_render_ok))
+
+        for name, value in cases:
+            with self.subTest(name=name):
+                with self.assertRaises(TraceEnvelopeError) as raised:
+                    decode_trace_envelope_v2(
+                        json.dumps(
+                            value, sort_keys=True, separators=(",", ":")
+                        ).encode()
+                    )
+                self.assertEqual(raised.exception.reason, "invalid_graph")
 
 
 class Version2QueueStoreMigrationTests(unittest.TestCase):
@@ -465,6 +761,45 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
         for path in self.root.rglob("*"):
             if path.is_file():
                 self.assertNotIn(sentinel, path.read_bytes(), path)
+
+    def test_writer_rejects_impossible_v2_graphs_before_database_mutation(self) -> None:
+        invalid_graph = json.loads(encode_trace_envelope_v2(_rows()))
+        invalid_graph["spans"] = [
+            span
+            for span in invalid_graph["spans"]
+            if span["name"] != "buoy.query.embed"
+        ]
+        error_zero = json.loads(
+            encode_trace_envelope_v2(_rows(outcome="error", pipeline=False))
+        )
+        error_zero["command"]["exit_code"] = 0
+        error_zero["spans"][0]["attributes"]["buoy.command.exit_code"] = 0
+        publications = []
+        for value in (invalid_graph, error_zero):
+            publications.append(
+                publish_envelope(
+                    json.dumps(value, sort_keys=True, separators=(",", ":")).encode(),
+                    paths=self.v2,
+                )
+            )
+        valid = publish_envelope(encode_trace_envelope_v2(_rows()), paths=self.v2)
+        with patch("buoy_search.telemetry_writer.IDLE_EXIT_SECONDS", 0):
+            self.assertEqual(run_writer(self.v1), 0)
+        receipts = [
+            read_terminal_receipt(result.source_name, paths=self.v2)
+            for result in (*publications, valid)
+        ]
+        self.assertEqual(
+            [(receipt.kind, receipt.reason) for receipt in receipts],
+            [("rejected", "invalid_graph"), ("rejected", "invalid_graph"), ("committed", None)],
+        )
+        with duckdb.connect(
+            str(self.v2.database_path), read_only=True, config=_SAFE_CONFIG
+        ) as connection:
+            self.assertEqual(
+                connection.execute("SELECT count(*) FROM retrieve_command_runs").fetchone(),
+                (1,),
+            )
 
     def test_separate_queue_and_exact_v2_views_persist_all_fixture_modes(self) -> None:
         payload = encode_trace_envelope_v2(_rows())
@@ -499,7 +834,7 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
                 connection.execute(
                     "SELECT count(*) FROM retrieval_stage_latency_v2"
                 ).fetchone(),
-                (1,),
+                (12,),
             )
             self.assertEqual(
                 connection.execute(
@@ -943,19 +1278,19 @@ class ReviewRepairTests(unittest.TestCase):
         self.assertEqual(telemetry_store.append_trace(self.v2, v2).outcome, "committed")
         self.assertEqual(telemetry_store.append_trace(self.v2, v2).outcome, "replayed")
         changed_command = list(v2.command)
-        changed_command[6] = "automatic"
-        changed_root = list(v2.spans[0])
-        root_attributes = json.loads(changed_root[8])
-        root_attributes["buoy.retrieval.mode"] = "automatic"
-        changed_root[8] = _canonical(root_attributes)
-        changed_pipeline = list(v2.spans[1])
-        pipeline_attributes = json.loads(changed_pipeline[8])
-        pipeline_attributes["buoy.retrieval.mode"] = "automatic"
-        changed_pipeline[8] = _canonical(pipeline_attributes)
+        changed_command[6] = "explicit_multi"
+        changed_spans = []
+        for span in v2.spans:
+            changed_span = list(span)
+            if span[3] in {V2_COMMAND_ROOT_SPAN_NAME, V2_PIPELINE_SPAN_NAME}:
+                attributes = json.loads(changed_span[8])
+                attributes["buoy.retrieval.mode"] = "explicit_multi"
+                changed_span[8] = _canonical(attributes)
+            changed_spans.append(tuple(changed_span))
         v2_conflict = CommandTraceRows(
             tuple(changed_command),
             v2.retrieval_operation,
-            (tuple(changed_root), tuple(changed_pipeline)),
+            tuple(changed_spans),
             v2.events,
         )
         encode_trace_envelope_v2(v2_conflict)
@@ -2162,25 +2497,33 @@ class ReviewRepairTests(unittest.TestCase):
 
 def _replace_trace(rows: CommandTraceRows, digit: str) -> CommandTraceRows:
     trace = digit * 32
-    root = digit * 15 + "1"
-    pipeline = digit * 15 + "2"
+    ids = {
+        span[1]: digit * 15 + f"{index + 1:x}"
+        for index, span in enumerate(rows.spans)
+    }
     command = list(rows.command)
     command[0] = trace
-    command[1] = root
+    command[1] = ids[rows.command[1]]
     operation = None
     if rows.retrieval_operation is not None:
         changed_operation = list(rows.retrieval_operation)
         changed_operation[0] = trace
-        changed_operation[1] = pipeline
+        changed_operation[1] = ids[rows.retrieval_operation[1]]
         operation = tuple(changed_operation)
     spans = []
-    for index, span in enumerate(rows.spans):
+    for span in rows.spans:
         changed = list(span)
         changed[0] = trace
-        changed[1] = root if index == 0 else pipeline
-        changed[2] = None if index == 0 else root
+        changed[1] = ids[span[1]]
+        changed[2] = None if span[2] is None else ids[span[2]]
         spans.append(tuple(changed))
-    return CommandTraceRows(tuple(command), operation, tuple(spans), rows.events)
+    events = []
+    for event in rows.events:
+        changed_event = list(event)
+        changed_event[0] = trace
+        changed_event[1] = ids[event[1]]
+        events.append(tuple(changed_event))
+    return CommandTraceRows(tuple(command), operation, tuple(spans), tuple(events))
 
 
 if __name__ == "__main__":
