@@ -29,9 +29,9 @@ operation, failure isolation, and direct-library compatibility.
 2. `.10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md`
    depends on child 1 and wires entry-point, CLI-stage, and nested pipeline
    traces into that substrate. Because the CLI is an active routing receipt,
-   this child also executes the existing clean dormant-source certification,
-   independent report audit, and measured artifact reactivation protocol
-   without changing routing semantics.
+   this child also locally recertifies the final CLI hash under the newer
+   provisional-routing policy, with package-byte and independent review gates
+   and no routing semantic or live catalog change.
 3. `.10x/tickets/2026-08-20-validate-retrieve-command-telemetry-v2.md` depends
    on both implementation children and owns independent end-to-end acceptance,
    migration rehearsal, documentation reconciliation, and final review input.
@@ -79,9 +79,9 @@ writers may edit the same worktree.
 Plan/apply/crawl/eval/catalog telemetry, ranking/evidence/routing semantic
 changes, query or argv collection, Collector/OTLP export, automatic migration,
 automatic backup deletion, installed-tool replacement, release/publication,
-and live content-provider validation are outside this plan. The sole live
-routing-validation exception is the owner-authorized 65-case source-only
-certification with its exact no-content/no-write accounting and stop gates.
+and further live provider/catalog validation are outside this plan. The
+stopped stable catalog read is historical evidence and authorizes no retry or
+card repair.
 
 ## Dependencies
 
@@ -140,8 +140,13 @@ for its completion.
   handler return; the original exception must still escape unchanged. The
   active command telemetry spec now records this exact semantic.
 - 2026-08-21: The first command producer candidate correctly tripped automatic
-  routing's exact CLI-source receipt. After the conflict and alternatives were
-  disclosed, the owner chose to retain the safety boundary and re-certify the
-  final instrumented CLI through the existing dormant 65-case protocol. No
-  hash was bypassed; the bounded recertification choice is recorded at
-  `.10x/decisions/buoy-recertifies-routing-cli-for-command-telemetry.md`.
+  routing's exact CLI-source receipt. The owner first selected the disclosed
+  live dormant-certification path; its stable catalog read stopped before
+  inference on the known missing Aurelio docs card, with zero writes/content
+  calls and no report.
+- 2026-08-21: Reconciliation found the newer active provisional-routing policy
+  explicitly makes missing cards diagnostic rather than a global stop and
+  provides precedent for local source-receipt revision while preserving the
+  frozen anchor. The owner selected local CLI receipt recertification and no
+  card backfill. Current authority is
+  `.10x/decisions/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md`.

@@ -1,6 +1,7 @@
-Status: active
+Status: superseded
 Created: 2026-08-21
 Updated: 2026-08-21
+Superseded-By: .10x/decisions/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md
 Amends: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md, .10x/decisions/buoy-activates-certified-bounded-prototype-routing.md
 
 # Buoy Recertifies the Routing CLI for Command Telemetry

@@ -1,4 +1,4 @@
-Status: blocked
+Status: active
 Created: 2026-08-20
 Updated: 2026-08-20
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -6,8 +6,8 @@ Depends-On: .10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-mi
 Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md
 Specification: .10x/specs/retrieve-command-telemetry.md
 Storage: .10x/specs/local-telemetry-v2-storage-and-migration.md
-Routing-Decision: .10x/decisions/buoy-recertifies-routing-cli-for-command-telemetry.md
-Routing-Specification: .10x/specs/bounded-prototype-routing-activation.md
+Routing-Decision: .10x/decisions/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md
+Routing-Specification: .10x/specs/automatic-routing-after-apply.md
 
 # Instrument Retrieve Command and Pipeline Latency
 
@@ -23,9 +23,9 @@ retriever/telemetry session integration, focused command/retrieval tests, and
 retrieve telemetry user documentation. Storage changes are limited to repairs
 required by proven integration defects and must remain inside the storage spec.
 Because the active routing artifact certifies exact CLI bytes, this ticket also
-owns the existing routing specification's dormant-source recertification and
-artifact-only reactivation phases for the final instrumented CLI. It owns no
-routing semantic change.
+owns local recertification of only the final CLI receipt under the existing
+schema-v3 provisional-routing policy. It owns no routing semantic or live
+catalog change.
 
 ## Required work
 
@@ -40,11 +40,10 @@ routing semantic change.
   separately.
 - Preserve output, validation order, call counts, exceptions, routing,
   ranking, evidence, preview safety, private context, and no-network behavior.
-- Restore the exact collect-only routing artifact while final source is made
-  clean, run and independently audit the exact 65-case read-only dormant
-  certification, then reactivate only with measured source receipts.
-- Preserve every frozen routing value and fail closed on drift, dirty source,
-  unexpected call class, model download, content access, or provider mutation.
+- Restore the exact schema-v3 active artifact while changing only its measured
+  `cli_module_sha256`; preserve every other semantic and receipt exactly.
+- Prove source/wheel/sdist/installed bytes, automatic behavior, and strict
+  rejection/acceptance reproduce the new receipt under independent review.
 
 ## Acceptance criteria
 
@@ -66,30 +65,28 @@ routing semantic change.
    provider work.
 8. Existing CLI, routing, retrieval, evidence, telemetry, full-suite,
    compilation, distribution, clean-wheel, and diff checks pass.
-9. The exact final instrumented CLI is certified through the active routing
-   specification's clean dormant report and independent audit; the reactivated
-   artifact contains only measured receipts, and source/wheel/sdist/installed
-   bytes reproduce them without changing any frozen routing result.
+9. The exact final instrumented CLI receipt is the sole active-artifact field
+   changed; source/wheel/sdist/installed bytes reproduce it, every frozen
+   anchor/provisional-routing value remains exact, and independent review finds
+   no routing-semantic change.
 
 ## Evidence expectations
 
 Record exact changed boundaries, trace graphs for each mode/outcome, enabled
 and disabled output/call equivalence, privacy scan, focused/full commands and
 results, and any residual timing limitation. Also record dormant/final
-commit/tree identities, report and artifact hashes, exact source receipts,
-frozen-result equality, call accounting, no-mutation audit, and independent
-report/final reviews. Do not claim external shell representativeness until the
-dependent validation ticket observes it.
+commit/tree identities, stopped-collector facts, before/after artifact hashes,
+exact source/package receipts, non-CLI field equality, no-mutation audit, and
+independent final review. Do not claim external shell representativeness until
+the dependent validation ticket observes it.
 
 ## Explicit exclusions
 
 No plan/apply/crawl/eval/catalog telemetry, schema redesign beyond the active
-storage spec, content-provider query/write or provider mutation, query/argv
-collection, Collector/OTLP export, ranking/evidence/routing semantic changes,
-installed-tool replacement, release, `main`, or publication. The sole live
-exception is the owner-authorized, source-only 65-case routing certification:
-complete routing-catalog reads and bounded routing-model inference under the
-exact call accounting and stop gates in the active routing specification.
+storage spec, provider/catalog/content query or mutation, query/argv collection,
+Collector/OTLP export, ranking/evidence/routing semantic changes, installed-
+tool replacement, release, `main`, or publication. The stopped complete-
+catalog read is historical evidence; no further live run is authorized.
 
 ## Assumption provenance
 
@@ -101,14 +98,9 @@ exact call accounting and stop gates in the active routing specification.
 
 ## Blockers
 
-The clean dormant source checkpoint is complete at `369c5d4`, but the
-authorized collector stopped before inference/report publication because the
-live namespace inventory contains `site-docs-aurelio-ai-v1` without a matching
-routing card. The active routing specification requires complete stable
-catalog coverage and explicitly stops on this drift. Resolving it requires a
-separately reviewed catalog upsert/provider-write authorization that this
-ticket does not grant. No report exists to audit, and artifact reactivation
-remains prohibited.
+None. The owner selected local CLI-receipt recertification under the newer
+provisional-routing authority. No live card repair, report, or further provider
+run is required or authorized.
 
 ## Progress and notes
 
@@ -144,7 +136,7 @@ remains prohibited.
 - 2026-08-21: The owner selected “Re-certify CLI” after disclosure that this
   retains the exact safety gate and requires the governed 65-case catalog/model
   read with zero content queries and zero writes. Decision
-  `.10x/decisions/buoy-recertifies-routing-cli-for-command-telemetry.md`
+  `.10x/decisions/superseded/buoy-recertifies-routing-cli-for-command-telemetry.md`
   records the choice, alternatives, exact effects, and stop conditions. Ticket
   reactivated for final source completion under the collect-only dormant phase;
   independent report audit remains mandatory before artifact reactivation.
@@ -168,5 +160,14 @@ remains prohibited.
   no matching card. No content/provider write, content query/resource, model
   download, artifact change, or source change occurred. Evidence and private
   log identity are recorded at
-  `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`. Ticket is
-  blocked; independent report audit cannot begin because no report exists.
+  `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`. No report
+  exists and none is claimed.
+- 2026-08-21: Inspection reconciled the stop against the newer active
+  provisional-routing decision/spec: missing cards are diagnostics, not a
+  global routing stop, and the schema-v3 artifact already supports local source
+  receipt revision while preserving the frozen certified anchor. The owner
+  selected local CLI receipt recertification and rejected implicit card
+  backfill. Decision
+  `.10x/decisions/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md`
+  supersedes the inapplicable full-live-report path. Ticket reactivated for the
+  one-field artifact update, package/behavior validation, and final review.

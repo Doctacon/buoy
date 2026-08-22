@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-21
 Updated: 2026-08-21
-Relates-To: .10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md, .10x/specs/retrieve-command-telemetry.md, .10x/decisions/buoy-recertifies-routing-cli-for-command-telemetry.md
+Relates-To: .10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md, .10x/specs/retrieve-command-telemetry.md, .10x/decisions/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-for-command-telemetry.md
 
 # Retrieve Command and Pipeline Telemetry Implementation
 
@@ -59,9 +59,10 @@ and distribution tests remain in force.
 The dormant certification state restores the exact previously certified
 collect-only artifact, SHA-256
 `23fb14c49263933a2adb2299a9c04089888fb2ec734b790d9eadda2df295cbed`.
-Packaged collect mode retains legacy selection. Exact active/anchored routing is
-injected only by tests until a new measured dormant report is independently
-audited and its receipts are authorized for artifact reactivation.
+Packaged collect mode retains legacy selection. At this checkpoint, exact
+active/anchored routing was injected only by tests while the initially selected
+full-live-report path remained pending. The later policy reconciliation below
+supersedes that path; it does not change this observed dormant state.
 
 ## Local validation before dormant certification
 
@@ -130,11 +131,28 @@ rejected locally before collection because reports are no-overwrite. That empty
 file was removed and contributes no certification evidence; the clean second
 invocation above reached the authoritative catalog stop.
 
+## Provisional-policy reconciliation
+
+The stopped collector enforced the older complete-live-coverage evaluator gate.
+Subsequent source/record reconciliation found newer active authority in
+`.10x/decisions/buoy-derives-routing-prototypes-from-reviewed-plans.md` and
+`.10x/specs/automatic-routing-after-apply.md`: unmanaged live namespaces
+without cards are diagnostics, not a global routing stop, and valid catalog
+drift routes provisionally while the frozen seven-namespace anchor alone owns
+singleton thresholds. The known Aurelio docs gap was already independently
+recorded as intentionally unregistered during catalog-v3 migration.
+
+The owner selected local CLI-receipt recertification after this was explained.
+No card semantics were invented and no card repair or further live run is
+authorized. Current execution authority is
+`.10x/decisions/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md`.
+The live stop remains valid evidence of zero mutation and no report; it is not a
+routing-quality failure or permission to backfill.
+
 ## Limits
 
 This evidence does not claim the reference-host parent-observed timing gate;
-that belongs to the dependent validation ticket. It does not activate a new
-routing artifact or provide a dormant report for audit. Certification cannot
-continue until the separately governed live catalog/card mismatch is resolved
-with explicit provider-write authority and the collector is rerun from an
-approved exact clean source state.
+that belongs to the dependent validation ticket. It does not yet activate the
+schema-v3 artifact or prove final source/wheel/sdist/installed CLI receipt
+agreement; those are pending local validation and independent review. The
+stopped collector produced no report and no quality result.

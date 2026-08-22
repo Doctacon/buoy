@@ -245,25 +245,29 @@ established behavior.
 ## Routing certification compatibility
 
 Command instrumentation changes the exact `src/buoy_search/cli.py` bytes bound
-by the active bounded-routing artifact. The implementation MUST NOT bypass,
-weaken, or merely rewrite that receipt. It MUST execute the ordered dormant
-source, read-only 65-case certification, independent report audit, measured
-artifact reactivation, distribution validation, and final review protocol in
-`.10x/specs/bounded-prototype-routing-activation.md`, as authorized by
-`.10x/decisions/buoy-recertifies-routing-cli-for-command-telemetry.md`.
+by the active schema-v3 routing artifact. The implementation MUST NOT bypass or
+weaken that receipt. Under the newer provisional-routing amendment in
+`.10x/specs/automatic-routing-after-apply.md`, it MUST preserve the frozen
+seven-namespace certified anchor and replace only `cli_module_sha256` with the
+measured final CLI receipt, as authorized by
+`.10x/decisions/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md`.
 
-The newly certified report MUST reproduce every frozen routing semantic,
-quality, catalog-projection, threshold, suite, privacy, and call-accounting
-value. Only the clean dormant commit/tree/report and measured source receipts
-may change. Expected certification effects are the governed complete catalog
-read, 65 routing-query inferences, and 65 bounded local reranker calls, with
-zero content queries, content-resource acquisitions, provider writes, and
-model downloads. Any drift, dirty source, unexpected call class, source change
-after certification, or failed audit blocks activation.
+The final active artifact MUST retain every non-CLI semantic and receipt:
+schema/revision, certified namespaces, provisional policy, models, thresholds,
+suite, projection, calibration, certification, original reports, evaluator,
+routing, evidence, and collect-artifact identities. Source, wheel, source
+distribution, and isolated installed-package bytes MUST reproduce the new CLI
+receipt and exact artifact. Focused/full tests and independent exact-commit
+review MUST prove routing validation order, selection, fanout, evidence,
+provider/content behavior, output, errors, and explicit bypass behavior are
+unchanged.
 
-This recertification changes no route, threshold, fanout, evidence, provider,
-or content behavior. Explicit retrieval remains independent, and invalid
-routing authority continues to stop automatic retrieval before content access.
+The stopped live collector is not a quality report and MUST NOT be represented
+as one. Its known missing `site-docs-aurelio-ai-v1` card remains a diagnostic
+under provisional routing, not permission to invent or write a card. No
+further live certification or provider mutation is authorized by this spec.
+Invalid routing authority continues to stop automatic retrieval before content
+access.
 
 ## Stable query contract
 
