@@ -250,7 +250,7 @@ weaken that receipt. Under the newer provisional-routing amendment in
 `.10x/specs/automatic-routing-after-apply.md`, it MUST preserve the frozen
 seven-namespace certified anchor and replace only `cli_module_sha256` with the
 measured final CLI receipt, as authorized by
-`.10x/decisions/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md`.
+`.10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md`.
 
 The final active artifact MUST retain every non-CLI semantic and receipt:
 schema/revision, certified namespaces, provisional policy, models, thresholds,

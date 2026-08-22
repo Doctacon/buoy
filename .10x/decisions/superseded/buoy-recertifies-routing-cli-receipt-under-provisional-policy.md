@@ -1,6 +1,7 @@
-Status: active
+Status: superseded
 Created: 2026-08-21
-Updated: 2026-08-21
+Updated: 2026-08-22
+Superseded-By: .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md
 Supersedes: .10x/decisions/superseded/buoy-recertifies-routing-cli-for-command-telemetry.md
 Amends: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md, .10x/decisions/buoy-derives-routing-prototypes-from-reviewed-plans.md
 

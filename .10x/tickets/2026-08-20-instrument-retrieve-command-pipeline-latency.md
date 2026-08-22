@@ -6,7 +6,7 @@ Depends-On: .10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-mi
 Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md
 Specification: .10x/specs/retrieve-command-telemetry.md
 Storage: .10x/specs/local-telemetry-v2-storage-and-migration.md
-Routing-Decision: .10x/decisions/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md
+Routing-Decision: .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md
 Routing-Specification: .10x/specs/automatic-routing-after-apply.md
 
 # Instrument Retrieve Command and Pipeline Latency
@@ -175,7 +175,7 @@ No live card repair, report, or further provider run is required or authorized.
   receipt revision while preserving the frozen certified anchor. The owner
   selected local CLI receipt recertification and rejected implicit card
   backfill. Decision
-  `.10x/decisions/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md`
+  `.10x/decisions/superseded/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md`
   supersedes the inapplicable full-live-report path. Ticket reactivated for the
   one-field artifact update, package/behavior validation, and final review.
 - 2026-08-22: Reactivated the exact schema-v3 artifact with only
