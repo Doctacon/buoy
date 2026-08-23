@@ -65,10 +65,11 @@ automatic migration, backup deletion, or out-of-scope product fix.
 
 ## Blockers
 
-Criterion 9 remains open pending a fresh independent review of the integrated
-validation target. Parent-owned criterion 2 passed and is recorded in the
-integrated evidence. The implementation dependencies remain done and are not
-blockers.
+Criterion 3 lacks controlled baseline-versus-delay observations for bootstrap
+and pipeline. Current fixed fake-clock assertions prove their boundaries but do
+not satisfy the ticket's controlled-delay wording. Criterion 9 therefore also
+remains open after a controlling FAIL review. Parent-owned criterion 2 passed;
+the implementation dependencies remain done and are not blockers.
 
 ## Progress and notes
 
@@ -103,5 +104,12 @@ blockers.
   0.9500946372682385, passing criterion 2 without rounding. A clean exact build
   of documentation commit `c9f0f44` also proved repaired README/changelog wheel
   metadata and sdist content while preserving runtime hashes and disabled
-  installed-preview behavior. Ticket remains active only for fresh independent
-  integrated review and closure reconciliation.
+  installed-preview behavior.
+- 2026-08-23: Parallel fresh review produced one PASS and one controlling FAIL.
+  The FAIL found that controlled delay comparisons cover initialization,
+  routing, and rendering but not bootstrap or pipeline; fixed fake-clock
+  assertions do not satisfy criterion 3's delay requirement. The composite
+  review is
+  `.10x/reviews/2026-08-23-retrieve-command-telemetry-v2-integrated-review.md`.
+  Ticket remains active for that bounded test/evidence repair and fresh
+  rereview; no production runtime defect is currently indicated.

@@ -59,9 +59,10 @@ Result: **212 passed, 289 subtests passed in 32.41 seconds**. The mode-0600
 log is
 `/private/tmp/buoy-v2-integrated-tests.O6AgP3/focused.log`, SHA-256
 `8ef129fea2934419562097ec6feed90cb996def5e450954f97e00ae5d22d995f`.
-This one bounded suite includes the controlled bootstrap/routing/
-initialization/pipeline/render cases; live/preview and explicit/automatic
-success/failure graphs; enabled/disabled output and call equivalence; direct-v1
+This one bounded suite includes exact fake-clock bootstrap/pipeline boundaries
+and controlled routing/initialization/render delay cases; live/preview and
+explicit/automatic success/failure graphs; enabled/disabled output and call
+equivalence; direct-v1
 behavior; privacy/context isolation; telemetry sink and stream faults; v1/v2
 envelope, queue, store, writer, status, flush, and migration behavior; hostile
 paths/schema/content; replay/conflict; shared capacity; process-death hooks;
@@ -95,7 +96,10 @@ and no nested-span summation. The raw mode-0600 log is
 `5a763592661d283aa92c935bbe29f503b3679b7c57a90e3de63773208e4b7786`.
 
 These are controlled attribution observations only. They are not the five-run
-reference-host timing gate.
+reference-host timing gate. Subsequent independent closure review established
+that fixed fake-clock assertions do not substitute for baseline-versus-delay
+observations at the bootstrap and pipeline seams. Those two comparisons remain
+to be added before criterion 3 is satisfied.
 
 ## Exact-wheel console migration rehearsal
 
@@ -249,8 +253,10 @@ Targeted wording assertions and `git diff --check` passed.
 2. Five warm parent-observed two-second subprocesses: satisfied by the parent
    observation recorded below. Median shell-minus-command was 117.155667 ms and
    median command/shell was 0.9500946372682385, passing both gates.
-3. Controlled attribution: satisfied by exact fake-clock and six subprocess
-   observations.
+3. Controlled attribution: **blocked**. Exact fake-clock coverage establishes
+   bootstrap and pipeline boundaries, but controlled baseline-versus-delay
+   observations currently cover only initialization, routing, and rendering.
+   Bootstrap and pipeline delay comparisons remain required.
 4. Built-console migration: satisfied by the isolated exact-wheel rehearsal.
 5. Fault/hostile/replay/management/privacy/no-network/provider-free paths:
    satisfied by the fresh integrated suite and console observations.
@@ -264,7 +270,11 @@ Targeted wording assertions and `git diff --check` passed.
    README/changelog metadata plus unchanged runtime bytes and installed preview.
 8. Public documentation/help/SQL: satisfied after bounded documentation commit
    `c9f0f44` and fresh inspection/execution.
-9. Independent final integrated review: still required and not created here.
+9. Independent final integrated review: **blocked**. Parallel fresh review
+   produced one PASS and one controlling FAIL for criterion 3. The composite
+   finding is recorded in
+   `.10x/reviews/2026-08-23-retrieve-command-telemetry-v2-integrated-review.md`;
+   repair and fresh rereview remain required.
 
 ## Parent timing invocation and method
 
@@ -387,13 +397,16 @@ Private artifacts are under mode-0700
 - wheel and sdist with the sizes and hashes above.
 
 ## Limits and remaining blockers
+
+- Controlled bootstrap-delay and pipeline-delay comparisons remain absent; the
+  integrated review therefore fails criteria 3 and 9 pending bounded test-only
+  repair and fresh rereview.
 - Fresh integrated runtime observations are one macOS arm64 host. Crash tests
   are deterministic process-death/fault injection, not hardware power-loss or
   unrelated-filesystem evidence.
 - Exact schema/view identities were observed on DuckDB 1.5.5 and match the
   existing DuckDB-1.5.4 authority; future DuckDB identities remain
   version-sensitive.
-- The fresh independent final integrated review record remains required.
 - No live provider/model download/credential/catalog/content/namespace, real
   `~/.buoy`, installed-tool replacement, remote, integration, release,
   publication, automatic migration, or backup deletion occurred.
