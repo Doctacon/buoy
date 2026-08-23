@@ -65,8 +65,10 @@ automatic migration, backup deletion, or out-of-scope product fix.
 
 ## Blockers
 
-None. Both implementation children are done with passing review and evidence.
-Integrated validation is ready for assignment.
+Parent-owned criterion 2 remains open: the parent must run and record the five
+warm two-second reference-host observations. Criterion 9 also remains open
+pending a fresh independent review of the integrated validation target. The
+implementation dependencies remain done and are not blockers.
 
 ## Progress and notes
 
@@ -79,3 +81,21 @@ Integrated validation is ready for assignment.
   worker owns the spec/evidence/documentation/migration/adversarial matrix; the
   parent retains the explicitly parent-observed five-run reference-host timing
   measurement and final evidence/closure reconciliation.
+- 2026-08-23: Fresh isolated/offline integrated validation passed 212 tests and
+  289 subtests, including controlled attribution, command compatibility,
+  storage/migration fault, privacy/context, no-network, management, replay, and
+  direct-v1 matrices. Exact parent package hashes were independently verified
+  before the accepted wheel was used for a console migration rehearsal: two v1
+  rows remained query-equivalent in the immutable v1 backup and v2 canonical
+  store, pending-v2 was 1 at migration, flush committed it once, exact view
+  identities matched, and the already-current rerun preserved backup and
+  canonical hashes.
+- 2026-08-23: Independent criterion-8 inspection found README and Unreleased
+  changelog omissions. Bounded documentation-only commit `c9f0f44` now states
+  separate near-shell command/pipeline durations, enabled-preview observation,
+  explicit migration, and the privacy boundary. Detailed docs, installed help,
+  status/migrate text, and all SQL examples passed inspection/execution.
+  Integrated evidence is
+  `.10x/evidence/2026-08-23-retrieve-command-telemetry-v2-validation.md`.
+  Ticket remains active; no parent timing values or final integrated review are
+  claimed.
