@@ -90,10 +90,14 @@ than whichever directory you happen to run it from:
 - applied-state databases live under `~/.buoy/state/`;
 - crawl output and pending plans live under
   `~/.buoy/artifacts/site-crawls/`;
-- optional local retrieval telemetry lives under `~/.buoy/telemetry/`, is
-  disabled by default, and can be inspected, drained, or explicitly upgraded
-  with `buoy telemetry status`, `buoy telemetry flush`, and `buoy telemetry
-  migrate`. See
+- optional local retrieval telemetry lives under `~/.buoy/telemetry/` and is
+  disabled by default. When enabled, live retrievals record separate near-shell
+  Buoy command and inner pipeline durations; enabled previews record only the
+  command duration and do no added provider work. Existing telemetry stores are
+  upgraded only by an explicit `buoy telemetry migrate`; use `buoy telemetry
+  status` and `buoy telemetry flush` to inspect and drain them. Records remain
+  local and exclude queries, content, source identifiers, paths, credentials,
+  and raw errors. See
   [Inspect local retrieval telemetry](docs/telemetry.md).
 
 Existing project-local `.buoy`, `.turbo-search`, and
