@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-08-20
-Updated: 2026-08-22
+Updated: 2026-08-23
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
 Depends-On: .10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-migration.md
 Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md
@@ -100,11 +100,13 @@ catalog read is historical evidence; no further live run is authorized.
 
 ## Blockers
 
-Immutable implementation `d4c336c8` failed fresh acceptance review. Independent
-validation still permits automatic pipeline/error graphs without completed
-routing prerequisites and successful traces with failed or out-of-order stages.
-The bounded source-backed repair is recorded at
-`.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-acceptance-review.md`.
+Exact candidate `e28a8b173624903e6d06e6485d0e87b9da2d7e01` failed fresh
+source-reachability review. Independent decoding still accepts evidence before
+the namespace result it consumes, successful/partial automatic pipelines with
+no evidence assessment, and automatic error prefixes that stop after successful
+catalog or second-model prerequisites. The bounded repair and already accepted
+portions are recorded at
+`.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-source-reachability-review.md`.
 Final parent package reproduction and exact-commit review must follow repair.
 The dependent ticket still owns the separate five-run reference-host timing
 gate.
@@ -264,3 +266,16 @@ No live card repair, report, or further provider run is required or authorized.
   pipeline; automatic `prepare=OK` or any pipeline requires the full successful
   routing graph. The corrected bounded contract is recorded in
   `.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-acceptance-review.md`.
+- 2026-08-23: Two timed-out workers left a substantial three-file graph repair;
+  bounded recovery committed it at `cb0ebea9`, tree `6775028e`. Parent isolated-
+  home validation exposed one real-model dependency in the privacy test, and a
+  test-only follow-up injected the existing fake reranker at `e28a8b17`, tree
+  `f9352f75`. Filtered full suites then passed 1,073 tests and 1,057 subtests on
+  Python 3.11 and 3.13; lock, compilation, changed-file Ruff, ranking, artifact
+  one-field equality, and diff checks passed.
+- 2026-08-23: Fresh review of exact `e28a8b17` returned FAIL despite those
+  passing suites. The decoder accepts evidence before its namespace result,
+  automatic success/partial without evidence, and gaps after successful routing
+  prerequisites. Exact package reproduction was deferred until source is final;
+  the bounded findings are recorded at
+  `.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-source-reachability-review.md`.
