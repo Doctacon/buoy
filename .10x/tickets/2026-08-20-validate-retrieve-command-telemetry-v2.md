@@ -1,4 +1,4 @@
-Status: open
+Status: active
 Created: 2026-08-20
 Updated: 2026-08-23
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -75,3 +75,7 @@ Integrated validation is ready for assignment.
 - 2026-08-23: Storage/migration and command/pipeline instrumentation dependencies
   are closed. Exact command implementation `6bfd0d4c` passed final review and
   package acceptance; this integrated validation ticket is unblocked.
+- 2026-08-23: Activated for independent integrated validation. A validation
+  worker owns the spec/evidence/documentation/migration/adversarial matrix; the
+  parent retains the explicitly parent-observed five-run reference-host timing
+  measurement and final evidence/closure reconciliation.
