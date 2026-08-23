@@ -246,10 +246,9 @@ Targeted wording assertions and `git diff --check` passed.
 ## Integrated ticket criterion status
 
 1. Spec maps: satisfied by the two tables above.
-2. Five warm parent-observed two-second subprocesses: **BLOCKED / NOT RUN by
-   this worker**, as explicitly assigned to the parent. Raw timing values,
-   medians, ratio, host, runtime, order, and method must be appended before
-   closure.
+2. Five warm parent-observed two-second subprocesses: satisfied by the parent
+   observation recorded below. Median shell-minus-command was 117.155667 ms and
+   median command/shell was 0.9500946372682385, passing both gates.
 3. Controlled attribution: satisfied by exact fake-clock and six subprocess
    observations.
 4. Built-console migration: satisfied by the isolated exact-wheel rehearsal.
@@ -258,15 +257,16 @@ Targeted wording assertions and `git diff --check` passed.
 6. Output/call compatibility and direct v1: satisfied by the fresh integrated
    suite.
 7. Full/package/static matrix: parent exact-implementation evidence remains the
-   authority for dual-runtime full, lock, compilation, Ruff, ranking,
-   distribution build/install, routing receipt, and disabled installed preview;
-   this worker independently verified archive and runtime file hashes before
-   using the exact wheel and did not overclaim reruns.
+   authority for dual-runtime full, lock, compilation, Ruff, ranking, routing
+   receipt, and runtime archive/install behavior. The worker independently
+   verified those archive/runtime hashes before use. The parent additionally
+   built the exact documentation target after criterion-8 repair and proved its
+   README/changelog metadata plus unchanged runtime bytes and installed preview.
 8. Public documentation/help/SQL: satisfied after bounded documentation commit
    `c9f0f44` and fresh inspection/execution.
 9. Independent final integrated review: still required and not created here.
 
-## Exact parent timing invocation and method (not run here)
+## Parent timing invocation and method
 
 Run from this worktree after independently rechecking the wheel hash. This uses
 one discarded warm-up followed by exactly five ordered, parent-timed subprocess
@@ -323,24 +323,77 @@ with tempfile.TemporaryDirectory(prefix="buoy-parent-timing-") as directory:
 PY
 ```
 
-The parent must append the unrounded raw output plus `sw_vers`, `uname -m`,
-Python `-VV`, installed package version, wheel SHA-256, and actual invocation
-order. Passing requires median shell-minus-command <=250 ms and median
-command/shell >=0.95. Do not infer or fill these values from the 500 ms
-attribution observations.
+The parent ran that method unchanged after independently rechecking the accepted
+wheel SHA-256. Host/runtime were macOS 26.5.1 build 25F80 arm64, Python 3.11.5,
+and installed package `0.5.2.dev84+g6bfd0d4ce`. The probe SHA-256 was
+`f6b10ea94541f31fd046a4fe0cced08e9cffb60bf82bd45ddf120ecd1c4fe069`.
+One warm-up was discarded, then these five runs occurred in order:
+
+| Order | Shell ms | Command ms | Pipeline ms | Shell minus command ms | Command / shell |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 2347.556667 | 2230.401 | 1.346 | 117.155667 | 0.9500946372682385 |
+| 2 | 2352.331417 | 2234.71 | 1.25 | 117.62141699999984 | 0.9499979398523674 |
+| 3 | 2344.231666 | 2227.613 | 1.165 | 116.6186660000003 | 0.9502529260689544 |
+| 4 | 2353.277 | 2237.891 | 1.043 | 115.38599999999997 | 0.9509679480996075 |
+| 5 | 2344.083 | 2224.819 | 1.277 | 119.26400000000012 | 0.9491212555186825 |
+
+Median shell-minus-command was **117.155667 ms**, at or below the 250 ms
+limit. Median command/shell was **0.9500946372682385**, at or above 0.95. The
+reference-host timing gate therefore passed. Individual ratios were not rounded
+before median evaluation.
+
+Raw parent artifacts are under mode-0700
+`/private/tmp/buoy-parent-timing-6bfd0d4.WAgXE5/`:
+
+- mode-0600 `parent-timing.log`, 2,688 bytes, SHA-256
+  `9f10c95d819caf4075a9a22f9ab7655ce9782d28057afc1f2cd0a5e615fa9790`;
+- mode-0600 `timing-result.json`, 888 bytes, SHA-256
+  `52df9e054b8022b6bdc4fd42b37f08bad237802750afbdb9cc9e415ed0e2ea8d`.
+
+## Documentation-target distribution acceptance
+
+Because criterion-8 repair changed packaged README/changelog content after the
+runtime archive was accepted, the parent also built exact documentation commit
+`c9f0f44348a51ece48cacee97c6cd6335f3f0df2`, tree
+`b2656e3402548e8ca439e79405a8f21b6fb56114`, from a clean detached worktree.
+Its only non-record differences from runtime implementation `6bfd0d4c` are
+`README.md` and `CHANGELOG.md`; CLI, envelope, routing artifact, tests, package
+configuration, and lock bytes are unchanged.
+
+The offline build produced:
+
+- 722,173-byte wheel
+  `buoy_search-0.5.2.dev88+gc9f0f4434-py3-none-any.whl`, SHA-256
+  `7bc7f08a638cd0d623382ce6f795ee85f790017d5f3692d936b8e1a0b602a98b`;
+- 1,269,309-byte source distribution
+  `buoy_search-0.5.2.dev88+gc9f0f4434.tar.gz`, SHA-256
+  `ebd3575fc5fa07d376d46de23f836ae2c60258e636094a0b30e704494032763b`.
+
+Wheel metadata and source-distribution README/changelog contain the repaired
+command/pipeline, enabled-preview, explicit-migration, and privacy wording.
+Source, wheel, sdist, and isolated install reproduce unchanged CLI SHA-256
+`90e7b2dd...`, envelope SHA-256 `e1681c4c...`, and routing-artifact SHA-256
+`62ec1fe8...`. The installed artifact loaded active schema 3 revision
+`active-anchor-e559a8aa-v1`; a disabled explicit preview created no `.buoy`.
+Clean identity held before and after, and the temporary worktree was removed.
+
+Private artifacts are under mode-0700
+`/private/tmp/buoy-parent-integrated-package-c9f0f44.vY43m3/`:
+
+- mode-0600 `integrated-package.log`, 5,988 bytes, SHA-256
+  `bcf203832ccd1b2bdad7d1bd6ac8216c1084a962d0b856b2af117ed80d14e05a`;
+- mode-0600 `installed-preview.json`, 2,162 bytes, SHA-256
+  `11b3f3a1fcbd547577df68a0f011c5a2c8477635dfcec993c0f89eda088ba487`;
+- wheel and sdist with the sizes and hashes above.
 
 ## Limits and remaining blockers
-
-- The parent timing values are intentionally absent; no reference-host timing
-  verdict is claimed.
 - Fresh integrated runtime observations are one macOS arm64 host. Crash tests
   are deterministic process-death/fault injection, not hardware power-loss or
   unrelated-filesystem evidence.
 - Exact schema/view identities were observed on DuckDB 1.5.5 and match the
   existing DuckDB-1.5.4 authority; future DuckDB identities remain
   version-sensitive.
-- The fresh independent final integrated review record is not created by this
-  worker and remains required.
+- The fresh independent final integrated review record remains required.
 - No live provider/model download/credential/catalog/content/namespace, real
   `~/.buoy`, installed-tool replacement, remote, integration, release,
   publication, automatic migration, or backup deletion occurred.

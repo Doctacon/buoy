@@ -65,10 +65,10 @@ automatic migration, backup deletion, or out-of-scope product fix.
 
 ## Blockers
 
-Parent-owned criterion 2 remains open: the parent must run and record the five
-warm two-second reference-host observations. Criterion 9 also remains open
-pending a fresh independent review of the integrated validation target. The
-implementation dependencies remain done and are not blockers.
+Criterion 9 remains open pending a fresh independent review of the integrated
+validation target. Parent-owned criterion 2 passed and is recorded in the
+integrated evidence. The implementation dependencies remain done and are not
+blockers.
 
 ## Progress and notes
 
@@ -97,5 +97,11 @@ implementation dependencies remain done and are not blockers.
   status/migrate text, and all SQL examples passed inspection/execution.
   Integrated evidence is
   `.10x/evidence/2026-08-23-retrieve-command-telemetry-v2-validation.md`.
-  Ticket remains active; no parent timing values or final integrated review are
-  claimed.
+- 2026-08-23: The parent ran one discarded warm-up and five ordered two-second
+  initialization-delay subprocesses from the accepted wheel. Median shell minus
+  command was 117.155667 ms and median command/shell was
+  0.9500946372682385, passing criterion 2 without rounding. A clean exact build
+  of documentation commit `c9f0f44` also proved repaired README/changelog wheel
+  metadata and sdist content while preserving runtime hashes and disabled
+  installed-preview behavior. Ticket remains active only for fresh independent
+  integrated review and closure reconciliation.
