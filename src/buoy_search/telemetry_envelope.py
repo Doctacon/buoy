@@ -2377,6 +2377,27 @@ def _validate_v2_retrieval_stages(
                     )
                 ):
                     raise TraceEnvelopeError("invalid_graph")
+            elif evidence:
+                assessment = evidence[0]
+                initial_assessment = (
+                    initial_fanout == final_fanout == 1
+                    and not operation["widened"]
+                    and operation["namespace_count"] > 1
+                )
+                assessment_before_rerank = (
+                    not reranks
+                    or assessment["ended_at_unix_us"]
+                    <= reranks[0]["started_at_unix_us"]
+                )
+                if initial_assessment:
+                    if not assessment_before_rerank:
+                        raise TraceEnvelopeError("invalid_graph")
+                elif (
+                    len(reranks) != 1
+                    or reranks[0]["ended_at_unix_us"]
+                    > assessment["started_at_unix_us"]
+                ):
+                    raise TraceEnvelopeError("invalid_graph")
 
     if operation["outcome"] in {"success", "partial"}:
         if (

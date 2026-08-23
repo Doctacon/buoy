@@ -893,6 +893,72 @@ def _automatic_partial_v2_object() -> dict[str, object]:
     return value
 
 
+def _automatic_initial_assessment_v2_object() -> dict[str, object]:
+    value = _automatic_v2_object()
+    operation = value["retrieval_operation"]
+    assert isinstance(operation, dict)
+    operation["namespace_count"] = 2
+    pipeline = _json_span(value, V2_PIPELINE_SPAN_NAME)
+    pipeline["attributes"]["buoy.retrieval.namespace_count"] = 2
+    namespace = _json_span(value, "buoy.namespace.query")
+    evidence = _json_span(value, "buoy.evidence.assess")
+    evidence["started_at_unix_us"] = namespace["ended_at_unix_us"] + 1
+    evidence["ended_at_unix_us"] = evidence["started_at_unix_us"] + 100
+    evidence["duration_ms"] = 0.1
+    value["spans"].sort(
+        key=lambda span: (span["started_at_unix_us"], span["span_id"])
+    )
+    return value
+
+
+def _move_sole_evidence_before_rerank(
+    value: dict[str, object],
+) -> dict[str, object]:
+    namespaces = [
+        span for span in value["spans"] if span["name"] == "buoy.namespace.query"
+    ]
+    evidence = [
+        span for span in value["spans"] if span["name"] == "buoy.evidence.assess"
+    ]
+    assert len(evidence) == 1
+    assessment = evidence[0]
+    assessment["started_at_unix_us"] = max(
+        span["ended_at_unix_us"] for span in namespaces
+    ) + 1
+    assessment["ended_at_unix_us"] = assessment["started_at_unix_us"] + 100
+    assessment["duration_ms"] = 0.1
+    value["spans"].sort(
+        key=lambda span: (span["started_at_unix_us"], span["span_id"])
+    )
+    return value
+
+
+def _empty_widening_final_evidence_before_rerank_object() -> dict[str, object]:
+    value = _widened_v2_object()
+    operation = value["retrieval_operation"]
+    assert isinstance(operation, dict)
+    operation["fallback_reason"] = "empty_top1"
+    pipeline = _json_span(value, V2_PIPELINE_SPAN_NAME)
+    pipeline["attributes"]["buoy.retrieval.fallback_reason"] = "empty_top1"
+    value["events"][0]["attributes"][
+        "buoy.retrieval.fallback_reason"
+    ] = "empty_top1"
+    namespaces = sorted(
+        (span for span in value["spans"] if span["name"] == "buoy.namespace.query"),
+        key=lambda span: span["attributes"]["buoy.route.rank"],
+    )
+    namespaces[0]["attributes"]["buoy.namespace.hit_count"] = 0
+    evidence = sorted(
+        (span for span in value["spans"] if span["name"] == "buoy.evidence.assess"),
+        key=lambda span: (span["started_at_unix_us"], span["span_id"]),
+    )
+    value["spans"].remove(evidence[0])
+    rerank = _json_span(value, "buoy.rerank")
+    rerank["started_at_unix_us"] += 200
+    rerank["ended_at_unix_us"] += 200
+    return _move_sole_evidence_before_rerank(value)
+
+
 def _automatic_success_without_evidence_object() -> dict[str, object]:
     value = _automatic_v2_object()
     value["spans"] = [
@@ -1329,7 +1395,7 @@ class Version2EnvelopeTests(unittest.TestCase):
             automatic_unset_evidence, "buoy.evidence.assess"
         )["status_code"] = "UNSET"
 
-        reached_evidence_error = _automatic_v2_object()
+        reached_evidence_error = _automatic_initial_assessment_v2_object()
         _set_command_error(reached_evidence_error, error_type="provider_call_error")
         _set_pipeline_error(reached_evidence_error)
         reached_pipeline = _json_span(
@@ -1337,7 +1403,8 @@ class Version2EnvelopeTests(unittest.TestCase):
         )
         reached_operation = reached_evidence_error["retrieval_operation"]
         assert isinstance(reached_operation, dict)
-        reached_operation["evidence_status"] = None
+        reached_operation.update({"hit_count": 0, "evidence_status": None})
+        reached_pipeline["attributes"]["buoy.retrieval.hit_count"] = 0
         reached_pipeline["attributes"].pop("buoy.evidence.status")
         reached_namespace = _json_span(
             reached_evidence_error, "buoy.namespace.query"
@@ -1366,6 +1433,9 @@ class Version2EnvelopeTests(unittest.TestCase):
         positives = {
             "automatic success with OK evidence": _automatic_v2_object(),
             "automatic success with UNSET evidence": automatic_unset_evidence,
+            "non-weak initial assessment before rerank": (
+                _automatic_initial_assessment_v2_object()
+            ),
             "automatic partial with one evidence": _automatic_partial_v2_object(),
             "automatic error with reached evidence": reached_evidence_error,
             "weak widening error after reached evidence": (
@@ -1404,6 +1474,9 @@ class Version2EnvelopeTests(unittest.TestCase):
             for span in automatic_partial_without_evidence["spans"]
             if span["name"] != "buoy.evidence.assess"
         ]
+        automatic_partial_evidence_before_rerank = _move_sole_evidence_before_rerank(
+            _automatic_partial_v2_object()
+        )
         invalid: dict[str, dict[str, object]] = {
             "evidence before namespace result": (
                 _automatic_evidence_before_namespace_object()
@@ -1412,6 +1485,12 @@ class Version2EnvelopeTests(unittest.TestCase):
                 _automatic_success_without_evidence_object()
             ),
             "automatic partial without evidence": automatic_partial_without_evidence,
+            "automatic partial final evidence before rerank": (
+                automatic_partial_evidence_before_rerank
+            ),
+            "empty widening final evidence before rerank": (
+                _empty_widening_final_evidence_before_rerank_object()
+            ),
             "weak evidence overlaps added namespace": (
                 _weak_widening_error_prefix_object(overlap_added=True)
             ),
@@ -1821,6 +1900,12 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
             for span in automatic_partial_without_evidence["spans"]
             if span["name"] != "buoy.evidence.assess"
         ]
+        automatic_partial_evidence_before_rerank = _move_sole_evidence_before_rerank(
+            _automatic_partial_v2_object()
+        )
+        empty_widening_evidence_before_rerank = (
+            _empty_widening_final_evidence_before_rerank_object()
+        )
         routing_gap_after_catalog = _automatic_prepare_gap_object("catalog")
         routing_gap_after_second_model = _automatic_prepare_gap_object(
             "second_model"
@@ -1843,6 +1928,8 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
             weak_evidence_overlaps_added,
             automatic_without_evidence,
             automatic_partial_without_evidence,
+            automatic_partial_evidence_before_rerank,
+            empty_widening_evidence_before_rerank,
             routing_gap_after_catalog,
             routing_gap_after_second_model,
         )
