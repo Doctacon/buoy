@@ -98,8 +98,8 @@ and no nested-span summation. The raw mode-0600 log is
 These are controlled attribution observations only. They are not the five-run
 reference-host timing gate. Subsequent independent closure review established
 that fixed fake-clock assertions do not substitute for baseline-versus-delay
-observations at the bootstrap and pipeline seams. Those two comparisons remain
-to be added before criterion 3 is satisfied.
+observations at the bootstrap and pipeline seams. At that review point those two comparisons remained absent. The later
+criterion-3 repair recorded below adds them and supersedes this blocker.
 
 ## Exact-wheel console migration rehearsal
 
@@ -225,7 +225,7 @@ Targeted wording assertions and `git diff --check` passed.
 | 7. Disabled behavior | disabled/global-OTel no-file test; sink-failure and enabled/disabled output/call equivalence |
 | 8. Direct library behavior | direct retriever v1/context-isolation case plus established v1 producer/envelope/store suites |
 | 9. Privacy | real entrypoint/queue/writer/store/path-component scan; exact-byte v2 terminal-artifact scan; v1 privacy suite |
-| 10. Timing boundaries | exact fake clock; controlled in-process and six subprocess observations above; parent gate still blocked below |
+| 10. Timing boundaries | exact fake clock; exact-commit baseline/delay subprocesses for all five seams; passing five-run parent reference-host gate |
 | 11. Failure isolation | private-provider/span/export/context/sink and clock/session/publication/writer/stream fault matrices |
 | Material graph/query/routing contracts | comprehensive decoder shape/value/graph matrix, source-backed reachability/cardinality/order, writer-before-DuckDB rejection, exact v2 view fixture, final source and acceptance reviews |
 
@@ -264,11 +264,11 @@ Targeted wording assertions and `git diff --check` passed.
 6. Output/call compatibility and direct v1: satisfied by the fresh integrated
    suite.
 7. Full/package/static matrix: parent exact-implementation evidence remains the
-   authority for dual-runtime full, lock, compilation, Ruff, ranking, routing
-   receipt, and runtime archive/install behavior. The worker independently
-   verified those archive/runtime hashes before use. The parent additionally
-   built the exact documentation target after criterion-8 repair and proved its
-   README/changelog metadata plus unchanged runtime bytes and installed preview.
+   authority for lock, compilation, Ruff, ranking, routing receipt, and runtime
+   archive/install behavior. Fresh filtered dual-runtime full suites pass at
+   test target `7eb6b393`; its clean exact wheel/sdist/install preserve runtime
+   hashes, repaired packaged documentation, changed-test sdist bytes, and
+   disabled installed-preview behavior.
 8. Public documentation/help/SQL: satisfied after bounded documentation commit
    `c9f0f44` and fresh inspection/execution.
 9. Independent final integrated review: **pending fresh rereview**. The
@@ -314,9 +314,13 @@ SHA-256 `3f9cec880d77792d9a17ad28f0cb453cacc8d67dba15d7643b2595ad4fe05842`.
 Its exact fixture SHA-256 is
 `95f6c15ed405698edd561e3e0ff3046883704ab350f04809538432962c39bebb`.
 
-Five consecutive focused invocations each passed the exact repaired test (5/5,
-one test each). A fresh integrated telemetry run passed **212 tests and 289
-subtests**. Fresh filtered full suites excluding only separately owned
+Five consecutive worker focused invocations each passed the exact repaired test
+(5/5, one test each). The parent independently reran that test once from records
+HEAD `1c06f619` in an isolated Python 3.11 environment: **1 passed in 5.92
+seconds**. Its mode-0600 log is
+`/private/tmp/buoy-parent-timing-repair-check.gIZ6pV/focused.log`, SHA-256
+`ac3bd901c5a06412a13708ffce1c995fe17d4ff29d43b577c6e96367b8baedca`.
+A fresh worker integrated telemetry run passed **212 tests and 289 subtests**. Fresh filtered full suites excluding only separately owned
 `tests/test_dynamic_version.py` passed on Python 3.11.5 and Python 3.13.0:
 **1,073 tests and 1,071 subtests** on each runtime, with the same 57 preexisting
 lxml warnings. Mode-0600 validation logs and SHA-256 values are:

@@ -121,5 +121,7 @@ baseline-versus-500 ms observations for all five seams. Parent-owned criterion
   authoritative command and pipeline durations. A clean detached offline build
   and isolated install preserved runtime/routing hashes, repaired packaged
   documentation, provider/model-free disabled preview, and no `.buoy` creation.
-  Integrated evidence was appended. Ticket remains active only for fresh
-  independent criterion-9 rereview; no rereview was created here.
+  Integrated evidence was appended. The parent independently reran the repaired
+  focused test once in a fresh isolated Python 3.11 environment; it passed.
+  Ticket remains active only for fresh independent criterion-9 rereview; no
+  rereview is yet recorded.
