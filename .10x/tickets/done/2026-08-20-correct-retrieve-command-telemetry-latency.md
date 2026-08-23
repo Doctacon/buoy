@@ -1,4 +1,4 @@
-Status: open
+Status: done
 Created: 2026-08-20
 Updated: 2026-08-23
 Parent: None
@@ -186,5 +186,38 @@ for its completion.
   validation. Its first closure review found missing controlled bootstrap and
   pipeline delay comparisons; test-only commit `7eb6b393` repaired that literal
   gap without changing production source. Two fresh independent rereviews
-  passed with no findings. All three child tickets are done; the parent plan is
-  ready for aggregate closure review.
+  passed with no findings. All three child tickets are done.
+- 2026-08-23: Fresh aggregate closure review mapped every parent criterion to
+  durable evidence, checked specification and graph coherence, and returned
+  PASS with no findings. The verdict is
+  `.10x/reviews/2026-08-23-retrieve-command-telemetry-latency-parent-closure-review.md`.
+  The parent outcome is complete.
+
+## Retrospective
+
+The original latency discrepancy was correctly isolated as an instrumentation-
+boundary defect rather than an OpenTelemetry clock defect. Splitting storage,
+command instrumentation, and integrated validation kept schema migration,
+runtime behavior, and acceptance ownership distinct. Exact source-reachable
+graph validation and repeated adversarial review prevented locally plausible
+but impossible routing/evidence envelopes from becoming durable data.
+
+The main execution mistakes were evidentiary rather than architectural:
+concurrency intent was initially confused with observed lock contention, an
+isolated privacy test inherited an unstated lazy model dependency, and fixed
+fake-clock timing was initially treated as equivalent to controlled delay at
+every named seam. Each was repaired at the narrowest boundary without weakening
+specifications or altering unrelated runtime behavior.
+
+Reusable lessons are preserved in:
+
+- `.10x/knowledge/concurrency-tests-observe-real-lock-boundaries.md`;
+- `.10x/knowledge/isolated-tests-own-lazy-model-dependencies.md`; and
+- `.10x/knowledge/timing-attribution-tests-delay-each-named-seam.md`.
+
+The active specifications still describe implemented behavior. All child
+reviews and evidence are coherent, every residual limit is explicit, and the
+separately owned stale dynamic-version collector remains at
+`.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md`.
+No further telemetry implementation, specification, decision, skill, or
+follow-up record is required.
