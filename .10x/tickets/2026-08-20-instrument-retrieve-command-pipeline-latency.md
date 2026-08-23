@@ -100,13 +100,13 @@ catalog read is historical evidence; no further live run is authorized.
 
 ## Blockers
 
-Exact candidate `e28a8b173624903e6d06e6485d0e87b9da2d7e01` failed fresh
-source-reachability review. Independent decoding still accepts evidence before
-the namespace result it consumes, successful/partial automatic pipelines with
-no evidence assessment, and automatic error prefixes that stop after successful
-catalog or second-model prerequisites. The bounded repair and already accepted
-portions are recorded at
-`.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-source-reachability-review.md`.
+Exact candidate `cb56b0afa38883fb22b0227c9e17e3a39c770814` failed fresh
+source-reachability rereview. The prior evidence cardinality, routing-prefix,
+namespace-result ordering, and weak-error ordering findings are closed, but the
+decoder still accepts a final automatic assessment before rerank on larger-
+fanout and empty/failed-widening paths. The bounded phase-distinction repair and
+accepted portions are recorded at
+`.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-source-reachability-rereview.md`.
 Final parent package reproduction and exact-commit review must follow repair.
 The dependent ticket still owns the separate five-run reference-host timing
 gate.
@@ -279,3 +279,11 @@ No live card repair, report, or further provider run is required or authorized.
   prerequisites. Exact package reproduction was deferred until source is final;
   the bounded findings are recorded at
   `.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-source-reachability-review.md`.
+- 2026-08-23: Implementation `814a2d3a` repaired the three reviewed findings;
+  parent focused validation then found weak evidence could overlap the added
+  namespace batch on an error prefix. Follow-up `cb56b0af`, tree `6c67a842`,
+  repaired that ordering and passed 66 focused tests plus 182 subtests. Fresh
+  rereview accepted those repairs but found one remaining phase ambiguity: the
+  sole final assessment for larger-fanout or empty/failed-widening paths can be
+  moved before rerank. The bounded finding is recorded at
+  `.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-source-reachability-rereview.md`.
