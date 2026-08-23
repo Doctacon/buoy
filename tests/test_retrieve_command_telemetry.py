@@ -867,7 +867,11 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
                 strict=True,
             )
         ]
-        multi = MultiNamespaceRetriever(retrievers=retrievers, embedder=_Embedder())
+        multi = MultiNamespaceRetriever(
+            retrievers=retrievers,
+            embedder=_Embedder(),
+            reranker_loader=_OrdinalReranker,
+        )
 
         self.publish_patch.stop()
         os.environ.update(
@@ -960,6 +964,7 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
                 )
             ],
             embedder=_Embedder(),
+            reranker_loader=_OrdinalReranker,
         )
         with patch.object(sys, "argv", argv), patch(
             "buoy_search.cli.MultiNamespaceRetriever.from_configs",
