@@ -1413,11 +1413,11 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
             routed.retrieval_operation[4], automatic_baseline.retrieval_operation[4]
         )
 
-    def test_controlled_subprocess_probe_attributes_pre_pipeline_and_render_delay(self) -> None:
+    def test_controlled_subprocess_probe_attributes_all_phase_delays(self) -> None:
         probe = Path(__file__).parent / "fixtures" / "retrieve_command_timing_probe.py"
         injected_delay_ms = 500
         observations: dict[str, dict[int, dict[str, object]]] = {}
-        for stage in ("initialize", "routing", "render"):
+        for stage in ("bootstrap", "initialize", "routing", "pipeline", "render"):
             observations[stage] = {}
             for delay_ms in (0, injected_delay_ms):
                 completed = subprocess.run(
@@ -1446,6 +1446,10 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
             for observation in (baseline, delayed):
                 self.assertEqual(observation["exit_code"], 0)
                 self.assertEqual(observation["stage"], stage)
+                self.assertEqual(
+                    observation["pipeline_span_duration_ms"],
+                    observation["pipeline_duration_ms"],
+                )
                 if stage == "routing":
                     self.assertTrue(observation["routing_before_pipeline"])
                     self.assertEqual(
@@ -1463,13 +1467,24 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
                 float(delayed["command_duration_ms"])
                 - float(baseline["command_duration_ms"])
             )
-            pipeline_delta = abs(
+            pipeline_delta = (
                 float(delayed["pipeline_duration_ms"])
                 - float(baseline["pipeline_duration_ms"])
             )
             self.assertGreaterEqual(command_delta, injected_delay_ms * 0.75)
             self.assertLessEqual(command_delta, injected_delay_ms * 1.5)
-            self.assertLessEqual(pipeline_delta, 25.0)
+            if stage == "pipeline":
+                self.assertGreaterEqual(pipeline_delta, injected_delay_ms * 0.75)
+                self.assertLessEqual(pipeline_delta, injected_delay_ms * 1.5)
+            else:
+                self.assertLessEqual(abs(pipeline_delta), 25.0)
+            if stage == "bootstrap":
+                bootstrap_delta = (
+                    float(delayed["bootstrap_span_duration_ms"])
+                    - float(baseline["bootstrap_span_duration_ms"])
+                )
+                self.assertGreaterEqual(bootstrap_delta, injected_delay_ms * 0.75)
+                self.assertLessEqual(bootstrap_delta, injected_delay_ms * 1.5)
 
 
 if __name__ == "__main__":

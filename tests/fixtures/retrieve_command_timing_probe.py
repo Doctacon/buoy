@@ -6,11 +6,15 @@ import argparse
 from contextlib import ExitStack
 import json
 import os
+import sys
 import time
 from types import SimpleNamespace
 from unittest.mock import patch
 
 started_at_ns = time.time_ns()
+if "--stage" in sys.argv and sys.argv[sys.argv.index("--stage") + 1] == "bootstrap":
+    delay_index = sys.argv.index("--delay-ms") + 1
+    time.sleep(int(sys.argv[delay_index]) / 1000)
 
 from buoy_search import telemetry
 from buoy_search.cli import main
@@ -27,8 +31,10 @@ from buoy_search.telemetry_queue import PublicationResult
 
 
 class ControlledRetriever:
-    def __init__(self, mode: str) -> None:
+    def __init__(self, mode: str, stage: str, delay_ms: int) -> None:
         self.mode = mode
+        self.stage = stage
+        self.delay_ms = delay_ms
 
     def retrieve(self, _query: str, _options: object, **_kwargs: object) -> object:
         with retrieval_trace(
@@ -45,6 +51,8 @@ class ControlledRetriever:
             routing_semantic_score=0.9 if self.mode == "automatic" else None,
             routing_semantic_margin=0.2 if self.mode == "automatic" else None,
         ) as pipeline:
+            if self.stage == "pipeline":
+                time.sleep(self.delay_ms / 1000)
             with telemetry_span(QUERY_EMBED_SPAN_NAME) as span:
                 span.mark_ok()
             with telemetry_span(
@@ -156,7 +164,7 @@ def _routing_patches(stage: str, delay_ms: int) -> tuple[object, ...]:
         patch("buoy_search.cli.hybrid_route", side_effect=route),
         patch(
             "buoy_search.cli.MultiNamespaceRetriever.from_configs",
-            return_value=ControlledRetriever("automatic"),
+            return_value=ControlledRetriever("automatic", stage, delay_ms),
         ),
     )
 
@@ -167,7 +175,7 @@ def run(stage: str, delay_ms: int) -> dict[str, object]:
     def construct(*_args: object, **_kwargs: object) -> ControlledRetriever:
         if stage == "initialize":
             time.sleep(delay_ms / 1000)
-        return ControlledRetriever("explicit_single")
+        return ControlledRetriever("explicit_single", stage, delay_ms)
 
     def render(_value: object) -> None:
         if stage == "render":
@@ -198,6 +206,7 @@ def run(stage: str, delay_ms: int) -> dict[str, object]:
 
     rows = decode_trace_envelope_v2(payloads[0])
     assert rows.retrieval_operation is not None
+    bootstrap = next(span for span in rows.spans if span[3] == "buoy.cli.bootstrap")
     pipeline = next(span for span in rows.spans if span[3] == "buoy.retrieve.pipeline")
     routing_spans = [
         span
@@ -211,6 +220,8 @@ def run(stage: str, delay_ms: int) -> dict[str, object]:
         "delay_ms": delay_ms,
         "command_duration_ms": rows.command[4],
         "pipeline_duration_ms": rows.retrieval_operation[4],
+        "bootstrap_span_duration_ms": bootstrap[6],
+        "pipeline_span_duration_ms": pipeline[6],
         "routing_stages": [span[3] for span in routing_spans],
         "routing_before_pipeline": bool(routing_spans)
         and all(span[5] <= pipeline[4] for span in routing_spans),
@@ -220,7 +231,9 @@ def run(stage: str, delay_ms: int) -> dict[str, object]:
 def main_probe() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--stage", choices=("initialize", "routing", "render"), required=True
+        "--stage",
+        choices=("bootstrap", "initialize", "routing", "pipeline", "render"),
+        required=True,
     )
     parser.add_argument("--delay-ms", type=int, required=True)
     args = parser.parse_args()
