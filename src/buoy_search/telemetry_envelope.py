@@ -2058,110 +2058,322 @@ def _validate_v2_stage_graph(
         ):
             raise TraceEnvelopeError("invalid_graph")
 
+    if prepare["status_code"] not in {"OK", "ERROR"}:
+        raise TraceEnvelopeError("invalid_graph")
+    if render is not None and render["status_code"] not in {"OK", "ERROR"}:
+        raise TraceEnvelopeError("invalid_graph")
     if pipeline is not None and (
-        not direct_child(pipeline, root) or not ends_before(prepare, pipeline)
+        not direct_child(pipeline, root)
+        or not ends_before(prepare, pipeline)
+        or prepare["status_code"] != "OK"
+    ):
+        raise TraceEnvelopeError("invalid_graph")
+    if command["outcome"] == "success" and (
+        prepare["status_code"] != "OK"
+        or render is None
+        or render["status_code"] != "OK"
+    ):
+        raise TraceEnvelopeError("invalid_graph")
+    if render is not None and render["status_code"] == "ERROR" and (
+        command["outcome"] != "error" or command["error_type"] != "render_error"
+    ):
+        raise TraceEnvelopeError("invalid_graph")
+    if (
+        operation is not None
+        and operation["outcome"] in {"success", "partial"}
+        and command["outcome"] == "error"
+        and (
+            render is None
+            or render["status_code"] != "ERROR"
+            or command["error_type"] != "render_error"
+        )
     ):
         raise TraceEnvelopeError("invalid_graph")
 
+    _validate_v2_routing_stages(
+        command,
+        spans,
+        prepare,
+        pipeline,
+        render,
+        by_id,
+    )
+    _validate_v2_retrieval_stages(command, operation, spans, pipeline)
+
+
+def _validate_v2_routing_stages(
+    command: dict[str, object],
+    spans: list[dict[str, object]],
+    prepare: dict[str, object],
+    pipeline: dict[str, object] | None,
+    render: dict[str, object] | None,
+    by_id: dict[object, dict[str, object]],
+) -> None:
     routing_names = {
         V2_ROUTING_CATALOG_SPAN_NAME,
         V2_ROUTING_MODEL_SPAN_NAME,
         V2_ROUTING_SELECT_SPAN_NAME,
     }
-    routing_spans = [span for span in spans if span["name"] in routing_names]
-    if command["retrieval_mode"] != "automatic" and routing_spans:
-        raise TraceEnvelopeError("invalid_graph")
-    if command["retrieval_mode"] == "automatic":
-        catalogs = named(V2_ROUTING_CATALOG_SPAN_NAME)
-        models = named(V2_ROUTING_MODEL_SPAN_NAME)
-        selections = named(V2_ROUTING_SELECT_SPAN_NAME)
-        if len(catalogs) > 1 or len(models) > 3 or len(selections) > 1:
+    routing = [span for span in spans if span["name"] in routing_names]
+    if command["retrieval_mode"] != "automatic":
+        if routing:
             raise TraceEnvelopeError("invalid_graph")
-        if command["outcome"] == "success" and (
-            len(catalogs) != 1 or not 1 <= len(models) <= 3 or len(selections) != 1
+        return
+
+    catalogs = [span for span in routing if span["name"] == V2_ROUTING_CATALOG_SPAN_NAME]
+    models = [span for span in routing if span["name"] == V2_ROUTING_MODEL_SPAN_NAME]
+    selections = [span for span in routing if span["name"] == V2_ROUTING_SELECT_SPAN_NAME]
+    if len(catalogs) > 1 or len(models) > 3 or len(selections) > 1:
+        raise TraceEnvelopeError("invalid_graph")
+    if any(span["status_code"] not in {"OK", "ERROR"} for span in routing):
+        raise TraceEnvelopeError("invalid_graph")
+    if any(span["parent_span_id"] != prepare["span_id"] for span in catalogs + selections):
+        raise TraceEnvelopeError("invalid_graph")
+
+    selection = selections[0] if selections else None
+    direct_models = sorted(
+        (span for span in models if span["parent_span_id"] == prepare["span_id"]),
+        key=lambda span: (span["started_at_unix_us"], span["span_id"]),
+    )
+    nested_models = [
+        span
+        for span in models
+        if selection is not None and span["parent_span_id"] == selection["span_id"]
+    ]
+    if len(direct_models) + len(nested_models) != len(models) or len(nested_models) > 1:
+        raise TraceEnvelopeError("invalid_graph")
+    for span in routing:
+        if not _is_descendant(span, prepare, by_id):
+            raise TraceEnvelopeError("invalid_graph")
+        if pipeline is not None and span["ended_at_unix_us"] > pipeline["started_at_unix_us"]:
+            raise TraceEnvelopeError("invalid_graph")
+        if render is not None and span["ended_at_unix_us"] > render["started_at_unix_us"]:
+            raise TraceEnvelopeError("invalid_graph")
+
+    full_graph = prepare["status_code"] == "OK" or pipeline is not None
+    if full_graph:
+        if (
+            len(catalogs) != 1
+            or len(direct_models) != 2
+            or len(selections) != 1
+            or any(span["status_code"] != "OK" for span in routing)
         ):
             raise TraceEnvelopeError("invalid_graph")
-        for span in catalogs + selections:
-            if not direct_child(span, prepare):
-                raise TraceEnvelopeError("invalid_graph")
-        for span in models:
-            parent = by_id.get(span["parent_span_id"])
-            if parent not in (prepare, *selections):
-                raise TraceEnvelopeError("invalid_graph")
-        if not catalogs:
-            if len(models) > 1 or selections:
-                raise TraceEnvelopeError("invalid_graph")
-        else:
-            catalog = catalogs[0]
-            if not any(
-                direct_child(model, prepare) and ends_before(model, catalog)
-                for model in models
+        catalog = catalogs[0]
+        first_model, second_model = direct_models
+        assert selection is not None
+        if not (
+            first_model["ended_at_unix_us"] <= catalog["started_at_unix_us"]
+            and catalog["ended_at_unix_us"] <= second_model["started_at_unix_us"]
+            and second_model["ended_at_unix_us"] <= selection["started_at_unix_us"]
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+        return
+
+    if prepare["status_code"] != "ERROR" or pipeline is not None:
+        raise TraceEnvelopeError("invalid_graph")
+    if not routing:
+        return
+    if not 1 <= len(direct_models) <= 2:
+        raise TraceEnvelopeError("invalid_graph")
+
+    first_model = direct_models[0]
+    catalog = catalogs[0] if catalogs else None
+    second_model = direct_models[1] if len(direct_models) == 2 else None
+    if first_model["status_code"] == "ERROR":
+        if catalog is not None or second_model is not None or selection is not None:
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    if catalog is None:
+        if second_model is not None or selection is not None or nested_models:
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    if first_model["ended_at_unix_us"] > catalog["started_at_unix_us"]:
+        raise TraceEnvelopeError("invalid_graph")
+    if catalog["status_code"] == "ERROR":
+        if second_model is not None or selection is not None:
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    if second_model is None:
+        if selection is not None or nested_models:
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    if catalog["ended_at_unix_us"] > second_model["started_at_unix_us"]:
+        raise TraceEnvelopeError("invalid_graph")
+    if second_model["status_code"] == "ERROR":
+        if selection is not None:
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    if selection is None:
+        if nested_models:
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    if second_model["ended_at_unix_us"] > selection["started_at_unix_us"]:
+        raise TraceEnvelopeError("invalid_graph")
+    if nested_models:
+        nested = nested_models[0]
+        if nested["status_code"] == "ERROR" and selection["status_code"] != "ERROR":
+            raise TraceEnvelopeError("invalid_graph")
+        if selection["status_code"] == "OK" and nested["status_code"] != "OK":
+            raise TraceEnvelopeError("invalid_graph")
+
+
+def _validate_v2_retrieval_stages(
+    command: dict[str, object],
+    operation: dict[str, object] | None,
+    spans: list[dict[str, object]],
+    pipeline: dict[str, object] | None,
+) -> None:
+    retrieval = [span for span in spans if span["name"] in V2_RETRIEVAL_STAGE_NAMES]
+    if command["execution_mode"] == "preview":
+        if retrieval:
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    if pipeline is None:
+        if retrieval:
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    assert operation is not None
+    if any(span["parent_span_id"] != pipeline["span_id"] for span in retrieval):
+        raise TraceEnvelopeError("invalid_graph")
+
+    embeds = [span for span in retrieval if span["name"] == QUERY_EMBED_SPAN_NAME]
+    namespaces = [span for span in retrieval if span["name"] == NAMESPACE_QUERY_SPAN_NAME]
+    reranks = [span for span in retrieval if span["name"] == RERANK_SPAN_NAME]
+    evidence = sorted(
+        (span for span in retrieval if span["name"] == EVIDENCE_SPAN_NAME),
+        key=lambda span: (span["started_at_unix_us"], span["span_id"]),
+    )
+    if len(embeds) != 1:
+        raise TraceEnvelopeError("invalid_graph")
+    embed = embeds[0]
+    if embed["status_code"] not in {"OK", "ERROR"}:
+        raise TraceEnvelopeError("invalid_graph")
+    if any(span["status_code"] not in {"OK", "ERROR"} for span in namespaces + reranks):
+        raise TraceEnvelopeError("invalid_graph")
+    if any(span["status_code"] not in {"UNSET", "OK", "ERROR"} for span in evidence):
+        raise TraceEnvelopeError("invalid_graph")
+
+    final_fanout = operation["final_fanout"]
+    assert type(final_fanout) is int
+    route_ranks = [span["attributes"].get("buoy.route.rank") for span in namespaces]
+    if len(namespaces) != final_fanout or set(route_ranks) != set(
+        range(1, final_fanout + 1)
+    ):
+        raise TraceEnvelopeError("invalid_graph")
+    for namespace in namespaces:
+        attributes = namespace["attributes"]
+        if namespace["status_code"] == "OK":
+            if (
+                attributes.get("buoy.namespace.status") != "ok"
+                or "buoy.namespace.hit_count" not in attributes
             ):
                 raise TraceEnvelopeError("invalid_graph")
-        if selections:
-            if not catalogs or not models:
-                raise TraceEnvelopeError("invalid_graph")
-            catalog = catalogs[0]
-            selection = selections[0]
-            direct_models = [
-                model
-                for model in models
-                if direct_child(model, prepare)
-                and ends_before(catalog, model)
-                and ends_before(model, selection)
-            ]
-            if not direct_models or not ends_before(catalog, selection):
-                raise TraceEnvelopeError("invalid_graph")
-        for span in routing_spans:
-            if not _is_descendant(span, prepare, by_id):
-                raise TraceEnvelopeError("invalid_graph")
-            if pipeline is not None and not ends_before(span, pipeline):
-                raise TraceEnvelopeError("invalid_graph")
-            if render is not None and not ends_before(span, render):
-                raise TraceEnvelopeError("invalid_graph")
-
-    retrieval_spans = [
-        span for span in spans if span["name"] in V2_RETRIEVAL_STAGE_NAMES
-    ]
-    if command["execution_mode"] == "preview" and retrieval_spans:
-        raise TraceEnvelopeError("invalid_graph")
-    if pipeline is not None:
-        assert operation is not None
-        embeds = named(QUERY_EMBED_SPAN_NAME)
-        namespaces = named(NAMESPACE_QUERY_SPAN_NAME)
-        reranks = named(RERANK_SPAN_NAME)
-        evidence = named(EVIDENCE_SPAN_NAME)
-        if len(embeds) != 1:
-            raise TraceEnvelopeError("invalid_graph")
-        final_fanout = operation["final_fanout"]
-        assert type(final_fanout) is int
-        route_ranks = [
-            span["attributes"].get("buoy.route.rank") for span in namespaces
-        ]
-        if len(namespaces) != final_fanout or set(route_ranks) != set(
-            range(1, final_fanout + 1)
+        elif (
+            attributes.get("buoy.namespace.status") != "failed"
+            or "buoy.namespace.hit_count" in attributes
         ):
             raise TraceEnvelopeError("invalid_graph")
-        mode = command["retrieval_mode"]
-        if mode == "explicit_single":
-            if reranks or evidence:
+
+    dependent = namespaces + reranks + evidence
+    if embed["status_code"] == "ERROR":
+        if dependent:
+            raise TraceEnvelopeError("invalid_graph")
+    else:
+        if any(embed["ended_at_unix_us"] > span["started_at_unix_us"] for span in namespaces):
+            raise TraceEnvelopeError("invalid_graph")
+    if reranks:
+        if len(reranks) > 1 or not namespaces or not any(
+            span["status_code"] == "OK" for span in namespaces
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+        rerank = reranks[0]
+        if any(span["ended_at_unix_us"] > rerank["started_at_unix_us"] for span in namespaces):
+            raise TraceEnvelopeError("invalid_graph")
+        if any(
+            not (
+                span["ended_at_unix_us"] <= rerank["started_at_unix_us"]
+                or rerank["ended_at_unix_us"] <= span["started_at_unix_us"]
+            )
+            for span in evidence
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+        if rerank["status_code"] == "ERROR" and any(
+            span["started_at_unix_us"] >= rerank["ended_at_unix_us"]
+            for span in evidence
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+    if evidence and (embed["status_code"] != "OK" or not any(
+        span["status_code"] == "OK" for span in namespaces
+    )):
+        raise TraceEnvelopeError("invalid_graph")
+    for failed in (span for span in evidence if span["status_code"] == "ERROR"):
+        if any(
+            span is not failed and span["started_at_unix_us"] >= failed["ended_at_unix_us"]
+            for span in retrieval
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+
+    mode = command["retrieval_mode"]
+    if mode == "explicit_single":
+        if reranks or evidence:
+            raise TraceEnvelopeError("invalid_graph")
+    else:
+        if operation["outcome"] in {"success", "partial"} and len(reranks) != 1:
+            raise TraceEnvelopeError("invalid_graph")
+        if mode == "explicit_multi" and evidence:
+            raise TraceEnvelopeError("invalid_graph")
+        if mode == "automatic":
+            if len(evidence) > 2:
                 raise TraceEnvelopeError("invalid_graph")
-        else:
-            if len(reranks) > 1:
+            weak_widening = (
+                operation["widened"]
+                and operation["fallback_reason"] == "weak_top1"
+            )
+            if len(evidence) == 2 and not weak_widening:
                 raise TraceEnvelopeError("invalid_graph")
-            if operation["outcome"] in {"success", "partial"} and len(reranks) != 1:
-                raise TraceEnvelopeError("invalid_graph")
-            if mode == "explicit_multi" and evidence:
-                raise TraceEnvelopeError("invalid_graph")
-            if mode == "automatic":
-                if len(evidence) > 2:
+            if operation["outcome"] in {"success", "partial"} and weak_widening:
+                if len(evidence) != 2 or len(reranks) != 1:
                     raise TraceEnvelopeError("invalid_graph")
-                if len(evidence) == 2 and not (
-                    operation["widened"]
-                    and operation["fallback_reason"] == "weak_top1"
+                initial_fanout = operation["initial_fanout"]
+                assert type(initial_fanout) is int
+                initial = [
+                    span
+                    for span in namespaces
+                    if span["attributes"].get("buoy.route.rank") <= initial_fanout
+                ]
+                added = [span for span in namespaces if span not in initial]
+                first, second = evidence
+                rerank = reranks[0]
+                if (
+                    any(span["ended_at_unix_us"] > first["started_at_unix_us"] for span in initial)
+                    or any(first["ended_at_unix_us"] > span["started_at_unix_us"] for span in added)
+                    or rerank["ended_at_unix_us"] > second["started_at_unix_us"]
                 ):
                     raise TraceEnvelopeError("invalid_graph")
-        if any(not _is_descendant(span, pipeline, by_id) for span in retrieval_spans):
+
+    if operation["outcome"] in {"success", "partial"}:
+        if (
+            embed["status_code"] != "OK"
+            or final_fanout <= 0
+            or any(span["status_code"] == "ERROR" for span in reranks + evidence)
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+        failed_namespaces = sum(
+            span["status_code"] == "ERROR" for span in namespaces
+        )
+        if operation["outcome"] == "success":
+            if (
+                operation["failure_count"] != 0
+                or operation["incomplete"]
+                or failed_namespaces
+            ):
+                raise TraceEnvelopeError("invalid_graph")
+        elif (
+            not 0 < operation["failure_count"] < final_fanout
+            or failed_namespaces != operation["failure_count"]
+            or failed_namespaces == len(namespaces)
+        ):
             raise TraceEnvelopeError("invalid_graph")
 
 

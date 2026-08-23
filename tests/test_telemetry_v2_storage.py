@@ -677,6 +677,213 @@ def _widened_v2_object() -> dict[str, object]:
     return value
 
 
+def _set_command_error(
+    value: dict[str, object],
+    *,
+    error_type: str,
+    exit_code: int = 2,
+) -> None:
+    command = value["command"]
+    assert isinstance(command, dict)
+    command.update(
+        {"outcome": "error", "exit_code": exit_code, "error_type": error_type}
+    )
+    root = _json_span(value, V2_COMMAND_ROOT_SPAN_NAME)
+    root["status_code"] = "ERROR"
+    root["attributes"].update(
+        {
+            "buoy.command.outcome": "error",
+            "buoy.command.exit_code": exit_code,
+            "buoy.error.type": error_type,
+        }
+    )
+
+
+def _set_pipeline_error(
+    value: dict[str, object],
+    *,
+    error_type: str = "runtime_error",
+) -> None:
+    operation = value["retrieval_operation"]
+    assert isinstance(operation, dict)
+    operation["outcome"] = "error"
+    pipeline = _json_span(value, V2_PIPELINE_SPAN_NAME)
+    pipeline["status_code"] = "ERROR"
+    pipeline["attributes"].update(
+        {
+            "buoy.retrieval.outcome": "error",
+            "buoy.error.type": error_type,
+        }
+    )
+
+
+def _automatic_prepare_error_object(prefix: str) -> dict[str, object]:
+    categories = {
+        "early": "configuration_error",
+        "model1_error": "model_error",
+        "after_model1": "configuration_error",
+        "catalog_error": "catalog_error",
+        "model2_error": "model_error",
+        "select_error": "routing_error",
+        "nested_model_error": "model_error",
+        "constructor_error": "model_error",
+    }
+    value = json.loads(
+        encode_trace_envelope_v2(_rows(outcome="error", pipeline=False))
+    )
+    value["command"]["retrieval_mode"] = "automatic"
+    root = _json_span(value, V2_COMMAND_ROOT_SPAN_NAME)
+    root["attributes"]["buoy.retrieval.mode"] = "automatic"
+    category = categories[prefix]
+    value["command"]["error_type"] = category
+    root["attributes"]["buoy.error.type"] = category
+    prepare = _json_span(value, "buoy.retrieve.prepare")
+    prepare["attributes"] = {"buoy.error.type": category}
+    if prefix == "early":
+        return value
+
+    start = prepare["started_at_unix_us"]
+    first_status = "ERROR" if prefix == "model1_error" else "OK"
+    _append_v2_span(
+        value,
+        name="buoy.routing.model",
+        span_id="c" * 16,
+        parent_span_id=prepare["span_id"],
+        started_at_unix_us=start,
+        ended_at_unix_us=start + 100,
+        status_code=first_status,
+        attributes=(
+            {"buoy.error.type": "model_error"}
+            if first_status == "ERROR"
+            else None
+        ),
+    )
+    if prefix in {"model1_error", "after_model1"}:
+        return value
+
+    catalog_status = "ERROR" if prefix == "catalog_error" else "OK"
+    _append_v2_span(
+        value,
+        name="buoy.routing.catalog",
+        span_id="9" * 16,
+        parent_span_id=prepare["span_id"],
+        started_at_unix_us=start + 100,
+        ended_at_unix_us=start + 200,
+        status_code=catalog_status,
+        attributes=(
+            {"buoy.error.type": "catalog_error"}
+            if catalog_status == "ERROR"
+            else None
+        ),
+    )
+    if prefix == "catalog_error":
+        return value
+
+    second_status = "ERROR" if prefix == "model2_error" else "OK"
+    _append_v2_span(
+        value,
+        name="buoy.routing.model",
+        span_id="a" * 16,
+        parent_span_id=prepare["span_id"],
+        started_at_unix_us=start + 200,
+        ended_at_unix_us=start + 300,
+        status_code=second_status,
+        attributes=(
+            {"buoy.error.type": "model_error"}
+            if second_status == "ERROR"
+            else None
+        ),
+    )
+    if prefix == "model2_error":
+        return value
+
+    selection_status = (
+        "ERROR" if prefix in {"select_error", "nested_model_error"} else "OK"
+    )
+    selection_error = (
+        "model_error" if prefix == "nested_model_error" else "routing_error"
+    )
+    selection = _append_v2_span(
+        value,
+        name="buoy.routing.select",
+        span_id="b" * 16,
+        parent_span_id=prepare["span_id"],
+        started_at_unix_us=start + 300,
+        ended_at_unix_us=start + 500,
+        status_code=selection_status,
+        attributes=(
+            {"buoy.error.type": selection_error}
+            if selection_status == "ERROR"
+            else None
+        ),
+    )
+    if prefix == "nested_model_error":
+        _append_v2_span(
+            value,
+            name="buoy.routing.model",
+            span_id="d" * 16,
+            parent_span_id=selection["span_id"],
+            started_at_unix_us=start + 350,
+            ended_at_unix_us=start + 400,
+            status_code="ERROR",
+            attributes={"buoy.error.type": "model_error"},
+        )
+    return value
+
+
+def _automatic_embed_failure_object() -> dict[str, object]:
+    value = _embed_failure_v2_object()
+    value["command"]["retrieval_mode"] = "automatic"
+    root = _json_span(value, V2_COMMAND_ROOT_SPAN_NAME)
+    root["attributes"]["buoy.retrieval.mode"] = "automatic"
+    pipeline = _json_span(value, V2_PIPELINE_SPAN_NAME)
+    pipeline["attributes"]["buoy.retrieval.mode"] = "automatic"
+    automatic = _automatic_v2_object()
+    value["spans"].extend(
+        deepcopy(span)
+        for span in automatic["spans"]
+        if span["name"]
+        in {"buoy.routing.model", "buoy.routing.catalog", "buoy.routing.select"}
+    )
+    value["spans"].sort(
+        key=lambda span: (span["started_at_unix_us"], span["span_id"])
+    )
+    return value
+
+
+def _all_namespace_failure_object() -> dict[str, object]:
+    value = _explicit_multi_v2_object()
+    _set_command_error(value, error_type="provider_call_error")
+    _set_pipeline_error(value, error_type="provider_call_error")
+    operation = value["retrieval_operation"]
+    assert isinstance(operation, dict)
+    operation.update(
+        {"hit_count": 0, "failure_count": 2, "incomplete": True}
+    )
+    pipeline = _json_span(value, V2_PIPELINE_SPAN_NAME)
+    pipeline["attributes"].update(
+        {
+            "buoy.retrieval.hit_count": 0,
+            "buoy.retrieval.failure_count": 2,
+            "buoy.retrieval.incomplete": True,
+        }
+    )
+    value["spans"] = [
+        span for span in value["spans"] if span["name"] != "buoy.rerank"
+    ]
+    for namespace in (
+        span for span in value["spans"] if span["name"] == "buoy.namespace.query"
+    ):
+        rank = namespace["attributes"]["buoy.route.rank"]
+        namespace["status_code"] = "ERROR"
+        namespace["attributes"] = {
+            "buoy.error.type": "provider_call_error",
+            "buoy.namespace.status": "failed",
+            "buoy.route.rank": rank,
+        }
+    return value
+
+
 class Version2EnvelopeTests(unittest.TestCase):
     def test_live_preview_and_pre_pipeline_error_round_trip_canonically(self) -> None:
         fixtures = (
@@ -818,11 +1025,7 @@ class Version2EnvelopeTests(unittest.TestCase):
             )
         self.assertEqual(raised.exception.reason, "invalid_graph")
 
-        partial = json.loads(encode_trace_envelope_v2(_rows()))
-        partial["retrieval_operation"]["outcome"] = "partial"
-        _json_span(partial, V2_PIPELINE_SPAN_NAME)["attributes"][
-            "buoy.retrieval.outcome"
-        ] = "partial"
+        partial = _namespace_failure_v2_object()
         decode_trace_envelope_v2(
             json.dumps(partial, sort_keys=True, separators=(",", ":")).encode()
         )
@@ -962,6 +1165,166 @@ class Version2EnvelopeTests(unittest.TestCase):
                 with self.assertRaises(TraceEnvelopeError) as raised:
                     decode_trace_envelope_v2(
                         json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+                    )
+                self.assertEqual(raised.exception.reason, "invalid_graph")
+
+    def test_source_backed_reachability_status_and_order(self) -> None:
+        render_error = _automatic_v2_object()
+        _set_command_error(render_error, error_type="render_error", exit_code=1)
+        render = _json_span(render_error, "buoy.output.render")
+        render["status_code"] = "ERROR"
+        render["attributes"] = {"buoy.error.type": "render_error"}
+        positives = {
+            **{
+                f"automatic prepare prefix {prefix}": _automatic_prepare_error_object(
+                    prefix
+                )
+                for prefix in (
+                    "early",
+                    "model1_error",
+                    "after_model1",
+                    "catalog_error",
+                    "model2_error",
+                    "select_error",
+                    "nested_model_error",
+                    "constructor_error",
+                )
+            },
+            "automatic pipeline embed error": _automatic_embed_failure_object(),
+            "all namespace failure": _all_namespace_failure_object(),
+            "partial namespace failure": _namespace_failure_v2_object(),
+            "weak evidence widening": _widened_v2_object(),
+            "successful pipeline then render error": render_error,
+        }
+        for name, value in positives.items():
+            with self.subTest(positive=name):
+                decode_trace_envelope_v2(
+                    json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+                )
+
+        invalid: dict[str, dict[str, object]] = {}
+
+        automatic_missing_routing = _automatic_embed_failure_object()
+        automatic_missing_routing["spans"] = [
+            span
+            for span in automatic_missing_routing["spans"]
+            if span["name"]
+            not in {
+                "buoy.routing.model",
+                "buoy.routing.catalog",
+                "buoy.routing.select",
+            }
+        ]
+        invalid["automatic pipeline missing routing"] = automatic_missing_routing
+
+        automatic_failed_routing = _automatic_embed_failure_object()
+        first_model = next(
+            span
+            for span in automatic_failed_routing["spans"]
+            if span["name"] == "buoy.routing.model"
+            and span["parent_span_id"]
+            == _json_span(automatic_failed_routing, "buoy.retrieve.prepare")["span_id"]
+        )
+        first_model["status_code"] = "ERROR"
+        first_model["attributes"] = {"buoy.error.type": "model_error"}
+        invalid["automatic pipeline after failed routing"] = automatic_failed_routing
+
+        failed_prepare_success = json.loads(encode_trace_envelope_v2(_rows()))
+        prepare = _json_span(failed_prepare_success, "buoy.retrieve.prepare")
+        prepare["status_code"] = "ERROR"
+        prepare["attributes"] = {"buoy.error.type": "unexpected_error"}
+        invalid["success after failed prepare"] = failed_prepare_success
+
+        arbitrary_error_after_pipeline = json.loads(encode_trace_envelope_v2(_rows()))
+        _set_command_error(
+            arbitrary_error_after_pipeline, error_type="provider_call_error"
+        )
+        invalid["arbitrary error after successful pipeline"] = (
+            arbitrary_error_after_pipeline
+        )
+
+        bad_parent = _explicit_multi_v2_object()
+        _json_span(bad_parent, "buoy.namespace.query")["parent_span_id"] = bad_parent[
+            "command"
+        ]["root_span_id"]
+        invalid["retrieval stage non-pipeline parent"] = bad_parent
+
+        namespace_before_embed = _explicit_multi_v2_object()
+        embed = _json_span(namespace_before_embed, "buoy.query.embed")
+        namespace = _json_span(namespace_before_embed, "buoy.namespace.query")
+        namespace["started_at_unix_us"] = embed["started_at_unix_us"]
+        namespace["ended_at_unix_us"] = embed["ended_at_unix_us"] - 1
+        namespace["duration_ms"] = (
+            namespace["ended_at_unix_us"] - namespace["started_at_unix_us"]
+        ) / 1_000
+        namespace_before_embed["spans"].sort(
+            key=lambda span: (span["started_at_unix_us"], span["span_id"])
+        )
+        invalid["namespace before embed completes"] = namespace_before_embed
+
+        rerank_before_namespace = _explicit_multi_v2_object()
+        rerank = _json_span(rerank_before_namespace, "buoy.rerank")
+        namespace = _json_span(rerank_before_namespace, "buoy.namespace.query")
+        rerank["started_at_unix_us"] = namespace["started_at_unix_us"] + 1
+        rerank["ended_at_unix_us"] = rerank["started_at_unix_us"] + 100
+        rerank["duration_ms"] = 0.1
+        rerank_before_namespace["spans"].sort(
+            key=lambda span: (span["started_at_unix_us"], span["span_id"])
+        )
+        invalid["rerank before namespace completion"] = rerank_before_namespace
+
+        failed_embed_with_namespace = _embed_failure_v2_object()
+        source_namespace = _json_span(
+            json.loads(encode_trace_envelope_v2(_rows())),
+            "buoy.namespace.query",
+        )
+        failed_embed_with_namespace["spans"].append(source_namespace)
+        failed_embed_with_namespace["spans"].sort(
+            key=lambda span: (span["started_at_unix_us"], span["span_id"])
+        )
+        failed_embed_with_namespace["retrieval_operation"]["final_fanout"] = 1
+        _json_span(failed_embed_with_namespace, V2_PIPELINE_SPAN_NAME)[
+            "attributes"
+        ]["buoy.retrieval.final_fanout"] = 1
+        invalid["dependent work after failed embed"] = failed_embed_with_namespace
+
+        success_with_failed_namespace = json.loads(encode_trace_envelope_v2(_rows()))
+        namespace = _json_span(success_with_failed_namespace, "buoy.namespace.query")
+        namespace["status_code"] = "ERROR"
+        namespace["attributes"] = {
+            "buoy.error.type": "provider_call_error",
+            "buoy.namespace.status": "failed",
+            "buoy.route.rank": 1,
+        }
+        invalid["success with failed namespace"] = success_with_failed_namespace
+
+        partial_count_mismatch = _namespace_failure_v2_object()
+        partial_count_mismatch["retrieval_operation"]["failure_count"] = 0
+        partial_count_mismatch["retrieval_operation"]["incomplete"] = False
+        pipeline = _json_span(partial_count_mismatch, V2_PIPELINE_SPAN_NAME)
+        pipeline["attributes"]["buoy.retrieval.failure_count"] = 0
+        pipeline["attributes"]["buoy.retrieval.incomplete"] = False
+        invalid["partial namespace failure count mismatch"] = partial_count_mismatch
+
+        prefix_after_failure = _automatic_prepare_error_object("model1_error")
+        prepare = _json_span(prefix_after_failure, "buoy.retrieve.prepare")
+        _append_v2_span(
+            prefix_after_failure,
+            name="buoy.routing.catalog",
+            span_id="9" * 16,
+            parent_span_id=prepare["span_id"],
+            started_at_unix_us=prepare["started_at_unix_us"] + 100,
+            ended_at_unix_us=prepare["started_at_unix_us"] + 200,
+        )
+        invalid["routing continues after failed prerequisite"] = prefix_after_failure
+
+        for name, value in invalid.items():
+            with self.subTest(invalid=name):
+                with self.assertRaises(TraceEnvelopeError) as raised:
+                    decode_trace_envelope_v2(
+                        json.dumps(
+                            value, sort_keys=True, separators=(",", ":")
+                        ).encode()
                     )
                 self.assertEqual(raised.exception.reason, "invalid_graph")
 
@@ -1193,6 +1556,39 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
                 attributes={"buoy.evidence.mode": "active", "buoy.evidence.status": "supported"},
             )
 
+        automatic_missing_routing = _automatic_embed_failure_object()
+        automatic_missing_routing["spans"] = [
+            span
+            for span in automatic_missing_routing["spans"]
+            if span["name"]
+            not in {
+                "buoy.routing.model",
+                "buoy.routing.catalog",
+                "buoy.routing.select",
+            }
+        ]
+        failed_prepare_success = json.loads(encode_trace_envelope_v2(_rows()))
+        prepare = _json_span(failed_prepare_success, "buoy.retrieve.prepare")
+        prepare["status_code"] = "ERROR"
+        prepare["attributes"] = {"buoy.error.type": "unexpected_error"}
+        rerank_before_namespace = _explicit_multi_v2_object()
+        rerank = _json_span(rerank_before_namespace, "buoy.rerank")
+        namespace = _json_span(rerank_before_namespace, "buoy.namespace.query")
+        rerank["started_at_unix_us"] = namespace["started_at_unix_us"] + 1
+        rerank["ended_at_unix_us"] = rerank["started_at_unix_us"] + 100
+        rerank["duration_ms"] = 0.1
+        rerank_before_namespace["spans"].sort(
+            key=lambda span: (span["started_at_unix_us"], span["span_id"])
+        )
+        partial_count_mismatch = _namespace_failure_v2_object()
+        partial_count_mismatch["retrieval_operation"]["failure_count"] = 0
+        partial_count_mismatch["retrieval_operation"]["incomplete"] = False
+        partial_pipeline = _json_span(
+            partial_count_mismatch, V2_PIPELINE_SPAN_NAME
+        )
+        partial_pipeline["attributes"]["buoy.retrieval.failure_count"] = 0
+        partial_pipeline["attributes"]["buoy.retrieval.incomplete"] = False
+
         invalid_values = (
             invalid_graph,
             error_zero,
@@ -1202,6 +1598,10 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
             duplicate_rank,
             gapped_rank,
             impossible_evidence,
+            automatic_missing_routing,
+            failed_prepare_success,
+            rerank_before_namespace,
+            partial_count_mismatch,
         )
         publications = []
         for value in invalid_values:

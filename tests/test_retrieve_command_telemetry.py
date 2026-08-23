@@ -220,6 +220,7 @@ class _AutomaticRetriever:
         ) as pipeline:
             with telemetry_span(QUERY_EMBED_SPAN_NAME) as child:
                 child.mark_ok()
+            pipeline.set_attribute("buoy.retrieval.final_fanout", 1)
             with telemetry_span(
                 NAMESPACE_QUERY_SPAN_NAME,
                 {"buoy.route.rank": 1},
@@ -524,6 +525,58 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
                 for routing_call in started[:7]:
                     self.assertEqual(routing_call.call_count, 1)
                 self.assertEqual(retriever.calls, 0 if preview else 1)
+
+    def test_automatic_pipeline_and_render_errors_keep_completed_routing(self) -> None:
+        os.environ["TURBOPUFFER_API_KEY"] = "private-key"
+        cases = (
+            ("pipeline", _AutomaticRetriever(failure=True), None),
+            ("render", _AutomaticRetriever(), OSError("private render failure")),
+        )
+        for name, retriever, render_failure in cases:
+            with self.subTest(name=name):
+                self.payloads.clear()
+                with ExitStack() as stack:
+                    for item in self._automatic_patches(retriever):
+                        stack.enter_context(item)
+                    if render_failure is not None:
+                        stack.enter_context(
+                            patch(
+                                "buoy_search.cli._print_json",
+                                side_effect=render_failure,
+                            )
+                        )
+                        raised = self.assertRaises(OSError)
+                    else:
+                        stack.enter_context(redirect_stderr(StringIO()))
+                        raised = None
+                    if raised is None:
+                        self.assertEqual(main(["retrieve", "query", "--json"]), 2)
+                    else:
+                        with raised:
+                            main(["retrieve", "query", "--json"])
+                rows = self._rows()
+                self.assertEqual(rows.command[6:8], ("automatic", "error"))
+                self.assertIsNotNone(rows.retrieval_operation)
+                routing = [
+                    span
+                    for span in rows.spans
+                    if span[3]
+                    in {
+                        "buoy.routing.catalog",
+                        "buoy.routing.model",
+                        "buoy.routing.select",
+                    }
+                ]
+                self.assertTrue(routing)
+                self.assertTrue(all(span[7] == "OK" for span in routing))
+                self._assert_exact_graph(
+                    rows, pipeline=True, automatic=True, namespace_minimum=1
+                )
+                if name == "pipeline":
+                    self.assertEqual(rows.retrieval_operation[5], "error")
+                else:
+                    self.assertEqual(rows.retrieval_operation[5], "success")
+                    self.assertEqual(rows.command[9], "render_error")
 
     def test_automatic_weak_evidence_widening_publishes_truthful_v2_graph(self) -> None:
         os.environ["TURBOPUFFER_API_KEY"] = "private-key"
