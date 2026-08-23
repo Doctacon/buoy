@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-21
-Updated: 2026-08-22
-Relates-To: .10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md, .10x/specs/retrieve-command-telemetry.md, .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-for-command-telemetry.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-rereview.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-final-review.md
+Updated: 2026-08-23
+Relates-To: .10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md, .10x/specs/retrieve-command-telemetry.md, .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-for-command-telemetry.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-rereview.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-final-review.md, .10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-acceptance-review.md
 
 # Retrieve Command and Pipeline Telemetry Implementation
 
@@ -626,6 +626,21 @@ Private parent artifacts remain outside the repository:
 
 No provider, catalog, content, credential, model, live collector, real telemetry
 home, installed-tool replacement, remote Git, integration, release, or
-publication operation occurred. Fresh independent review remains mandatory;
-the separate five-run reference-host timing gate remains with the dependent
+publication operation occurred. Fresh independent review remained mandatory;
+the separate five-run reference-host timing gate remained with the dependent
 validation ticket.
+
+## Acceptance-review challenge
+
+Fresh acceptance review of immutable `d4c336c8` accepted every previously named
+repair and the parent-observed package evidence but returned FAIL on independent
+graph reachability. An automatic command with a pipeline can omit all routing
+stages because full routing is required only for command success, although CLI
+source necessarily completes routing before any live call. A successful command
+can also carry a failed prepare span, and a multi-command rerank span can be
+moved before embedding/namespace work. These impossible mutations pass current
+decoding and therefore writer validation. The accepted prerequisite/status/
+order repair and adjacent source-backed operation consistency checks are bounded
+at `.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-acceptance-review.md`.
+The parent package results remain valid evidence for `d4c336c8` but must be
+reproduced once more after final source repair.

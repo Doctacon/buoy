@@ -100,11 +100,14 @@ catalog read is historical evidence; no further live run is authorized.
 
 ## Blockers
 
-The final-review source/test findings and parent-observed exact-commit package
-reproduction are complete for immutable implementation `d4c336c8`, tree
-`08863bae`. Fresh independent exact-commit review remains required before
-closure. The dependent ticket still owns the separate five-run reference-host
-timing gate.
+Immutable implementation `d4c336c8` failed fresh acceptance review. Independent
+validation still permits automatic pipeline/error graphs without completed
+routing prerequisites and successful traces with failed or out-of-order stages.
+The bounded source-backed repair is recorded at
+`.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-acceptance-review.md`.
+Final parent package reproduction and exact-commit review must follow repair.
+The dependent ticket still owns the separate five-run reference-host timing
+gate.
 
 No live card repair, report, or further provider run is required or authorized.
 
@@ -249,6 +252,10 @@ No live card repair, report, or further provider run is required or authorized.
   receipt and active routing accepted; installed disabled preview created no
   `.buoy`; post-run status stayed clean. Failed harness attempts and complete
   reproducible limits are preserved additively in
-  `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`. Ticket
-  remains active only for fresh independent review; the dependent timing gate is
-  unchanged.
+  `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`.
+- 2026-08-23: Fresh acceptance review of `d4c336c8` returned FAIL. An automatic
+  pipeline can omit all routing stages, a successful command can mark prepare
+  failed, and rerank can precede embed/namespace work. Prior cardinality,
+  timing, privacy, behavior, routing-receipt, and package findings were accepted.
+  The source-backed prerequisite/status/order repair is bounded at
+  `.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-acceptance-review.md`.

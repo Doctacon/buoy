@@ -167,6 +167,11 @@ for its completion.
   findings and added clean exact-commit package records, but final review found
   one truthful weak-evidence widening graph rejected, namespace count/rank
   disagreement accepted, and delayed subprocesses lacking zero-delay baselines.
-  Parent package reproduction remains pending final source. Child 2 remains
-  active under
+  Child 2 remained active under
   `.10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-final-review.md`.
+- 2026-08-23: Implementation `d4c336c8` closed those findings and passed parent
+  exact package reproduction, but acceptance review found automatic pipeline
+  graphs can omit mandatory routing and failed/out-of-order prerequisites can
+  persist. Prior cardinality/timing/privacy/package findings were accepted.
+  Child 2 remains active under
+  `.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-acceptance-review.md`.
