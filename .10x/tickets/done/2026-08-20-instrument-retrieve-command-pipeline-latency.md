@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-20
 Updated: 2026-08-23
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -100,13 +100,11 @@ catalog read is historical evidence; no further live run is authorized.
 
 ## Blockers
 
-No implementation blocker is currently observed. Exact implementation
-`6bfd0d4cec784cec18e9050bef4a8d0787f354e7` passed fresh source-reachability
-review, dual-runtime filtered full suites, static/ranking checks, and parent
-exact source/wheel/sdist/install acceptance. Fresh final acceptance review of
-that immutable implementation and recorded evidence remains required before
-closure. The dependent ticket still owns the separate five-run reference-host
-timing gate.
+None. Exact implementation `6bfd0d4cec784cec18e9050bef4a8d0787f354e7`
+passed source-reachability and final acceptance review, dual-runtime filtered
+full suites, static/ranking checks, and parent exact source/wheel/sdist/install
+acceptance. The separate five-run reference-host timing gate belongs to the
+dependent validation ticket and does not block this ticket.
 
 No live card repair, report, or further provider run is required or authorized.
 
@@ -293,5 +291,28 @@ No live card repair, report, or further provider run is required or authorized.
   reproduced CLI/envelope/artifact bytes, active routing accepted the new CLI
   receipt, the old receipt rejected, and a disabled installed preview created
   no `.buoy`. Full details are additive in
-  `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`. Ticket
-  remains active only for fresh final acceptance review and coherent closure.
+  `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`.
+- 2026-08-23: Fresh final acceptance review returned PASS with no blocker and
+  mapped every ticket criterion to implementation, tests, or parent-observed
+  evidence. The review is
+  `.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-final-acceptance-review.md`.
+  This ticket is closed; integrated validation and the five-run reference-host
+  timing gate remain with the dependent child ticket.
+
+## Retrospective
+
+Repeated adversarial review converted plausible graph checks into explicit
+source-reachability validation for successful and failed routing, retrieval,
+and evidence phases. The durable contract now lives in focused decoder/writer
+fixtures and the source-reachability review sequence; no separate operational
+skill is needed.
+
+An isolated-home full-suite run exposed that a privacy test claiming local fakes
+still relied on the user's cached reranker through a lazy default. The test now
+injects the existing ordinal fake, and the reusable lesson is recorded at
+`.10x/knowledge/isolated-tests-own-lazy-model-dependencies.md`.
+
+No unfinished implementation, accepted residual defect, routing semantic
+change, external mutation, or hidden follow-up remains in this ticket. The
+integrated timing claim was deliberately never absorbed here and remains owned
+by `.10x/tickets/2026-08-20-validate-retrieve-command-telemetry-v2.md`.

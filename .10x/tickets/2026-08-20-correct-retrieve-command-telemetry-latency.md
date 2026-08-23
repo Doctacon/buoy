@@ -1,6 +1,6 @@
 Status: open
 Created: 2026-08-20
-Updated: 2026-08-21
+Updated: 2026-08-23
 Parent: None
 Depends-On: None
 Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md
@@ -26,7 +26,7 @@ operation, failure isolation, and direct-library compatibility.
    implements the envelope/inbox/store/status/flush/migrate substrate using
    deterministic fixture traces. It is the first dependency and owns no CLI
    retrieval instrumentation.
-2. `.10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md`
+2. `.10x/tickets/done/2026-08-20-instrument-retrieve-command-pipeline-latency.md`
    depends on child 1 and wires entry-point, CLI-stage, and nested pipeline
    traces into that substrate. Because the CLI is an active routing receipt,
    this child also locally recertifies the final CLI hash under the newer
@@ -173,5 +173,10 @@ for its completion.
   exact package reproduction, but acceptance review found automatic pipeline
   graphs can omit mandatory routing and failed/out-of-order prerequisites can
   persist. Prior cardinality/timing/privacy/package findings were accepted.
-  Child 2 remains active under
+  Child 2 remained active under
   `.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-acceptance-review.md`.
+- 2026-08-23: Final child-2 implementation `6bfd0d4c`, tree `26931097`, passed
+  source-reachability and final acceptance review, dual-runtime filtered full
+  suites, static/ranking checks, and parent exact source/wheel/sdist/install
+  reproduction. Child 2 is closed; child 3 integrated validation and its
+  parent-observed five-run reference-host timing gate are now unblocked.

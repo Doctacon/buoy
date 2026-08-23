@@ -1,8 +1,8 @@
 Status: open
 Created: 2026-08-20
-Updated: 2026-08-20
+Updated: 2026-08-23
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
-Depends-On: .10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md
+Depends-On: .10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-migration.md, .10x/tickets/done/2026-08-20-instrument-retrieve-command-pipeline-latency.md
 Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md
 Specifications: .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md
 
@@ -65,10 +65,13 @@ automatic migration, backup deletion, or out-of-scope product fix.
 
 ## Blockers
 
-Both implementation child tickets must be done with evidence and no unresolved
-spec conflict.
+None. Both implementation children are done with passing review and evidence.
+Integrated validation is ready for assignment.
 
 ## Progress and notes
 
 - 2026-08-20: Opened as the final dependent acceptance unit. No validation or
   repair begins before both implementation dependencies complete.
+- 2026-08-23: Storage/migration and command/pipeline instrumentation dependencies
+  are closed. Exact command implementation `6bfd0d4c` passed final review and
+  package acceptance; this integrated validation ticket is unblocked.

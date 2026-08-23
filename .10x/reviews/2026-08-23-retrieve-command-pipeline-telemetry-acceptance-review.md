@@ -3,7 +3,7 @@ Created: 2026-08-23
 Updated: 2026-08-23
 Target: d4c336c8289f5eda4cfadbc0b2bbe255349e62dc
 Verdict: fail
-Ticket: .10x/tickets/2026-08-20-instrument-retrieve-command-pipeline-latency.md
+Ticket: .10x/tickets/done/2026-08-20-instrument-retrieve-command-pipeline-latency.md
 Prior-Review: .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-final-review.md
 Evidence-Head: 9a18b42169cde89a7d5919c263a4cedc65736f18
 
