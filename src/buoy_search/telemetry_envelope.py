@@ -2353,17 +2353,28 @@ def _validate_v2_retrieval_stages(
                 required_evidence = 2 if weak_widening else 1
                 if len(evidence) != required_evidence:
                     raise TraceEnvelopeError("invalid_graph")
-            if operation["outcome"] in {"success", "partial"} and weak_widening:
-                if len(reranks) != 1:
-                    raise TraceEnvelopeError("invalid_graph")
-                initial = initial_namespaces
-                added = [span for span in namespaces if span not in initial]
-                first, second = evidence
-                rerank = reranks[0]
+            if weak_widening and evidence:
+                added = [
+                    span for span in namespaces if span not in initial_namespaces
+                ]
+                first = evidence[0]
                 if (
-                    any(span["ended_at_unix_us"] > first["started_at_unix_us"] for span in initial)
-                    or any(first["ended_at_unix_us"] > span["started_at_unix_us"] for span in added)
-                    or rerank["ended_at_unix_us"] > second["started_at_unix_us"]
+                    any(
+                        span["ended_at_unix_us"] > first["started_at_unix_us"]
+                        for span in initial_namespaces
+                    )
+                    or any(
+                        first["ended_at_unix_us"] > span["started_at_unix_us"]
+                        for span in added
+                    )
+                    or (
+                        len(evidence) == 2
+                        and (
+                            len(reranks) != 1
+                            or reranks[0]["ended_at_unix_us"]
+                            > evidence[1]["started_at_unix_us"]
+                        )
+                    )
                 ):
                     raise TraceEnvelopeError("invalid_graph")
 

@@ -916,6 +916,52 @@ def _automatic_evidence_before_namespace_object() -> dict[str, object]:
     return value
 
 
+def _weak_widening_error_prefix_object(
+    *, overlap_added: bool = False
+) -> dict[str, object]:
+    value = _widened_v2_object()
+    _set_command_error(value, error_type="provider_call_error")
+    _set_pipeline_error(value)
+    operation = value["retrieval_operation"]
+    assert isinstance(operation, dict)
+    operation.update({"hit_count": 0, "evidence_status": None})
+    pipeline = _json_span(value, V2_PIPELINE_SPAN_NAME)
+    pipeline["attributes"]["buoy.retrieval.hit_count"] = 0
+    pipeline["attributes"].pop("buoy.evidence.status")
+
+    evidence = sorted(
+        (span for span in value["spans"] if span["name"] == "buoy.evidence.assess"),
+        key=lambda span: (span["started_at_unix_us"], span["span_id"]),
+    )
+    first = evidence[0]
+    value["spans"] = [
+        span
+        for span in value["spans"]
+        if span["name"] != "buoy.rerank" and span is not evidence[1]
+    ]
+    added = next(
+        span
+        for span in value["spans"]
+        if span["name"] == "buoy.namespace.query"
+        and span["attributes"]["buoy.route.rank"] == 2
+    )
+    added["status_code"] = "ERROR"
+    added["attributes"] = {
+        "buoy.error.type": "runtime_error",
+        "buoy.namespace.status": "failed",
+        "buoy.route.rank": 2,
+    }
+    if overlap_added:
+        added["started_at_unix_us"] = first["started_at_unix_us"] + 10
+        added["duration_ms"] = (
+            added["ended_at_unix_us"] - added["started_at_unix_us"]
+        ) / 1_000
+    value["spans"].sort(
+        key=lambda span: (span["started_at_unix_us"], span["span_id"])
+    )
+    return value
+
+
 def _automatic_prepare_gap_object(after: str) -> dict[str, object]:
     if after == "catalog":
         value = _automatic_prepare_error_object("model2_error")
@@ -1322,6 +1368,9 @@ class Version2EnvelopeTests(unittest.TestCase):
             "automatic success with UNSET evidence": automatic_unset_evidence,
             "automatic partial with one evidence": _automatic_partial_v2_object(),
             "automatic error with reached evidence": reached_evidence_error,
+            "weak widening error after reached evidence": (
+                _weak_widening_error_prefix_object()
+            ),
             **{
                 f"automatic prepare prefix {prefix}": _automatic_prepare_error_object(
                     prefix
@@ -1363,6 +1412,9 @@ class Version2EnvelopeTests(unittest.TestCase):
                 _automatic_success_without_evidence_object()
             ),
             "automatic partial without evidence": automatic_partial_without_evidence,
+            "weak evidence overlaps added namespace": (
+                _weak_widening_error_prefix_object(overlap_added=True)
+            ),
             "routing stops after successful catalog": (
                 _automatic_prepare_gap_object("catalog")
             ),
@@ -1759,6 +1811,9 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
         partial_pipeline["attributes"]["buoy.retrieval.incomplete"] = False
 
         evidence_before_namespace = _automatic_evidence_before_namespace_object()
+        weak_evidence_overlaps_added = _weak_widening_error_prefix_object(
+            overlap_added=True
+        )
         automatic_without_evidence = _automatic_success_without_evidence_object()
         automatic_partial_without_evidence = _automatic_partial_v2_object()
         automatic_partial_without_evidence["spans"] = [
@@ -1785,6 +1840,7 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
             rerank_before_namespace,
             partial_count_mismatch,
             evidence_before_namespace,
+            weak_evidence_overlaps_added,
             automatic_without_evidence,
             automatic_partial_without_evidence,
             routing_gap_after_catalog,
