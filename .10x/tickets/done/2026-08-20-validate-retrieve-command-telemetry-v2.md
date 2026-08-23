@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-20
 Updated: 2026-08-23
 Parent: .10x/tickets/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -65,10 +65,8 @@ automatic migration, backup deletion, or out-of-scope product fix.
 
 ## Blockers
 
-Criterion 9 remains open pending fresh independent rereview of the exact
-criterion-3 repair commit and appended evidence. Criterion 3 now has controlled
-baseline-versus-500 ms observations for all five seams. Parent-owned criterion
-2 passed; the implementation dependencies remain done and are not blockers.
+None. All nine criteria are supported by durable evidence, and two fresh
+independent rereviews passed with no findings.
 
 ## Progress and notes
 
@@ -123,5 +121,33 @@ baseline-versus-500 ms observations for all five seams. Parent-owned criterion
   documentation, provider/model-free disabled preview, and no `.buoy` creation.
   Integrated evidence was appended. The parent independently reran the repaired
   focused test once in a fresh isolated Python 3.11 environment; it passed.
-  Ticket remains active only for fresh independent criterion-9 rereview; no
-  rereview is yet recorded.
+- 2026-08-23: Two fresh independent rereviews recalculated the controlled-delay
+  and reference-host timing arithmetic, inspected the exact test/package
+  provenance, and rechecked all nine criteria. Both returned PASS with no
+  findings. The durable verdict is
+  `.10x/reviews/2026-08-23-retrieve-command-telemetry-v2-integrated-rereview.md`.
+  Every acceptance criterion maps to
+  `.10x/evidence/2026-08-23-retrieve-command-telemetry-v2-validation.md`; the
+  ticket is complete.
+
+## Retrospective
+
+The first integrated review exposed an evidence-category mistake: fixed
+fake-clock timestamps proved bootstrap and pipeline boundaries, but did not
+satisfy a criterion requiring controlled baseline-versus-delay observations at
+every named seam. Treating adjacent delay coverage as sufficient would have
+closed a literal acceptance gap despite correct production runtime behavior.
+
+The bounded repair kept production bytes immutable, added real delays only to a
+provider/model-free test fixture, consumed authoritative command and pipeline
+columns directly, and rebuilt the exact test target because changed tests and
+fixtures are source-distribution content. Independent raw-value recalculation,
+five repeated worker runs, one parent run, dual-runtime full suites, and two
+fresh PASS rereviews removed the blocker without broadening product scope.
+
+Reusable timing-test procedure is preserved in
+`.10x/knowledge/timing-attribution-tests-delay-each-named-seam.md`. The
+separately owned stale dynamic-version collector remains outside this ticket at
+`.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md`.
+No additional implementation, specification, decision, skill, or follow-up
+record is required.

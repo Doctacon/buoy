@@ -315,4 +315,4 @@ injects the existing ordinal fake, and the reusable lesson is recorded at
 No unfinished implementation, accepted residual defect, routing semantic
 change, external mutation, or hidden follow-up remains in this ticket. The
 integrated timing claim was deliberately never absorbed here and remains owned
-by `.10x/tickets/2026-08-20-validate-retrieve-command-telemetry-v2.md`.
+by `.10x/tickets/done/2026-08-20-validate-retrieve-command-telemetry-v2.md`.

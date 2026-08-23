@@ -56,7 +56,7 @@ The review independently accepted:
 | Sole artifact field and distribution authority | satisfied |
 
 The separate five-run reference-host timing measurement is correctly owned by
-`.10x/tickets/2026-08-20-validate-retrieve-command-telemetry-v2.md`; it blocks
+`.10x/tickets/done/2026-08-20-validate-retrieve-command-telemetry-v2.md`; it blocks
 parent-plan closure, not this instrumentation ticket.
 
 ## Verdict

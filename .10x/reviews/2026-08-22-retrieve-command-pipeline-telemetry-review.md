@@ -103,7 +103,7 @@ the sentence without implying disabled-preview side effects.
 
 One reviewer treated the five-run parent-observed subprocess timing gate as an
 implementation-ticket blocker. The active parent plan and
-`.10x/tickets/2026-08-20-validate-retrieve-command-telemetry-v2.md` deliberately
+`.10x/tickets/done/2026-08-20-validate-retrieve-command-telemetry-v2.md` deliberately
 assign the reference-host five-run measurement and external shell
 representativeness claim to the dependent validation child. That final gate
 remains mandatory before parent closure, but it is not claimed by this ticket.

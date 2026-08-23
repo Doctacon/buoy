@@ -32,9 +32,10 @@ operation, failure isolation, and direct-library compatibility.
    this child also locally recertifies the final CLI hash under the newer
    provisional-routing policy, with package-byte and independent review gates
    and no routing semantic or live catalog change.
-3. `.10x/tickets/2026-08-20-validate-retrieve-command-telemetry-v2.md` depends
-   on both implementation children and owns independent end-to-end acceptance,
-   migration rehearsal, documentation reconciliation, and final review input.
+3. `.10x/tickets/done/2026-08-20-validate-retrieve-command-telemetry-v2.md`
+   depends on both implementation children and owns independent end-to-end
+   acceptance, migration rehearsal, documentation reconciliation, and final
+   review input.
 
 Children are sequential because they modify shared telemetry modules and one
 governed schema. They must use one task worktree/branch at a time; no parallel
@@ -180,3 +181,10 @@ for its completion.
   suites, static/ranking checks, and parent exact source/wheel/sdist/install
   reproduction. Child 2 is closed; child 3 integrated validation and its
   parent-observed five-run reference-host timing gate are now unblocked.
+- 2026-08-23: Child 3 completed integrated migration/privacy/no-network,
+  documentation/help/SQL, package, dual-runtime, and reference-host timing
+  validation. Its first closure review found missing controlled bootstrap and
+  pipeline delay comparisons; test-only commit `7eb6b393` repaired that literal
+  gap without changing production source. Two fresh independent rereviews
+  passed with no findings. All three child tickets are done; the parent plan is
+  ready for aggregate closure review.

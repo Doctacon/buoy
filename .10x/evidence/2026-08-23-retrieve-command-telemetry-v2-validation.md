@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-23
 Updated: 2026-08-23
-Relates-To: .10x/tickets/2026-08-20-validate-retrieve-command-telemetry-v2.md, .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md
+Relates-To: .10x/tickets/done/2026-08-20-validate-retrieve-command-telemetry-v2.md, .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md
 
 # Retrieve Command Telemetry V2 Integrated Validation
 
@@ -271,10 +271,9 @@ Targeted wording assertions and `git diff --check` passed.
    disabled installed-preview behavior.
 8. Public documentation/help/SQL: satisfied after bounded documentation commit
    `c9f0f44` and fresh inspection/execution.
-9. Independent final integrated review: **pending fresh rereview**. The
-   controlling criterion-3 finding has been repaired, but the existing FAIL
-   remains authoritative until an independently created fresh review passes.
-   This repair does not create that review.
+9. Independent final integrated review: satisfied by two fresh PASS rereviews
+   with no findings, recorded in
+   `.10x/reviews/2026-08-23-retrieve-command-telemetry-v2-integrated-rereview.md`.
 
 ## Criterion-3 controlled-delay repair
 
@@ -501,9 +500,10 @@ Private artifacts are under mode-0700
 
 ## Limits and remaining blockers
 
-- Controlled bootstrap-delay and pipeline-delay comparisons now satisfy
-  criterion 3. Criterion 9 remains pending a fresh independent rereview; the
-  existing integrated review remains FAIL until then.
+- Controlled bootstrap-delay and pipeline-delay comparisons satisfy criterion
+  3; two fresh independent PASS rereviews satisfy criterion 9.
+- The reference-host command/shell median passed only about `0.0000946373`
+  above its threshold and is not portable evidence.
 - Fresh integrated runtime observations are one macOS arm64 host. Crash tests
   are deterministic process-death/fault injection, not hardware power-loss or
   unrelated-filesystem evidence.
