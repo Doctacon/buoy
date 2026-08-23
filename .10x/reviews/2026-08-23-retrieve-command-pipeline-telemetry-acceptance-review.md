@@ -42,13 +42,22 @@ all with `OK` status before the pipeline. Add error-pipeline and successful-
 pipeline/render-error positive cases and missing/error/reordered routing
 adversarial decoder/writer cases.
 
-Every automatic command also enters the initial routing-model span before any
-credential/evidence/catalog decision. Pre-pipeline error graphs therefore require
-that initial model span. Preserve truthful prefixes: one failed initial model;
-one successful initial model followed by configuration/evidence failure;
-initial model plus failed catalog; initial model/catalog plus failed second
-model; and full prefix ending in failed select/nested model. Do not synthesize
-unreached stages.
+Once automatic routing is reached, the initial routing-model span precedes the
+credential/evidence/catalog decisions. Preserve truthful prefixes: one failed
+initial model; one successful initial model followed by configuration/evidence
+failure; initial model plus failed catalog; initial model/catalog plus failed
+second model; and full prefix ending in failed select/nested model. Do not
+synthesize unreached stages.
+
+**Source correction recorded after review:** empty query and namespace-resolution
+or `RuntimeConfigError` failure occurs inside prepare before the first routing-
+model span, even when retrieval mode was classified as automatic from raw CLI
+arguments. Such an error truthfully has no routing span. The safe invariant is:
+an automatic pipeline or `prepare=OK` requires the complete successful routing
+graph; `prepare=ERROR` with no pipeline may have zero routing stages or a
+source-reachable routing prefix. This correction narrows the repair and
+supersedes any reading that every automatic error must contain the initial
+model.
 
 ### High — prerequisite status and retrieval ordering are under-enforced
 

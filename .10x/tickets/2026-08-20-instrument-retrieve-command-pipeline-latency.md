@@ -257,5 +257,10 @@ No live card repair, report, or further provider run is required or authorized.
   pipeline can omit all routing stages, a successful command can mark prepare
   failed, and rerank can precede embed/namespace work. Prior cardinality,
   timing, privacy, behavior, routing-receipt, and package findings were accepted.
-  The source-backed prerequisite/status/order repair is bounded at
+- 2026-08-23: A source-reachability oracle corrected one overbroad review
+  inference before timing out: empty-query and namespace-resolution/runtime-
+  config automatic errors occur before the initial routing-model span. The
+  repair therefore permits zero routing spans only for `prepare=ERROR` without a
+  pipeline; automatic `prepare=OK` or any pipeline requires the full successful
+  routing graph. The corrected bounded contract is recorded in
   `.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-acceptance-review.md`.
