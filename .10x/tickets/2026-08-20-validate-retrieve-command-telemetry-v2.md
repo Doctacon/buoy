@@ -65,11 +65,10 @@ automatic migration, backup deletion, or out-of-scope product fix.
 
 ## Blockers
 
-Criterion 3 lacks controlled baseline-versus-delay observations for bootstrap
-and pipeline. Current fixed fake-clock assertions prove their boundaries but do
-not satisfy the ticket's controlled-delay wording. Criterion 9 therefore also
-remains open after a controlling FAIL review. Parent-owned criterion 2 passed;
-the implementation dependencies remain done and are not blockers.
+Criterion 9 remains open pending fresh independent rereview of the exact
+criterion-3 repair commit and appended evidence. Criterion 3 now has controlled
+baseline-versus-500 ms observations for all five seams. Parent-owned criterion
+2 passed; the implementation dependencies remain done and are not blockers.
 
 ## Progress and notes
 
@@ -113,3 +112,14 @@ the implementation dependencies remain done and are not blockers.
   `.10x/reviews/2026-08-23-retrieve-command-telemetry-v2-integrated-review.md`.
   Ticket remains active for that bounded test/evidence repair and fresh
   rereview; no production runtime defect is currently indicated.
+- 2026-08-23: Test-only commit `7eb6b393` repaired criterion 3 without changing
+  production runtime. Five consecutive focused runs, the fresh 212-test/289-
+  subtest integrated suite, and filtered 1,073-test/1,071-subtest full suites
+  on Python 3.11 and 3.13 passed. Exact-commit raw baseline-versus-500 ms values
+  now prove bootstrap increases command and bootstrap-span duration without
+  increasing pipeline duration, while pipeline delay increases both
+  authoritative command and pipeline durations. A clean detached offline build
+  and isolated install preserved runtime/routing hashes, repaired packaged
+  documentation, provider/model-free disabled preview, and no `.buoy` creation.
+  Integrated evidence was appended. Ticket remains active only for fresh
+  independent criterion-9 rereview; no rereview was created here.

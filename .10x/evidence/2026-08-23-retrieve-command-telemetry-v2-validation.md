@@ -253,10 +253,11 @@ Targeted wording assertions and `git diff --check` passed.
 2. Five warm parent-observed two-second subprocesses: satisfied by the parent
    observation recorded below. Median shell-minus-command was 117.155667 ms and
    median command/shell was 0.9500946372682385, passing both gates.
-3. Controlled attribution: **blocked**. Exact fake-clock coverage establishes
-   bootstrap and pipeline boundaries, but controlled baseline-versus-delay
-   observations currently cover only initialization, routing, and rendering.
-   Bootstrap and pipeline delay comparisons remain required.
+3. Controlled attribution: satisfied by the exact-commit bootstrap,
+   initialization, routing, pipeline, and rendering baseline-versus-delay
+   observations appended below. The command and pipeline deltas use the
+   authoritative version-2 columns directly; no nested span durations are
+   summed.
 4. Built-console migration: satisfied by the isolated exact-wheel rehearsal.
 5. Fault/hostile/replay/management/privacy/no-network/provider-free paths:
    satisfied by the fresh integrated suite and console observations.
@@ -270,11 +271,109 @@ Targeted wording assertions and `git diff --check` passed.
    README/changelog metadata plus unchanged runtime bytes and installed preview.
 8. Public documentation/help/SQL: satisfied after bounded documentation commit
    `c9f0f44` and fresh inspection/execution.
-9. Independent final integrated review: **blocked**. Parallel fresh review
-   produced one PASS and one controlling FAIL for criterion 3. The composite
-   finding is recorded in
-   `.10x/reviews/2026-08-23-retrieve-command-telemetry-v2-integrated-review.md`;
-   repair and fresh rereview remain required.
+9. Independent final integrated review: **pending fresh rereview**. The
+   controlling criterion-3 finding has been repaired, but the existing FAIL
+   remains authoritative until an independently created fresh review passes.
+   This repair does not create that review.
+
+## Criterion-3 controlled-delay repair
+
+Test-only commit `7eb6b3934890635b78246fb01f317dfe9f03df0c`, tree
+`5b13db4535e39141d82c6a18dc16eb386a3f3b47`, extends the provider/model-free
+controlled fixture and its subprocess assertion. Bootstrap delay occurs after
+capturing the entry timestamp and before provider-facing CLI imports. Pipeline
+delay occurs inside the controlled `buoy.retrieve.pipeline` span. The fixture
+exposes raw bootstrap and pipeline span durations; every pipeline span duration
+was exactly equal to the authoritative version-2 pipeline column. Assertions
+and the calculations below use the authoritative command/pipeline columns
+directly and never sum nested spans.
+
+The exact test target's Python 3.11 installed package
+`0.5.2.dev92+g7eb6b3934` produced these unrounded fixture values for independent
+zero- and 500-millisecond subprocesses:
+
+| Seam | Baseline command / pipeline / bootstrap span ms | Delayed command / pipeline / bootstrap span ms | Command delta ms | Pipeline delta ms | Bootstrap-span delta ms |
+| --- | --- | --- | ---: | ---: | ---: |
+| bootstrap | 340.29 / 0.099 / 313.82 | 774.9 / 0.087 / 756.836 | 434.61 | -0.012 | 443.016 |
+| initialization | 225.159 / 0.09 / 206.974 | 738.248 / 1.159 / 208.304 | 513.089 | 1.069 | 1.33 |
+| routing | 233.598 / 0.12 / 215.787 | 734.338 / 1.314 / 212.525 | 500.74 | 1.194 | -3.262 |
+| pipeline | 224.884 / 0.091 / 207.16 | 734.413 / 508.522 / 208.048 | 509.529 | 508.431 | 0.888 |
+| rendering | 231.173 / 0.088 / 213.541 | 732.955 / 0.09 / 205.375 | 501.782 | 0.002 | -8.166 |
+
+All five authoritative command deltas and the pipeline seam's authoritative
+pipeline delta satisfy the unchanged 375-750 ms allowance. Bootstrap's span
+delta independently satisfies that allowance while its authoritative pipeline
+delta remains within 25 ms. Initialization, routing, and rendering preserve
+their existing command attribution and <=25 ms absolute pipeline-delta checks.
+Routing observations retained catalog, two model, and select spans, all before
+the pipeline.
+
+The complete mode-0600 raw artifact is
+`/private/tmp/buoy-v2-repair-package.zKLVEk/controlled-attribution.json`,
+SHA-256 `3f9cec880d77792d9a17ad28f0cb453cacc8d67dba15d7643b2595ad4fe05842`.
+Its exact fixture SHA-256 is
+`95f6c15ed405698edd561e3e0ff3046883704ab350f04809538432962c39bebb`.
+
+Five consecutive focused invocations each passed the exact repaired test (5/5,
+one test each). A fresh integrated telemetry run passed **212 tests and 289
+subtests**. Fresh filtered full suites excluding only separately owned
+`tests/test_dynamic_version.py` passed on Python 3.11.5 and Python 3.13.0:
+**1,073 tests and 1,071 subtests** on each runtime, with the same 57 preexisting
+lxml warnings. Mode-0600 validation logs and SHA-256 values are:
+
+- focused repeats:
+  `/private/tmp/buoy-v2-repair-focused.pDbR0o/focused-repeat.log`,
+  `fbbbc0aa291580edafa842c0267632a80e51fcc41aad46e828d879a796fb382c`;
+- integrated telemetry:
+  `/private/tmp/buoy-v2-repair-integrated.zb04Or/integrated.log`,
+  `31d83e1eae3236411729e282894c9ba0a79d7e51ccf7a03dc25b227c1c065653`;
+- Python 3.11 full:
+  `/private/tmp/buoy-v2-repair-full311-isolated.FQEXlI/full-python311.log`,
+  `4afbc7331b7071bcba59f03131e4df5a21e4ff972a30df5330122984a426505e`;
+- Python 3.13 full:
+  `/private/tmp/buoy-v2-repair-full313-isolated.Dy4lqL/full-python313.log`,
+  `40c2db742e3044f137128a937d29154f1370c41be1fbc534a7bfcc47919819f4`.
+
+One initial parallel Python 3.11 harness attempt failed collection because the
+concurrent Python 3.13 `uv run` replaced the shared project environment. The
+Python 3.13 attempt itself passed, but both were discarded for acceptance and
+rerun with independent `UV_PROJECT_ENVIRONMENT` paths under mode-0700 roots;
+the accepted results are those listed above. Focused Ruff `F,E9`, Python 3.11
+changed-file compilation, `git diff --check`, and the test-only source diff
+check also passed.
+
+From a clean detached worktree at the exact test commit, `uv build --offline`
+created:
+
+- 722,173-byte, 77-file wheel
+  `buoy_search-0.5.2.dev92+g7eb6b3934-py3-none-any.whl`, SHA-256
+  `54b3e5cd105add2ac533e191b9ce30c65fc4b25424ec18d6e0a66d8c68475b0d`;
+- 1,269,566-byte, 157-file source distribution
+  `buoy_search-0.5.2.dev92+g7eb6b3934.tar.gz`, SHA-256
+  `3c22f0c47fe5728b20c6998d6d80a529d45b6c3e8b943bbfc24c4f94aeb891b2`.
+
+Source, wheel, source distribution, and isolated install retained CLI SHA-256
+`90e7b2ddf7bbde2daaf0ccd78aa2a779d9e61946a8b7f7ae8f3512dec431ebf9`,
+envelope SHA-256
+`e1681c4c4dab0909270127fbb7b5eeffb7ea99864ca994cda406cac9c6e76b47`,
+and active routing-artifact SHA-256
+`62ec1fe8cb7e49247c24b633379a6b2553475bc0e25ce846998ea5dd77df8cf5`.
+Wheel metadata and source-distribution README retained the repaired telemetry
+wording; the source-distribution changelog retained its repaired Unreleased
+entry. The changed fixture and test were present in the source distribution at
+SHA-256 `95f6c15ed405698edd561e3e0ff3046883704ab350f04809538432962c39bebb`
+and `e31d8b4fc3346bad16d1adf9fc2359af8c7d12b43d936d6990d8565213eacfd6`,
+respectively. Offline isolated install reported active routing schema 3 revision
+`active-anchor-e559a8aa-v1`; disabled explicit preview created no `.buoy` and
+performed no routing/provider/model work. Package artifacts and mode-0600 logs
+are under mode-0700 `/private/tmp/buoy-v2-repair-package.zKLVEk/`. Build,
+archive-inspection, install-validation, and installed-preview artifact SHA-256
+values are, respectively,
+`afd1785f339b78467fa0b4c349f646514e7b852c477616d496522f0eb193ebf4`,
+`fff12c9f2838a88ebcf969027acef7c44d7b67d95068cbb971b8f32ff1e4dc1a`,
+`8c752069a9b1a0cbcb8b22ec5d3a77510b3c741aa3ea794f0e55b6e69c24987a`,
+and `d4cb29c6710825beb3053c443d09172fd8e46d472d7b211218f6cdbd97b2482f`.
+No publication or external mutation occurred.
 
 ## Parent timing invocation and method
 
@@ -398,9 +497,9 @@ Private artifacts are under mode-0700
 
 ## Limits and remaining blockers
 
-- Controlled bootstrap-delay and pipeline-delay comparisons remain absent; the
-  integrated review therefore fails criteria 3 and 9 pending bounded test-only
-  repair and fresh rereview.
+- Controlled bootstrap-delay and pipeline-delay comparisons now satisfy
+  criterion 3. Criterion 9 remains pending a fresh independent rereview; the
+  existing integrated review remains FAIL until then.
 - Fresh integrated runtime observations are one macOS arm64 host. Crash tests
   are deterministic process-death/fault injection, not hardware power-loss or
   unrelated-filesystem evidence.
