@@ -2195,9 +2195,7 @@ def _validate_v2_routing_stages(
             raise TraceEnvelopeError("invalid_graph")
         return
     if second_model is None:
-        if selection is not None or nested_models:
-            raise TraceEnvelopeError("invalid_graph")
-        return
+        raise TraceEnvelopeError("invalid_graph")
     if catalog["ended_at_unix_us"] > second_model["started_at_unix_us"]:
         raise TraceEnvelopeError("invalid_graph")
     if second_model["status_code"] == "ERROR":
@@ -2205,9 +2203,7 @@ def _validate_v2_routing_stages(
             raise TraceEnvelopeError("invalid_graph")
         return
     if selection is None:
-        if nested_models:
-            raise TraceEnvelopeError("invalid_graph")
-        return
+        raise TraceEnvelopeError("invalid_graph")
     if second_model["ended_at_unix_us"] > selection["started_at_unix_us"]:
         raise TraceEnvelopeError("invalid_graph")
     if nested_models:
@@ -2307,6 +2303,27 @@ def _validate_v2_retrieval_stages(
         span["status_code"] == "OK" for span in namespaces
     )):
         raise TraceEnvelopeError("invalid_graph")
+    initial_fanout = operation["initial_fanout"]
+    assert type(initial_fanout) is int
+    initial_namespaces = [
+        span
+        for span in namespaces
+        if span["attributes"].get("buoy.route.rank") <= initial_fanout
+    ]
+    for assessment in evidence:
+        before_rerank = (
+            not reranks
+            or assessment["ended_at_unix_us"]
+            <= reranks[0]["started_at_unix_us"]
+        )
+        if before_rerank:
+            if not initial_namespaces or any(
+                span["ended_at_unix_us"] > assessment["started_at_unix_us"]
+                for span in initial_namespaces
+            ):
+                raise TraceEnvelopeError("invalid_graph")
+        elif reranks[0]["ended_at_unix_us"] > assessment["started_at_unix_us"]:
+            raise TraceEnvelopeError("invalid_graph")
     for failed in (span for span in evidence if span["status_code"] == "ERROR"):
         if any(
             span is not failed and span["started_at_unix_us"] >= failed["ended_at_unix_us"]
@@ -2332,16 +2349,14 @@ def _validate_v2_retrieval_stages(
             )
             if len(evidence) == 2 and not weak_widening:
                 raise TraceEnvelopeError("invalid_graph")
-            if operation["outcome"] in {"success", "partial"} and weak_widening:
-                if len(evidence) != 2 or len(reranks) != 1:
+            if operation["outcome"] in {"success", "partial"}:
+                required_evidence = 2 if weak_widening else 1
+                if len(evidence) != required_evidence:
                     raise TraceEnvelopeError("invalid_graph")
-                initial_fanout = operation["initial_fanout"]
-                assert type(initial_fanout) is int
-                initial = [
-                    span
-                    for span in namespaces
-                    if span["attributes"].get("buoy.route.rank") <= initial_fanout
-                ]
+            if operation["outcome"] in {"success", "partial"} and weak_widening:
+                if len(reranks) != 1:
+                    raise TraceEnvelopeError("invalid_graph")
+                initial = initial_namespaces
                 added = [span for span in namespaces if span not in initial]
                 first, second = evidence
                 rerank = reranks[0]

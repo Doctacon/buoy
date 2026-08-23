@@ -15,6 +15,7 @@ started_at_ns = time.time_ns()
 from buoy_search import telemetry
 from buoy_search.cli import main
 from buoy_search.telemetry import (
+    EVIDENCE_SPAN_NAME,
     NAMESPACE_QUERY_SPAN_NAME,
     QUERY_EMBED_SPAN_NAME,
     RERANK_SPAN_NAME,
@@ -60,6 +61,15 @@ class ControlledRetriever:
             if self.mode != "explicit_single":
                 with telemetry_span(RERANK_SPAN_NAME) as span:
                     span.mark_ok()
+            if self.mode == "automatic":
+                with telemetry_span(
+                    EVIDENCE_SPAN_NAME,
+                    {
+                        "buoy.evidence.mode": "active",
+                        "buoy.evidence.status": "supported",
+                    },
+                ):
+                    pass
             pipeline.set_attributes(
                 {
                     "buoy.retrieval.outcome": "success",

@@ -237,6 +237,15 @@ class _AutomaticRetriever:
             if self.mode != "explicit_single":
                 with telemetry_span(RERANK_SPAN_NAME) as child:
                     child.mark_ok()
+            if self.mode == "automatic":
+                with telemetry_span(
+                    EVIDENCE_SPAN_NAME,
+                    {
+                        "buoy.evidence.mode": "active",
+                        "buoy.evidence.status": "supported",
+                    },
+                ):
+                    pass
             pipeline.set_attributes(
                 {
                     "buoy.retrieval.outcome": "success",
@@ -525,6 +534,12 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
                 for routing_call in started[:7]:
                     self.assertEqual(routing_call.call_count, 1)
                 self.assertEqual(retriever.calls, 0 if preview else 1)
+                evidence = [
+                    span for span in rows.spans if span[3] == EVIDENCE_SPAN_NAME
+                ]
+                self.assertEqual(len(evidence), 0 if preview else 1)
+                if evidence:
+                    self.assertEqual(evidence[0][7], "UNSET")
 
     def test_automatic_pipeline_and_render_errors_keep_completed_routing(self) -> None:
         os.environ["TURBOPUFFER_API_KEY"] = "private-key"

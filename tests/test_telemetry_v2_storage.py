@@ -479,13 +479,25 @@ def _automatic_v2_object() -> dict[str, object]:
         },
     ]
     value["spans"].extend(routing_spans)
-    _append_v2_span(
+    rerank = _append_v2_span(
         value,
         name="buoy.rerank",
         span_id="d" * 16,
         parent_span_id=pipeline["span_id"],
         started_at_unix_us=pipeline["ended_at_unix_us"] - 800,
         ended_at_unix_us=pipeline["ended_at_unix_us"] - 600,
+    )
+    _append_v2_span(
+        value,
+        name="buoy.evidence.assess",
+        span_id="f" * 16,
+        parent_span_id=pipeline["span_id"],
+        started_at_unix_us=rerank["ended_at_unix_us"] + 100,
+        ended_at_unix_us=rerank["ended_at_unix_us"] + 200,
+        attributes={
+            "buoy.evidence.mode": "active",
+            "buoy.evidence.status": "supported",
+        },
     )
     value["spans"].sort(
         key=lambda span: (span["started_at_unix_us"], span["span_id"])
@@ -514,7 +526,12 @@ def _explicit_multi_v2_object() -> dict[str, object]:
         span
         for span in value["spans"]
         if span["name"]
-        not in {"buoy.routing.catalog", "buoy.routing.model", "buoy.routing.select"}
+        not in {
+            "buoy.routing.catalog",
+            "buoy.routing.model",
+            "buoy.routing.select",
+            "buoy.evidence.assess",
+        }
     ]
     namespace = _json_span(value, "buoy.namespace.query")
     _append_v2_span(
@@ -635,15 +652,17 @@ def _widened_v2_object() -> dict[str, object]:
             "buoy.route.rank": 2,
         },
     )
-    _append_v2_span(
-        value,
-        name="buoy.evidence.assess",
-        span_id="f" * 16,
-        parent_span_id=pipeline["span_id"],
-        started_at_unix_us=pipeline["started_at_unix_us"] + 5_000,
-        ended_at_unix_us=pipeline["started_at_unix_us"] + 5_100,
-        attributes={"buoy.evidence.mode": "active", "buoy.evidence.status": "no_relevant_evidence"},
+    initial_evidence = _json_span(value, "buoy.evidence.assess")
+    initial_evidence["started_at_unix_us"] = (
+        pipeline["started_at_unix_us"] + 5_000
     )
+    initial_evidence["ended_at_unix_us"] = (
+        pipeline["started_at_unix_us"] + 5_100
+    )
+    initial_evidence["duration_ms"] = 0.1
+    initial_evidence["attributes"][
+        "buoy.evidence.status"
+    ] = "no_relevant_evidence"
     rerank = _json_span(value, "buoy.rerank")
     rerank["started_at_unix_us"] = pipeline["started_at_unix_us"] + 5_400
     rerank["ended_at_unix_us"] = pipeline["started_at_unix_us"] + 5_600
@@ -829,6 +848,88 @@ def _automatic_prepare_error_object(prefix: str) -> dict[str, object]:
             attributes={"buoy.error.type": "model_error"},
         )
     return value
+
+
+def _automatic_partial_v2_object() -> dict[str, object]:
+    value = _automatic_v2_object()
+    operation = value["retrieval_operation"]
+    assert isinstance(operation, dict)
+    operation.update(
+        {
+            "outcome": "partial",
+            "namespace_count": 2,
+            "initial_fanout": 2,
+            "final_fanout": 2,
+            "failure_count": 1,
+            "incomplete": True,
+        }
+    )
+    pipeline = _json_span(value, V2_PIPELINE_SPAN_NAME)
+    pipeline["attributes"].update(
+        {
+            "buoy.retrieval.outcome": "partial",
+            "buoy.retrieval.namespace_count": 2,
+            "buoy.retrieval.initial_fanout": 2,
+            "buoy.retrieval.final_fanout": 2,
+            "buoy.retrieval.failure_count": 1,
+            "buoy.retrieval.incomplete": True,
+        }
+    )
+    namespace = _json_span(value, "buoy.namespace.query")
+    _append_v2_span(
+        value,
+        name="buoy.namespace.query",
+        span_id="e" * 16,
+        parent_span_id=pipeline["span_id"],
+        started_at_unix_us=namespace["started_at_unix_us"] + 100,
+        ended_at_unix_us=namespace["ended_at_unix_us"],
+        status_code="ERROR",
+        attributes={
+            "buoy.error.type": "provider_call_error",
+            "buoy.namespace.status": "failed",
+            "buoy.route.rank": 2,
+        },
+    )
+    return value
+
+
+def _automatic_success_without_evidence_object() -> dict[str, object]:
+    value = _automatic_v2_object()
+    value["spans"] = [
+        span for span in value["spans"] if span["name"] != "buoy.evidence.assess"
+    ]
+    return value
+
+
+def _automatic_evidence_before_namespace_object() -> dict[str, object]:
+    value = _automatic_v2_object()
+    namespace = _json_span(value, "buoy.namespace.query")
+    evidence = _json_span(value, "buoy.evidence.assess")
+    evidence["started_at_unix_us"] = namespace["started_at_unix_us"] + 1
+    evidence["ended_at_unix_us"] = namespace["ended_at_unix_us"] - 1
+    evidence["duration_ms"] = (
+        evidence["ended_at_unix_us"] - evidence["started_at_unix_us"]
+    ) / 1_000
+    value["spans"].sort(
+        key=lambda span: (span["started_at_unix_us"], span["span_id"])
+    )
+    return value
+
+
+def _automatic_prepare_gap_object(after: str) -> dict[str, object]:
+    if after == "catalog":
+        value = _automatic_prepare_error_object("model2_error")
+        value["spans"] = [
+            span for span in value["spans"] if span["span_id"] != "a" * 16
+        ]
+        return value
+    if after == "second_model":
+        value = _automatic_prepare_error_object("select_error")
+        value["spans"] = [
+            span for span in value["spans"] if span["name"] != "buoy.routing.select"
+        ]
+        return value
+    raise AssertionError(f"unsupported routing gap: {after}")
 
 
 def _automatic_embed_failure_object() -> dict[str, object]:
@@ -1135,16 +1236,18 @@ class Version2EnvelopeTests(unittest.TestCase):
 
         automatic_two_evidence = _automatic_v2_object()
         automatic_pipeline = _json_span(automatic_two_evidence, V2_PIPELINE_SPAN_NAME)
-        for index, span_id in enumerate(("f" * 16, "1" * 15 + "2")):
-            _append_v2_span(
-                automatic_two_evidence,
-                name="buoy.evidence.assess",
-                span_id=span_id,
-                parent_span_id=automatic_pipeline["span_id"],
-                started_at_unix_us=automatic_pipeline["ended_at_unix_us"] - 500 + index * 100,
-                ended_at_unix_us=automatic_pipeline["ended_at_unix_us"] - 450 + index * 100,
-                attributes={"buoy.evidence.mode": "active", "buoy.evidence.status": "supported"},
-            )
+        _append_v2_span(
+            automatic_two_evidence,
+            name="buoy.evidence.assess",
+            span_id="1" * 15 + "2",
+            parent_span_id=automatic_pipeline["span_id"],
+            started_at_unix_us=automatic_pipeline["ended_at_unix_us"] - 300,
+            ended_at_unix_us=automatic_pipeline["ended_at_unix_us"] - 200,
+            attributes={
+                "buoy.evidence.mode": "active",
+                "buoy.evidence.status": "supported",
+            },
+        )
         cases["two evidence assessments without weak widening"] = automatic_two_evidence
 
         three_evidence = _widened_v2_object()
@@ -1174,7 +1277,51 @@ class Version2EnvelopeTests(unittest.TestCase):
         render = _json_span(render_error, "buoy.output.render")
         render["status_code"] = "ERROR"
         render["attributes"] = {"buoy.error.type": "render_error"}
+
+        automatic_unset_evidence = _automatic_v2_object()
+        _json_span(
+            automatic_unset_evidence, "buoy.evidence.assess"
+        )["status_code"] = "UNSET"
+
+        reached_evidence_error = _automatic_v2_object()
+        _set_command_error(reached_evidence_error, error_type="provider_call_error")
+        _set_pipeline_error(reached_evidence_error)
+        reached_pipeline = _json_span(
+            reached_evidence_error, V2_PIPELINE_SPAN_NAME
+        )
+        reached_operation = reached_evidence_error["retrieval_operation"]
+        assert isinstance(reached_operation, dict)
+        reached_operation["evidence_status"] = None
+        reached_pipeline["attributes"].pop("buoy.evidence.status")
+        reached_namespace = _json_span(
+            reached_evidence_error, "buoy.namespace.query"
+        )
+        reached_evidence = _json_span(
+            reached_evidence_error, "buoy.evidence.assess"
+        )
+        reached_evidence["started_at_unix_us"] = (
+            reached_namespace["ended_at_unix_us"] + 1
+        )
+        reached_evidence["ended_at_unix_us"] = (
+            reached_evidence["started_at_unix_us"] + 100
+        )
+        reached_evidence["duration_ms"] = 0.1
+        reached_evidence["status_code"] = "ERROR"
+        reached_evidence["attributes"] = {"buoy.error.type": "runtime_error"}
+        reached_evidence_error["spans"] = [
+            span
+            for span in reached_evidence_error["spans"]
+            if span["name"] != "buoy.rerank"
+        ]
+        reached_evidence_error["spans"].sort(
+            key=lambda span: (span["started_at_unix_us"], span["span_id"])
+        )
+
         positives = {
+            "automatic success with OK evidence": _automatic_v2_object(),
+            "automatic success with UNSET evidence": automatic_unset_evidence,
+            "automatic partial with one evidence": _automatic_partial_v2_object(),
+            "automatic error with reached evidence": reached_evidence_error,
             **{
                 f"automatic prepare prefix {prefix}": _automatic_prepare_error_object(
                     prefix
@@ -1202,7 +1349,27 @@ class Version2EnvelopeTests(unittest.TestCase):
                     json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
                 )
 
-        invalid: dict[str, dict[str, object]] = {}
+        automatic_partial_without_evidence = _automatic_partial_v2_object()
+        automatic_partial_without_evidence["spans"] = [
+            span
+            for span in automatic_partial_without_evidence["spans"]
+            if span["name"] != "buoy.evidence.assess"
+        ]
+        invalid: dict[str, dict[str, object]] = {
+            "evidence before namespace result": (
+                _automatic_evidence_before_namespace_object()
+            ),
+            "automatic success without evidence": (
+                _automatic_success_without_evidence_object()
+            ),
+            "automatic partial without evidence": automatic_partial_without_evidence,
+            "routing stops after successful catalog": (
+                _automatic_prepare_gap_object("catalog")
+            ),
+            "routing stops after successful second model": (
+                _automatic_prepare_gap_object("second_model")
+            ),
+        }
 
         automatic_missing_routing = _automatic_embed_failure_object()
         automatic_missing_routing["spans"] = [
@@ -1545,16 +1712,18 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
 
         impossible_evidence = _automatic_v2_object()
         evidence_pipeline = _json_span(impossible_evidence, V2_PIPELINE_SPAN_NAME)
-        for index, span_id in enumerate(("f" * 16, "1" * 15 + "2")):
-            _append_v2_span(
-                impossible_evidence,
-                name="buoy.evidence.assess",
-                span_id=span_id,
-                parent_span_id=evidence_pipeline["span_id"],
-                started_at_unix_us=evidence_pipeline["ended_at_unix_us"] - 500 + index * 100,
-                ended_at_unix_us=evidence_pipeline["ended_at_unix_us"] - 450 + index * 100,
-                attributes={"buoy.evidence.mode": "active", "buoy.evidence.status": "supported"},
-            )
+        _append_v2_span(
+            impossible_evidence,
+            name="buoy.evidence.assess",
+            span_id="1" * 15 + "2",
+            parent_span_id=evidence_pipeline["span_id"],
+            started_at_unix_us=evidence_pipeline["ended_at_unix_us"] - 300,
+            ended_at_unix_us=evidence_pipeline["ended_at_unix_us"] - 200,
+            attributes={
+                "buoy.evidence.mode": "active",
+                "buoy.evidence.status": "supported",
+            },
+        )
 
         automatic_missing_routing = _automatic_embed_failure_object()
         automatic_missing_routing["spans"] = [
@@ -1589,6 +1758,19 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
         partial_pipeline["attributes"]["buoy.retrieval.failure_count"] = 0
         partial_pipeline["attributes"]["buoy.retrieval.incomplete"] = False
 
+        evidence_before_namespace = _automatic_evidence_before_namespace_object()
+        automatic_without_evidence = _automatic_success_without_evidence_object()
+        automatic_partial_without_evidence = _automatic_partial_v2_object()
+        automatic_partial_without_evidence["spans"] = [
+            span
+            for span in automatic_partial_without_evidence["spans"]
+            if span["name"] != "buoy.evidence.assess"
+        ]
+        routing_gap_after_catalog = _automatic_prepare_gap_object("catalog")
+        routing_gap_after_second_model = _automatic_prepare_gap_object(
+            "second_model"
+        )
+
         invalid_values = (
             invalid_graph,
             error_zero,
@@ -1602,6 +1784,11 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
             failed_prepare_success,
             rerank_before_namespace,
             partial_count_mismatch,
+            evidence_before_namespace,
+            automatic_without_evidence,
+            automatic_partial_without_evidence,
+            routing_gap_after_catalog,
+            routing_gap_after_second_model,
         )
         publications = []
         for value in invalid_values:
