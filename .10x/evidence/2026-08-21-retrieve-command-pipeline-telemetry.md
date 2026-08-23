@@ -549,6 +549,83 @@ produced the passing results above.
 All tests used temporary homes, local fakes, and offline dependencies. No
 provider, live catalog, content, credential, model, collector, real telemetry
 home, installed tool, remote Git, integration, release, or publication action
-occurred. Fresh independent review remains mandatory. Exact package/archive/
-installed-byte reproduction for `d4c336c` is explicitly parent-unverified and
-remains a blocker; this worker did not run or claim it.
+occurred. Fresh independent review remains mandatory.
+
+## Parent-observed exact implementation acceptance
+
+The parent independently inspected the implementation/records split and proved
+current records-only HEAD changes no source, test, fixture, documentation,
+package configuration, or lock bytes after immutable implementation
+`d4c336c8289f5eda4cfadbc0b2bbe255349e62dc`, tree
+`08863bae239f0ae442912b288bcc38e834572a0c`. It reran the real automatic weak-
+evidence widening, baseline-versus-delay subprocess, source-backed cardinality,
+and writer-before-mutation cases in an isolated Python 3.11 environment. One
+combined invocation timed out after 240 seconds with three progress indicators
+and no residual process; the same exact four cases then passed together with 14
+subtests in 3.65 seconds, and the writer case independently passed in 5.91
+seconds. The timeout is retained as a harness observation, not hidden as a test
+failure or treated as evidence of a product defect.
+
+The parent then created a detached temporary worktree at exact `d4c336c8` and
+performed clean offline source, archive, and install acceptance. Exact identity
+and clean status held before and after. Host/runtime were macOS 26.5.1 build
+25F80 arm64, Python 3.11.5 and 3.13.0, uv 0.11.7, locked DuckDB 1.5.4,
+hatchling 1.31.0, and hatch-vcs 0.5.0. Measured source hashes were:
+
+- CLI: `90e7b2ddf7bbde2daaf0ccd78aa2a779d9e61946a8b7f7ae8f3512dec431ebf9`;
+- v2 envelope:
+  `1f28f1eedaeaf26ad92931561c6e285662ae3b1f8c81cbc88821173dc09d2eb8`;
+- active routing artifact:
+  `62ec1fe8cb7e49247c24b633379a6b2553475bc0e25ce846998ea5dd77df8cf5`.
+
+Parsed and textual comparison with `6fd5595` again found exactly one artifact
+change: `/receipts/cli_module_sha256`, from `92c49e94...` to the exact measured
+CLI hash. Exact source loading accepted mode `active`, schema 3, revision
+`active-anchor-e559a8aa-v1`; an isolated installed-package copy with the old
+receipt failed specifically with `Routing activation source receipt
+'cli_module_sha256' is incompatible.`
+
+`uv build --offline` from the detached exact commit produced:
+
+- 720,799-byte wheel
+  `buoy_search-0.5.2.dev73+gd4c336c82-py3-none-any.whl`, SHA-256
+  `3c16f18fa8c1ba1fed1efa7f79c1ef6453af8f3889514fa31334e74183b3ec77`;
+- 1,264,282-byte source distribution
+  `buoy_search-0.5.2.dev73+gd4c336c82.tar.gz`, SHA-256
+  `448dad449cc06f6dc4d324a28d1ede928ba170bef95169f9db8c70eabdfd0103`.
+
+Source, wheel, source distribution, and isolated installed wheel reproduced all
+three source/artifact hashes. The installed package reported
+`0.5.2.dev73+gd4c336c82`, active schema-v3 routing, DuckDB 1.5.5, and
+OpenTelemetry 1.44.0. A disabled explicit installed preview under an isolated
+empty home created no `.buoy` path. The temporary detached worktree was removed;
+the task worktree remained clean.
+
+Two bounded harness mistakes preceded the successful run. The first attempted
+to import build-only `hatchling` from the locked runtime and stopped before
+build. The second tried to import a raw VCS checkout before hatch-vcs generated
+`_version.py` and stopped before build. A third run built and verified archives,
+then stopped after a successful calibration load because the reporting script
+used nonexistent field `revision` instead of `calibration_revision`; continuing
+against the same immutable artifacts corrected only reporting and completed
+source/install acceptance. None changed tracked files or external state.
+
+Private parent artifacts remain outside the repository:
+
+- completed run `/private/tmp/buoy-parent-accept-d4c336c.7FJLfy/parent-acceptance.log`,
+  mode 0600, 8,826 bytes, SHA-256
+  `21ce5e2529af4c9013281287d1bba35b2e527e35bedaa1935e28789c926844f0`;
+- installed preview in the same directory, mode 0600, 2,142 bytes, SHA-256
+  `3e62798ee8c0bb6bfa6e4aad673871d25a9dd6741bce91e42c9f80361baa2aab`;
+- pre-build failed-attempt logs
+  `/private/tmp/buoy-parent-accept-d4c336c.MMRbk2/parent-acceptance.log` and
+  `/private/tmp/buoy-parent-accept-d4c336c.HJDJ3l/parent-acceptance.log`, both
+  mode 0600, respectively 9,644/2,322 bytes and SHA-256
+  `b4517e6bebfab1d3b83a7c57c681ec3b86d31ecd934c4eeb81d65e5d59d5901d` /
+  `1d5da238d6f7badecb8781097cb3b9fb02552371c0d9ac0b2fba8ab9eaf653b6`.
+
+No provider, catalog, content, credential, model, live collector, real telemetry
+home, installed-tool replacement, remote Git, integration, release, or
+publication operation occurred. Fresh independent review remains mandatory;
+the separate five-run reference-host timing gate remains with the dependent
+validation ticket.

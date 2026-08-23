@@ -100,11 +100,11 @@ catalog read is historical evidence; no further live run is authorized.
 
 ## Blockers
 
-The final-review source/test findings are repaired at immutable implementation
-`d4c336c8`, tree `08863bae`. Fresh independent exact-commit review and parent-
-observed offline wheel/sdist/archive/isolated-install reproduction remain
-required before closure. The dependent ticket still owns the separate five-run
-reference-host timing gate.
+The final-review source/test findings and parent-observed exact-commit package
+reproduction are complete for immutable implementation `d4c336c8`, tree
+`08863bae`. Fresh independent exact-commit review remains required before
+closure. The dependent ticket still owns the separate five-run reference-host
+timing gate.
 
 No live card repair, report, or further provider run is required or authorized.
 
@@ -241,6 +241,14 @@ No live card repair, report, or further provider run is required or authorized.
   Fifteen affected modules passed 411 tests/383 subtests and the filtered full
   suite passed 1071 tests/1031 subtests on both Python 3.11 and 3.13; offline
   lock, compile, changed-file Ruff, ranking, and diff checks passed. CLI and
-  routing artifact hashes remain `90e7b2dd...` and `62ec1fe8...`. Additive
-  evidence is in `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`.
-  Ticket remains active for parent package reproduction and fresh review.
+  routing artifact hashes remain `90e7b2dd...` and `62ec1fe8...`.
+- 2026-08-22: Parent independently reran the four final repaired cases, then
+  built exact `d4c336c8` offline from a clean detached worktree. Wheel/sdist
+  SHA-256 are `3c16f18...` / `448dad44...`; source, both archives, and isolated
+  install reproduced CLI/envelope/artifact bytes; old receipt rejected, new
+  receipt and active routing accepted; installed disabled preview created no
+  `.buoy`; post-run status stayed clean. Failed harness attempts and complete
+  reproducible limits are preserved additively in
+  `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`. Ticket
+  remains active only for fresh independent review; the dependent timing gate is
+  unchanged.
