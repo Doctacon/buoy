@@ -100,16 +100,13 @@ catalog read is historical evidence; no further live run is authorized.
 
 ## Blockers
 
-Exact candidate `cb56b0afa38883fb22b0227c9e17e3a39c770814` failed fresh
-source-reachability rereview. The prior evidence cardinality, routing-prefix,
-namespace-result ordering, and weak-error ordering findings are closed, but the
-decoder still accepts a final automatic assessment before rerank on larger-
-fanout and empty/failed-widening paths. The bounded phase-distinction repair and
-accepted portions are recorded at
-`.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-source-reachability-rereview.md`.
-Final parent package reproduction and exact-commit review must follow repair.
-The dependent ticket still owns the separate five-run reference-host timing
-gate.
+No implementation blocker is currently observed. Exact implementation
+`6bfd0d4cec784cec18e9050bef4a8d0787f354e7` passed fresh source-reachability
+review, dual-runtime filtered full suites, static/ranking checks, and parent
+exact source/wheel/sdist/install acceptance. Fresh final acceptance review of
+that immutable implementation and recorded evidence remains required before
+closure. The dependent ticket still owns the separate five-run reference-host
+timing gate.
 
 No live card repair, report, or further provider run is required or authorized.
 
@@ -287,3 +284,14 @@ No live card repair, report, or further provider run is required or authorized.
   sole final assessment for larger-fanout or empty/failed-widening paths can be
   moved before rerank. The bounded finding is recorded at
   `.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-source-reachability-rereview.md`.
+- 2026-08-23: Final implementation `6bfd0d4c`, tree `26931097`, closes the
+  initial-versus-final assessment phase distinction. Fresh source-only review
+  returned PASS. Parent filtered full suites passed 1,073 tests and 1,071
+  subtests on both Python 3.11 and 3.13; lock, compile, Ruff, ranking, and diff
+  checks passed. A clean detached exact-commit build produced wheel/sdist
+  SHA-256 `8dd11b7d...` / `65a21357...`; source, archives, and isolated install
+  reproduced CLI/envelope/artifact bytes, active routing accepted the new CLI
+  receipt, the old receipt rejected, and a disabled installed preview created
+  no `.buoy`. Full details are additive in
+  `.10x/evidence/2026-08-21-retrieve-command-pipeline-telemetry.md`. Ticket
+  remains active only for fresh final acceptance review and coherent closure.

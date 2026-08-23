@@ -644,3 +644,114 @@ order repair and adjacent source-backed operation consistency checks are bounded
 at `.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-acceptance-review.md`.
 The parent package results remain valid evidence for `d4c336c8` but must be
 reproduced once more after final source repair.
+
+## Final source-reachability repair and review
+
+The final immutable implementation is
+`6bfd0d4cec784cec18e9050bef4a8d0787f354e7`, tree
+`269310974768aafb2d79d62c50f0753d94ac8491`. The repair sequence independently
+validates automatic routing prerequisites, command-stage status, direct
+pipeline ancestry, embed/namespace/rerank order, namespace summary consistency,
+evidence cardinality, weak-widening success/error order, and the distinction
+between a truthful initial pre-rerank assessment and every final post-rerank
+assessment. It preserves early automatic preparation failures with no routing,
+source-reached error prefixes, initialized error summaries, and successful
+evidence status `UNSET` or `OK`.
+
+Fresh source-only review returned PASS with no blocker at exact `6bfd0d4c`:
+`.10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-source-reachability-final-review.md`.
+The earlier failed candidates and bounded findings remain recorded in the two
+preceding 2026-08-23 source-reachability reviews.
+
+### Parent dual-runtime and static validation
+
+The parent ran the filtered full suite from clean exact implementation state,
+excluding only separately owned stale `tests/test_dynamic_version.py`:
+
+- Python 3.11.5: **1,073 passed tests, 1,071 passed subtests, 57 warnings** in
+  72.16 seconds;
+- Python 3.13.0: **1,073 passed tests, 1,071 passed subtests, 57 warnings** in
+  75.61 seconds.
+
+All warnings are the pre-existing lxml `strip_cdata` deprecation in
+`tests/test_crawler_exact_host.py`. Both runs used fresh mode-0700 temporary
+homes, offline/frozen dependency resolution, no telemetry credential, and no
+provider/model operation. Private mode-0600 logs are:
+
+- `/private/tmp/buoy-6bfd0d4-py311.HxN37x/full-py311.log`, SHA-256
+  `5dd6b24bf85ac09363da40d5c4dc15d9360d8d038d476c15a88cc13b6463162a`;
+- `/private/tmp/buoy-6bfd0d4-py313.T02H2B/full-py313.log`, SHA-256
+  `24cca85fc0ad6c83740987d18f01859a2ac700fe8320c5f707220b99b8d328ba`.
+
+`uv lock --check --offline` resolved 157 packages. Python 3.11 changed-file
+`py_compile`, Python 3.13 full `compileall`, changed-file Ruff `F,E9`,
+`git diff --check`, and ranking validation passed. Ranking retained 13 datasets,
+369 judgments, 90 composite identities, and dataset bundle SHA-256
+`5a79f58aaca87a2d4f7cbec68fdcfbbcbf041131821587f8aba74a86daca99d9`.
+The task worktree stayed clean.
+
+One parent adversarial harness invocation used the wrong helper selector
+`model2` instead of `second_model` and stopped before decoding. Correcting only
+that local selector then proved evidence-before-namespace, automatic-success-
+without-evidence, post-catalog gap, and post-second-model gap envelopes all
+reject as `invalid_graph`. Later parent probes accepted the truthful weak error
+prefix and non-weak initial assessment while rejecting weak evidence overlapping
+added work and partial/empty-widening final evidence before rerank.
+
+### Parent exact-commit archive and install acceptance
+
+The parent created and later removed a detached clean worktree at exact
+`6bfd0d4c`. Identity and clean status held before and after. Host/runtime were
+macOS 26.5.1 build 25F80 arm64, uv 0.11.7, Python 3.11.5 and 3.13.0, locked
+DuckDB 1.5.4, hatchling 1.31.0, and hatch-vcs 0.5.0.
+
+Measured source hashes were:
+
+- CLI: `90e7b2ddf7bbde2daaf0ccd78aa2a779d9e61946a8b7f7ae8f3512dec431ebf9`;
+- v2 envelope:
+  `e1681c4c4dab0909270127fbb7b5eeffb7ea99864ca994cda406cac9c6e76b47`;
+- active routing artifact:
+  `62ec1fe8cb7e49247c24b633379a6b2553475bc0e25ce846998ea5dd77df8cf5`.
+
+Parsed comparison with pre-instrumentation authority `6fd5595` again found
+exactly one artifact leaf change: `/receipts/cli_module_sha256`, from
+`92c49e943ed5918df7fe65294ff89717e2654a8e9d76317979b63198f1b98ee9`
+to the exact measured CLI hash. No frozen anchor, provisional policy, threshold,
+calibration, model, evaluator, report, routing, evidence, or other receipt value
+changed.
+
+`uv build --offline` from the detached exact commit produced:
+
+- 722,022-byte, 77-file wheel
+  `buoy_search-0.5.2.dev84+g6bfd0d4ce-py3-none-any.whl`, SHA-256
+  `8dd11b7d203797d122a709c780936553172cd9178289e7828a7a34ad010566fd`;
+- 1,268,999-byte, 157-file source distribution
+  `buoy_search-0.5.2.dev84+g6bfd0d4ce.tar.gz`, SHA-256
+  `65a21357da2d45e70c5434b253441cd4b81c6ccd08df97501bcf2237d3a2bef7`.
+
+Source, wheel, and source distribution reproduced all three source/artifact
+hashes exactly; the source distribution excluded `.10x/**`. Exact source loading
+reported version `0.5.2.dev84+g6bfd0d4ce`, active schema 3 revision
+`active-anchor-e559a8aa-v1`, and DuckDB 1.5.4.
+
+Offline installation of the exact wheel and cached dependencies into a fresh
+Python 3.11 environment reproduced the same version and three hashes, active
+schema-v3 routing, and DuckDB 1.5.5. A private copied install containing the old
+CLI receipt failed specifically with `Routing activation source receipt
+'cli_module_sha256' is incompatible.` A disabled explicit installed preview in
+an isolated empty home completed without creating `.buoy`.
+
+Private parent artifacts are under the mode-0700 directory
+`/private/tmp/buoy-parent-accept-6bfd0d4.P6jVgj/`:
+
+- mode-0600 `parent-acceptance.log`, 6,891 bytes, SHA-256
+  `43f13d6396d3526d93ab6cf6597928f6e6640c023a5ffaa3d3d031f91c658a7f`;
+- mode-0600 `installed-preview.json`, 2,142 bytes, SHA-256
+  `3e62798ee8c0bb6bfa6e4aad673871d25a9dd6741bce91e42c9f80361baa2aab`;
+- the wheel and source distribution with the sizes and hashes above.
+
+No provider, catalog, content, credential, model, live collector, real telemetry
+home, installed-tool replacement, remote Git, integration, release, or
+publication operation occurred. The dependent ticket still owns the separate
+five-run parent-observed reference-host timing gate; this evidence does not
+claim it.
