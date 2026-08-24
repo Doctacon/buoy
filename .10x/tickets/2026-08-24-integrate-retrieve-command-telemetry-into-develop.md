@@ -1,4 +1,4 @@
-Status: open
+Status: active
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/done/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -76,3 +76,17 @@ merged at `3eabedd6` and its post-merge CI passed.
   both resolve to `3eabedd6`; telemetry task branch is clean at `ef756020`.
   This is the sole remaining unit authorized by the user's “do all of that”
   instruction.
+- 2026-08-24: Activated after exact local preflight. Before mutation,
+  `git status --short --branch` reported clean branch
+  `work/retrieval-command-telemetry-v2`; `git worktree list` confirmed this
+  task worktree and integration-only `develop` worktree roles. After
+  `git fetch origin`, ticket-opening HEAD was exactly
+  `88553279099cadde8588fd390ba645da5a1903ab` with sole parent
+  `ef756020aab8811e5ac60dde79c2894451683501`; local `develop` and
+  `origin/develop` were both exactly
+  `3eabedd6b1e2c60a2a8be2489327b014d04130fc`; immutable production runtime
+  `6bfd0d4cec784cec18e9050bef4a8d0787f354e7` remained present. Porcelain was
+  empty and no identity differed or had advanced. The governing decision,
+  both specifications, prior integrated telemetry evidence/reviews, both done
+  cleanup ticket/evidence/review sequences, and repository instructions were
+  read in full before activation.
