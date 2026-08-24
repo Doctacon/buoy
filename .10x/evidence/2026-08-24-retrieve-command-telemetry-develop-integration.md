@@ -224,6 +224,52 @@ Python 3.11, Python 3.13, and dependent build/smoke gates. No `main`, tag,
 Release, publication, installed-tool, provider/model/content/credential/catalog,
 or unrelated GitHub operation occurred.
 
+## Exact-head hosted timing failure
+
+Draft PR #145 exact head `67e129170199d7740847a924537211e208b6a219`
+triggered CI run `32761209125` against unchanged
+`develop@3eabedd6b1e2c60a2a8be2489327b014d04130fc`. Both runtime jobs passed
+checkout, dependency sync, and the ranking/C6 static-validator step, then
+failed at the first command-delta assertion in
+`test_controlled_subprocess_probe_attributes_all_phase_delays`:
+
+- Python 3.11 job `97540448298`: observed command delta
+  `330.61740100000003 ms`, below the `375.0 ms` lower bound for a real 500 ms
+  injected delay; 1,076 tests ran in 138.438 seconds with this sole failure.
+- Python 3.13 job `97540447983`: observed command delta `309.929979 ms`, below
+  the same lower bound; 1,076 tests ran in 131.672 seconds with this sole
+  failure.
+- Dependent distribution job `97541351303` was skipped.
+
+The test's deterministic process order identifies both failures as the first,
+bootstrap pair: it launches a zero-delay bootstrap subprocess first and the
+500 ms subprocess second, then checks bootstrap before every other named seam.
+Thus the authoritative delta subtracts the first cold import/bootstrap cost
+from a warmer delayed process. Concurrent hosted matrix activity can amplify
+that first-process cost. The hosted log records the resulting delta but not
+the individual baseline and delayed JSON observations, so it cannot quantify
+the two components independently. This evidence supports warming the same
+zero-delay local-fake path before authoritative observations and using a larger
+real delay; it does not support lowering the proportional bound.
+
+Raw downloaded artifacts are under
+`/private/tmp/buoy-pr145-ci-fail-67e1291.ntr38Q`:
+
+- `run.json`: SHA-256
+  `3583b1e42bcd8a1748d6cf23952d327ffe3477d298f2ed406fc462ff2f19ca8b`;
+- `check-runs.json`: SHA-256
+  `65567ba8ba7d5dc39368fa6f7f18e9c075be838cad21cb466dc7d7c3f54692e9`;
+- `run.log`: SHA-256
+  `c7a486e303d423d212cbd3002686ac90778062ce76aed228bc05c29190321d72`;
+- `failed.log`: SHA-256
+  `5cad596e551b5b0ef688ae5a45ec89baf8475d5ce4cf7b6a812dbc2944f69578`.
+
+Recording and inspecting these artifacts performed no provider, model,
+content, credential, catalog, installed-tool, package-publication, release,
+tag, `main`, or real-home mutation. The ticket is blocked pending bounded test
+repair, repeated local dual-runtime validation, independent repair review, a
+new pushed exact head, and hosted exact-head checks.
+
 ## Raw artifacts, limits, and remaining gates
 
 All logs and distributions are under mode-0700

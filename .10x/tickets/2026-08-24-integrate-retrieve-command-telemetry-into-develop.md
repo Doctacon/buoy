@@ -1,4 +1,4 @@
-Status: active
+Status: blocked
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/done/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -65,9 +65,15 @@ reviews. Treat the GitHub PR as canonical for hosted check and merge state.
 
 ## Blockers
 
-None. The user explicitly authorized the cleanup and telemetry PRs into
-`develop` while retaining every exclusion above. Cleanup PR #144 is squash-
-merged at `3eabedd6` and its post-merge CI passed.
+Hosted exact-head CI run `32761209125` failed the controlled subprocess timing
+test at exact PR head `67e129170199d7740847a924537211e208b6a219`. Python
+3.11 job `97540448298` observed a first bootstrap command delta of
+`330.61740100000003 ms`; Python 3.13 job `97540447983` observed
+`309.929979 ms`. Both were below the existing 375 ms lower bound for a 500 ms
+injected delay. Static validators passed in both jobs and the dependent
+distribution job `97541351303` was skipped. Repair and repeated dual-runtime
+validation are required before a new exact-head hosted run; no threshold
+weakening or production-source change is authorized.
 
 ## Progress and notes
 
@@ -136,3 +142,17 @@ merged at `3eabedd6` and its post-merge CI passed.
   will create the head on which hosted gates are required. Ticket remains
   active for hosted exact-head CI, final acceptance/closure records, and
   dedicated integration.
+- 2026-08-24: Exact-head hosted run `32761209125` failed only at the first
+  command-delta assertion in
+  `test_controlled_subprocess_probe_attributes_all_phase_delays` on both Python
+  jobs: 3.11 job `97540448298` measured `330.61740100000003 ms`, and 3.13 job
+  `97540447983` measured `309.929979 ms`, versus the 375 ms lower bound for the
+  real 500 ms delay. Test order proves this was the bootstrap baseline/delayed
+  pair: the cold zero-delay baseline is the first controlled subprocess and
+  the delayed subprocess follows it, so one-time import/runner contention can
+  subtract from the paired delta. The logs retain only the failed first delta,
+  not the two raw observations, so this diagnosis remains bounded to ordering
+  plus the symmetric dual-runtime failure. Both static-validator steps passed;
+  distribution was dependency-skipped. Ticket marked blocked before repair.
+  Downloaded run artifacts and exact hashes are recorded in the integration
+  evidence.
