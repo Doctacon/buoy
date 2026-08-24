@@ -1,10 +1,12 @@
-Status: blocked
+Status: active
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
 Depends-On: .10x/tickets/done/2026-08-24-integrate-retrieve-command-telemetry-into-develop.md
-Decision: .10x/decisions/superseded/one-time-local-telemetry-v2-canary.md
-Authorization-Evidence: .10x/evidence/2026-08-24-local-telemetry-v2-canary-authorization.md
+Decisions: .10x/decisions/superseded/one-time-local-telemetry-v2-canary.md, .10x/decisions/local-telemetry-canary-budgets-logical-namespace-operations.md
+Authorization-Evidence: .10x/evidence/2026-08-24-local-telemetry-v2-canary-authorization.md, .10x/evidence/2026-08-24-local-telemetry-v2-canary-closure-authorization.md
+Follow-Up: .10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md
+Knowledge: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
 Specifications: .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/specs/local-telemetry-writer.md
 Reviews: .10x/reviews/2026-08-24-local-telemetry-v2-canary-review.md, .10x/reviews/2026-08-24-local-telemetry-v2-canary-final-review.md
 
@@ -68,9 +70,12 @@ unchanged.
 - All four commands exit zero. If any command fails, its truthful telemetry is
   still flushed and inspected, but this success criterion fails and no retry or
   repair occurs.
-- Content provider access is bounded to at most six namespace query calls plus
-  the automatic route's established catalog reads. No provider, catalog,
-  namespace, content, credential, model-cache, or remote state write occurs.
+- Content provider access is bounded to at most six logical namespace query
+  operations, each represented by one `buoy.namespace.query` span, plus the
+  automatic route's established catalog reads. Lower-level transport attempts
+  inside one logical operation are not this canary's budget unit. No provider,
+  catalog, namespace, content, credential, model-cache, or remote state write
+  occurs.
 - No model/network download occurs; required local model inference uses only
   already available pinned assets or stops before provider access.
 - New telemetry artifacts contain no query, argv, namespace, credential,
@@ -93,8 +98,8 @@ Record:
   permissions, schema/view/row counts;
 - per-mode content-free command outcome, command duration, nullable pipeline
   duration, fanout/failure counts, and stage names for only the canary window;
-- bounded provider/catalog call accounting available from telemetry and source
-  contract, with its limits;
+- bounded logical namespace-operation and catalog-read accounting available
+  from telemetry and source contract, with physical-attempt limits explicit;
 - privacy scan verdict without literal private values;
 - temporary cleanup proof; and
 - commands by operation description rather than raw argv when argv would
@@ -135,9 +140,10 @@ policy; unrelated source, record, local-home, or GitHub changes.
   local-only one-time canary, user-ratified.
 - **Failure/retry/escalation:** stop on drift, failure, or uncertainty; no retry
   or repair. Report to the owner in this workstream; user-ratified.
-- **Cost/security/privacy:** at most six content namespace reads plus bounded
-  catalog reads; no writes, downloads, credential persistence, or prohibited
-  telemetry values. User-ratified and specification-backed.
+- **Cost/security/privacy:** at most six logical content-namespace operations
+  plus bounded catalog reads; lower-level transport attempts are outside this
+  canary's count unit. No writes, downloads, credential persistence, or
+  prohibited telemetry values. User-ratified and specification-backed.
 - **Launch authority:** the owner's three-step current-workstream confirmation
   is recorded in the authorization evidence.
 - **Operational owner:** repository owner; exact execution delegated under this
@@ -222,16 +228,21 @@ policy; unrelated source, record, local-home, or GitHub changes.
   review environment. No migration, flush, retrieve, provider/model, or hosted
   operation was rerun. This corroborates post-state but cannot reconstruct the
   missing physical provider-call count.
+- 2026-08-24: The owner explicitly ratified the six-call criterion as at most
+  six logical namespace operations, accepted the operational canary as passed
+  under that interpretation, prohibited a rerun, and directed separate future
+  tracking of physical provider attempts. Five retained namespace spans satisfy
+  the clarified criterion. Authority and rationale are recorded at
+  `.10x/evidence/2026-08-24-local-telemetry-v2-canary-closure-authorization.md`
+  and
+  `.10x/decisions/local-telemetry-canary-budgets-logical-namespace-operations.md`.
+  The physical-attempt gap is durably owned by
+  `.10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md`.
+  Ticket returned to active for records-only closure review; no operational
+  authority was renewed.
 
 ## Blockers
 
-- The at-most-six content-provider-call acceptance criterion is unsupported.
-  Five namespace spans bound logical namespace operations, not physical
-  provider invocations; each may contain a two-invocation compatibility
-  fallback. No retained artifact proves which fusion path occurred.
-- The mandatory independent-review criterion is unmet: both independent
-  reviews returned FAIL on the unsupported physical provider-call ceiling.
-- One-time migration and workload authority is consumed. This ticket cannot
-  repair either blocker by retrying or rerunning the canary. Resolution requires
-  separately ratified acceptance supersession or separately authorized new
-  work; neither exists.
+- Fresh independent closure rereview is pending against the owner-ratified
+  logical-operation criterion and records-only reconciliation. No operational
+  rerun is permitted or required.

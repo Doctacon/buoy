@@ -93,8 +93,11 @@ ultimately found that retained telemetry proves five logical namespace spans
 but not the physical provider-call count: one span may
 contain a second request through the compatibility fallback. Because temporary
 output/runtime artifacts were deleted as required and no independent call
-receipt was retained, the at-most-six-call criterion is unsupported and the
-canary ticket is blocked.
+receipt was retained, the physical-attempt interpretation was unsupported and
+initial review blocked the canary ticket. The owner later ratified logical
+namespace operations as this canary's budget unit under
+`.10x/decisions/local-telemetry-canary-budgets-logical-namespace-operations.md`.
+That clarification grants no successor execution authority.
 
 This decision is superseded by consumption, with no successor execution
 authority. It remains historical provenance only. It grants no retry,

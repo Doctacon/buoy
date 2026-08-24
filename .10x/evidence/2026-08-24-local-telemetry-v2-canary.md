@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-24
 Updated: 2026-08-24
-Relates-To: .10x/tickets/2026-08-24-run-local-telemetry-v2-canary.md, .10x/decisions/superseded/one-time-local-telemetry-v2-canary.md, .10x/evidence/2026-08-24-local-telemetry-v2-canary-authorization.md, .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/specs/local-telemetry-writer.md
+Relates-To: .10x/tickets/2026-08-24-run-local-telemetry-v2-canary.md, .10x/decisions/superseded/one-time-local-telemetry-v2-canary.md, .10x/decisions/local-telemetry-canary-budgets-logical-namespace-operations.md, .10x/evidence/2026-08-24-local-telemetry-v2-canary-authorization.md, .10x/evidence/2026-08-24-local-telemetry-v2-canary-closure-authorization.md, .10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md, .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/specs/local-telemetry-writer.md
 
 # Local Telemetry V2 Canary
 
@@ -169,8 +169,12 @@ provider request inside the same span when that fusion form is unsupported.
 Retained telemetry records neither the selected fusion path nor physical call
 count. The raw result/runtime artifacts were deleted as required and no
 independent provider-call receipt was retained. Consequently this evidence does
-**not** prove the ticket's at-most-six content-provider-call criterion; five
-spans permit more than six physical calls if compatibility fallback occurred.
+not prove a physical-attempt ceiling; five spans permit more than six physical
+attempts if compatibility fallback occurred. The owner later ratified logical
+namespace operations—not physical attempts—as this canary's budget unit. These
+five spans therefore prove the clarified at-most-six logical-operation
+criterion. Physical-attempt observability remains separately tracked and
+unknown for this historical execution.
 
 Automatic routing had one governed catalog stage. Exact catalog request counts
 are not telemetry fields; their bounded read-only list/metadata/card behavior
@@ -245,12 +249,13 @@ read back from the filesystem. The required immutable v1 backup remains exact:
 Migration scratch and WAL remain absent.
 
 This is one macOS arm64 host observation of one ratified v1 store and four
-approved requests. It establishes exact local artifact/store/trace facts but
-not the required physical content-provider-call bound. It does not establish
-other hosts, power-loss behavior, recurring operation, release readiness, or
-independent network-level provider accounting. Both independent reviews failed
-on the unsupported provider-call criterion; the ticket is blocked and must not
-close from this evidence.
+approved requests. It establishes exact local artifact/store/trace facts and
+five logical namespace operations but not a physical provider-attempt count. It
+does not establish other hosts, power-loss behavior, recurring operation,
+release readiness, or independent network-level provider accounting. Both
+initial independent reviews failed under a physical-attempt interpretation;
+the owner subsequently ratified logical operations as this canary's budget unit
+and required fresh closure review without a rerun.
 
 ## Parent post-review readback
 
@@ -289,5 +294,6 @@ an idle writer, and the independent correctness/privacy reviewer separately
 confirmed stopped-writer state through read-only fixed-state inspection.
 
 This post-review readback corroborates the durable store, backup, global-tool,
-and ref state. It cannot reconstruct the physical provider invocation count and
-does not repair the blocked acceptance criterion.
+and ref state. It cannot reconstruct the physical provider invocation count.
+That count remains explicitly unknown and is not part of the later
+owner-ratified logical-operation acceptance criterion.
