@@ -1,6 +1,6 @@
-Status: active
+Status: done
 Created: 2026-08-23
-Updated: 2026-08-23
+Updated: 2026-08-24
 Parent: None
 Depends-On: .10x/tickets/done/2026-08-20-reconcile-missing-release-checks-test-harness.md
 
@@ -44,9 +44,9 @@ replacement, provider/model/content/credential operation, or unrelated cleanup.
 
 ## Blockers
 
-No implementation blocker. Independent implementation review and hosted CI at
-exact head `0d819e24` passed. Final acceptance review, closure records, and an
-exact-head hosted rerun after those record changes remain before integration.
+None. Implementation review, local validation, hosted exact-head CI, and final
+acceptance review pass. A final CI rerun after this records-only closure commit
+is an integration stop gate, not an open ticket criterion.
 
 ## Progress and notes
 
@@ -96,6 +96,30 @@ exact-head hosted rerun after those record changes remain before integration.
   head `0d819e24`: Python 3.11, Python 3.13, and the dependent distribution
   build/clean-wheel smoke all completed successfully. Canonical run URL is
   `https://github.com/Doctacon/buoy/actions/runs/32754913353`; raw log identity
-  and job IDs are appended to the evidence. The ticket remains active for final
-  acceptance review, closure records, a final exact-head rerun, and dedicated
-  squash integration.
+  and job IDs are appended to the evidence.
+- 2026-08-24: After recording that observation, exact records head `86f1c152`
+  passed hosted run `32755450115` with the same three successful jobs. Fresh
+  final acceptance review returned PASS with no findings and is recorded in
+  `.10x/reviews/2026-08-24-stale-ci-release-automation-call-final-acceptance-review.md`.
+  Every criterion is satisfied. The ticket is complete; the records-only
+  closure head must still pass exact-head CI before dedicated squash merge.
+
+## Retrospective
+
+Cleanup commit `0c669c5e` removed unsupported release automation but left two
+independent consumer classes: an import-time test dependency and CI command
+invocations. Either repair alone left the aggregate branch red, so the reviewed
+child fixes had to be assembled before hosted validation.
+
+The safe repair classified consumers before deletion, preserved every live
+Hatch-VCS test, removed exactly two dead workflow commands, and byte-compared
+all retained workflow structure. Local offline validation established behavior
+without external dependencies; hosted Ubuntu CI then verified both Python
+matrices and the dependent build/smoke path at exact heads.
+
+The intentionally deleted source/distribution invariant checks remain absent by
+explicit user choice and are documented as residual coverage, not silently
+claimed by narrower retained checks. Independent review found no additional
+knowledge, skill, specification, decision, or implementation follow-up. PR #144
+is the canonical integration artifact; final exact-head CI and dedicated squash
+merge remain operational stop gates rather than incomplete ticket behavior.

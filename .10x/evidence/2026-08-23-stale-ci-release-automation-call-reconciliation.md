@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-23
-Updated: 2026-08-23
-Relates-To: .10x/tickets/2026-08-23-reconcile-stale-ci-release-automation-calls.md
+Updated: 2026-08-24
+Relates-To: .10x/tickets/done/2026-08-23-reconcile-stale-ci-release-automation-calls.md
 
 # Stale CI Release-Automation Call Reconciliation
 
@@ -188,6 +188,25 @@ The complete hosted log is stored mode 0600 under mode-0700
 `/private/tmp/buoy-pr144-ci-0d819e2.zNA8yn/run.log`: 236,769 bytes, SHA-256
 `a2a6e4f7cb5935e98b4e4b93ab7992c449268e286911d307d44c07f3d2859097`.
 
+After the hosted observation and PR pointer were recorded, exact records head
+`86f1c152be1c853cc7d389e55170d8473a815377` also passed GitHub Actions run
+`32755450115`. Python 3.13 job `97521813969`, Python 3.11 job `97521814256`,
+and dependent Build distributions job `97522805169` all completed successfully.
+Canonical run URL is
+`https://github.com/Doctacon/buoy/actions/runs/32755450115`.
+
+Raw mode-0600 artifacts are under mode-0700
+`/private/tmp/buoy-pr144-ci-86f1c15.xsfTa1/`:
+
+- `run.json`: 5,344 bytes, SHA-256
+  `e56fcf0537229eae1a99f5fb62ce0e308f135abb52f3153b203a41d4ba1822c2`;
+- `check-runs.json`: 10,504 bytes, SHA-256
+  `59843f8b2c1d8eae3c10d00013781cf9316b394a98ceda5e9808df3896328c24`;
+- `run.log`: 236,999 bytes, SHA-256
+  `23628b88e32e6006134971908dd322eda166cdee2f7f0d1cc5b9a096e88e7e7e`.
+
+Fresh independent final acceptance review inspected these artifacts and passed.
+
 ## What this supports
 
 This evidence supports that the workflow implementation removes exactly the two
@@ -198,8 +217,9 @@ passes the hosted Python 3.11, Python 3.13, and build jobs at exact PR head
 
 ## Limits
 
-- Fresh independent implementation review passed, but final ticket closure and
-  the required exact-head rerun after closure-record changes remain pending.
+- Independent implementation and final acceptance reviews passed. A final
+  exact-head rerun after the records-only closure commit remains an integration
+  stop gate rather than an implementation acceptance gap.
 - Offline wheel installation used packages already present in the machine-local
   uv cache. It did not prove a fresh network-backed dependency resolution.
 - Temporary logs and artifacts may be removed by operating-system cleanup; the

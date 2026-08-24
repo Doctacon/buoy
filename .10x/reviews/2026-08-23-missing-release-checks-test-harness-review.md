@@ -57,7 +57,7 @@ behavior was restored or changed.
 
 `.github/workflows/ci.yml` still invokes deleted
 `scripts/release_automation.py`. That separate regression is durably owned by
-`.10x/tickets/2026-08-23-reconcile-stale-ci-release-automation-calls.md` and is
+`.10x/tickets/done/2026-08-23-reconcile-stale-ci-release-automation-calls.md` and is
 not a blocker to this bounded test-ticket acceptance. Hosted CI cannot pass
 until the dependent owner completes.
 

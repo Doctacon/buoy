@@ -97,6 +97,6 @@ before deleting anything. This removed only the orphaned helper test and its two
 imports while preserving package/module/CLI version coherence coverage. The
 separate stale CI consumer was not folded into this ticket; it has its own
 bounded owner at
-`.10x/tickets/2026-08-23-reconcile-stale-ci-release-automation-calls.md`.
+`.10x/tickets/done/2026-08-23-reconcile-stale-ci-release-automation-calls.md`.
 No additional knowledge, skill, specification, decision, or follow-up record is
 required.
