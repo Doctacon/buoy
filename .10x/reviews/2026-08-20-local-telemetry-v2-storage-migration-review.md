@@ -158,7 +158,7 @@ The unmodified suite cannot collect because current develop deleted
 `scripts/release_checks.py` while retaining `tests/test_dynamic_version.py`'s
 module import. This predates the telemetry branch and does not explain the
 findings above. It has a separate durable owner at
-`.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md` and
+`.10x/tickets/done/2026-08-20-reconcile-missing-release-checks-test-harness.md` and
 must not be repaired by widening this telemetry ticket.
 
 ## Verdict

@@ -218,6 +218,6 @@ Reusable lessons are preserved in:
 The active specifications still describe implemented behavior. All child
 reviews and evidence are coherent, every residual limit is explicit, and the
 separately owned stale dynamic-version collector remains at
-`.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md`.
+`.10x/tickets/done/2026-08-20-reconcile-missing-release-checks-test-harness.md`.
 No further telemetry implementation, specification, decision, skill, or
 follow-up record is required.

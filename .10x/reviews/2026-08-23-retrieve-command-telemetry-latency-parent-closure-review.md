@@ -65,7 +65,7 @@ truthful history and every accepted finding maps to a later repair and PASS.
   are recorded.
 - The stale `tests/test_dynamic_version.py` collector is a pre-existing,
   separately owned release-cleanup regression at
-  `.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md`.
+  `.10x/tickets/done/2026-08-20-reconcile-missing-release-checks-test-harness.md`.
   Excluding it while running 1,073 other tests and 1,071 subtests on both
   runtimes is a truthful bounded limit, not a telemetry closure blocker.
 

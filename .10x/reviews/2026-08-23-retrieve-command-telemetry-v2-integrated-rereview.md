@@ -96,6 +96,6 @@ supported after this review is persisted and records are reconciled.
   deterministic process-failure injection rather than hardware power loss or
   unrelated filesystems.
 - The filtered full-suite exclusion remains owned by
-  `.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md`.
+  `.10x/tickets/done/2026-08-20-reconcile-missing-release-checks-test-harness.md`.
 - No live provider/model/content/credential/catalog, real-home, network,
   installed-tool replacement, release, or publication behavior was exercised.

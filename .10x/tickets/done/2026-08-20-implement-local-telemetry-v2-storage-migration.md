@@ -84,7 +84,7 @@ None. Final independent exact-commit review passed at
 `.10x/reviews/2026-08-21-local-telemetry-v2-storage-migration-final-acceptance-review.md`.
 
 The intentionally stale release-check collector remains separately owned by
-`.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md` and
+`.10x/tickets/done/2026-08-20-reconcile-missing-release-checks-test-harness.md` and
 did not widen or block this ticket's bounded filtered validation.
 
 ## Progress and notes

@@ -101,6 +101,6 @@ pipeline-delay evidence plus a fresh independent PASS after repair.
   loss or other filesystems.
 - Full suites exclude the separately owned stale
   `tests/test_dynamic_version.py` collector; its active owner is
-  `.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md`.
+  `.10x/tickets/done/2026-08-20-reconcile-missing-release-checks-test-harness.md`.
 - No live provider/model/content/credential/catalog mutation, real home, remote,
   release, or publication operation was performed.

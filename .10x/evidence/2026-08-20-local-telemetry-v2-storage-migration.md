@@ -355,7 +355,7 @@ They do not close the ticket; fresh exact-commit review remains mandatory.
   --ignore=tests/test_dynamic_version.py` exited 0: **1042 passed, 949
   subtests passed, 57 preexisting lxml warnings**. The excluded stale collector
   remains owned by
-  `.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md`;
+  `.10x/tickets/done/2026-08-20-reconcile-missing-release-checks-test-harness.md`;
   this repair did not restore or change that surface.
 - The exact targeted rereview plus privacy/no-network/crash/shared-capacity
   command exited 0: **11 passed, 35 subtests passed**.

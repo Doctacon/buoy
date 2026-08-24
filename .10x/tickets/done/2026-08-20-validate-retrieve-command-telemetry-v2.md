@@ -148,6 +148,6 @@ fresh PASS rereviews removed the blocker without broadening product scope.
 Reusable timing-test procedure is preserved in
 `.10x/knowledge/timing-attribution-tests-delay-each-named-seam.md`. The
 separately owned stale dynamic-version collector remains outside this ticket at
-`.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md`.
+`.10x/tickets/done/2026-08-20-reconcile-missing-release-checks-test-harness.md`.
 No additional implementation, specification, decision, skill, or follow-up
 record is required.
