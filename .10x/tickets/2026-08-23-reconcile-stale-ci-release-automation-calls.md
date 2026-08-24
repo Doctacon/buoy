@@ -86,5 +86,10 @@ acceptance gates, so this ticket remains active.
   implementation review returned PASS with no findings and approved draft-PR
   handoff; it is recorded in
   `.10x/reviews/2026-08-23-stale-ci-release-automation-call-implementation-review.md`.
-  The ticket remains active only for parent-owned hosted exact-head CI, final
-  acceptance reconciliation, and integration.
+- 2026-08-23: Pushed the aggregate cleanup branch and opened canonical GitHub
+  PR #144, `https://github.com/Doctacon/buoy/pull/144`, targeting `develop`.
+  It was observed draft/open at exact head `87fcd70e`; the GitHub PR remains
+  canonical for hosted check and merge status. This local ticket remains
+  canonical for behavior, evidence limits, and retrospective. The ticket stays
+  active for exact-head hosted CI, final acceptance reconciliation, and
+  dedicated integration.
