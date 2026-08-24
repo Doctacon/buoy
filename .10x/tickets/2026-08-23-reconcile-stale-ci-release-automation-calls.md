@@ -1,4 +1,4 @@
-Status: blocked
+Status: active
 Created: 2026-08-23
 Updated: 2026-08-23
 Parent: None
@@ -44,9 +44,8 @@ replacement, provider/model/content/credential operation, or unrelated cleanup.
 
 ## Blockers
 
-Implementation waits for the separately owned stale dynamic-version test ticket
-to complete so both independent fixes can be assembled into one exact-head
-passing cleanup PR; either fix alone leaves CI red on the other stale consumer.
+None. The stale dynamic-version test ticket is done and its reviewed branch has
+been incorporated into this aggregate cleanup branch.
 
 ## Progress and notes
 
@@ -63,3 +62,7 @@ passing cleanup PR; either fix alone leaves CI red on the other stale consumer.
   `develop@0c669c5e`. Because stale CI calls and the stale dynamic test fail
   independently, their reviewed commits will be assembled into one cleanup PR
   before the telemetry PR.
+- 2026-08-23: Reviewed stale-test closure commit `a46cbaa8` was incorporated by
+  merge commit `aa884666`; its ticket is now under `.10x/tickets/done/` and
+  dual-runtime unfiltered suites pass locally. Activated this dependent CI
+  ticket for its exact two-call workflow deletion.
