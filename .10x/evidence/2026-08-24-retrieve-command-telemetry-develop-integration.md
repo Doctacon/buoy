@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-24
 Updated: 2026-08-24
-Relates-To: .10x/tickets/2026-08-24-integrate-retrieve-command-telemetry-into-develop.md, .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md
+Relates-To: .10x/tickets/done/2026-08-24-integrate-retrieve-command-telemetry-into-develop.md, .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md
 
 # Retrieve Command Telemetry Develop Integration
 

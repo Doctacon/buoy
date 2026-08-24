@@ -58,7 +58,7 @@ post-merge `develop` CI are external integration stop gates: failure forbids a
 completion claim and requires a durable blocker/follow-up before reporting.
 
 This decision explicitly supersedes the literal exact-PR-head Hatch-VCS gate in
-`.10x/tickets/2026-08-24-integrate-retrieve-command-telemetry-into-develop.md`
+`.10x/tickets/done/2026-08-24-integrate-retrieve-command-telemetry-into-develop.md`
 and the corresponding recommendation in
 `.10x/reviews/2026-08-24-retrieve-command-telemetry-develop-integration-review.md`.
 It does not weaken any telemetry, storage, migration, privacy, routing, test,

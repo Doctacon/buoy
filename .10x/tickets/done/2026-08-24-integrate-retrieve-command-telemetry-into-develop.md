@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/done/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -78,13 +78,11 @@ reviews. Treat the GitHub PR as canonical for hosted check and merge state.
 
 ## Blockers
 
-No implementation blocker. Failed hosted run `32761209125` remains retained
-history and passing run `32764801426` resolves its timing-test failure on the
-head/base synthetic merge ref. Final closure review at `049a4ac` failed the
-then-active literal task-head Hatch-VCS criterion. The user has now explicitly
-superseded that criterion through the active merge-ref/final-squash decision;
-hosted evidence and this ticket are corrected. Fresh independent rereview is
-required before closure.
+None for ticket closure. The prior closure FAIL is resolved by explicit
+user-ratified contract supersession, corrected hosted evidence, and a fresh
+passing rereview. Final records-head merge-ref CI, dedicated squash integration,
+and exact-final-commit `develop` CI remain external stop gates and prohibit an
+overall completion claim until they pass.
 
 ## Progress and notes
 
@@ -224,4 +222,37 @@ required before closure.
   head/base synthetic merge, while post-merge `develop` CI MUST validate the
   exact final squash commit before completion is claimed. Successful run IDs,
   checkout/version identity, raw hashes, and limits are now appended to the
-  integrated evidence. Ticket remains active pending fresh rereview.
+  integrated evidence.
+- 2026-08-24: Fresh independent rereview of records candidate `d3c621ae`, the
+  active decision, corrected ticket/evidence, prior FAIL, all source/spec/test
+  mappings, and raw artifacts returned PASS with no findings. It confirmed all
+  ticket criteria are satisfied and explicitly authorized records-only closure
+  before the external integration stop gates. The pass is recorded in
+  `.10x/reviews/2026-08-24-retrieve-command-telemetry-final-closure-rereview.md`.
+  Ticket is done and moves to the terminal path in this closure commit.
+
+## Retrospective
+
+The integration exposed two verification lessons. First, timing tests that
+subtract separate process observations must dominate cold-import and shared-
+runner variance without lowering semantic bounds. A discarded warm-up, a real
+2,000 ms signal, repeated concurrent observations, and stage-specific subtests
+made the attribution test robust while preserving every command/pipeline/
+bootstrap assertion. The reusable test lesson already lives in
+`.10x/knowledge/timing-attribution-tests-delay-each-named-seam.md`; no duplicate
+knowledge or skill is needed.
+
+Second, GitHub check association, checked-out commit, and final integrated
+commit are different identities. Default pull-request checkout validates a
+synthetic head/base merge; squash integration creates the final version-bearing
+commit. The initial closure review correctly failed rather than calling
+merge-ref Hatch-VCS bytes task-head bytes. Explicit user ratification produced
+`.10x/decisions/buoy-validates-pr-merge-ref-and-final-squash-commit.md`, which
+requires truthful pre-merge merge-ref evidence and exact-final-commit
+post-merge CI without changing workflow behavior.
+
+Failed run `32761209125`, two invalid local harness non-results, the repaired
+local matrix, and passing run `32764801426` are all retained with limits. No
+unfinished implementation, product behavior, specification gap, or separate
+follow-up remains. PR #145 durably owns final records-head CI, dedicated squash
+merge, tree verification, and post-merge `develop` CI as external stop gates.
