@@ -26,7 +26,7 @@ is recorded at
 
 ## Decision
 
-For `.10x/tickets/2026-08-24-run-local-telemetry-v2-canary.md`, the at-most-six
+For `.10x/tickets/done/2026-08-24-run-local-telemetry-v2-canary.md`, the at-most-six
 content-namespace limit means **logical namespace query operations**. One
 `buoy.namespace.query` span represents one such operation. Lower-level initial,
 compatibility-fallback, optional-schema-fallback, or retry transport attempts

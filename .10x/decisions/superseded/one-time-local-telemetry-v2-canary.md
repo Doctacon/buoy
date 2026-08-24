@@ -31,7 +31,7 @@ not duplicate those values.
 ## Decision
 
 Authorize one forward-only local canary under
-`.10x/tickets/2026-08-24-run-local-telemetry-v2-canary.md` with these exact
+`.10x/tickets/done/2026-08-24-run-local-telemetry-v2-canary.md` with these exact
 bounds:
 
 1. Build and install the exact integrated commit only in an owner-private

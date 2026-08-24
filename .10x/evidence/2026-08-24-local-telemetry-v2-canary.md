@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-24
 Updated: 2026-08-24
-Relates-To: .10x/tickets/2026-08-24-run-local-telemetry-v2-canary.md, .10x/decisions/superseded/one-time-local-telemetry-v2-canary.md, .10x/decisions/local-telemetry-canary-budgets-logical-namespace-operations.md, .10x/evidence/2026-08-24-local-telemetry-v2-canary-authorization.md, .10x/evidence/2026-08-24-local-telemetry-v2-canary-closure-authorization.md, .10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md, .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/specs/local-telemetry-writer.md
+Relates-To: .10x/tickets/done/2026-08-24-run-local-telemetry-v2-canary.md, .10x/decisions/superseded/one-time-local-telemetry-v2-canary.md, .10x/decisions/local-telemetry-canary-budgets-logical-namespace-operations.md, .10x/evidence/2026-08-24-local-telemetry-v2-canary-authorization.md, .10x/evidence/2026-08-24-local-telemetry-v2-canary-closure-authorization.md, .10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md, .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/specs/local-telemetry-writer.md
 
 # Local Telemetry V2 Canary
 

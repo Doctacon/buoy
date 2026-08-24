@@ -2,7 +2,7 @@ Status: blocked
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
-Depends-On: .10x/tickets/2026-08-24-run-local-telemetry-v2-canary.md
+Depends-On: .10x/tickets/done/2026-08-24-run-local-telemetry-v2-canary.md
 Knowledge: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
 
 # Define Physical Provider Attempt Accounting

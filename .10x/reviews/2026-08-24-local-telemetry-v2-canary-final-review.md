@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-24
 Updated: 2026-08-24
-Target: .10x/tickets/2026-08-24-run-local-telemetry-v2-canary.md, .10x/evidence/2026-08-24-local-telemetry-v2-canary.md, commit 0da62fa6252b7e89a472744c40e9046a7be2e1f0
+Target: .10x/tickets/done/2026-08-24-run-local-telemetry-v2-canary.md, .10x/evidence/2026-08-24-local-telemetry-v2-canary.md, commit 0da62fa6252b7e89a472744c40e9046a7be2e1f0
 Verdict: fail
 
 # Local Telemetry V2 Canary Final Review

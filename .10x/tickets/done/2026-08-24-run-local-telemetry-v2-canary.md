@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
@@ -8,7 +8,7 @@ Authorization-Evidence: .10x/evidence/2026-08-24-local-telemetry-v2-canary-autho
 Follow-Up: .10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md
 Knowledge: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
 Specifications: .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/specs/local-telemetry-writer.md
-Reviews: .10x/reviews/2026-08-24-local-telemetry-v2-canary-review.md, .10x/reviews/2026-08-24-local-telemetry-v2-canary-final-review.md
+Reviews: .10x/reviews/2026-08-24-local-telemetry-v2-canary-review.md, .10x/reviews/2026-08-24-local-telemetry-v2-canary-final-review.md, .10x/reviews/2026-08-24-local-telemetry-v2-canary-closure-rereview.md
 
 # Run Local Telemetry V2 Canary
 
@@ -240,9 +240,37 @@ policy; unrelated source, record, local-home, or GitHub changes.
   `.10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md`.
   Ticket returned to active for records-only closure review; no operational
   authority was renewed.
+- 2026-08-24: Two fresh independent reviewers returned PASS at exact records
+  commit `25f99351c69855908bbfdc0b32e10d2c20f3af36`. They confirmed direct owner
+  ratification, five logical namespace operations under the maximum six, every
+  remaining acceptance criterion mapped to evidence, truthful preservation of
+  the unknown physical-attempt count, coherent historical FAIL reviews, and a
+  bounded follow-up owner. Read-only Git inspection confirmed a clean worktree,
+  empty diff check, and seven records-only ratification paths. Review is
+  recorded at
+  `.10x/reviews/2026-08-24-local-telemetry-v2-canary-closure-rereview.md`.
+  Closure performed no migration, retrieval, flush, telemetry status/database,
+  provider/model, credential, global-tool, hosted, source, or workflow
+  operation.
 
 ## Blockers
 
-- Fresh independent closure rereview is pending against the owner-ratified
-  logical-operation criterion and records-only reconciliation. No operational
-  rerun is permitted or required.
+None. The operational canary satisfies the owner-ratified logical-operation
+contract. Physical transport-attempt accounting is separate future work owned
+by `.10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md` and
+does not block this ticket.
+
+## Retrospective
+
+- The core canary succeeded: exact migration, backup/v1 preservation, four-mode
+  command/pipeline telemetry, privacy, terminal durability, and local/global
+  state boundaries were all proven.
+- The review failure exposed a reusable vocabulary/evidence gap rather than an
+  operational defect. Logical namespace operations and physical transport
+  attempts must be named and evidenced separately. Guidance is preserved at
+  `.10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md`.
+- Future physical cost/rate-limit accounting requires transport-boundary count
+  receipts retained through review. Shaping and implementation remain owned by
+  `.10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md`.
+- No retry, source repair, specification drift, instruction change, or release
+  action was required for this closure.
