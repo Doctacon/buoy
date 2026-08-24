@@ -127,5 +127,12 @@ merged at `3eabedd6` and its post-merge CI passed.
   metadata/archive identity requires the mandatory exact-PR-head hosted build.
   Review is recorded in
   `.10x/reviews/2026-08-24-retrieve-command-telemetry-develop-integration-review.md`.
-  Push and draft PR are supported. Ticket remains active for hosted exact-head
-  CI, final acceptance/closure records, and dedicated integration.
+  Push and draft PR are supported.
+- 2026-08-24: Pushed reviewed records head `5732beb5` and opened draft PR #145
+  (`https://github.com/Doctacon/buoy/pull/145`) explicitly against exact
+  `develop@3eabedd6`. Creation state was open/draft with exact head `5732beb5`.
+  The canonical PR description records validation, source identities,
+  Hatch-VCS exact-head limits, and exclusions. This records-only handoff update
+  will create the head on which hosted gates are required. Ticket remains
+  active for hosted exact-head CI, final acceptance/closure records, and
+  dedicated integration.

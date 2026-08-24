@@ -206,6 +206,24 @@ those external harness expectations to the existing accepted help/status and
 unchanged workflow canary contract produced the passing result above. No
 tracked file, package, or product test was changed or weakened.
 
+## Hosted handoff
+
+After the independent local review passed, reviewed records head
+`5732beb56ac900860ed185783b0555d28ff2680d` was pushed as branch
+`work/retrieval-command-telemetry-v2`. Draft PR #145 was opened explicitly
+against `develop`:
+
+- canonical URL: `https://github.com/Doctacon/buoy/pull/145`;
+- observed base: `develop@3eabedd6b1e2c60a2a8be2489327b014d04130fc`;
+- observed head: `5732beb56ac900860ed185783b0555d28ff2680d`;
+- state at creation: open and draft.
+
+The PR description preserves the exact accepted source hashes, local validation
+counts, Hatch-VCS boundary, privacy/external-effect limits, and mandatory hosted
+Python 3.11, Python 3.13, and dependent build/smoke gates. No `main`, tag,
+Release, publication, installed-tool, provider/model/content/credential/catalog,
+or unrelated GitHub operation occurred.
+
 ## Raw artifacts, limits, and remaining gates
 
 All logs and distributions are under mode-0700
