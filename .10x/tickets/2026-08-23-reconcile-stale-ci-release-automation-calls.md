@@ -44,8 +44,10 @@ replacement, provider/model/content/credential operation, or unrelated cleanup.
 
 ## Blockers
 
-None. The stale dynamic-version test ticket is done and its reviewed branch has
-been incorporated into this aggregate cleanup branch.
+None for local implementation. The stale dynamic-version test ticket is done
+and its reviewed branch has been incorporated into this aggregate cleanup
+branch. Required independent review and hosted exact-head CI remain parent-owned
+acceptance gates, so this ticket remains active.
 
 ## Progress and notes
 
@@ -66,3 +68,20 @@ been incorporated into this aggregate cleanup branch.
   merge commit `aa884666`; its ticket is now under `.10x/tickets/done/` and
   dual-runtime unfiltered suites pass locally. Activated this dependent CI
   ticket for its exact two-call workflow deletion.
+- 2026-08-23: Workflow-only implementation commit
+  `33a6d8eb60319f074ee0a5139957cd8353b174c0` (tree
+  `6fe239332c866613acd7185df1124744639fd1e7`) removed exactly the two dead
+  `scripts/release_automation.py` invocations. It changed only
+  `.github/workflows/ci.yml`, with zero additions and two deletions; no shell
+  syntax became redundant and no deleted validation was restored or replaced.
+- 2026-08-23: Fresh disposable offline/frozen Python 3.11 and 3.13 environments
+  each passed ranking-contract and C6 validation plus the complete unfiltered
+  `1009/1009` suite. A clean Python 3.13 wheel/sdist build, isolated offline
+  wheel install, and the unchanged help/tokenizer/routing smoke passed. Strict
+  inventory, exact-byte/YAML equivalence, lock, Ruff `F,E9`, changed-file
+  compilation, and diff hygiene also passed. Exact commands, hashes, coverage
+  disclosure, and limits are recorded in
+  `.10x/evidence/2026-08-23-stale-ci-release-automation-call-reconciliation.md`.
+- 2026-08-23: Local implementation and evidence are complete. The ticket stays
+  active for parent-owned independent review and hosted exact-head CI; neither
+  has been run or claimed locally.
