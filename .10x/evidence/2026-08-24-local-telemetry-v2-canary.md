@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-24
 Updated: 2026-08-24
-Relates-To: .10x/tickets/2026-08-24-run-local-telemetry-v2-canary.md, .10x/decisions/one-time-local-telemetry-v2-canary.md, .10x/evidence/2026-08-24-local-telemetry-v2-canary-authorization.md, .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/specs/local-telemetry-writer.md
+Relates-To: .10x/tickets/2026-08-24-run-local-telemetry-v2-canary.md, .10x/decisions/superseded/one-time-local-telemetry-v2-canary.md, .10x/evidence/2026-08-24-local-telemetry-v2-canary-authorization.md, .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/specs/local-telemetry-writer.md
 
 # Local Telemetry V2 Canary
 
@@ -149,7 +149,7 @@ model flags were enforced. No command was retried.
 All four commands exited zero, produced one valid JSON object, and persisted
 exactly these content-free rows:
 
-| Case ID | Execution / retrieval mode | Command ms | Pipeline ms | Hits | Fanout | Failures | Namespace reads | Governed stages |
+| Case ID | Execution / retrieval mode | Command ms | Pipeline ms | Hits | Fanout | Failures | Namespace spans | Governed stages |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | `u01-dagster-purpose` | preview / explicit-single | 456.779 | null | null | null | null | 0 | bootstrap, prepare, render |
 | `u01-dagster-purpose` | live / explicit-single | 43,997.248 | 2,402.982 | 5 | 1 | 0 | 1 | bootstrap, prepare, pipeline, embed, namespace, render |
@@ -162,12 +162,20 @@ pipeline interval was enclosed by its command interval, every span reached the
 single command root, all live failure counts were zero, and automatic fanout
 was two, below the maximum three.
 
-The complete canary used five content-namespace query spans, below the maximum
-six. Automatic routing had one governed catalog stage. Exact catalog request
-counts are not telemetry fields; their bounded read-only list/metadata/card
-behavior and absence of write paths come from the exact integrated retrieval
-source contract. This run therefore proves five content calls plus established
-bounded catalog reads, not an independent packet-level audit. No provider write
+The complete canary recorded five `buoy.namespace.query` spans. Those spans
+count logical namespace operations, not physical provider invocations. Exact
+integrated source first requests server-side fusion and may issue a second
+provider request inside the same span when that fusion form is unsupported.
+Retained telemetry records neither the selected fusion path nor physical call
+count. The raw result/runtime artifacts were deleted as required and no
+independent provider-call receipt was retained. Consequently this evidence does
+**not** prove the ticket's at-most-six content-provider-call criterion; five
+spans permit more than six physical calls if compatibility fallback occurred.
+
+Automatic routing had one governed catalog stage. Exact catalog request counts
+are not telemetry fields; their bounded read-only list/metadata/card behavior
+and absence of write paths come from the exact integrated retrieval source
+contract rather than an independent packet-level audit. No provider write
 operation was invoked.
 
 Raw stdout/stderr existed only as mode-private temporary files. Machine checks
@@ -237,8 +245,9 @@ read back from the filesystem. The required immutable v1 backup remains exact:
 Migration scratch and WAL remain absent.
 
 This is one macOS arm64 host observation of one ratified v1 store and four
-approved requests. It establishes exact local artifact/store/trace facts and
-source-contracted call bounds. It does not establish other hosts, power-loss
-behavior, recurring operation, release readiness, or independent network-level
-provider accounting. Independent review remains required before ticket
-closure.
+approved requests. It establishes exact local artifact/store/trace facts but
+not the required physical content-provider-call bound. It does not establish
+other hosts, power-loss behavior, recurring operation, release readiness, or
+independent network-level provider accounting. Independent acceptance review
+failed on the unsupported provider-call criterion; the ticket is blocked and
+must not close from this evidence.

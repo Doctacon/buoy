@@ -1,4 +1,4 @@
-Status: active
+Status: superseded
 Created: 2026-08-24
 Updated: 2026-08-24
 
@@ -84,6 +84,22 @@ Beginning the migration consumes this one-time forward authority. The four
 workload authorities are consumed individually when their corresponding
 commands begin. Failure or uncertainty does not grant a retry. Provider access
 cannot begin unless migration and its immediate readback pass.
+
+## Supersession and consumed authority
+
+The one migration and all four workload forms began under this authority, so
+all forward authority granted here is consumed. Independent acceptance review
+subsequently found that retained telemetry proves five logical namespace spans
+but not the physical provider-call count: one span may contain a second request
+through the compatibility fallback. Because temporary output/runtime artifacts
+were deleted as required and no independent call receipt was retained, the
+at-most-six-call criterion is unsupported and the canary ticket is blocked.
+
+This decision is superseded by consumption, with no successor execution
+authority. It remains historical provenance only. It grants no retry,
+replacement canary, migration, flush, provider/model access, repair, or other
+external operation. Any further operation requires separately shaped and
+ratified authority.
 
 ## Alternatives considered
 

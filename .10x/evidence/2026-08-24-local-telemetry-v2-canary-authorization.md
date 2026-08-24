@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-24
 Updated: 2026-08-24
-Relates-To: .10x/decisions/one-time-local-telemetry-v2-canary.md, .10x/tickets/2026-08-24-run-local-telemetry-v2-canary.md
+Relates-To: .10x/decisions/superseded/one-time-local-telemetry-v2-canary.md, .10x/tickets/2026-08-24-run-local-telemetry-v2-canary.md
 
 # Local Telemetry V2 Canary Authorization
 
@@ -57,8 +57,8 @@ confirmed values remain bound to the immutable approved dataset and case IDs.
 
 ## What this supports
 
-This supports the semantic and side-effect authority recorded in
-`.10x/decisions/one-time-local-telemetry-v2-canary.md` and removes the ticket's
+This supports the historical semantic and side-effect authority recorded in
+`.10x/decisions/superseded/one-time-local-telemetry-v2-canary.md` and removes the ticket's
 scope, migration, workload, provider-read, model, credential-source, reporting,
 and cleanup ambiguities.
 

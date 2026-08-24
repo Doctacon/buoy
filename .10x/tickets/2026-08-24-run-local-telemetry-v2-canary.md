@@ -1,9 +1,9 @@
-Status: active
+Status: blocked
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
 Depends-On: .10x/tickets/done/2026-08-24-integrate-retrieve-command-telemetry-into-develop.md
-Decision: .10x/decisions/one-time-local-telemetry-v2-canary.md
+Decision: .10x/decisions/superseded/one-time-local-telemetry-v2-canary.md
 Authorization-Evidence: .10x/evidence/2026-08-24-local-telemetry-v2-canary-authorization.md
 Specifications: .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/specs/local-telemetry-writer.md
 
@@ -191,8 +191,34 @@ policy; unrelated source, record, local-home, or GitHub changes.
   raw output/log were removed; the backup remains. Sanitized evidence is at
   `.10x/evidence/2026-08-24-local-telemetry-v2-canary.md`. Ticket remains active
   awaiting mandatory independent review; no self-review or closure occurred.
+- 2026-08-24: Independent acceptance/side-effects review returned FAIL. Five
+  `buoy.namespace.query` spans do not prove five provider invocations: exact
+  integrated source may issue a second provider request inside one span when
+  server-side fusion is unsupported, and retained telemetry does not record
+  the selected fusion path or provider invocation count. The temporary output
+  and runtime artifacts were deleted as required, so the at-most-six provider
+  call criterion cannot be reconstructed from retained evidence. The separate
+  correctness/privacy reviewer detached without returning a substantive
+  verdict. Combined review is recorded at
+  `.10x/reviews/2026-08-24-local-telemetry-v2-canary-review.md` with verdict
+  FAIL. The ticket is blocked, not closed.
+- 2026-08-24: Migration and all four workload authorities were consumed by the
+  one-time execution. The governing decision is now historical at
+  `.10x/decisions/superseded/one-time-local-telemetry-v2-canary.md`; it grants
+  no retry, replacement canary, provider access, or repair. No canary,
+  telemetry-management, provider/model, database, or external operation was
+  rerun during review reconciliation.
 
 ## Blockers
 
-None. The ticket is executable but has not begun; implementation must occur in
-a later turn under the repository execution gate.
+- The at-most-six content-provider-call acceptance criterion is unsupported.
+  Five namespace spans bound logical namespace operations, not physical
+  provider invocations; each may contain a two-invocation compatibility
+  fallback. No retained artifact proves which fusion path occurred.
+- The mandatory independent-review criterion is unmet: acceptance/side-effects
+  review failed, and correctness/privacy review returned no substantive
+  verdict.
+- One-time migration and workload authority is consumed. This ticket cannot
+  repair either blocker by retrying or rerunning the canary. Resolution requires
+  separately ratified acceptance supersession or separately authorized new
+  work; neither exists.
