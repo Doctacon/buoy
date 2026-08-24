@@ -14,7 +14,6 @@ from dataclasses import dataclass, replace
 import errno
 import hashlib
 import json
-import math
 import os
 from pathlib import Path
 import re
@@ -24,7 +23,7 @@ import subprocess
 import sys
 import time
 import warnings
-from typing import Any, Literal
+from typing import Callable, Literal
 
 try:  # The strong queue is intentionally POSIX-only.
     import fcntl
@@ -43,6 +42,7 @@ RECEIPT_MAX_ENTRIES = 4_096
 RECEIPT_MAX_BYTES = 4_194_304
 RECEIPT_MAX_FILE_BYTES = 1_024
 RECEIPT_MIN_AGE_SECONDS = 121
+_writer_state_fault_hook: Callable[[str], None] | None = None
 STALE_ENVELOPE_TEMP_SECONDS = 86_400
 STATE_MAX_BYTES = 262_144
 ACCOUNTING_MAX_BYTES = 4_096
@@ -62,6 +62,12 @@ _ENVELOPE_RE = re.compile(r"^v1-([0-9a-f]{32})\.json$")
 _ENVELOPE_TEMP_RE = re.compile(r"^v1-([0-9a-f]{32})\.part$")
 _RECEIPT_RE = re.compile(r"^r1-([0-9a-f]{32})\.json$")
 _RECEIPT_TEMP_RE = re.compile(r"^r1-([0-9a-f]{32})\.part$")
+_V2_ENVELOPE_RE = re.compile(r"^v2-([0-9a-f]{32})\.json$")
+_V2_ENVELOPE_TEMP_RE = re.compile(r"^v2-([0-9a-f]{32})\.part$")
+_V2_RECEIPT_RE = re.compile(r"^r2-([0-9a-f]{32})\.json$")
+_V2_RECEIPT_TEMP_RE = re.compile(r"^r2-([0-9a-f]{32})\.part$")
+_ANY_ENVELOPE_RE = re.compile(r"^v[12]-([0-9a-f]{32})\.json$")
+_ANY_RECEIPT_RE = re.compile(r"^r[12]-([0-9a-f]{32})\.json$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _RECOGNIZED_DIRECTORY_FSYNC_ERRORS = frozenset(
     {
@@ -74,7 +80,13 @@ _RECOGNIZED_DIRECTORY_FSYNC_ERRORS = frozenset(
 
 WriterPhase = Literal["starting", "idle", "draining", "blocked", "stopped"]
 WriterStoreState = Literal[
-    "absent", "compatible", "incompatible", "busy", "unreadable", "unsafe"
+    "absent",
+    "compatible",
+    "upgrade_required",
+    "incompatible",
+    "busy",
+    "unreadable",
+    "unsafe",
 ]
 WriterReason = Literal[
     "database_busy",
@@ -84,6 +96,7 @@ WriterReason = Literal[
     "queue_unsafe",
     "receipt_failure",
     "retry_deadline",
+    "upgrade_required",
 ]
 ReceiptKind = Literal["committed", "replayed", "rejected", "conflict"]
 ReceiptReason = Literal[
@@ -100,7 +113,15 @@ ReceiptReason = Literal[
 
 _WRITER_PHASES = frozenset({"starting", "idle", "draining", "blocked", "stopped"})
 _WRITER_STORE_STATES = frozenset(
-    {"absent", "compatible", "incompatible", "busy", "unreadable", "unsafe"}
+    {
+        "absent",
+        "compatible",
+        "upgrade_required",
+        "incompatible",
+        "busy",
+        "unreadable",
+        "unsafe",
+    }
 )
 _WRITER_REASONS = frozenset(
     {
@@ -111,6 +132,7 @@ _WRITER_REASONS = frozenset(
         "queue_unsafe",
         "receipt_failure",
         "retry_deadline",
+        "upgrade_required",
     }
 )
 _RECEIPT_KINDS = frozenset({"committed", "replayed", "rejected", "conflict"})
@@ -178,6 +200,12 @@ class TelemetryPaths:
     ready_directory: Path
     claimed_directory: Path
     receipts_directory: Path
+    migration_directory: Path
+    migration_database_path: Path
+    migration_wal_path: Path
+    migration_backup_candidate_path: Path
+    backup_database_path: Path
+    queue_version: int = 1
 
 
 @dataclass(frozen=True)
@@ -313,16 +341,23 @@ class ReceiptPublicationResult:
     durability_degraded: bool = False
 
 
-def telemetry_paths(directory: Path | None = None) -> TelemetryPaths:
-    """Return fixed v1 paths without touching the filesystem."""
+def telemetry_paths(
+    directory: Path | None = None,
+    *,
+    queue_version: int = 1,
+) -> TelemetryPaths:
+    """Return fixed versioned paths without touching the filesystem."""
 
+    if queue_version not in {1, 2}:
+        raise ValueError("telemetry queue version must be 1 or 2")
     root = (
         default_buoy_home() / "telemetry"
         if directory is None
         else Path(os.path.abspath(os.fspath(directory)))
     )
-    inbox = root / "inbox-v1"
+    inbox = root / f"inbox-v{queue_version}"
     scratch = root / "database-init-v1"
+    migration = root / "database-migrate-v2"
     return TelemetryPaths(
         directory=root,
         database_path=root / "telemetry.duckdb",
@@ -345,7 +380,36 @@ def telemetry_paths(directory: Path | None = None) -> TelemetryPaths:
         ready_directory=inbox / "ready",
         claimed_directory=inbox / "claimed",
         receipts_directory=inbox / "receipts",
+        migration_directory=migration,
+        migration_database_path=migration / "telemetry.duckdb",
+        migration_wal_path=migration / "telemetry.duckdb.wal",
+        migration_backup_candidate_path=(
+            migration / "telemetry-v1-backup.duckdb"
+        ),
+        backup_database_path=root / "telemetry-v1-backup.duckdb",
+        queue_version=queue_version,
     )
+
+
+def telemetry_paths_v2(directory: Path | None = None) -> TelemetryPaths:
+    """Return the separate fixed version-2 inbox paths."""
+
+    return telemetry_paths(directory, queue_version=2)
+
+
+def _queue_patterns(
+    version: int,
+) -> tuple[re.Pattern[str], re.Pattern[str], re.Pattern[str], re.Pattern[str]]:
+    if version == 1:
+        return _ENVELOPE_RE, _ENVELOPE_TEMP_RE, _RECEIPT_RE, _RECEIPT_TEMP_RE
+    if version == 2:
+        return (
+            _V2_ENVELOPE_RE,
+            _V2_ENVELOPE_TEMP_RE,
+            _V2_RECEIPT_RE,
+            _V2_RECEIPT_TEMP_RE,
+        )
+    raise ValueError("telemetry queue version must be 1 or 2")
 
 
 def posix_writer_capability() -> CapabilityResult:
@@ -688,6 +752,25 @@ def safe_link_at(
         raise UnsafePathError("private hard-link publication is inconsistent")
 
 
+def scan_fixed_private_inventory(
+    directory_fd: int,
+    *,
+    allowed_names: frozenset[str],
+) -> tuple[str, ...]:
+    """Stream one fixed tiny directory inventory without attacker-sized storage."""
+
+    observed: list[str] = []
+    with os.scandir(directory_fd) as iterator:
+        for entry in iterator:
+            name = entry.name
+            if name not in allowed_names or len(observed) >= len(allowed_names):
+                raise UnsafePathError("private directory inventory is unsafe")
+            if name in observed:
+                raise UnsafePathError("private directory inventory is unsafe")
+            observed.append(name)
+    return tuple(observed)
+
+
 def fsync_directory(descriptor: int) -> bool:
     """Synchronize a directory; return False only for recognized unsupported fs."""
 
@@ -763,6 +846,7 @@ class _QueueDirectoryFds:
     ready: int
     claimed: int
     receipts: int
+    queue_version: int
 
     def close(self) -> None:
         for descriptor in (
@@ -797,7 +881,10 @@ def _open_queue_directories(
     receipts_fd: int | None = None
     try:
         inbox_fd = open_private_directory_at(
-            root_fd, "inbox-v1", create=create, repair_mode=repair_mode
+            root_fd,
+            paths.inbox_directory.name,
+            create=create,
+            repair_mode=repair_mode,
         )
         temp_fd = open_private_directory_at(
             inbox_fd, "tmp", create=create, repair_mode=repair_mode
@@ -821,6 +908,7 @@ def _open_queue_directories(
             ready=ready_fd,
             claimed=claimed_fd,
             receipts=receipts_fd,
+            queue_version=paths.queue_version,
         )
     except Exception:
         for descriptor in (receipts_fd, claimed_fd, ready_fd, temp_fd, inbox_fd, root_fd):
@@ -1075,6 +1163,7 @@ def _write_fixed_json_at(
     temporary_name: str,
     payload: bytes,
     maximum: int,
+    fault_hook: Callable[[str], None] | None = None,
 ) -> bool:
     """Atomically replace one fixed canonical state file.
 
@@ -1109,6 +1198,8 @@ def _write_fixed_json_at(
         if observed.st_size != len(payload):
             raise UnsafePathError("state temporary size changed")
         _require_open_name_matches_fd(parent_fd, temporary_name, descriptor)
+        if fault_hook is not None:
+            fault_hook("temporary_durable")
     finally:
         os.close(descriptor)
     os.rename(
@@ -1117,7 +1208,12 @@ def _write_fixed_json_at(
         src_dir_fd=parent_fd,
         dst_dir_fd=parent_fd,
     )
-    return fsync_directory(parent_fd)
+    if fault_hook is not None:
+        fault_hook("renamed")
+    durable = fsync_directory(parent_fd)
+    if fault_hook is not None:
+        fault_hook("directory_synced")
+    return durable
 
 
 def _require_exact_keys(value: Mapping[str, object], expected: set[str]) -> None:
@@ -1433,13 +1529,16 @@ def _parse_writer_state(value: Mapping[str, object]) -> WriterState:
         raise InvalidStateError("writer reason is invalid")
     store_schema = value["store_schema_version"]
     if store_schema is not None and (
-        type(store_schema) is not int or store_schema != 1
+        type(store_schema) is not int or store_schema not in {1, 2}
     ):
         raise InvalidStateError("writer store schema is invalid")
     receipts = value["accounted_receipts"]
     if not isinstance(receipts, list) or len(receipts) > RECEIPT_MAX_ENTRIES:
         raise InvalidStateError("writer accounted receipts are invalid")
-    if any(not isinstance(name, str) or _RECEIPT_RE.fullmatch(name) is None for name in receipts):
+    if any(
+        not isinstance(name, str) or _ANY_RECEIPT_RE.fullmatch(name) is None
+        for name in receipts
+    ):
         raise InvalidStateError("writer accounted receipt name is invalid")
     if receipts != sorted(set(receipts)):
         raise InvalidStateError("writer accounted receipts are not sorted and unique")
@@ -1540,7 +1639,44 @@ def write_writer_state(
             temporary_name=".writer-state-v1.tmp",
             payload=payload,
             maximum=STATE_MAX_BYTES,
+            fault_hook=_writer_state_fault_hook,
         )
+    finally:
+        os.close(root_fd)
+
+
+def writer_state_temporary_present(
+    paths: TelemetryPaths | None = None,
+) -> bool:
+    """Return whether the one safe fixed writer-state temporary remains."""
+
+    selected = paths or telemetry_paths()
+    root_fd = _open_telemetry_root(selected, create=False, repair_mode=False)
+    try:
+        return _existing_private_file(
+            root_fd,
+            ".writer-state-v1.tmp",
+            maximum=STATE_MAX_BYTES,
+        )
+    finally:
+        os.close(root_fd)
+
+
+def fsync_writer_state_directory(
+    paths: TelemetryPaths | None = None,
+) -> bool:
+    """Re-attest the final writer-state rename by syncing its directory."""
+
+    selected = paths or telemetry_paths()
+    root_fd = _open_telemetry_root(selected, create=False, repair_mode=False)
+    try:
+        stat_private_entry_at(
+            root_fd,
+            "writer-state-v1.json",
+            kind="file",
+            max_bytes=STATE_MAX_BYTES,
+        )
+        return fsync_directory(root_fd)
     finally:
         os.close(root_fd)
 
@@ -1572,7 +1708,8 @@ _RECEIPT_FIELDS = {
 
 def _parse_receipt(value: Mapping[str, object]) -> TerminalReceipt:
     _require_exact_keys(value, _RECEIPT_FIELDS)
-    if type(value["schema_version"]) is not int or value["schema_version"] != 1:
+    schema_version = value["schema_version"]
+    if type(schema_version) is not int or schema_version not in {1, 2}:
         raise InvalidStateError("receipt version is incompatible")
     kind = value["kind"]
     source_name = value["source_name"]
@@ -1581,7 +1718,11 @@ def _parse_receipt(value: Mapping[str, object]) -> TerminalReceipt:
     digest_complete = _require_boolean(value["digest_complete"])
     if not isinstance(kind, str) or kind not in _RECEIPT_KINDS:
         raise InvalidStateError("receipt kind is invalid")
-    if not isinstance(source_name, str) or _ENVELOPE_RE.fullmatch(source_name) is None:
+    if (
+        not isinstance(source_name, str)
+        or _ANY_ENVELOPE_RE.fullmatch(source_name) is None
+        or not source_name.startswith(f"v{schema_version}-")
+    ):
         raise InvalidStateError("receipt source name is invalid")
     if digest is not None and (
         not isinstance(digest, str) or _SHA256_RE.fullmatch(digest) is None
@@ -1611,7 +1752,7 @@ def _parse_receipt(value: Mapping[str, object]) -> TerminalReceipt:
     ):
         raise InvalidStateError("classified receipt digest fields are inconsistent")
     return TerminalReceipt(
-        schema_version=1,
+        schema_version=schema_version,
         kind=kind,  # type: ignore[arg-type]
         source_name=source_name,
         envelope_sha256=digest,
@@ -1623,17 +1764,17 @@ def _parse_receipt(value: Mapping[str, object]) -> TerminalReceipt:
 
 
 def receipt_name_for_source(source_name: str) -> str:
-    match = _ENVELOPE_RE.fullmatch(source_name)
+    match = _ANY_ENVELOPE_RE.fullmatch(source_name)
     if match is None:
-        raise ValueError("recognized v1 envelope name required")
-    return f"r1-{match.group(1)}.json"
+        raise ValueError("recognized telemetry envelope name required")
+    return f"r{source_name[1]}-{match.group(1)}.json"
 
 
 def receipt_temp_name_for_source(source_name: str) -> str:
-    match = _ENVELOPE_RE.fullmatch(source_name)
+    match = _ANY_ENVELOPE_RE.fullmatch(source_name)
     if match is None:
-        raise ValueError("recognized v1 envelope name required")
-    return f"r1-{match.group(1)}.part"
+        raise ValueError("recognized telemetry envelope name required")
+    return f"r{source_name[1]}-{match.group(1)}.part"
 
 
 def _read_receipt_at(receipts_fd: int, receipt_name: str) -> TerminalReceipt:
@@ -1736,6 +1877,8 @@ def _scan_private_files(
 
 def _scan_receipt_files(
     receipts_fd: int,
+    *,
+    queue_version: int,
 ) -> tuple[_DirectoryScan, _DirectoryScan]:
     """Scan final receipts and receipt temporaries in one bounded pass."""
 
@@ -1752,8 +1895,11 @@ def _scan_receipt_files(
                 incomplete = True
                 break
             name = entry.name
-            is_final = _RECEIPT_RE.fullmatch(name) is not None
-            is_temporary = _RECEIPT_TEMP_RE.fullmatch(name) is not None
+            _envelope, _temporary, receipt, receipt_temporary = _queue_patterns(
+                queue_version
+            )
+            is_final = receipt.fullmatch(name) is not None
+            is_temporary = receipt_temporary.fullmatch(name) is not None
             if not is_final and not is_temporary:
                 raise UnsafePathError("receipt directory contains an unknown entry")
             observed = stat_private_entry_at(
@@ -1775,22 +1921,28 @@ def _scan_receipt_files(
 def _strict_queue_scans(
     directories: _QueueDirectoryFds,
 ) -> tuple[_DirectoryScan, _DirectoryScan, _DirectoryScan, _DirectoryScan, _DirectoryScan]:
+    envelope, envelope_temporary, _receipt, _receipt_temporary = _queue_patterns(
+        directories.queue_version
+    )
     temporary = _scan_private_files(
         directories.temporary,
-        accepted=_ENVELOPE_TEMP_RE,
+        accepted=envelope_temporary,
         maximum_file_bytes=ENVELOPE_MAX_BYTES,
     )
     ready = _scan_private_files(
         directories.ready,
-        accepted=_ENVELOPE_RE,
+        accepted=envelope,
         maximum_file_bytes=COUNTER_MAX,
     )
     claimed = _scan_private_files(
         directories.claimed,
-        accepted=_ENVELOPE_RE,
+        accepted=envelope,
         maximum_file_bytes=max(ENVELOPE_MAX_BYTES, COUNTER_MAX),
     )
-    receipts, receipt_temps = _scan_receipt_files(directories.receipts)
+    receipts, receipt_temps = _scan_receipt_files(
+        directories.receipts,
+        queue_version=directories.queue_version,
+    )
     if any(
         scan.incomplete
         for scan in (temporary, ready, claimed, receipts, receipt_temps)
@@ -1891,7 +2043,9 @@ def _preflight_existing_publication_tree(paths: TelemetryPaths) -> None:
         except FileNotFoundError:
             return
         try:
-            inbox_fd = _open_preflight_directory_at(root_fd, "inbox-v1")
+            inbox_fd = _open_preflight_directory_at(
+                root_fd, paths.inbox_directory.name
+            )
         except FileNotFoundError:
             return
 
@@ -1927,11 +2081,14 @@ def _preflight_existing_publication_tree(paths: TelemetryPaths) -> None:
         ):
             return
 
+        envelope, envelope_temporary, _receipt, _receipt_temporary = (
+            _queue_patterns(paths.queue_version)
+        )
         empty = _DirectoryScan((), False)
         temporary = (
             _scan_private_files(
                 child_fds["tmp"],
-                accepted=_ENVELOPE_TEMP_RE,
+                accepted=envelope_temporary,
                 maximum_file_bytes=ENVELOPE_MAX_BYTES,
             )
             if "tmp" in child_fds
@@ -1940,7 +2097,7 @@ def _preflight_existing_publication_tree(paths: TelemetryPaths) -> None:
         ready = (
             _scan_private_files(
                 child_fds["ready"],
-                accepted=_ENVELOPE_RE,
+                accepted=envelope,
                 maximum_file_bytes=COUNTER_MAX,
             )
             if "ready" in child_fds
@@ -1949,14 +2106,16 @@ def _preflight_existing_publication_tree(paths: TelemetryPaths) -> None:
         claimed = (
             _scan_private_files(
                 child_fds["claimed"],
-                accepted=_ENVELOPE_RE,
+                accepted=envelope,
                 maximum_file_bytes=COUNTER_MAX,
             )
             if "claimed" in child_fds
             else empty
         )
         if "receipts" in child_fds:
-            receipts, receipt_temps = _scan_receipt_files(child_fds["receipts"])
+            receipts, receipt_temps = _scan_receipt_files(
+                child_fds["receipts"], queue_version=paths.queue_version
+            )
         else:
             receipts, receipt_temps = empty, empty
         if any(
@@ -2007,7 +2166,7 @@ def _open_read_only_queue(
         try:
             inbox_fd = open_private_directory_at(
                 root_fd,
-                "inbox-v1",
+                paths.inbox_directory.name,
                 create=False,
                 repair_mode=False,
             )
@@ -2038,6 +2197,7 @@ def _open_read_only_queue(
             ready=child_fds[1],
             claimed=child_fds[2],
             receipts=child_fds[3],
+            queue_version=paths.queue_version,
         )
     except Exception:
         try:
@@ -2061,22 +2221,28 @@ def scan_queue_read_only(
         if directories is None:
             return QueueSnapshot(present=False)
         try:
+            envelope, envelope_temporary, _receipt, _receipt_temporary = (
+                _queue_patterns(selected.queue_version)
+            )
             temporary = _scan_private_files(
                 directories.temporary,
-                accepted=_ENVELOPE_TEMP_RE,
+                accepted=envelope_temporary,
                 maximum_file_bytes=ENVELOPE_MAX_BYTES,
             )
             ready = _scan_private_files(
                 directories.ready,
-                accepted=_ENVELOPE_RE,
+                accepted=envelope,
                 maximum_file_bytes=COUNTER_MAX,
             )
             claimed = _scan_private_files(
                 directories.claimed,
-                accepted=_ENVELOPE_RE,
+                accepted=envelope,
                 maximum_file_bytes=COUNTER_MAX,
             )
-            receipts, receipt_temps = _scan_receipt_files(directories.receipts)
+            receipts, receipt_temps = _scan_receipt_files(
+                directories.receipts,
+                queue_version=selected.queue_version,
+            )
         finally:
             directories.close()
         pending = ready.entries + claimed.entries
@@ -2127,10 +2293,11 @@ def _fresh_token(directories: _QueueDirectoryFds) -> str:
         token = secrets.token_hex(16)
         if _TOKEN_RE.fullmatch(token) is None:
             continue
-        temp_name = f"v1-{token}.part"
-        source_name = f"v1-{token}.json"
-        receipt_name = f"r1-{token}.json"
-        receipt_temp_name = f"r1-{token}.part"
+        version = directories.queue_version
+        temp_name = f"v{version}-{token}.part"
+        source_name = f"v{version}-{token}.json"
+        receipt_name = f"r{version}-{token}.json"
+        receipt_temp_name = f"r{version}-{token}.part"
         if not any(
             (
                 _name_exists(directories.temporary, temp_name),
@@ -2177,17 +2344,49 @@ def publish_envelope(
                 )
                 pending_count = len(ready.entries) + len(claimed.entries)
                 pending_bytes = ready.total_bytes + claimed.total_bytes
+                temporary_count = len(temporary.entries)
+                temporary_bytes = temporary.total_bytes
+                other_paths = telemetry_paths(
+                    selected.directory,
+                    queue_version=2 if selected.queue_version == 1 else 1,
+                )
+                try:
+                    other_directories = _open_queue_directories(
+                        other_paths, create=False
+                    )
+                except FileNotFoundError:
+                    other_directories = None
+                if other_directories is not None:
+                    try:
+                        (
+                            other_temporary,
+                            other_ready,
+                            other_claimed,
+                            _other_receipts,
+                            _other_receipt_temps,
+                        ) = _strict_queue_scans(other_directories)
+                        pending_count += len(other_ready.entries) + len(
+                            other_claimed.entries
+                        )
+                        pending_bytes += (
+                            other_ready.total_bytes + other_claimed.total_bytes
+                        )
+                        temporary_count += len(other_temporary.entries)
+                        temporary_bytes += other_temporary.total_bytes
+                    finally:
+                        other_directories.close()
                 if (
                     pending_count >= PUBLISHED_MAX_ENTRIES
                     or pending_bytes + len(payload) > PUBLISHED_MAX_BYTES
-                    or len(temporary.entries) >= TEMP_MAX_ENTRIES
-                    or temporary.total_bytes + len(payload) > TEMP_MAX_BYTES
+                    or temporary_count >= TEMP_MAX_ENTRIES
+                    or temporary_bytes + len(payload) > TEMP_MAX_BYTES
                 ):
                     _increment_accounting_at(directories.root, "queue_full")
                     return PublicationResult(False, None, "queue_full")
                 token = _fresh_token(directories)
-                temp_name = f"v1-{token}.part"
-                source_name = f"v1-{token}.json"
+                version = selected.queue_version
+                temp_name = f"v{version}-{token}.part"
+                source_name = f"v{version}-{token}.json"
                 descriptor = open_private_file_at(
                     directories.temporary,
                     temp_name,
@@ -2291,9 +2490,12 @@ def cleanup_stale_envelope_temporaries(
     with queue_lock(selected):
         directories = _open_queue_directories(selected, create=False)
         try:
+            _envelope, envelope_temporary, _receipt, _receipt_temporary = (
+                _queue_patterns(selected.queue_version)
+            )
             scan = _scan_private_files(
                 directories.temporary,
-                accepted=_ENVELOPE_TEMP_RE,
+                accepted=envelope_temporary,
                 maximum_file_bytes=ENVELOPE_MAX_BYTES,
             )
             if scan.incomplete:
@@ -2344,14 +2546,57 @@ def claim_ready_batch(
             directories.close()
 
 
+def claim_ready_names(
+    paths: TelemetryPaths,
+    source_names: Sequence[str],
+) -> tuple[str, ...]:
+    """Atomically claim an exact bounded migration snapshot subset."""
+
+    names = tuple(source_names)
+    if not names or len(names) > 128 or len(set(names)) != len(names):
+        raise ValueError("exact claim set must contain 1 through 128 names")
+    envelope, _temporary, _receipt, _receipt_temporary = _queue_patterns(
+        paths.queue_version
+    )
+    if any(envelope.fullmatch(name) is None for name in names):
+        raise ValueError("recognized versioned envelope names required")
+    claimed_names: list[str] = []
+    with queue_lock(paths):
+        directories = _open_queue_directories(paths, create=False)
+        try:
+            _temporary_scan, ready, claimed, _receipts, _receipt_temps = (
+                _strict_queue_scans(directories)
+            )
+            ready_names = {item.name for item in ready.entries}
+            claimed_existing = {item.name for item in claimed.entries}
+            if not set(names) <= ready_names or set(names) & claimed_existing:
+                raise UnsafePathError("exact claim snapshot changed")
+            for name in names:
+                os.rename(
+                    name,
+                    name,
+                    src_dir_fd=directories.ready,
+                    dst_dir_fd=directories.claimed,
+                )
+                claimed_names.append(name)
+            fsync_directory(directories.ready)
+            fsync_directory(directories.claimed)
+            return tuple(claimed_names)
+        finally:
+            directories.close()
+
+
 def recover_claim(
     paths: TelemetryPaths,
     source_name: str,
 ) -> bool:
     """Return one receipt-free claimed envelope to ready under queue authority."""
 
-    if _ENVELOPE_RE.fullmatch(source_name) is None:
-        raise ValueError("recognized v1 envelope name required")
+    envelope, _temporary, _receipt, _receipt_temporary = _queue_patterns(
+        paths.queue_version
+    )
+    if envelope.fullmatch(source_name) is None:
+        raise ValueError("recognized versioned envelope name required")
     with queue_lock(paths):
         directories = _open_queue_directories(paths, create=False)
         try:
@@ -2422,8 +2667,11 @@ def read_claimed_envelope(
 ) -> ClaimReadResult:
     """Read one stable claimed file with the exact oversized/digest boundary."""
 
-    if _ENVELOPE_RE.fullmatch(source_name) is None:
-        raise ValueError("recognized v1 envelope name required")
+    envelope, _temporary, _receipt, _receipt_temporary = _queue_patterns(
+        paths.queue_version
+    )
+    if envelope.fullmatch(source_name) is None:
+        raise ValueError("recognized versioned envelope name required")
     directories = _open_queue_directories(paths, create=False)
     try:
         descriptor = open_private_file_at(
@@ -2494,39 +2742,61 @@ def read_claimed_envelope(
 
 
 def _rotate_receipts_for_payload(
-    directories: _QueueDirectoryFds,
+    directories: tuple[_QueueDirectoryFds, ...],
     *,
     payload_bytes: int,
-    now_unix_ms: int,
+    creating_temporary: bool = True,
 ) -> tuple[str, ...]:
-    finals, temporaries = _scan_receipt_files(directories.receipts)
-    if finals.incomplete or temporaries.incomplete:
-        raise TelemetryQueueError("receipt scan exceeded its bound")
-    if (
-        len(temporaries.entries) >= RECEIPT_MAX_ENTRIES
-        or temporaries.total_bytes + payload_bytes > RECEIPT_MAX_BYTES
-    ):
+    scans: list[tuple[_QueueDirectoryFds, _DirectoryScan, _DirectoryScan]] = []
+    for current in directories:
+        finals, temporaries = _scan_receipt_files(
+            current.receipts,
+            queue_version=current.queue_version,
+        )
+        if finals.incomplete or temporaries.incomplete:
+            raise TelemetryQueueError("receipt scan exceeded its bound")
+        scans.append((current, finals, temporaries))
+    temporary_count = sum(len(item.entries) for _d, _f, item in scans)
+    temporary_bytes = sum(item.total_bytes for _d, _f, item in scans)
+    if creating_temporary:
+        temporary_full = (
+            temporary_count >= RECEIPT_MAX_ENTRIES
+            or temporary_bytes + payload_bytes > RECEIPT_MAX_BYTES
+        )
+    else:
+        temporary_full = (
+            temporary_count > RECEIPT_MAX_ENTRIES
+            or temporary_bytes > RECEIPT_MAX_BYTES
+        )
+    if temporary_full:
         raise TelemetryQueueError("receipt temporary capacity is full")
-    remaining_count = len(finals.entries)
-    remaining_bytes = finals.total_bytes
+    remaining_count = sum(len(item.entries) for _d, item, _t in scans)
+    remaining_bytes = sum(item.total_bytes for _d, item, _t in scans)
     if (
         remaining_count + 1 <= RECEIPT_MAX_ENTRIES
         and remaining_bytes + payload_bytes <= RECEIPT_MAX_BYTES
     ):
         return ()
-    cutoff_ns = (now_unix_ms - RECEIPT_MIN_AGE_SECONDS * 1_000) * 1_000_000
+    cutoff_ns = time.time_ns() - RECEIPT_MIN_AGE_SECONDS * 1_000_000_000
     eligible = sorted(
-        (item for item in finals.entries if item.mtime_ns <= cutoff_ns),
-        key=lambda item: (item.mtime_ns, item.name),
+        (
+            (item.mtime_ns, item.name, current, item)
+            for current, finals, _temporaries in scans
+            for item in finals.entries
+            if item.mtime_ns <= cutoff_ns
+        ),
+        key=lambda value: (value[0], value[1]),
     )
     removed: list[str] = []
-    for item in eligible:
+    mutated: set[int] = set()
+    for _mtime_ns, _name, current, item in eligible:
         if (
             remaining_count + 1 <= RECEIPT_MAX_ENTRIES
             and remaining_bytes + payload_bytes <= RECEIPT_MAX_BYTES
         ):
             break
-        safe_unlink_at(directories.receipts, item.name)
+        safe_unlink_at(current.receipts, item.name)
+        mutated.add(current.receipts)
         removed.append(item.name)
         remaining_count -= 1
         remaining_bytes -= item.size
@@ -2535,6 +2805,8 @@ def _rotate_receipts_for_payload(
         or remaining_bytes + payload_bytes > RECEIPT_MAX_BYTES
     ):
         raise TelemetryQueueError("receipt capacity has no eligible rotation")
+    for descriptor in mutated:
+        fsync_directory(descriptor)
     return tuple(removed)
 
 
@@ -2545,6 +2817,8 @@ def publish_terminal_receipt(
     """Durably publish one unique content-free terminal receipt."""
 
     validated = _parse_receipt(_receipt_object(receipt))
+    if validated.schema_version != paths.queue_version:
+        raise ValueError("receipt and queue versions differ")
     payload = _canonical_json_bytes(
         _receipt_object(validated),
         maximum=RECEIPT_MAX_FILE_BYTES,
@@ -2553,8 +2827,21 @@ def publish_terminal_receipt(
     temporary_name = receipt_temp_name_for_source(validated.source_name)
     with queue_lock(paths):
         directories = _open_queue_directories(paths, create=False)
+        other_directories: _QueueDirectoryFds | None = None
         try:
             _strict_queue_scans(directories)
+            other_paths = telemetry_paths(
+                paths.directory,
+                queue_version=2 if paths.queue_version == 1 else 1,
+            )
+            try:
+                other_directories = _open_queue_directories(
+                    other_paths, create=False
+                )
+            except FileNotFoundError:
+                other_directories = None
+            if other_directories is not None:
+                _strict_queue_scans(other_directories)
             stat_private_entry_at(
                 directories.claimed,
                 validated.source_name,
@@ -2567,9 +2854,12 @@ def publish_terminal_receipt(
                     raise InvalidStateError("terminal receipt classification differs")
                 return ReceiptPublicationResult(False, True)
             rotated = _rotate_receipts_for_payload(
-                directories,
+                tuple(
+                    current
+                    for current in (directories, other_directories)
+                    if current is not None
+                ),
                 payload_bytes=len(payload),
-                now_unix_ms=validated.recorded_at_unix_ms,
             )
             if _name_exists(directories.receipts, temporary_name):
                 raise TelemetryQueueError("terminal receipt temporary already exists")
@@ -2614,6 +2904,8 @@ def publish_terminal_receipt(
                 durability_degraded=durability_degraded,
             )
         finally:
+            if other_directories is not None:
+                other_directories.close()
             directories.close()
 
 
@@ -2623,8 +2915,11 @@ def acknowledge_claim(
 ) -> bool:
     """Remove one claim only after its matching valid final receipt exists."""
 
-    if _ENVELOPE_RE.fullmatch(source_name) is None:
-        raise ValueError("recognized v1 envelope name required")
+    envelope, _temporary, _receipt, _receipt_temporary = _queue_patterns(
+        paths.queue_version
+    )
+    if envelope.fullmatch(source_name) is None:
+        raise ValueError("recognized versioned envelope name required")
     with queue_lock(paths):
         directories = _open_queue_directories(paths, create=False)
         try:
@@ -2652,8 +2947,11 @@ def inspect_receipt_temporaries(
 
     directories = _open_queue_directories(paths, create=False)
     try:
-        _finals, temporaries = _scan_receipt_files(directories.receipts)
-        if temporaries.incomplete:
+        finals, temporaries = _scan_receipt_files(
+            directories.receipts,
+            queue_version=directories.queue_version,
+        )
+        if finals.incomplete or temporaries.incomplete:
             raise TelemetryQueueError("receipt temporary scan exceeded its bound")
         return tuple(item.name for item in temporaries.entries)
     finally:
@@ -2666,9 +2964,12 @@ def read_terminal_receipt_temporary(
 ) -> TerminalReceipt:
     """Read and validate a recognized construction temporary without finalizing it."""
 
-    match = _RECEIPT_TEMP_RE.fullmatch(temporary_name)
+    _envelope, _temporary, _receipt, receipt_temporary = _queue_patterns(
+        paths.queue_version
+    )
+    match = receipt_temporary.fullmatch(temporary_name)
     if match is None:
-        raise ValueError("recognized v1 receipt temporary name required")
+        raise ValueError("recognized versioned receipt temporary name required")
     directories = _open_queue_directories(paths, create=False)
     try:
         payload = _read_all_verified(
@@ -2696,13 +2997,29 @@ def resolve_receipt_temporary(
     condition before passing ``terminal_condition_proven=True``.
     """
 
-    match = _RECEIPT_TEMP_RE.fullmatch(temporary_name)
+    _envelope, _temporary, _receipt, receipt_temporary = _queue_patterns(
+        paths.queue_version
+    )
+    match = receipt_temporary.fullmatch(temporary_name)
     if match is None:
-        raise ValueError("recognized v1 receipt temporary name required")
+        raise ValueError("recognized versioned receipt temporary name required")
     with queue_lock(paths):
         directories = _open_queue_directories(paths, create=False)
+        other_directories: _QueueDirectoryFds | None = None
         try:
             _strict_queue_scans(directories)
+            other_paths = telemetry_paths(
+                paths.directory,
+                queue_version=2 if paths.queue_version == 1 else 1,
+            )
+            try:
+                other_directories = _open_queue_directories(
+                    other_paths, create=False
+                )
+            except FileNotFoundError:
+                other_directories = None
+            if other_directories is not None:
+                _strict_queue_scans(other_directories)
             try:
                 payload = _read_all_verified(
                     directories.receipts,
@@ -2717,8 +3034,9 @@ def resolve_receipt_temporary(
             except (InvalidStateError, UnsafePathError, UnreadablePathError):
                 receipt = None
                 valid_name = False
-            final_name = f"r1-{match.group(1)}.json"
-            source_name = f"v1-{match.group(1)}.json"
+            version = paths.queue_version
+            final_name = f"r{version}-{match.group(1)}.json"
+            source_name = f"v{version}-{match.group(1)}.json"
             final_exists = _name_exists(directories.receipts, final_name)
             claim_exists = _name_exists(directories.claimed, source_name)
             if final_exists:
@@ -2732,6 +3050,15 @@ def resolve_receipt_temporary(
                 and claim_exists
                 and terminal_condition_proven
             ):
+                _rotate_receipts_for_payload(
+                    tuple(
+                        current
+                        for current in (directories, other_directories)
+                        if current is not None
+                    ),
+                    payload_bytes=len(payload),
+                    creating_temporary=False,
+                )
                 os.rename(
                     temporary_name,
                     final_name,
@@ -2744,6 +3071,8 @@ def resolve_receipt_temporary(
             fsync_directory(directories.receipts)
             return False
         finally:
+            if other_directories is not None:
+                other_directories.close()
             directories.close()
 
 
@@ -2853,17 +3182,80 @@ def reconcile_writer_receipts(
     with queue_lock(selected):
         directories = _open_queue_directories(selected, create=False)
         try:
-            finals, temporaries = _scan_receipt_files(directories.receipts)
+            finals, temporaries = _scan_receipt_files(
+                directories.receipts,
+                queue_version=directories.queue_version,
+            )
             if finals.incomplete or temporaries.incomplete:
                 return replace(state, accounting_incomplete=True)
             visible_names = {item.name for item in finals.entries}
             accounted = set(state.accounted_receipts)
+            version_prefix = f"r{selected.queue_version}-"
+            accounted_here = {
+                name for name in accounted if name.startswith(version_prefix)
+            }
+            accounted_elsewhere = accounted - accounted_here
             updated = state
-            for missing in sorted(accounted - visible_names):
+            for missing in sorted(accounted_here - visible_names):
                 del missing
                 updated = increment_writer_counter(updated, "receipts_rotated")
-            for receipt_name in sorted(visible_names - accounted):
+            for receipt_name in sorted(visible_names - accounted_here):
                 receipt = _read_receipt_at(directories.receipts, receipt_name)
+                if receipt.kind == "replayed":
+                    updated = increment_writer_counter(updated, "replays")
+                elif receipt.kind == "rejected":
+                    updated = increment_writer_counter(updated, "rejected")
+                elif receipt.kind == "conflict":
+                    updated = increment_writer_counter(updated, "conflicts")
+            return replace(
+                updated,
+                accounted_receipts=tuple(
+                    sorted(accounted_elsewhere | visible_names)
+                ),
+            )
+        finally:
+            directories.close()
+
+
+def reconcile_writer_receipts_shared(
+    state: WriterState,
+    *,
+    paths: tuple[TelemetryPaths, ...],
+) -> WriterState:
+    """Reconcile the one bounded receipt identity set across both inboxes."""
+
+    if not paths:
+        return state
+    opened: list[_QueueDirectoryFds] = []
+    with queue_lock(paths[0]):
+        try:
+            visible: dict[str, tuple[_QueueDirectoryFds, str]] = {}
+            for selected in paths:
+                try:
+                    directories = _open_queue_directories(
+                        selected, create=False
+                    )
+                except FileNotFoundError:
+                    continue
+                opened.append(directories)
+                finals, temporaries = _scan_receipt_files(
+                    directories.receipts,
+                    queue_version=directories.queue_version,
+                )
+                if finals.incomplete or temporaries.incomplete:
+                    return replace(state, accounting_incomplete=True)
+                for item in finals.entries:
+                    visible[item.name] = (directories, item.name)
+            if len(visible) > RECEIPT_MAX_ENTRIES:
+                return replace(state, accounting_incomplete=True)
+            accounted = set(state.accounted_receipts)
+            visible_names = set(visible)
+            updated = state
+            for _missing in sorted(accounted - visible_names):
+                updated = increment_writer_counter(updated, "receipts_rotated")
+            for receipt_name in sorted(visible_names - accounted):
+                directories, name = visible[receipt_name]
+                receipt = _read_receipt_at(directories.receipts, name)
                 if receipt.kind == "replayed":
                     updated = increment_writer_counter(updated, "replays")
                 elif receipt.kind == "rejected":
@@ -2875,7 +3267,8 @@ def reconcile_writer_receipts(
                 accounted_receipts=tuple(sorted(visible_names)),
             )
         finally:
-            directories.close()
+            for directories in opened:
+                directories.close()
 
 
 def _fresh_writer_state_suppresses_start(

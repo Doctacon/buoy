@@ -139,6 +139,7 @@ class TelemetryWriterTests(unittest.TestCase):
                 "queue",
                 "writer",
                 "accounting",
+                "migration_backup_present",
             },
         )
         self.assertEqual(value["overall"], "disabled")

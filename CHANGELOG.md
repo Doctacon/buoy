@@ -6,6 +6,15 @@ as GitHub Release assets rather than to PyPI.
 
 ## Unreleased
 
+### Added
+
+- Local retrieval telemetry now records separate near-shell Buoy command and
+  inner pipeline durations. Opted-in previews record command duration without
+  adding provider work, while existing schema-v1 stores upgrade only through
+  explicit `buoy telemetry migrate` with a retained backup. Records remain
+  local and exclude queries, content, source identifiers, paths, credentials,
+  and raw errors.
+
 ## [0.6.1] - 2026-08-20
 
 ### Added

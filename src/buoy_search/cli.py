@@ -28,6 +28,7 @@ from buoy_search.config import (
     DEFAULT_EMBEDDING_PRECISION,
     DEFAULT_REGION,
     EMBEDDING_PRECISIONS,
+    RuntimeConfig,
     RuntimeConfigError,
     load_config,
     removed_embedding_environment_error,
@@ -116,6 +117,16 @@ from buoy_search.routing import (
 )
 from buoy_search.routing_quality import (
     load_routing_confidence_calibration,
+)
+from buoy_search.telemetry import (
+    CommandTelemetry,
+    OUTPUT_RENDER_SPAN_NAME,
+    RETRIEVE_PREPARE_SPAN_NAME,
+    ROUTING_CATALOG_SPAN_NAME,
+    ROUTING_MODEL_SPAN_NAME,
+    ROUTING_SELECT_SPAN_NAME,
+    retrieve_command_trace,
+    safe_time_ns,
 )
 
 
@@ -1505,210 +1516,317 @@ def _run_apply(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_retrieve(args: argparse.Namespace) -> int:
-    query = args.query.strip()
-    if not query:
-        print("A non-empty query is required for retrieval.", file=sys.stderr)
-        return 2
-    namespaces = resolve_retrieval_namespaces(args)
-    if namespaces:
-        base_config = config_from_args(args)
-        configs = [replace(base_config, namespace=namespace) for namespace in namespaces]
-        options = [
-            retrieval_options_from_args(args, config=config, doc_kind=args.doc_kind)
-            for config in configs
-        ]
-        if args.dry_run:
-            plan: RetrievalPlan | MultiNamespaceRetrievalPlan
-            plan = (
-                retrieval_plan(query, config=configs[0], options=options[0])
-                if len(configs) == 1
-                else multi_namespace_retrieval_plan(query, configs=configs, options=options)
-            )
-            if args.json:
-                _print_json(plan.to_dict())
-            else:
-                print_retrieval_text(plan)
-            return 0
-        try:
-            result: RetrievalResult | MultiNamespaceRetrievalResult
-            with suppress_model_progress_bars():
-                result = (
-                    HybridRetriever.from_config(configs[0]).retrieve(query, options[0])
-                    if len(configs) == 1
-                    else MultiNamespaceRetriever.from_configs(configs).retrieve(query, options)
+class _RetrieveCommandFailure(Exception):
+    def __init__(self, message: str, error_type: str) -> None:
+        self.message = message
+        self.error_type = error_type
+        super().__init__(error_type)
+
+
+def _render_retrieve(command: CommandTelemetry, callback: object) -> None:
+    with command.stage(
+        OUTPUT_RENDER_SPAN_NAME,
+        error_type="render_error",
+        replace_error=True,
+    ):
+        assert callable(callback)
+        callback()
+
+
+def _run_retrieve(
+    args: argparse.Namespace,
+    command: CommandTelemetry | None = None,
+) -> int:
+    command = command or CommandTelemetry()
+    preview: RetrievalPlan | MultiNamespaceRetrievalPlan | RoutedRetrievalPlan | None = None
+    live_call: object | None = None
+    live_failure_prefix = "Retrieval failed"
+
+    try:
+        with command.stage(
+            RETRIEVE_PREPARE_SPAN_NAME,
+            error_type="unexpected_error",
+        ):
+            query = args.query.strip()
+            if not query:
+                command.set_error_type("configuration_error")
+                raise _RetrieveCommandFailure(
+                    "A non-empty query is required for retrieval.",
+                    "configuration_error",
                 )
-        except RuntimeError as exc:
-            print(f"Retrieval failed: {exc}", file=sys.stderr)
-            return 2
-        if args.json:
-            _print_json(result.to_dict())
-        else:
-            print_retrieval_text(result, explain=args.explain)
+            namespaces = resolve_retrieval_namespaces(args)
+            if namespaces:
+                base_config = config_from_args(args)
+                configs = [
+                    replace(base_config, namespace=namespace)
+                    for namespace in namespaces
+                ]
+                options = [
+                    retrieval_options_from_args(
+                        args, config=config, doc_kind=args.doc_kind
+                    )
+                    for config in configs
+                ]
+                if args.dry_run:
+                    preview = (
+                        retrieval_plan(query, config=configs[0], options=options[0])
+                        if len(configs) == 1
+                        else multi_namespace_retrieval_plan(
+                            query, configs=configs, options=options
+                        )
+                    )
+                else:
+                    try:
+                        with suppress_model_progress_bars():
+                            retriever = (
+                                HybridRetriever.from_config(configs[0])
+                                if len(configs) == 1
+                                else MultiNamespaceRetriever.from_configs(configs)
+                            )
+                    except RuntimeError as exc:
+                        category = (
+                            "configuration_error"
+                            if not os.environ.get("TURBOPUFFER_API_KEY")
+                            else "model_error"
+                        )
+                        command.set_error_type(category)
+                        raise _RetrieveCommandFailure(
+                            f"Retrieval failed: {exc}", category
+                        ) from exc
+                    if len(configs) == 1:
+                        live_call = lambda: retriever.retrieve(query, options[0])
+                    else:
+                        live_call = lambda: retriever.retrieve(query, options)
+            else:
+                try:
+                    with command.stage(
+                        ROUTING_MODEL_SPAN_NAME,
+                        error_type="model_error",
+                    ):
+                        routing_confidence = ROUTING_CONFIDENCE_FACTORY()
+                except (OSError, ValueError) as exc:
+                    raise _RetrieveCommandFailure(
+                        "Automatic routing failed: routing confidence artifact is invalid.",
+                        "model_error",
+                    ) from exc
+                api_key = os.environ.get("TURBOPUFFER_API_KEY")
+                if not api_key:
+                    command.set_error_type("configuration_error")
+                    raise _RetrieveCommandFailure(
+                        "TURBOPUFFER_API_KEY must be set for automatic routing.",
+                        "configuration_error",
+                    )
+                try:
+                    evidence_calibration = load_evidence_calibration()
+                except EvidenceCalibrationError as exc:
+                    command.set_error_type("model_error")
+                    raise _RetrieveCommandFailure(
+                        f"Automatic evidence assessment failed: {exc}",
+                        "model_error",
+                    ) from exc
+                base_config = config_from_args(args)
+                compatibility = CompatibilityContract(
+                    region=base_config.region,
+                    embedding_model=base_config.embedding_model,
+                    embedding_precision=base_config.embedding_precision,
+                )
+                try:
+                    with command.stage(
+                        ROUTING_CATALOG_SPAN_NAME,
+                        error_type="catalog_error",
+                    ):
+                        client = REMOTE_CATALOG_CLIENT_FACTORY(
+                            api_key=api_key,
+                            region=base_config.region,
+                        )
+                        snapshot = read_remote_catalog(
+                            client,
+                            region=base_config.region,
+                            compatibility=compatibility,
+                        )
+                        snapshot = require_eligible(snapshot)
+                except (RemoteCatalogError, CatalogError, RuntimeError, ValueError) as exc:
+                    raise _RetrieveCommandFailure(
+                        f"Automatic routing failed: {exc}", "catalog_error"
+                    ) from exc
+                try:
+                    with command.stage(
+                        ROUTING_MODEL_SPAN_NAME,
+                        error_type="model_error",
+                    ):
+                        with suppress_model_progress_bars():
+                            route_embedder = ROUTING_EMBEDDER_FACTORY()
+                except Exception as exc:
+                    failure = AutomaticRoutingError(
+                        "routing query embedder loading failed"
+                    )
+                    raise _RetrieveCommandFailure(
+                        f"Automatic routing failed: {failure}", "model_error"
+                    ) from exc
+                exclusion_ids = {
+                    "missing_card": list(snapshot.missing_card_ids),
+                    "stale_target": list(snapshot.stale_target_ids),
+                    "disabled": list(snapshot.disabled_ids),
+                    "incompatible": list(snapshot.incompatible_ids),
+                }
+                route_kwargs: dict[str, object] = {
+                    "embedder": route_embedder,
+                    "route_top_k": DEFAULT_ROUTE_TOP_K,
+                    "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
+                    "region": base_config.region,
+                    "snapshot_revision": snapshot.snapshot_revision,
+                    "exclusion_counts": {
+                        key: len(values)
+                        for key, values in exclusion_ids.items()
+                        if values
+                    },
+                    "exclusion_ids": {
+                        key: values for key, values in exclusion_ids.items() if values
+                    },
+                    "remote_counts": {
+                        "listed_total": snapshot.counts.listed_total,
+                        "control_plane_count": snapshot.counts.control_plane_count,
+                        "content_live_count": snapshot.counts.content_live_count,
+                        "card_count": snapshot.counts.card_count,
+                        "stale_target_count": snapshot.counts.stale_target_count,
+                        "missing_card_count": snapshot.counts.missing_card_count,
+                        "disabled_count": snapshot.counts.disabled_count,
+                        "incompatible_count": snapshot.counts.incompatible_count,
+                        "eligible_count": snapshot.counts.eligible_count,
+                    },
+                    "read_metrics": {
+                        "namespace_list_pages": snapshot.metrics.namespace_list_pages,
+                        "metadata_requests": snapshot.metrics.metadata_requests,
+                        "card_query_pages": snapshot.metrics.card_query_pages,
+                        "billing": list(snapshot.metrics.billing),
+                    },
+                }
+                def load_routing_reranker_for_command():
+                    with command.stage(
+                        ROUTING_MODEL_SPAN_NAME,
+                        error_type="model_error",
+                    ):
+                        return ROUTING_RERANKER_FACTORY()
+
+                try:
+                    with command.stage(
+                        ROUTING_SELECT_SPAN_NAME,
+                        error_type="routing_error",
+                    ):
+                        if routing_confidence.mode == "active":
+                            routing = prototype_route(
+                                query,
+                                snapshot.eligible_cards,
+                                calibration=routing_confidence,
+                                reranker_loader=load_routing_reranker_for_command,
+                                **route_kwargs,
+                            )
+                        else:
+                            routing = hybrid_route(
+                                query,
+                                snapshot.eligible_cards,
+                                **route_kwargs,
+                            )
+                except (AutomaticRoutingError, RuntimeError, ValueError) as exc:
+                    raise _RetrieveCommandFailure(
+                        f"Automatic routing failed: {exc}", "routing_error"
+                    ) from exc
+                configs = [
+                    replace(
+                        base_config,
+                        namespace=card.namespace,
+                        region=card.region,
+                        embedding_model=card.embedding_model,
+                        embedding_precision=card.embedding_precision,
+                    )
+                    for card in routing.selected_cards
+                ]
+                options = [
+                    routed_retrieval_options_from_args(args, card=card)
+                    for card in routing.selected_cards
+                ]
+                if args.dry_run:
+                    preview = RoutedRetrievalPlan(
+                        plan=multi_namespace_retrieval_plan(
+                            query,
+                            configs=configs,
+                            options=options,
+                            initial_fanout=routing.initial_fanout,
+                        ),
+                        routing=routing,
+                        evidence=automatic_evidence_plan(evidence_calibration),
+                    )
+                else:
+                    top_route_entry = routing.entries[0]
+                    retrieval_kwargs: dict[str, object] = {
+                        "initial_fanout": routing.initial_fanout,
+                        "evidence_assessor": CalibratedEvidenceAssessor(
+                            evidence_calibration
+                        ),
+                        "evidence_route_context": EvidenceRouteContext(
+                            selection_reason=routing.selection_reason,
+                            semantic_score=top_route_entry.semantic_score,
+                            semantic_margin=routing.semantic_margin,
+                        ),
+                    }
+                    try:
+                        with suppress_model_progress_bars():
+                            retriever = MultiNamespaceRetriever.from_configs(configs)
+                    except RuntimeError as exc:
+                        category = (
+                            "configuration_error"
+                            if not os.environ.get("TURBOPUFFER_API_KEY")
+                            else "model_error"
+                        )
+                        command.set_error_type(category)
+                        raise _RetrieveCommandFailure(
+                            f"Multi-corpus retrieval failed: {exc}", category
+                        ) from exc
+                    live_failure_prefix = "Multi-corpus retrieval failed"
+                    live_call = lambda: RoutedRetrievalResult(
+                        result=retriever.retrieve(
+                            query,
+                            options,
+                            **retrieval_kwargs,
+                        ),
+                        routing=routing,
+                    )
+    except _RetrieveCommandFailure as failure:
+        command.set_error_type(failure.error_type)
+        _render_retrieve(
+            command,
+            lambda: print(failure.message, file=sys.stderr),
+        )
+        return 2
+
+    if preview is not None:
+        _render_retrieve(
+            command,
+            lambda: _print_json(preview.to_dict())
+            if args.json
+            else print_retrieval_text(preview),
+        )
         return 0
 
+    assert callable(live_call)
     try:
-        routing_confidence = ROUTING_CONFIDENCE_FACTORY()
-    except (OSError, ValueError):
-        print(
-            "Automatic routing failed: routing confidence artifact is invalid.",
-            file=sys.stderr,
-        )
-        return 2
-    api_key = os.environ.get("TURBOPUFFER_API_KEY")
-    if not api_key:
-        print("TURBOPUFFER_API_KEY must be set for automatic routing.", file=sys.stderr)
-        return 2
-    try:
-        evidence_calibration = load_evidence_calibration()
-    except EvidenceCalibrationError as exc:
-        print(f"Automatic evidence assessment failed: {exc}", file=sys.stderr)
-        return 2
-    base_config = config_from_args(args)
-    compatibility = CompatibilityContract(
-        region=base_config.region,
-        embedding_model=base_config.embedding_model,
-        embedding_precision=base_config.embedding_precision,
-    )
-    try:
-        client = REMOTE_CATALOG_CLIENT_FACTORY(
-            api_key=api_key,
-            region=base_config.region,
-        )
-        snapshot = read_remote_catalog(
-            client,
-            region=base_config.region,
-            compatibility=compatibility,
-        )
-        snapshot = require_eligible(snapshot)
-        try:
-            with suppress_model_progress_bars():
-                route_embedder = ROUTING_EMBEDDER_FACTORY()
-        except Exception:
-            raise AutomaticRoutingError(
-                "routing query embedder loading failed"
-            ) from None
-        exclusion_ids = {
-            "missing_card": list(snapshot.missing_card_ids),
-            "stale_target": list(snapshot.stale_target_ids),
-            "disabled": list(snapshot.disabled_ids),
-            "incompatible": list(snapshot.incompatible_ids),
-        }
-        route_kwargs: dict[str, object] = {
-            "embedder": route_embedder,
-            "route_top_k": DEFAULT_ROUTE_TOP_K,
-            "catalog_namespace": REMOTE_CATALOG_NAMESPACE,
-            "region": base_config.region,
-            "snapshot_revision": snapshot.snapshot_revision,
-            "exclusion_counts": {
-                key: len(values) for key, values in exclusion_ids.items() if values
-            },
-            "exclusion_ids": {
-                key: values for key, values in exclusion_ids.items() if values
-            },
-            "remote_counts": {
-                "listed_total": snapshot.counts.listed_total,
-                "control_plane_count": snapshot.counts.control_plane_count,
-                "content_live_count": snapshot.counts.content_live_count,
-                "card_count": snapshot.counts.card_count,
-                "stale_target_count": snapshot.counts.stale_target_count,
-                "missing_card_count": snapshot.counts.missing_card_count,
-                "disabled_count": snapshot.counts.disabled_count,
-                "incompatible_count": snapshot.counts.incompatible_count,
-                "eligible_count": snapshot.counts.eligible_count,
-            },
-            "read_metrics": {
-                "namespace_list_pages": snapshot.metrics.namespace_list_pages,
-                "metadata_requests": snapshot.metrics.metadata_requests,
-                "card_query_pages": snapshot.metrics.card_query_pages,
-                "billing": list(snapshot.metrics.billing),
-            },
-        }
-        if routing_confidence.mode == "active":
-            routing = prototype_route(
-                query,
-                snapshot.eligible_cards,
-                calibration=routing_confidence,
-                reranker_loader=ROUTING_RERANKER_FACTORY,
-                **route_kwargs,
-            )
-        else:
-            routing = hybrid_route(
-                query,
-                snapshot.eligible_cards,
-                **route_kwargs,
-            )
-    except (
-        RemoteCatalogError,
-        CatalogError,
-        AutomaticRoutingError,
-        RuntimeError,
-        ValueError,
-    ) as exc:
-        print(f"Automatic routing failed: {exc}", file=sys.stderr)
-        return 2
-
-    configs = [
-        replace(
-            base_config,
-            namespace=card.namespace,
-            region=card.region,
-            embedding_model=card.embedding_model,
-            embedding_precision=card.embedding_precision,
-        )
-        for card in routing.selected_cards
-    ]
-    options = [
-        routed_retrieval_options_from_args(args, card=card)
-        for card in routing.selected_cards
-    ]
-    if args.dry_run:
-        plan = RoutedRetrievalPlan(
-            plan=multi_namespace_retrieval_plan(
-                query,
-                configs=configs,
-                options=options,
-                initial_fanout=routing.initial_fanout,
-            ),
-            routing=routing,
-            evidence=automatic_evidence_plan(evidence_calibration),
-        )
-        if args.json:
-            _print_json(plan.to_dict())
-        else:
-            print_retrieval_text(plan)
-        return 0
-    try:
-        top_route_entry = routing.entries[0]
-        retrieval_kwargs: dict[str, object] = {
-            "initial_fanout": routing.initial_fanout,
-            "evidence_assessor": CalibratedEvidenceAssessor(
-                evidence_calibration
-            ),
-            "evidence_route_context": EvidenceRouteContext(
-                selection_reason=routing.selection_reason,
-                semantic_score=top_route_entry.semantic_score,
-                semantic_margin=routing.semantic_margin,
-            ),
-        }
         with suppress_model_progress_bars():
-            result = RoutedRetrievalResult(
-                result=MultiNamespaceRetriever.from_configs(configs).retrieve(
-                    query,
-                    options,
-                    **retrieval_kwargs,
-                ),
-                routing=routing,
-            )
+            result = live_call()
     except RuntimeError as exc:
-        print(f"Multi-corpus retrieval failed: {exc}", file=sys.stderr)
+        command.set_error_type("provider_call_error")
+        message = f"{live_failure_prefix}: {exc}"
+        _render_retrieve(
+            command,
+            lambda: print(message, file=sys.stderr),
+        )
         return 2
-    if args.json:
-        _print_json(result.to_dict())
-    else:
-        print_retrieval_text(result, explain=args.explain)
+    _render_retrieve(
+        command,
+        lambda: _print_json(result.to_dict())
+        if args.json
+        else print_retrieval_text(result, explain=args.explain),
+    )
     return 0
-
 
 def _run_evals(args: argparse.Namespace) -> int:
     config = config_from_args(args)
@@ -2342,7 +2460,16 @@ def print_eval_text(payload: dict[str, object]) -> None:
                 print(f"     Section: {hit['section_path']}")
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    entry_started_at_ns: int | None = None,
+) -> int:
+    command_started_at_ns = (
+        entry_started_at_ns
+        if type(entry_started_at_ns) is int and entry_started_at_ns >= 0
+        else safe_time_ns()
+    )
     parser = build_parser()
     args = parser.parse_args(argv)
     if (
@@ -2371,6 +2498,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         except OSError:
             pass
         return 2
+    if args.func is _run_retrieve:
+        raw_namespaces = (
+            args.namespace if isinstance(args.namespace, list) else []
+        )
+        retrieval_mode = (
+            "automatic"
+            if not raw_namespaces
+            else "explicit_single"
+            if len(raw_namespaces) == 1
+            else "explicit_multi"
+        )
+        bootstrap_ended_at_ns = safe_time_ns()
+        with retrieve_command_trace(
+            started_at_ns=command_started_at_ns,
+            bootstrap_ended_at_ns=bootstrap_ended_at_ns,
+            execution_mode="preview" if args.dry_run else "live",
+            retrieval_mode=retrieval_mode,
+        ) as command:
+            try:
+                result = _run_retrieve(args, command)
+            except RuntimeConfigError as exc:
+                command.set_error_type("configuration_error", replace=True)
+                message = str(exc)
+                try:
+                    _render_retrieve(
+                        command,
+                        lambda: print(message, file=sys.stderr),
+                    )
+                except OSError:
+                    pass
+                result = 2
+            command.finish(result)
+            return result
     try:
         return args.func(args)
     except RuntimeConfigError as exc:

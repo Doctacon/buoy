@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import sys
+import time
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Dispatch telemetry without importing Buoy's provider-facing CLI."""
 
+    try:
+        started_at_ns = time.time_ns()
+    except Exception:
+        started_at_ns = None
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments[:1] == ["telemetry"]:
         from buoy_search.telemetry_cli import main as telemetry_main
@@ -17,4 +22,4 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from buoy_search.cli import main as legacy_main
 
-    return legacy_main(arguments)
+    return legacy_main(arguments, entry_started_at_ns=started_at_ns)
