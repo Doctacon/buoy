@@ -161,3 +161,25 @@ integration.
   seam still receives its own real baseline-versus-delay subprocess pair;
   command, pipeline, bootstrap, routing-stage, and routing-order attribution
   assertions remain intact. No fixture or production `src/` byte changed.
+- 2026-08-24: Repair committed as exact `75f65b0b`, tree `e720c59b`, after the
+  separate failure-record commit `7346fdca`, tree `6f12a056`. Concurrent
+  repeated timing validation passed 3/3 complete repetitions on Python 3.11
+  and 3/3 on Python 3.13. Across all 30 named-seam pairs, command deltas were
+  1,994.517-2,043.084 ms; pipeline-delay deltas were
+  2,001.182-2,010.752 ms; all non-pipeline absolute pipeline deltas were at
+  most 1.591 ms; and bootstrap-delay deltas were 2,001.749-2,043.364 ms.
+  Routing stage membership/order remained exact.
+- 2026-08-24: Fresh concurrent unfiltered suites using the established
+  offline/frozen uv form and fresh repair-root project environments passed
+  1,076 tests and 1,076 subtests on each of Python 3.11 and 3.13. The focused
+  integrated telemetry suite passed 212 tests and 294 subtests. Lock, focused
+  Ruff `F,E9`, dual-runtime ranking/C6, dual-runtime tracked-Python compile,
+  diff hygiene, topology, staged-diff, accepted source equality, and exact
+  CLI/envelope/routing hashes passed. Two earlier executions were discarded as
+  harness non-results: one used an empty offline cache for nested build
+  requirements; one mixed an old exact-wheel venv with checkout `PYTHONPATH`
+  and therefore imported stale generated version bytes. Exact commands,
+  observations, non-result limits, and artifact hashes are appended to the
+  integration evidence. Ticket remains active for independent repair review,
+  push, hosted exact-new-head runtime/distribution CI, closure, and dedicated
+  integration.

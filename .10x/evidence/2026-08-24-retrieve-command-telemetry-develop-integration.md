@@ -270,6 +270,165 @@ tag, `main`, or real-home mutation. The ticket is blocked pending bounded test
 repair, repeated local dual-runtime validation, independent repair review, a
 new pushed exact head, and hosted exact-head checks.
 
+## Bounded hosted-timing repair and validation
+
+The failed hosted state was recorded first in records-only commit
+`7346fdca703e41bb5b8b2ed0c7a6a6ebf3a7c580`, tree
+`6f12a0563cf2abf1231f2f5d8192899bf2681283`, with sole parent exact failed PR
+head `67e129170199d7740847a924537211e208b6a219`. The bounded test repair is
+commit `75f65b0b41b2bc74126bd5304f92116d77a9bbac`, tree
+`e720c59b03c3c4d5cac0c8b3db640a4d4c1ef6b0`. It changes only
+`tests/test_retrieve_command_telemetry.py` and the active ticket: one
+zero-delay bootstrap subprocess is discarded as a warm-up before authoritative
+observations; the real injected delay is 2,000 ms; the existing proportional
+75%-150% bounds and 25 ms non-pipeline bound remain exact; and subtest failure
+diagnostics carry the stage, raw pair, and command/pipeline deltas. Every named
+bootstrap, initialization, routing, pipeline, and render seam still receives
+its own baseline and delayed local-fake subprocess observation. Command,
+pipeline, bootstrap, routing-stage membership, and routing-before-pipeline
+attribution remain asserted. The fixture and all production `src/` bytes are
+unchanged.
+
+### Repeated concurrent timing observations
+
+Python 3.11.10 and 3.13.0 each ran the complete repaired timing test three
+times, concurrently across runtimes to model matrix contention. Each runtime
+passed 3/3. The external recording harness captured the test's discarded
+warm-up and all authoritative fixture JSON without changing test behavior.
+The exact command/pipeline observations and deltas were:
+
+| Python | Rep | Seam | Command baseline -> delayed (delta) ms | Pipeline baseline -> delayed (delta) ms | Bootstrap delta ms |
+| --- | ---: | --- | --- | --- | ---: |
+| 3.11 | 1 | bootstrap | 120.778 -> 2160.792 (2040.014) | 0.097 -> 0.123 (0.026) | 2039.795 |
+| 3.11 | 1 | initialize | 121.178 -> 2135.430 (2014.252) | 0.096 -> 1.071 (0.975) | 1.993 |
+| 3.11 | 1 | routing | 121.638 -> 2128.731 (2007.093) | 0.140 -> 1.731 (1.591) | -0.473 |
+| 3.11 | 1 | pipeline | 123.174 -> 2128.813 (2005.639) | 0.099 -> 2009.405 (2009.306) | -4.400 |
+| 3.11 | 1 | render | 120.703 -> 2129.719 (2009.016) | 0.104 -> 0.092 (-0.012) | -0.292 |
+| 3.11 | 2 | bootstrap | 121.703 -> 2159.903 (2038.200) | 0.094 -> 0.094 (0.000) | 2038.163 |
+| 3.11 | 2 | initialize | 119.372 -> 2126.433 (2007.061) | 0.091 -> 0.849 (0.758) | 4.081 |
+| 3.11 | 2 | routing | 122.973 -> 2130.350 (2007.377) | 0.132 -> 1.184 (1.052) | -2.516 |
+| 3.11 | 2 | pipeline | 121.492 -> 2130.904 (2009.412) | 0.096 -> 2010.848 (2010.752) | -1.401 |
+| 3.11 | 2 | render | 124.457 -> 2127.970 (2003.513) | 0.101 -> 0.122 (0.021) | -2.182 |
+| 3.11 | 3 | bootstrap | 122.844 -> 2165.928 (2043.084) | 0.093 -> 0.097 (0.004) | 2043.364 |
+| 3.11 | 3 | initialize | 122.238 -> 2129.633 (2007.395) | 0.100 -> 0.393 (0.293) | -2.794 |
+| 3.11 | 3 | routing | 121.830 -> 2124.156 (2002.326) | 0.151 -> 0.486 (0.335) | -0.033 |
+| 3.11 | 3 | pipeline | 121.878 -> 2131.127 (2009.249) | 0.104 -> 2007.978 (2007.874) | 1.490 |
+| 3.11 | 3 | render | 122.948 -> 2128.367 (2005.419) | 0.097 -> 0.094 (-0.003) | -0.701 |
+| 3.13 | 1 | bootstrap | 135.178 -> 2137.692 (2002.514) | 0.079 -> 0.082 (0.003) | 2001.749 |
+| 3.13 | 1 | initialize | 131.945 -> 2136.218 (2004.273) | 0.079 -> 0.206 (0.127) | -4.114 |
+| 3.13 | 1 | routing | 130.343 -> 2140.051 (2009.708) | 0.111 -> 0.197 (0.086) | 2.348 |
+| 3.13 | 1 | pipeline | 133.360 -> 2127.877 (1994.517) | 0.087 -> 2001.269 (2001.182) | -5.866 |
+| 3.13 | 1 | render | 133.056 -> 2130.142 (1997.086) | 0.089 -> 0.078 (-0.011) | -6.439 |
+| 3.13 | 2 | bootstrap | 134.890 -> 2138.137 (2003.247) | 0.079 -> 0.084 (0.005) | 2003.192 |
+| 3.13 | 2 | initialize | 134.407 -> 2133.960 (1999.553) | 0.080 -> 0.228 (0.148) | -6.484 |
+| 3.13 | 2 | routing | 134.259 -> 2138.744 (2004.485) | 0.114 -> 0.279 (0.165) | -2.679 |
+| 3.13 | 2 | pipeline | 133.195 -> 2143.373 (2010.178) | 0.087 -> 2010.346 (2010.259) | 0.395 |
+| 3.13 | 2 | render | 133.749 -> 2132.942 (1999.193) | 0.089 -> 0.079 (-0.010) | -7.541 |
+| 3.13 | 3 | bootstrap | 133.717 -> 2142.160 (2008.443) | 0.077 -> 0.086 (0.009) | 2008.172 |
+| 3.13 | 3 | initialize | 135.396 -> 2142.659 (2007.263) | 0.075 -> 0.195 (0.120) | -1.116 |
+| 3.13 | 3 | routing | 134.978 -> 2136.727 (2001.749) | 0.119 -> 0.199 (0.080) | -0.687 |
+| 3.13 | 3 | pipeline | 139.455 -> 2137.134 (1997.679) | 0.090 -> 2005.427 (2005.337) | -6.842 |
+| 3.13 | 3 | render | 134.436 -> 2139.646 (2005.210) | 0.119 -> 0.082 (-0.037) | -2.123 |
+
+All 30 command deltas were within the retained 1,500-3,000 ms bounds. All six
+pipeline-delay deltas were within those bounds. Every one of the 24
+non-pipeline deltas had absolute value at most 1.591 ms, below the unchanged 25
+ms bound. All six bootstrap-delay deltas were within the proportional bounds;
+every routing pair retained catalog/model/select membership and ordering before
+the pipeline.
+
+### Complete repair-head validation
+
+After the timing repetitions, both complete suites ran concurrently in fresh
+repair-root `UV_PROJECT_ENVIRONMENT` directories using the same successful
+integration form, ambient configured uv cache, offline/frozen resolution, no
+checkout `PYTHONPATH`, isolated HOME/TMP/XDG config/XDG data/pycache, and unset
+credentials:
+
+```text
+uv run --offline --frozen --python /opt/homebrew/bin/python3.11 --with pytest python -m pytest -q -p no:cacheprovider
+uv run --offline --frozen --python /opt/homebrew/bin/python3.13 --with pytest python -m pytest -q -p no:cacheprovider
+```
+
+Python 3.11 passed **1,076 tests and 1,076 subtests** in 130.13 seconds; Python
+3.13 passed **1,076 tests and 1,076 subtests** in 126.94 seconds. Each retained
+57 established lxml warnings. The authority-derived integrated telemetry suite
+on Python 3.11 passed **212 tests and 294 subtests** in 35.33 seconds. The five
+additional subtests relative to the earlier integration evidence are the five
+named timing-seam diagnostics, not added behavior.
+
+`uv lock --check --offline`; focused Ruff `F,E9` over the repaired test,
+fixture, and retained dynamic-version test; dual-runtime ranking validation;
+dual-runtime C6 validation; and dual-runtime compilation of every tracked
+Python file all passed. Ranking retained 13 datasets, 369 judgments, 90
+composite identities, inventory SHA-256
+`e6f97842ec90f0558f51e70f93ea6b8f09f82f63019a27d0738d2b1efb427608`,
+and dataset bundle SHA-256
+`5a79f58aaca87a2d4f7cbec68fdcfbbcbf041131821587f8aba74a86daca99d9`.
+C6 retained forecast SHA-256
+`d5199276c19ae89779287eaa90824ce1e1cc684a3f060899f02f65d976016243`.
+Diff hygiene, empty staged diff, exact `origin/develop` merge-base, and source
+equality to both failed head `67e1291` and accepted telemetry `ef756020`
+passed. Accepted source SHA-256 identities remain exact:
+
+- CLI: `90e7b2ddf7bbde2daaf0ccd78aa2a779d9e61946a8b7f7ae8f3512dec431ebf9`;
+- envelope: `e1681c4c4dab0909270127fbb7b5eeffb7ea99864ca994cda406cac9c6e76b47`;
+- routing artifact:
+  `62ec1fe8cb7e49247c24b633379a6b2553475bc0e25ce846998ea5dd77df8cf5`.
+
+Two earlier harness executions are explicitly discarded and prove no product
+failure. The first pointed `UV_OFFLINE` at an empty isolated cache while using
+an old validation venv, so only the three dynamic-version tests failed to
+resolve their pinned Hatch build requirements; its logs are retained as
+`discarded-empty-cache-old-venv-full-3.11.log` and
+`discarded-empty-cache-old-venv-full-3.13.log`. The second 3.11 diagnostic used
+an old exact-wheel venv together with checkout `PYTHONPATH`, so clone metadata
+resolved the repair head while module imports resolved stale
+`0.5.2.dev100+g366069015`; it is retained as
+`discarded-old-wheel-venv-pypath-dynamic-3.11.log`. Neither harness represented
+the repository's supported isolated command. The fresh exact-form runs above
+executed all dynamic-version and timing tests and passed.
+
+### Repair artifact identities and limits
+
+All repair artifacts are under mode-0700
+`/private/tmp/buoy-timing-repair-validation.d04ZXI`. The top-level manifest is
+`SHA256SUMS`, SHA-256
+`2d1b72abe2cdc61eb17e763fedeaa3938449b2cdbad02d69052c82ef0c710d48`.
+Key files are:
+
+- timing 3.11 JSONL/log:
+  `9ff4f9431a182cfb8c6b3568873f3ed72f99b847b9cfc191b293528e4d46e83d` /
+  `fc7b2a02be48f23d2e63fa77e34f1054b55010f43e9dfa486fb583e3fad63324`;
+- timing 3.13 JSONL/log:
+  `66bd162be06da16d4ed68b492f07a9ef79303c9dd1e16291142ce6f3f01e44e8` /
+  `59639ab1225c9beed5b2b27c941b502e786dcff0314fbcf5e73ddf9b4d150a22`;
+- exact timing summary:
+  `a7e79e198792db4c09ab6f5743106fb0304c0ee3164efed650322e807e84f8f9`;
+- full 3.11/3.13 logs:
+  `cbdc65f71764a5ad377898237897c1987d786af092030b21097555b362f8b54a` /
+  `0f0ce378553199116df04e2c4fef7254187d6c00caa138af51e62576126c6019`;
+- integrated telemetry:
+  `e594ae00825c7143c726f7be0489b7eaa8baf9885ab639c786d5a6e903d79505`;
+- lock/Ruff, validators 3.11/3.13, compile, and diff/identity:
+  `bed4cf1996410f36aee7acfb56440b0b209430fe68b9864c541333f4b58a1839`,
+  `dc5f8ac93affb900a5aea832cec838d98729fffb3c622768bacb3f6f9edc95b9`,
+  `41c48e24b8619180ec2c5d21efabb30b813b6b1f2d2d3f704f8fb5aa286cea75`,
+  `0891dac94420024638bce1563f85228168c0ffc47048f7da0196bda1cb71407a`,
+  and `14d81ce1bf6aafe79cf6c3ea189e779e4930b7f0f81739a3200ac943911965f2`;
+- discarded harness logs 3.11/3.13/diagnostic:
+  `957d1398ceb1d5c1ed7dbdd99cd4c372011ffd77ca9bc5f2b284f65a887e4d10`,
+  `ee470a3774d7ae8d504850b63f3640c7133aaf356e9f44113620e72e0f9dd1e2`,
+  and `08b95835f55d976c2a2b6986ae9b4b96d0dbe0b01e623a81c0d7f1ba2c28ec54`.
+
+Validation was local macOS arm64, offline/cache-backed, and concurrent only
+across the two local runtime processes. It used no network resolution, real
+home, real `.buoy`, installed Buoy replacement, provider, model, content,
+credential, namespace, catalog, telemetry store, package publication, release,
+tag, `main`, GitHub mutation, push, or merge. Ticket remains active for fresh
+independent repair review, push, hosted exact-new-head CI including dependent
+distribution, closure, and dedicated integration.
+
 ## Raw artifacts, limits, and remaining gates
 
 All logs and distributions are under mode-0700
