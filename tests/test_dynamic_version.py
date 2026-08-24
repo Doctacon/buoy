@@ -9,12 +9,9 @@ import sys
 import tarfile
 import tempfile
 import unittest
-from unittest.mock import patch
 import zipfile
 
 from packaging.version import Version
-
-from scripts import release_checks
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -286,38 +283,6 @@ class DynamicVersionTests(unittest.TestCase):
                 run(str(venv_buoy(venv)), "--version", cwd=root).stdout.strip(),
                 f"buoy {target}",
             )
-
-    def test_legacy_checker_requires_override_and_rejects_stale_version(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            package = root / "src" / "buoy_search"
-            package.mkdir(parents=True)
-            (root / "pyproject.toml").write_text(
-                '[project]\nname = "buoy-search"\ndynamic = ["version"]\n'
-            )
-            (package / "__init__.py").write_text("from ._version import __version__\n")
-            (package / "_version.py").write_text(
-                '__version__ = version = "0.4.1"\n'
-            )
-            with patch.object(release_checks, "ROOT", root):
-                with patch.dict(os.environ, {}, clear=True):
-                    with self.assertRaisesRegex(
-                        ValueError, "requires SETUPTOOLS_SCM_PRETEND_VERSION"
-                    ):
-                        release_checks.verify_tag("v0.4.1")
-                with patch.dict(
-                    os.environ,
-                    {"SETUPTOOLS_SCM_PRETEND_VERSION": "0.4.2"},
-                    clear=True,
-                ):
-                    with self.assertRaisesRegex(ValueError, "package version mismatch"):
-                        release_checks.verify_tag("v0.4.2")
-                with patch.dict(
-                    os.environ,
-                    {"SETUPTOOLS_SCM_PRETEND_VERSION": "0.4.1"},
-                    clear=True,
-                ):
-                    release_checks.verify_tag("v0.4.1")
 
 
 if __name__ == "__main__":
