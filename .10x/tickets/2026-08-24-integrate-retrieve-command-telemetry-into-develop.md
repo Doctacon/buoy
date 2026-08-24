@@ -90,3 +90,34 @@ merged at `3eabedd6` and its post-merge CI passed.
   both specifications, prior integrated telemetry evidence/reviews, both done
   cleanup ticket/evidence/review sequences, and repository instructions were
   read in full before activation.
+- 2026-08-24: Activation was committed separately as `c319305e`. Exact develop
+  was then incorporated without history rewrite by merge commit `36606901`,
+  whose parents are activation `c319305e` and develop `3eabedd6`. The expected
+  semantic reconciliation removed the duplicate active stale-test ticket,
+  retained both reviewed done cleanup tickets, and repaired every telemetry-side
+  reference to the done path. Develop is the exact merge base, all cleanup
+  paths are present, old active-path scans are empty, production `src/` bytes
+  are unchanged from `8855327`/`ef756020`, and the CLI, envelope, and routing
+  artifact retain their accepted SHA-256 identities.
+- 2026-08-24: Complete isolated offline validation passed at exact combined
+  merge head `36606901`: unfiltered Python 3.11 and 3.13 pytest suites each
+  passed 1,076 tests and 1,071 subtests with no stale-test exclusion; retained
+  dynamic-version tests passed 3/3 on both; the integrated telemetry suite
+  passed 212 tests and 289 subtests; every named controlled timing seam passed
+  fresh baseline-versus-500 ms attribution; lock, dual-runtime ranking/C6,
+  focused Ruff `F,E9`, full tracked-Python compilation, diff/record hygiene,
+  YAML inventory, and active routing receipt/load checks passed. The known
+  non-gating broad Ruff baseline remains 21 pre-existing unrelated findings and
+  was not widened into this ticket.
+- 2026-08-24: A clean exact-`36606901` offline build produced and inspected one
+  wheel and one sdist. A fresh isolated wheel install reproduced the three
+  accepted source identities and passed package/CLI/module help, telemetry
+  help/status/absent migration wording, disabled preview/no-write, tokenizer,
+  routing canary/dataset, and active authority checks without a real home or
+  external effects. Exact commands, counts, timing rows, hashes, raw artifact
+  paths, harness corrections, and platform/offline limits are recorded in
+  `.10x/evidence/2026-08-24-retrieve-command-telemetry-develop-integration.md`.
+  Local merge/reconciliation, identity, unfiltered test, static, timing, and
+  package acceptance criteria are supported. Ticket remains active for fresh
+  independent review, push/PR, hosted exact-head CI, closure, and dedicated
+  integration, all parent-owned.
