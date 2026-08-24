@@ -248,6 +248,46 @@ This is one macOS arm64 host observation of one ratified v1 store and four
 approved requests. It establishes exact local artifact/store/trace facts but
 not the required physical content-provider-call bound. It does not establish
 other hosts, power-loss behavior, recurring operation, release readiness, or
-independent network-level provider accounting. Independent acceptance review
-failed on the unsupported provider-call criterion; the ticket is blocked and
-must not close from this evidence.
+independent network-level provider accounting. Both independent reviews failed
+on the unsupported provider-call criterion; the ticket is blocked and must not
+close from this evidence.
+
+## Parent post-review readback
+
+After execution and worker reconciliation completed, the correctness/privacy
+reviewer requested sanitized parent-observed current facts. The parent rebuilt
+exact integrated commit `d3ae1ba272c9ce8999332dd04058116e8a5dda0f` offline in
+an owner-private temporary review environment and verified candidate version
+`0.5.2.dev45+gd3ae1ba27`. The exact v2 status implementation then performed its
+documented read-only inspection of the real store and reported:
+
+- output/store schema 2 and a compatible, disabled store;
+- 5,517,312 database bytes and 16 persisted snapshots;
+- an empty queue with 16 receipts and zero v1/v2 ready, claimed, temporary, or
+  pending work;
+- retained migration backup and idle writer with null reason; and
+- zero conflicts, rejections, replays, write failures, or durability
+  degradation.
+
+Read-only file and DuckDB inspection independently observed the canonical
+schema-v2 database at mode 0600, one link, SHA-256
+`71e39d9236f70dfd15d329584215c6132338b33179727e92080f90b6a04cdd78`,
+with 12 v1 rows, 43 v1 stage rows, four v2 command rows, and 30 v2 stage rows.
+The retained backup remained 3,682,304 bytes, mode 0600, one link, SHA-256
+`c184c594439191c3c115f31f0e1eac180be5aca8cd3c10e1bdc7440c2864ef58`,
+with 12 v1 rows, 55 spans, one event, and 43 v1 stage rows.
+
+Read-only Git and package inspection confirmed clean task/root worktrees,
+unchanged `develop`, `origin/develop`, `main`, and `origin/main`, and unchanged
+global `buoy-search 0.6.2.dev2+g796f7384e`. The temporary review environment
+was removed. No migration, flush, retrieve, provider/model, credential,
+global-install, ref, hosted, or telemetry write operation was performed.
+
+A broad process-text probe self-matched its own review command and is discarded
+as non-evidence; no process-count claim relies on it. Exact v2 status reported
+an idle writer, and the independent correctness/privacy reviewer separately
+confirmed stopped-writer state through read-only fixed-state inspection.
+
+This post-review readback corroborates the durable store, backup, global-tool,
+and ref state. It cannot reconstruct the physical provider invocation count and
+does not repair the blocked acceptance criterion.

@@ -12,12 +12,13 @@ This record reconciles two independent review responses against the ticket,
 sanitized evidence, exact integrated source, focused source test, and current Git
 metadata without rerunning any canary or telemetry operation.
 
-- The correctness/privacy reviewer detached for coordination before returning a
-  substantive verdict. This is not a PASS and supplies no closure authority.
-- The acceptance/side-effects reviewer returned **FAIL**. It accepted the
-  candidate identity, migration and backup equality, v1 preservation, four
-  observations, timing semantics, privacy, model-cache invariance, cleanup, and
-  global/ref invariance, but found the provider-call bound unsupported.
+- The correctness/privacy reviewer initially detached for supervisor-provided
+  sanitized Git/status facts, then completed with **FAIL**. It accepted the
+  candidate identity, migration, backup, v1 preservation, four observations,
+  timing/graph behavior, privacy, model/global invariance, and cleanup, but found
+  the physical provider-call bound unsupported.
+- The acceptance/side-effects reviewer independently returned **FAIL** on the
+  same provider-call evidence gap while accepting the other mapped criteria.
 - Read-only source inspection confirmed that `run_multi_query` in
   `src/buoy_search/retriever.py` first attempts server-side fusion and, for the
   governed unsupported-form error, issues a second physical provider request
@@ -26,9 +27,12 @@ metadata without rerunning any canary or telemetry operation.
   namespace-client invocations for one retrieval operation in
   `tests/test_retriever.py`.
 - Read-only Git inspection confirmed the bounded task head and unchanged
-  `develop` and `main` identities. No status command, database query, test,
-  migration, retrieve, flush, provider/model, or external operation was run for
-  this reconciliation.
+  `develop` and `main` identities. After the detached reviewer requested
+  parent-observed facts, the parent rebuilt the exact candidate offline in a
+  private temporary environment and ran only documented read-only status and
+  database/count inspection. No migration, retrieve, flush, provider/model,
+  credential, global-tool, or hosted mutation was rerun, and the review
+  environment was removed.
 
 ## Findings
 
@@ -53,10 +57,10 @@ workload authorities are consumed and retries are explicitly prohibited.
 
 ### Significant blocker: independent review gate is unmet
 
-One independent review failed and the other returned no substantive verdict.
-The acceptance criterion requiring PASS or resolved findings is unsatisfied.
-There is no authority to resolve the provider-call finding through another
-canary operation.
+Both independent reviewers returned **FAIL** on the unsupported physical
+provider-call ceiling. The acceptance criterion requiring PASS or resolved
+findings is unsatisfied. There is no authority to resolve the provider-call
+finding through another canary operation.
 
 ### Record inconsistency resolved
 
@@ -84,15 +88,16 @@ any observation.
 | Four zero-exit commands with no retry | Supported | Four zero exits and once-only executor account are recorded; raw outputs were removed as required. |
 | At most six content-provider calls plus bounded catalog reads; no writes | **Unsupported / FAIL** | Five namespace spans do not bound physical calls because one span may make two requests. Catalog accounting remains source-bounded; no write path is identified. |
 | No model/network download; pinned local assets only | Supported | Complete model-cache manifest is byte-identical pre/post under recorded offline settings. |
-| Prohibited values absent from new telemetry artifacts | Supported | Sanitized literal/file/database-scalar scan passed; the correctness/privacy reviewer did not return a substantive independent verdict. |
+| Prohibited values absent from new telemetry artifacts | Supported | Sanitized literal/file/database-scalar scan passed; the correctness/privacy reviewer accepted the privacy evidence while failing the separate provider-call criterion. |
 | Temporary runtime/raw output removed; backup retained; source/refs/global/unrelated state unchanged | Supported | Cleanup and content-free global/ref comparisons are recorded and current Git metadata is coherent. |
-| Independent review PASS or all findings resolved | **Unsatisfied / FAIL** | Acceptance/side-effects review failed; correctness/privacy review returned no substantive verdict; provider-call finding is unresolved. |
+| Independent review PASS or all findings resolved | **Unsatisfied / FAIL** | Both independent reviewers failed the unsupported provider-call criterion; the finding is unresolved. |
 
 ## Verdict
 
 **FAIL.** Most canary behavior and side-effect criteria are supported, but the
 at-most-six physical content-provider-call criterion and mandatory review gate
-are not. The ticket must remain blocked and must not move to `done`.
+are not. Both independent reviewers substantively agree on that blocker. The
+ticket must remain blocked and must not move to `done`.
 
 The one-time decision is superseded by consumption and moved to
 `.10x/decisions/superseded/one-time-local-telemetry-v2-canary.md`. That record
@@ -107,8 +112,7 @@ is historical provenance only and grants no retry or repair authority.
 - Ephemeral wheel/runtime/raw artifacts were deleted as required, so artifact
   hashes, shape checks, and once-only operation counts remain executor
   attestations backed by the sanitized record rather than retained raw files.
-- The correctness/privacy review is incomplete because that reviewer returned
-  no substantive verdict. The failed combined verdict does not rely on treating
-  that response as either PASS or FAIL.
+- Both independent reviews are complete and fail on the same unsupported
+  physical-call-count criterion; neither claims that the limit was exceeded.
 - No evidence shows provider writes or unrelated mutation; this review does not
   turn source-contract absence into independent network-level proof.

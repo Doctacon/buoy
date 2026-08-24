@@ -6,6 +6,7 @@ Depends-On: .10x/tickets/done/2026-08-24-integrate-retrieve-command-telemetry-in
 Decision: .10x/decisions/superseded/one-time-local-telemetry-v2-canary.md
 Authorization-Evidence: .10x/evidence/2026-08-24-local-telemetry-v2-canary-authorization.md
 Specifications: .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/specs/local-telemetry-writer.md
+Reviews: .10x/reviews/2026-08-24-local-telemetry-v2-canary-review.md, .10x/reviews/2026-08-24-local-telemetry-v2-canary-final-review.md
 
 # Run Local Telemetry V2 Canary
 
@@ -198,16 +199,29 @@ policy; unrelated source, record, local-home, or GitHub changes.
   the selected fusion path or provider invocation count. The temporary output
   and runtime artifacts were deleted as required, so the at-most-six provider
   call criterion cannot be reconstructed from retained evidence. The separate
-  correctness/privacy reviewer detached without returning a substantive
-  verdict. Combined review is recorded at
-  `.10x/reviews/2026-08-24-local-telemetry-v2-canary-review.md` with verdict
-  FAIL. The ticket is blocked, not closed.
+  correctness/privacy reviewer initially detached for sanitized parent facts,
+  then completed with FAIL on the same physical-call-count blocker while
+  accepting the other mapped behavior/privacy criteria. Combined and final
+  reviews are recorded at
+  `.10x/reviews/2026-08-24-local-telemetry-v2-canary-review.md` and
+  `.10x/reviews/2026-08-24-local-telemetry-v2-canary-final-review.md`. The ticket
+  is blocked, not closed.
 - 2026-08-24: Migration and all four workload authorities were consumed by the
   one-time execution. The governing decision is now historical at
   `.10x/decisions/superseded/one-time-local-telemetry-v2-canary.md`; it grants
   no retry, replacement canary, provider access, or repair. No canary,
   telemetry-management, provider/model, database, or external operation was
-  rerun during review reconciliation.
+  rerun during worker review reconciliation.
+- 2026-08-24: After the detached reviewer requested parent-observed current
+  facts, the parent rebuilt the exact integrated wheel offline in an
+  owner-private temporary review environment and ran only documented read-only
+  v2 status, database/count, Git, and global-tool identity checks. They
+  confirmed compatible schema v2, 16 persisted snapshots, four v2 command
+  rows, empty queues, 16 receipts, retained byte-identical backup, idle writer,
+  unchanged global tool/refs, clean task/root worktrees, and removal of the
+  review environment. No migration, flush, retrieve, provider/model, or hosted
+  operation was rerun. This corroborates post-state but cannot reconstruct the
+  missing physical provider-call count.
 
 ## Blockers
 
@@ -215,9 +229,8 @@ policy; unrelated source, record, local-home, or GitHub changes.
   Five namespace spans bound logical namespace operations, not physical
   provider invocations; each may contain a two-invocation compatibility
   fallback. No retained artifact proves which fusion path occurred.
-- The mandatory independent-review criterion is unmet: acceptance/side-effects
-  review failed, and correctness/privacy review returned no substantive
-  verdict.
+- The mandatory independent-review criterion is unmet: both independent
+  reviews returned FAIL on the unsupported physical provider-call ceiling.
 - One-time migration and workload authority is consumed. This ticket cannot
   repair either blocker by retrying or rerunning the canary. Resolution requires
   separately ratified acceptance supersession or separately authorized new
