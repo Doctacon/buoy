@@ -1,4 +1,4 @@
-Status: open
+Status: active
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
@@ -151,6 +151,15 @@ policy; unrelated source, record, local-home, or GitHub changes.
   bounded migration/provider effects, then confirmed the literal approved
   `u01`/`m01` workload forms. Governing decision and authorization evidence
   externalize the complete one-time contract.
+- 2026-08-24: Activated before any real telemetry mutation or provider access.
+  The worktree was clean on `work/local-telemetry-v2-canary` at records head
+  `182e1c14`, whose parent is exact integrated source commit `d3ae1ba2`;
+  `develop` and `origin/develop` were both exact `d3ae1ba2`. Repository
+  instructions, this ticket, its governing decision and authorization evidence,
+  all referenced specifications/decisions/evidence, and the Turbopuffer site
+  RAG skill were read in full. Execution is bound to a detached owner-private
+  candidate built from exact `d3ae1ba2`, never this records head. No real-home,
+  provider, model, credential, installed-tool, or source mutation has occurred.
 
 ## Blockers
 
