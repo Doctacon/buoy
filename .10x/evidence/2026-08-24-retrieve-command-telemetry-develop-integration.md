@@ -41,10 +41,9 @@ returned exact `3eabedd6`, and `git merge-base --is-ancestor develop HEAD`
 passed.
 
 Git reported no textual conflict. The expected semantic record movement still
-required explicit reconciliation: the duplicate active
-`.10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md` was
-removed, the reviewed done ticket from develop was retained, and all eight
-telemetry-side references to the old active path were changed to
+required explicit reconciliation: the duplicate top-level active stale-test
+ticket was removed, the reviewed done ticket from develop was retained, and all
+eight telemetry-side references to the old active path were changed to
 `.10x/tickets/done/2026-08-20-reconcile-missing-release-checks-test-harness.md`.
 The done stale-CI ticket and both cleanup evidence/review sequences from develop
 were retained. A complete `.10x` scan found no old active path or reference.
