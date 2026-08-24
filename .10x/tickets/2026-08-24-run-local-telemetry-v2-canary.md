@@ -160,6 +160,37 @@ policy; unrelated source, record, local-home, or GitHub changes.
   RAG skill were read in full. Execution is bound to a detached owner-private
   candidate built from exact `d3ae1ba2`, never this records head. No real-home,
   provider, model, credential, installed-tool, or source mutation has occurred.
+- 2026-08-24: Exact detached candidate preparation passed: commit/tree, one
+  offline wheel, Hatch-VCS version, dependency and sole-entry-point identity,
+  three accepted source hashes, isolated-home no-create behavior, approved
+  dataset digest, intended credential-source presence, unchanged global-tool
+  baseline, and unchanged 159-entry model-cache manifest were proven. The
+  immediate drift gate freshly required exact schema v1, 12 runs, 12 receipts,
+  empty v1/v2 queues, the ratified database byte identity, idle writer, absent
+  backup/scratch, and no independent writer or migration process.
+- 2026-08-24: The public migration operation ran exactly once and exited zero:
+  12 v1 runs, 55 spans, and one event migrated in 1,389 ms with zero pending
+  v2 work. The retained private backup is byte-identical to the pre-migration
+  store. Exact v1 rows, ordered values, and view definitions match across the
+  pre-store, backup, and schema-v2 store; scratch/WAL are absent. A read-only
+  verifier's initial management-output schema assumption was corrected against
+  exact source without retrying migration.
+- 2026-08-24: Runtime extraction from the approved digest/case IDs supplied the
+  four authorized forms. All four ran once and exited zero with valid JSON-object
+  shape. Exactly one explicit-single preview and three successful live command
+  rows were committed with truthful command/pipeline nullability and enclosure,
+  source-reachable graphs, zero failures, automatic fanout two, and five total
+  namespace-query spans. The sole flush returned `empty` because the writer had
+  already committed all four; no retry or second flush occurred.
+- 2026-08-24: Final status is compatible schema v2 with 16 persisted snapshots,
+  16 receipts, empty queues, idle/terminated writer, retained immutable backup,
+  and no migration scratch/WAL. Privacy scanning covered 23 artifact files,
+  9,205,190 bytes, 1,073 database string scalars, and 66 private literals with
+  no prohibited value. Model caches and the complete content-free global-tool
+  identity remained exact. The owner-private candidate environment and every
+  raw output/log were removed; the backup remains. Sanitized evidence is at
+  `.10x/evidence/2026-08-24-local-telemetry-v2-canary.md`. Ticket remains active
+  awaiting mandatory independent review; no self-review or closure occurred.
 
 ## Blockers
 
