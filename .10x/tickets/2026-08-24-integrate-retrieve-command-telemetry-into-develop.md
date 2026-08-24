@@ -3,7 +3,7 @@ Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/done/2026-08-20-correct-retrieve-command-telemetry-latency.md
 Depends-On: .10x/tickets/done/2026-08-20-reconcile-missing-release-checks-test-harness.md, .10x/tickets/done/2026-08-23-reconcile-stale-ci-release-automation-calls.md
-Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md
+Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md, .10x/decisions/buoy-validates-pr-merge-ref-and-final-squash-commit.md
 Specifications: .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md
 
 # Integrate Retrieve Command Telemetry Into Develop
@@ -14,9 +14,9 @@ Incorporate exact current `develop@3eabedd6b1e2c60a2a8be2489327b014d04130fc`
 into `work/retrieval-command-telemetry-v2` without rewriting the already reviewed
 telemetry implementation history. Reconcile the now-done stale-test/CI record
 graph, run complete unfiltered local and package validation at the combined
-head, push one telemetry PR to `develop`, require exact-head hosted CI and
-independent review, then hand the authorized squash merge to a dedicated
-integration session.
+head, push one telemetry PR to `develop`, require exact head/base-bound hosted
+merge-ref CI and independent review, then hand the authorized squash merge and
+exact-final-commit `develop` CI gate to a dedicated integration session.
 
 The production telemetry runtime remains implementation
 `6bfd0d4cec784cec18e9050bef4a8d0787f354e7`; later product commits change only
@@ -42,11 +42,24 @@ orphan-test deletion and exact two-line CI cleanup from squash commit
   routing smoke pass without using the owner's real home or installed tool.
 - One integrated evidence record maps inherited telemetry acceptance, cleanup
   integration, exact identities, commands/results, package hashes, and limits.
-- Fresh independent review passes with no unresolved concern.
-- The exact PR head passes hosted Python 3.11, Python 3.13, and distribution
-  build/smoke checks against current `develop`.
-- A dedicated integration session rechecks head/base/checks/mergeability and
-  squash-merges only the reviewed PR into `develop`.
+- Fresh independent review passes with no unresolved concern under the active
+  merge-ref/final-squash verification decision.
+- A hosted pull-request check suite is bound to the exact reviewed PR head and
+  current `develop` base; its corresponding synthetic merge ref passes Python
+  3.11, Python 3.13, and distribution build/clean-wheel smoke. Records name the
+  associated head/base, executed merge commit, and generated Hatch-VCS identity
+  without representing it as literal task-head or final-squash identity.
+
+## External integration stop gates
+
+After this ticket closes on the final reviewed PR branch, a dedicated
+integration session MUST recheck head/base/checks/draft/open/mergeability,
+squash-merge only PR #145 into `develop`, verify tree identity, and require the
+normal `develop` push workflow's Python 3.11, Python 3.13, and dependent build/
+smoke jobs to pass at the exact final squash commit. Overall integration MUST
+not be reported complete before that post-merge run passes. PR #145 is
+canonical for the final receipt. These gates follow ticket closure because no
+third record-only PR or direct `develop` commit is authorized.
 
 ## Explicit exclusions
 
@@ -65,10 +78,13 @@ reviews. Treat the GitHub PR as canonical for hosted check and merge state.
 
 ## Blockers
 
-None for bounded local repair validation. Hosted exact-head CI run
-`32761209125` remains failed history, and a fresh independent repair review,
-push, and new exact-head hosted run remain mandatory gates before closure or
-integration.
+No implementation blocker. Failed hosted run `32761209125` remains retained
+history and passing run `32764801426` resolves its timing-test failure on the
+head/base synthetic merge ref. Final closure review at `049a4ac` failed the
+then-active literal task-head Hatch-VCS criterion. The user has now explicitly
+superseded that criterion through the active merge-ref/final-squash decision;
+hosted evidence and this ticket are corrected. Fresh independent rereview is
+required before closure.
 
 ## Progress and notes
 
@@ -191,3 +207,21 @@ integration.
   `.10x/reviews/2026-08-24-retrieve-command-telemetry-hosted-timing-repair-review.md`.
   Ticket remains active for push, hosted exact-new-head runtime/distribution
   CI, final acceptance/closure records, and dedicated integration.
+- 2026-08-24: Repaired records head `049a4ac4` passed head/base-bound GitHub
+  Actions run `32764801426`: Python 3.11 job `97551744742`, Python 3.13 job
+  `97551745084`, and Build distributions job `97552647317`. Both unfiltered
+  jobs passed 1,076 tests; build and clean-wheel smoke passed. Raw logs prove
+  all jobs executed synthetic merge `848b6ec1` and generated Hatch-VCS version
+  `0.5.2.dev109+g848b6ec1a`, not literal task-head metadata.
+- 2026-08-24: Final closure review correctly returned FAIL because the ticket
+  still required literal exact-PR-head Hatch-VCS identity and successful hosted
+  evidence was not yet durable. The review is recorded in
+  `.10x/reviews/2026-08-24-retrieve-command-telemetry-final-closure-review.md`.
+  At the resulting explicit checkpoint, the user selected “Merge-ref then
+  post-merge” over changing workflow checkout or stopping. Active decision
+  `.10x/decisions/buoy-validates-pr-merge-ref-and-final-squash-commit.md`
+  supersedes only that integration gate: pre-merge CI validates the exact
+  head/base synthetic merge, while post-merge `develop` CI MUST validate the
+  exact final squash commit before completion is claimed. Successful run IDs,
+  checkout/version identity, raw hashes, and limits are now appended to the
+  integrated evidence. Ticket remains active pending fresh rereview.

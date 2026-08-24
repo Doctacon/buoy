@@ -429,6 +429,69 @@ tag, `main`, GitHub mutation, push, or merge. Ticket remains active for fresh
 independent repair review, push, hosted exact-new-head CI including dependent
 distribution, closure, and dedicated integration.
 
+## Successful hosted merge-ref validation
+
+After the test-only repair and independent repair review, draft PR #145 advanced
+to records head `049a4ac4149923f4f6592840534c929532262044`. GitHub Actions run
+`32764801426` (`https://github.com/Doctacon/buoy/actions/runs/32764801426`)
+completed successfully and its check API associates the run with exact head
+`049a4ac` and exact base
+`develop@3eabedd6b1e2c60a2a8be2489327b014d04130fc`.
+
+Exactly three required jobs completed successfully:
+
+- Python 3.11 job `97551744742`, 2026-08-24T18:51:47Z through
+  2026-08-24T18:54:46Z;
+- Python 3.13 job `97551745084`, 2026-08-24T18:51:47Z through
+  2026-08-24T18:54:38Z;
+- dependent Build distributions job `97552647317`,
+  2026-08-24T18:54:49Z through 2026-08-24T18:55:35Z.
+
+Both test jobs ran the workflow's unfiltered unittest discovery and each passed
+all **1,076 tests**. Because quiet unittest output does not enumerate passing
+tests, discoverability and current source establish that the repaired timing
+test was included. The build job built and installed one sdist/wheel pair, and
+its clean-wheel CLI/module/routing smoke passed.
+
+The raw checkout identity is essential: all three jobs executed GitHub's
+synthetic PR merge commit
+`848b6ec1a9c91873e4299bf3e0e1ce6bdb8c99a6`, created from the associated exact
+head and base. Hatch-VCS generated version `0.5.2.dev109+g848b6ec1a`; the build
+produced
+`buoy_search-0.5.2.dev109+g848b6ec1a.tar.gz` and
+`buoy_search-0.5.2.dev109+g848b6ec1a-py3-none-any.whl`. These are merge-ref
+identities. They are not represented as literal `049a4ac` task-head or future
+squash-commit identities.
+
+Raw mode-0600 artifacts are under mode-0700
+`/private/tmp/buoy-pr145-ci-pass-049a4ac.q892bN`:
+
+- `run.json`: 5,331 bytes, SHA-256
+  `72136df36fce47ddc200921958cac5c8974d13ed42246abe276fa10599ac7429`;
+- `check-runs.json`: 10,465 bytes, SHA-256
+  `a81b951d0b569ef489b1ac66c8c9e60cc7d95d7aadaf65ad37c802bcd67b29ad`;
+- `run.log`: 237,393 bytes, SHA-256
+  `c85b7cc030ccca0b93ba3cc79a9edf2f881265ede53b8e718e2f5697e0024052`.
+
+This passing run resolves failed hosted run `32761209125` for timing robustness:
+the repaired unfiltered test jobs passed under the same Ubuntu matrix and the
+previously skipped dependent build now passed. It does not erase the failed run,
+which remains separately recorded with raw hashes.
+
+Final closure review correctly failed the then-active literal task-head
+Hatch-VCS requirement. At an explicit 2026-08-24 checkpoint, the user selected
+**Merge-ref then post-merge**. The resulting active decision,
+`.10x/decisions/buoy-validates-pr-merge-ref-and-final-squash-commit.md`, governs
+this integration: pre-merge CI validates the exact head/base merge ref; after
+a dedicated squash merge, `develop` push CI MUST pass at the exact final squash
+commit before overall completion is claimed. No workflow change is authorized
+or required. PR #145 remains canonical for that final external receipt.
+
+At the last parent observation before record correction, PR #145 was open and
+draft with head `049a4ac`, base `3eabedd6`, and GitHub reported mergeable/CLEAN.
+That state is temporal and does not replace the dedicated integrator's mandatory
+fresh read immediately before merge.
+
 ## Raw artifacts, limits, and remaining gates
 
 All logs and distributions are under mode-0700
@@ -447,11 +510,15 @@ Key test-log identities are:
 - package build: `90bb121cb8822ef88567455ac4d14d1f6828f9cfc8366f73a6457ada52b2bd68`;
 - archive inspection: `5480c1085cc8e91b3722c49a83a78904b7365978774d24f2054350102483f384`.
 
-This is one macOS arm64 offline/cache-backed observation. It does not establish
-other-filesystem or hardware-power-loss behavior and does not replace hosted
-Ubuntu exact-head CI. No network-backed dependency resolution or live provider,
-model, content, credential, namespace, catalog, real telemetry store, real
-home, installed-tool, GitHub, release, publication, `main`, tag, or merge
-operation occurred. Independent review, push/PR creation, hosted exact-head
-Python 3.11/3.13/build checks, ticket closure, and dedicated squash integration
-remain parent-owned gates. The ticket therefore remains active.
+The local portion is one macOS arm64 offline/cache-backed observation. It does
+not establish other-filesystem or hardware-power-loss behavior. That portion
+used no network-backed dependency resolution or live provider, model, content,
+credential, namespace, catalog, real telemetry store, real home, installed tool,
+GitHub, release, publication, `main`, tag, or merge operation. The subsequent
+hosted Ubuntu merge-ref run is separately identified above and supplies its own
+bounded observation.
+
+Fresh independent rereview of the corrected verification authority/evidence,
+records-only closure, a final head/base-bound merge-ref CI run, dedicated squash
+integration, and exact-final-commit `develop` push CI remain. The ticket
+therefore remains active.
