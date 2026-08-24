@@ -1,4 +1,4 @@
-Status: blocked
+Status: active
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/done/2026-08-20-correct-retrieve-command-telemetry-latency.md
@@ -65,15 +65,10 @@ reviews. Treat the GitHub PR as canonical for hosted check and merge state.
 
 ## Blockers
 
-Hosted exact-head CI run `32761209125` failed the controlled subprocess timing
-test at exact PR head `67e129170199d7740847a924537211e208b6a219`. Python
-3.11 job `97540448298` observed a first bootstrap command delta of
-`330.61740100000003 ms`; Python 3.13 job `97540447983` observed
-`309.929979 ms`. Both were below the existing 375 ms lower bound for a 500 ms
-injected delay. Static validators passed in both jobs and the dependent
-distribution job `97541351303` was skipped. Repair and repeated dual-runtime
-validation are required before a new exact-head hosted run; no threshold
-weakening or production-source change is authorized.
+None for bounded local repair validation. Hosted exact-head CI run
+`32761209125` remains failed history, and a fresh independent repair review,
+push, and new exact-head hosted run remain mandatory gates before closure or
+integration.
 
 ## Progress and notes
 
@@ -156,3 +151,13 @@ weakening or production-source change is authorized.
   distribution was dependency-skipped. Ticket marked blocked before repair.
   Downloaded run artifacts and exact hashes are recorded in the integration
   evidence.
+- 2026-08-24: Reactivated for bounded validation after a test-only repair. The
+  controlled test now discards one zero-delay bootstrap warm-up before all
+  authoritative baseline/delayed pairs, injects a real 2,000 ms delay so the
+  named signal dominates one-time import and shared-runner contention, retains
+  the existing proportional 75%-150% bounds and exact 25 ms non-pipeline
+  bound, and reports each named seam's raw pair and deltas through subtest
+  diagnostics. Every bootstrap, initialization, routing, pipeline, and render
+  seam still receives its own real baseline-versus-delay subprocess pair;
+  command, pipeline, bootstrap, routing-stage, and routing-order attribution
+  assertions remain intact. No fixture or production `src/` byte changed.
