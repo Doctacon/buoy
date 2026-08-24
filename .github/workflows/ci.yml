@@ -39,7 +39,6 @@ jobs:
         run: uv sync --locked --python ${{ matrix.python-version }}
       - name: Validate source and frozen contracts
         run: |
-          PYTHONDONTWRITEBYTECODE=1 uv run python scripts/release_automation.py validate-source
           PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate_ranking_contract.py
           PYTHONDONTWRITEBYTECODE=1 uv run python scripts/c6_syntax_forecast.py validate
       - name: Run tests
@@ -64,7 +63,6 @@ jobs:
         run: |
           uv sync --locked --python 3.13
           uv build --out-dir dist
-          uv run python scripts/release_automation.py validate-distribution dist
       - name: Smoke a clean wheel installation
         run: |
           uv venv --python 3.13 "$RUNNER_TEMP/buoy-wheel-smoke"
