@@ -44,10 +44,9 @@ replacement, provider/model/content/credential operation, or unrelated cleanup.
 
 ## Blockers
 
-None for local implementation. The stale dynamic-version test ticket is done
-and its reviewed branch has been incorporated into this aggregate cleanup
-branch. Required independent review and hosted exact-head CI remain parent-owned
-acceptance gates, so this ticket remains active.
+No implementation blocker. Independent implementation review and hosted CI at
+exact head `0d819e24` passed. Final acceptance review, closure records, and an
+exact-head hosted rerun after those record changes remain before integration.
 
 ## Progress and notes
 
@@ -93,3 +92,10 @@ acceptance gates, so this ticket remains active.
   canonical for behavior, evidence limits, and retrospective. The ticket stays
   active for exact-head hosted CI, final acceptance reconciliation, and
   dedicated integration.
+- 2026-08-24: Hosted GitHub Actions run `32754913353` passed at exact PR #144
+  head `0d819e24`: Python 3.11, Python 3.13, and the dependent distribution
+  build/clean-wheel smoke all completed successfully. Canonical run URL is
+  `https://github.com/Doctacon/buoy/actions/runs/32754913353`; raw log identity
+  and job IDs are appended to the evidence. The ticket remains active for final
+  acceptance review, closure records, a final exact-head rerun, and dedicated
+  squash integration.

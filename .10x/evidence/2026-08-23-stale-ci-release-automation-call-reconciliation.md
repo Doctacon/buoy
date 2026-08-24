@@ -168,19 +168,38 @@ f7ee814e348fdf1a5734983c7c30a7873ad1d6551184c2c17d277952bc5365bd  logs/python311
 f5aba77641880b02e437b484bdd353764e946c64c59a4d6799bbd03393154bdc  logs/python313.log
 ```
 
+## Hosted exact-head observation
+
+Canonical draft PR #144 is `https://github.com/Doctacon/buoy/pull/144`.
+GitHub Actions run `32754913353` executed the CI workflow against exact head
+`0d819e24a99e41af65268e114f8c1d6a742a77a0` and completed successfully:
+
+- Python 3.13 job `97520335621`: success;
+- Python 3.11 job `97520335828`: success; and
+- dependent Build distributions job `97521149951`: success, including the
+  clean-wheel smoke.
+
+Run URL:
+`https://github.com/Doctacon/buoy/actions/runs/32754913353`. The run began at
+2026-08-24T17:08:39Z and completed at 2026-08-24T17:12:55Z. The commit check API
+returned exactly three completed successful checks bound to that head SHA.
+
+The complete hosted log is stored mode 0600 under mode-0700
+`/private/tmp/buoy-pr144-ci-0d819e2.zNA8yn/run.log`: 236,769 bytes, SHA-256
+`a2a6e4f7cb5935e98b4e4b93ab7992c449268e286911d307d44c07f3d2859097`.
+
 ## What this supports
 
 This evidence supports that the workflow implementation removes exactly the two
 dead script invocations without widening scope, keeps every other workflow byte
-and parsed behavior, and passes all locally executable retained CI commands on
-the supported interpreters in offline isolated environments.
+and parsed behavior, passes all locally executable retained CI commands, and
+passes the hosted Python 3.11, Python 3.13, and build jobs at exact PR head
+`0d819e24`.
 
 ## Limits
 
-- Hosted GitHub Actions and exact-head checks were not run or claimed. The
-  parent session owns push and hosted exact-head validation.
-- An independent review has not yet been created; the parent session owns the
-  required review gate. This ticket remains active.
+- Fresh independent implementation review passed, but final ticket closure and
+  the required exact-head rerun after closure-record changes remain pending.
 - Offline wheel installation used packages already present in the machine-local
   uv cache. It did not prove a fresh network-backed dependency resolution.
 - Temporary logs and artifacts may be removed by operating-system cleanup; the
