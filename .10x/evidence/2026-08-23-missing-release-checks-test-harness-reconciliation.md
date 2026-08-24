@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-23
 Updated: 2026-08-23
-Relates-To: .10x/tickets/2026-08-20-reconcile-missing-release-checks-test-harness.md, .10x/specs/buoy-package-and-cli-identity.md, .10x/decisions/annotated-tag-triggered-github-releases.md
+Relates-To: .10x/tickets/done/2026-08-20-reconcile-missing-release-checks-test-harness.md, .10x/specs/buoy-package-and-cli-identity.md, .10x/decisions/annotated-tag-triggered-github-releases.md
 
 # Missing Release Checks Test Harness Reconciliation
 
@@ -143,5 +143,5 @@ and complete suites pass on both supported CI interpreters.
   system cleanup; the hashes identify the exact logs observed here.
 - No hosted CI, GitHub action, release workflow, publication operation, or
   installed-tool smoke was run or authorized.
-- The ticket remains active pending its required independent review. This
-  evidence does not perform that review and does not close or move the ticket.
+- Fresh independent review is recorded separately and passed; this evidence
+  remains the bounded observation record rather than the closure authority.

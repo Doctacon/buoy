@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-20
 Updated: 2026-08-23
 Parent: None
@@ -45,9 +45,9 @@ main mutation, tags, packages, and installed tools.
 
 ## Blockers
 
-None. The user confirmed in the 2026-08-20 workstream that the release-check
-module was intentionally deleted because it was unsupported/nonfunctional and
-must not be restored. This ratifies removal of its stale dependent tests.
+None. The user confirmed the deleted release-check module must not be restored;
+implementation, dual-runtime validation, evidence, and independent review all
+pass.
 
 ## Progress and notes
 
@@ -78,5 +78,25 @@ must not be restored. This ratifies removal of its stale dependent tests.
   diff checks also passed. Exact commands, output hashes, environment limits,
   and removed-versus-retained coverage are recorded in
   `.10x/evidence/2026-08-23-missing-release-checks-test-harness-reconciliation.md`.
-- 2026-08-23: No execution blockers remain. The ticket stays active pending the
-  required independent review; this worker did not close or move it.
+- 2026-08-23: No execution blockers remained after implementation. Fresh
+  independent review returned PASS with no findings and is recorded in
+  `.10x/reviews/2026-08-23-missing-release-checks-test-harness-review.md`.
+  Every acceptance criterion maps to
+  `.10x/evidence/2026-08-23-missing-release-checks-test-harness-reconciliation.md`;
+  the ticket is complete.
+
+## Retrospective
+
+The failure was an incomplete deletion: release automation and its primary test
+surface were removed, but one consumer remained in a broader dynamic-version
+test module. Import-time failure then hid three still-valuable live Hatch-VCS
+checks from default collection.
+
+The effective repair classified each test by its live implementation dependency
+before deleting anything. This removed only the orphaned helper test and its two
+imports while preserving package/module/CLI version coherence coverage. The
+separate stale CI consumer was not folded into this ticket; it has its own
+bounded owner at
+`.10x/tickets/2026-08-23-reconcile-stale-ci-release-automation-calls.md`.
+No additional knowledge, skill, specification, decision, or follow-up record is
+required.
