@@ -180,6 +180,14 @@ integration.
   requirements; one mixed an old exact-wheel venv with checkout `PYTHONPATH`
   and therefore imported stale generated version bytes. Exact commands,
   observations, non-result limits, and artifact hashes are appended to the
-  integration evidence. Ticket remains active for independent repair review,
-  push, hosted exact-new-head runtime/distribution CI, closure, and dedicated
-  integration.
+  integration evidence.
+- 2026-08-24: Fresh independent read-only review of exact repair candidate
+  `627ae8d2`, both raw artifact roots, governing records, test/fixture, and all
+  repair commits returned PASS with no findings. It confirmed the diagnosis is
+  properly bounded, the warm-up/2,000 ms change is the smallest robust fix, no
+  threshold or assertion weakened, all timing arithmetic and subtest-count
+  changes are exact, suite/runtime cost remains modest, and production source
+  did not move. Review is recorded in
+  `.10x/reviews/2026-08-24-retrieve-command-telemetry-hosted-timing-repair-review.md`.
+  Ticket remains active for push, hosted exact-new-head runtime/distribution
+  CI, final acceptance/closure records, and dedicated integration.
