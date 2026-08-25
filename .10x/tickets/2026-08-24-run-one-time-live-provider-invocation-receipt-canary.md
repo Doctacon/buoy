@@ -1,4 +1,4 @@
-Status: open
+Status: active
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
@@ -290,10 +290,8 @@ claim; unrelated cleanup or source widening.
 
 ## Blockers
 
-- This canary ticket has not been explicitly activated.
-
-No semantic, operational-contract, or dependency blocker remains. Dependency
-satisfaction does not automatically activate this ticket.
+None. The exact reviewed dependency and explicit activation gates are satisfied.
+The live command remains unstarted behind every preparation and preflight gate.
 
 ## Progress and notes
 
@@ -321,3 +319,11 @@ satisfaction does not automatically activate this ticket.
   pending separate explicit activation. No build, model/cache, credential,
   provider/network, telemetry/store/database, global-tool, release, or canary
   operation ran.
+- 2026-08-24: The owner explicitly activated only this one-time canary ticket
+  for preparation from clean HEAD `440d38d0e6c8970ad5752fd8c5f2633754246f9c`.
+  The exact fake-only dependency remains done at reviewed source commit
+  `0b27c4eaa2449493125f4040af3cd1f7c926b531`, tree
+  `9017c4a335938faca80cdded54545df8b79c12f8`. No source export, build,
+  model/cache, credential, provider/network, telemetry/store/database, command,
+  release, deployment, ref mutation, or canary operation began before this
+  activation record.
