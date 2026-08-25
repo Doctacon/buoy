@@ -2,7 +2,7 @@ Status: open
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
-Depends-On: .10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipt-core.md, .10x/tickets/done/2026-08-24-instrument-content-provider-invocations.md, .10x/tickets/2026-08-24-instrument-catalog-provider-invocations.md
+Depends-On: .10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipt-core.md, .10x/tickets/done/2026-08-24-instrument-content-provider-invocations.md, .10x/tickets/done/2026-08-24-instrument-catalog-provider-invocations.md
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
 Authorization-Evidence: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md, .10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md
 Downstream-Canary: .10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md
@@ -116,18 +116,13 @@ changes are excluded.
 
 ## Blockers
 
-The governing contract has independent PASS rereview at
-`.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md`.
-The core predecessor is done at independently reviewed source commit
-`8953e9336354f2a2e0604a54be9cd882a97a7985`, tree
-`66fb2d0dcca5d397132f60eb0be6d22a5b69479b`; the content predecessor is done at
-independently reviewed source commit
-`e72841d2c4553c66f99be9f57efc1cd137fd543d`, tree
-`8fea9db249214a6d633a7d34d2c014fbcd6e816b`. The catalog predecessor must still
-be done at an independently reviewed exact commit, and this child must be
-explicitly activated in a later turn before execution. Ticket remains
-open/inactive. Its exact final fake-only commit must pass independent integration
-review before the separate downstream live-canary ticket may activate.
+None.
+
+Core, content, and catalog predecessors are done at independently reviewed exact
+commits/trees. This child remains open/inactive and must be explicitly activated
+in a later turn before execution. Its exact final fake-only commit must pass
+independent integration review before the separate downstream live-canary ticket
+may activate.
 
 ## Progress and notes
 
@@ -167,3 +162,11 @@ review before the separate downstream live-canary ticket may activate.
   behind only catalog and still requires separate explicit activation; no
   integration source/test, CLI receipt, routing artifact, validation, or
   operational work ran in this records-only closure.
+- 2026-08-24: Catalog predecessor satisfied by
+  `.10x/tickets/done/2026-08-24-instrument-catalog-provider-invocations.md` at
+  reviewed source commit `d9399e86e121e00f403f5f3a1d674f70c2d75aa4`, tree
+  `1359284ad942224c6873ca810f7de93fd188ad9c`. All predecessor dependencies are
+  now satisfied and blockers are none. Integration remains open/inactive until
+  separately activated; no integration source/test, CLI receipt, routing
+  artifact, validation, provider/network, canary, or operational work ran in
+  this records-only closure.

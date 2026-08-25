@@ -38,9 +38,12 @@ source work, provider access, canary execution, or activation of a child.
      propagation. It is done at independently reviewed source commit
      `e72841d2c4553c66f99be9f57efc1cd137fd543d`, tree
      `8fea9db249214a6d633a7d34d2c014fbcd6e816b`; and
-   - `.10x/tickets/2026-08-24-instrument-catalog-provider-invocations.md`
-     instruments the strong automatic-catalog read boundary.
-   These two children may execute independently after the core is reviewed.
+   - `.10x/tickets/done/2026-08-24-instrument-catalog-provider-invocations.md`
+     instruments the strong automatic-catalog read boundary. It is done at
+     independently reviewed source commit
+     `d9399e86e121e00f403f5f3a1d674f70c2d75aa4`, tree
+     `1359284ad942224c6873ca810f7de93fd188ad9c`.
+   These two children executed independently after the core was reviewed.
 3. After children 1-3,
    `.10x/tickets/2026-08-24-validate-provider-invocation-receipt-integration.md`
    performs integrated strict-model, privacy, concurrency, observer-fault, and
@@ -48,12 +51,10 @@ source work, provider access, canary execution, or activation of a child.
 
 Only one implementation child may be active in a writer worktree at a time.
 Each child must incorporate the reviewed predecessor state named by its
-`Depends-On` graph. The core and content dependencies are satisfied by their
-done tickets and independently reviewed exact source commits/trees. Catalog is
-the remaining dependency-eligible implementation child but remains
-open/inactive and MUST be explicitly activated in a later implementation turn.
-Integration may begin only after catalog also is done at a reviewed exact
-commit.
+`Depends-On` graph. The core, content, and catalog dependencies are satisfied by
+their done tickets and independently reviewed exact source commits/trees.
+Integration is now dependency-eligible but remains open/inactive and MUST be
+explicitly activated in a later implementation turn.
 
 The separate one-time live canary at
 `.10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md`
@@ -111,16 +112,12 @@ main/develop integration are excluded.
 
 ## Blockers
 
-The records-contract review gate is satisfied by independent PASS rereview
-`.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md` for
-exact commit `cb4a76b97f68fcdfc2816c49c33b5b23e9b5f899`. Core is done at reviewed
-source commit `8953e9336354f2a2e0604a54be9cd882a97a7985`, tree
-`66fb2d0dcca5d397132f60eb0be6d22a5b69479b`; content is done at reviewed source
-commit `e72841d2c4553c66f99be9f57efc1cd137fd543d`, tree
-`8fea9db249214a6d633a7d34d2c014fbcd6e816b`. This parent remains non-executable
-and open behind catalog and integration. A remaining child may move to `active`
-or execute only when its `Depends-On` graph is satisfied and the
-owner/integration session explicitly activates that selected child.
+None.
+
+The parent remains non-executable and open behind the integration child. Core,
+content, and catalog are done at independently reviewed exact source
+commits/trees. Integration remains open/inactive and may move to `active` or
+execute only when the owner/integration session explicitly activates it.
 
 ## Progress and notes
 
@@ -163,3 +160,11 @@ owner/integration session explicitly activates that selected child.
   evidence, and PASS review are linked in the child sequence. Catalog remains
   open/inactive pending separate explicit activation; integration remains
   blocked only on catalog.
+- 2026-08-24: Catalog closed independently at reviewed source commit
+  `d9399e86e121e00f403f5f3a1d674f70c2d75aa4`, tree
+  `1359284ad942224c6873ca810f7de93fd188ad9c`. Its done ticket, focused closure
+  evidence, and PASS review are linked in the child sequence. All three
+  implementation predecessors are now done; integration is dependency-eligible
+  but remains open/inactive pending separate explicit activation. No integration
+  source/test, CLI receipt, routing artifact, validation, or operational work
+  ran in this records-only closure.

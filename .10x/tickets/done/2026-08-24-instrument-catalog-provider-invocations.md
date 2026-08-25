@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
@@ -8,8 +8,11 @@ Authorization-Evidence: .10x/evidence/2026-08-24-provider-client-invocation-rece
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
+Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
+Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-catalog-closure.md
+Review: .10x/reviews/2026-08-24-provider-invocation-receipt-catalog-review.md
+Reviewed-Source: commit d9399e86e121e00f403f5f3a1d674f70c2d75aa4, tree 1359284ad942224c6873ca810f7de93fd188ad9c
 
 # Instrument Catalog Provider Invocations
 
@@ -152,3 +155,36 @@ None.
   catalog/content operation, store, telemetry, database, persistence, canary,
   CLI wiring, routing, release, or global-tool operation ran. Ticket remains
   active pending independent review.
+- 2026-08-24: Independent review passed exact source commit
+  `d9399e86e121e00f403f5f3a1d674f70c2d75aa4`, tree
+  `1359284ad942224c6873ca810f7de93fd188ad9c`, with no blocker or required
+  repair. Focused closure evidence maps all nine acceptance criteria, including
+  the approved transformed-cancellation core defect; confirms both active specs
+  remain coherent; preserves the historical contract FAIL and repair lineage;
+  and records the no-rerun/raw-output limit. This records-only closure preserves
+  reviewed source/test blobs, sets blockers to none, and moves the ticket to
+  `tickets/done`.
+
+## Retrospective
+
+- Shared catalog readers required an explicit default-`None` operation
+  capability. Activating a receipt scope alone must never observe apply,
+  catalog-management, CLI, evaluation, or direct-library reads; this keeps the
+  instrumentation boundary mechanically auditable and avoids ambient authority.
+- The aggregate-only privacy constraint makes exact source-order validation a
+  decomposition problem. Rejecting ambiguous 10,001-call L1 shapes is safer
+  than inferring pass identity or retaining pass/stage data that the receipt is
+  forbidden to store.
+- Existing `_call` sanitization can transform a reached SDK cancellation after
+  the invocation has already recorded authoritative interruption. The narrow
+  repair is to prefer only an already-recorded interrupted catalog invocation
+  for operation accounting while preserving external exception type/message and
+  leaving ordinary errors unchanged.
+- A focused 12-test local-fake matrix, together with the existing core boundary
+  tables, made source order, maxima, cancellation, privacy, containment, and
+  observer-fault equivalence independently reviewable without provider access.
+- No new reusable skill, specification change, or follow-up ticket is needed.
+  The closure evidence and PASS review retain exact source identity, criterion
+  mapping, historical FAIL/repair lineage, and evidence limits. Integrated CLI
+  wiring/final validation and the live canary remain correctly isolated in
+  existing downstream tickets.
