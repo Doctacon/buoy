@@ -5,7 +5,7 @@ Parent: None
 Depends-On: .10x/tickets/done/2026-08-24-run-local-telemetry-v2-canary.md
 Decision: .10x/decisions/one-time-v0-6-3-global-install-and-telemetry-pilot.md
 Authorization-Evidence: .10x/evidence/2026-08-24-v0-6-3-install-and-telemetry-pilot-authorization.md
-Preflight-Evidence: .10x/evidence/2026-08-24-buoy-v0-6-3-release-and-install-preflight.md
+Preflight-Evidence: .10x/evidence/2026-08-24-buoy-v0-6-3-release-and-install-preflight.md, .10x/evidence/2026-08-24-v0-6-3-install-and-pilot-preparation.md
 Specifications: .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/specs/local-telemetry-writer.md
 Knowledge: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
 
@@ -122,6 +122,17 @@ physical-attempt inference; recurring telemetry enablement; unrelated cleanup.
   `work/v0-6-3-telemetry-pilot`, based on exact `develop@4171555a`. Execution
   must use exact tagged release source, not this records commit. Forward install,
   each retrieval, and flush remain individually unconsumed.
+- 2026-08-24: Preparation PASS. Exact release/tag/tree/CI were revalidated; an
+  exact `0.6.3` candidate and exact old-version rollback wheel were built and
+  accepted offline; locked dependencies, sole entry point, source identities,
+  isolated status/help, global baseline, non-Buoy tools, approved dataset,
+  credential-source presence, and 159-entry model-cache manifest were bound.
+  Private forward and rollback commands both passed isolated uv-tool rehearsal.
+  Sanitized evidence is at
+  `.10x/evidence/2026-08-24-v0-6-3-install-and-pilot-preparation.md`. No global
+  replacement, real-home telemetry inspection, provider/model operation,
+  retrieval, or flush began; all one-time authorities remain unconsumed pending
+  independent install gate.
 
 ## Blockers
 
