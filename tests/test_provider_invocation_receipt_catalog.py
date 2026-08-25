@@ -715,11 +715,15 @@ class CatalogInvocationInstrumentationTests(unittest.TestCase):
         for relative in (
             "src/buoy_search/apply.py",
             "src/buoy_search/catalog_cli.py",
-            "src/buoy_search/cli.py",
+            "scripts/evaluate_multi_corpus_retrieval.py",
+            "scripts/evaluate_routing_quality.py",
         ):
             source = (root / relative).read_text(encoding="utf-8")
             with self.subTest(relative=relative):
                 self.assertNotIn("_invocation_observer", source)
+        cli_source = (root / "src/buoy_search/cli.py").read_text(encoding="utf-8")
+        self.assertEqual(cli_source.count("_invocation_observer"), 1)
+        self.assertIn("_invocation_observer=_active_catalog_observer()", cli_source)
         remote_source = (root / "src/buoy_search/remote_catalog.py").read_text(
             encoding="utf-8"
         )

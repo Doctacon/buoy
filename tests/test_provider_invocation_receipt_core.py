@@ -116,16 +116,19 @@ class ReceiptLifecycleTests(unittest.TestCase):
         self.assertIsNone(receipt._active_ledger())
 
     def test_active_empty_scope_is_canonical_only_after_exit_and_repeatable(self) -> None:
+        self.assertIsNone(receipt._active_catalog_observer())
         with receipt._provider_invocation_receipt_scope() as handle:
             self.assertIsNone(handle.receipt())
             self.assertIsNotNone(receipt._active_ledger())
             observer = handle._catalog_observer()
             self.assertIsNotNone(observer)
+            self.assertIsNotNone(receipt._active_catalog_observer())
         first = handle.receipt()
         second = handle.receipt()
         self.assertIs(first, second)
         self.assertEqual(first, canonical(value()))
         self.assertIsNone(handle._catalog_observer())
+        self.assertIsNone(receipt._active_catalog_observer())
         assert first is not None
         assert_valid(self, json.loads(first))
 
@@ -338,6 +341,14 @@ class ReceiptLifecycleTests(unittest.TestCase):
             with receipt._provider_invocation_receipt_scope() as broken:
                 body.append("also-ran")
         self.assertIsNone(broken.receipt())
+
+    def test_active_catalog_observer_fault_is_null_and_faults_authority(self) -> None:
+        with receipt._provider_invocation_receipt_scope() as handle:
+            with patch.object(
+                receipt, "_CatalogObserver", side_effect=RuntimeError("private")
+            ):
+                self.assertIsNone(receipt._active_catalog_observer())
+        self.assertIsNone(handle.receipt())
 
     def test_active_lookup_fault_around_governed_call_invalidates_receipt(self) -> None:
         class BrokenLookup:

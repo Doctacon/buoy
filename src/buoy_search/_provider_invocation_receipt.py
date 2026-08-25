@@ -537,6 +537,19 @@ def _active_ledger() -> _Ledger | None:
         return None
 
 
+def _active_catalog_observer() -> _CatalogObserver | None:
+    ledger = _active_ledger()
+    if ledger is None:
+        return None
+    try:
+        if not ledger._is_live():
+            return None
+        return _CatalogObserver(ledger)
+    except BaseException:
+        ledger._fault()
+        return None
+
+
 class _NoOpContentOperationObserver:
     __slots__ = ()
 

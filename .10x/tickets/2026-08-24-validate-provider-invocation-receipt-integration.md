@@ -176,3 +176,34 @@ may activate.
   fake tests may proceed; routing calibration artifact mutation, provider,
   network, credential, model, store, telemetry, canary, release, and global-
   tool operations remain excluded. Source/test work has not begun.
+- 2026-08-24: Staged the automatic-retrieve-only CLI candidate. A new private
+  active-catalog accessor fault-isolates ledger lookup/capability construction;
+  only automatic retrieve passes its result explicitly to `read_remote_catalog`.
+  Apply's two callers, catalog management's nine callers, two evaluation-script
+  callers, and direct/default calls remain argument-free. Added nine integrated
+  local-fake test methods covering automatic catalog-only preview, separated
+  live catalog/content families, explicit catalog-null, catalog/content pre-
+  call failure, partial/all content failure, nested and independent concurrent
+  scopes, three concurrent leased workers, terminal exception handoff, the full
+  cancellation/control-flow/error matrix, observer faults, strict canonical
+  privacy, caller inventory, and public/CLI/env/persistence/telemetry-v2 audit.
+  Updated predecessor tests only for the new private accessor and the now-
+  intentional sole automatic CLI caller.
+- 2026-08-24: Credential-removed, telemetry-independent offline runs passed the
+  full 90-test core/content/catalog/integration suite on Python 3.11 and 3.13;
+  the nine integration tests separately passed on both runtimes; and 185 CLI,
+  remote-catalog, retriever, local-telemetry, telemetry-envelope, and telemetry-
+  producer tests passed on Python 3.13. Exact AST inventory found 14 production
+  reader calls and only `src/buoy_search/cli.py` passing the private keyword.
+  Static diff checks prove no package-public, parser, environment, persistence,
+  telemetry-v2, dependency, lock, or routing-artifact change. Broader automatic-
+  routing commands were also run and produced only the expected 8 and 1
+  failures from the deliberately stale governed CLI hash; the calibration
+  artifact remains byte-identical at SHA-256
+  `62ec1fe8cb7e49247c24b633379a6b2553475bc0e25ce846998ea5dd77df8cf5`
+  pending independent review. Candidate `cli.py` SHA-256 is
+  `c6b575e160c5379b8a7214b3434a06d47864f0414e1478f44bcddeff313609ce`.
+  No provider, model, network, credential, real store/database, migration,
+  canary, routing-artifact, release, installed-tool, or global-tool operation
+  ran. Ticket remains active for independent CLI-byte review and later governed
+  artifact recertification; this source/test staging turn must not close it.
