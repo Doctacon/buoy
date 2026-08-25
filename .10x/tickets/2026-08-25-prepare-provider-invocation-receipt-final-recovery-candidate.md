@@ -1,12 +1,13 @@
-Status: blocked
+Status: active
 Created: 2026-08-25
 Updated: 2026-08-25
 Parent: .10x/tickets/2026-08-25-provider-invocation-receipt-final-recovery-plan.md
 Depends-On: .10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-integration.md
 Activation: active
-Eligibility: eligible-after-explicit-activation
-Decision: .10x/decisions/one-time-provider-invocation-receipt-final-recovery.md
+Eligibility: eligible-under-existing-provider-free-activation
+Decision: .10x/decisions/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md
 Authorization: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-authorization.md
+Authority-Correction: .10x/evidence/2026-08-25-provider-invocation-receipt-model-authority-correction.md
 Shaping-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-activation-review.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
@@ -28,11 +29,13 @@ complete sanitized evidence. Do not consume or approach live authority.
 
 ## Scope and activation gate
 
-This is the sole executable preparation child under the parent plan. It is open
-and inactive. A future explicit activation MUST bind this ticket/decision graph
-and then-current clean HEAD/tree/ref/worktree state before any clone, cache read
-or seed, build, install, or validator begins. Activation authorizes only this
-provider-free phase and is never credential/model/provider/network/live GO.
+This is the sole executable preparation child under the parent plan. It is
+active under the existing owner-directed provider-free activation recorded in
+its progress history. That activation remains bounded to this provider-free
+phase and is never credential/model-construction/provider/network/live GO. The
+exact retained candidate/runtime/harness remains the only candidate authority;
+this correction authorizes only the unresolved provider-free dual-model cache/
+ref/assets inspection and harness-guard correction described below.
 
 All three predecessor attempts remain blocked, consumed, and ineligible. Do not
 resume, edit, or infer authority from them. Do not change implementation source,
@@ -121,9 +124,27 @@ offline and from the owned cache. Provider-free checks MUST prove:
 - production routing loader/validator acceptance of exact schema-v3 authority;
 - executable/module help and private receipt import without retrieval;
 - strict receipt encode/decode/validation/canonicalization behavior governed by
-  both active specs; and
+  both active specs;
 - no ambient editable checkout, `PYTHONPATH`, user/global package, or installed
-  global Buoy/tool supplied the result.
+  global Buoy/tool supplied the result; and
+- provider-free filesystem inspection binds exact cache roots, refs, and assets
+  for both authorized production models, while harness guards enforce their
+  exact identities/runtime settings and reject every other model, download, or
+  substitution without constructing either model.
+
+The exact dual-model boundary is:
+
+- `BAAI/bge-small-en-v1.5` at revision
+  `5c38ec7c405ec4b44b94cc5a9bb96e735b38267a`, float32, with unchanged
+  production automatic-device behavior; and
+- `cross-encoder/ms-marco-MiniLM-L-6-v2` at revision
+  `c5ee24cb16019beea0893ab7796b1df96625c6b8`, CPU-only, local-files-only,
+  safetensors-only, remote code disabled, max-length 512, and batch 8.
+
+Both MUST remain offline/no-download. No other model or substitution is allowed.
+Inspection reads model cache files only to establish exact public model assets;
+it MUST NOT import a model library, construct, load, or run either model, or
+read unrelated credential-bearing cache content.
 
 Validators and harnesses may be corrected and rerun against the same exact
 source/candidate. After exact candidate acceptance, corrections MUST NOT mutate
@@ -132,7 +153,8 @@ or substitute wheel bytes. Every rerun rebinds the exact candidate digest.
 Throughout preparation MUST NOT:
 
 - read, source, copy, print, hash for retention, or expose a credential value;
-- construct, load, or run the embedding model;
+- import a model library or construct, load, or run either authorized model or
+  any other model;
 - perform DNS, TLS, provider, catalog, content, or any other network access;
 - open or invoke telemetry database, store, API, status, migration, flush,
   writer, queue, receipt, backup, export, or purge behavior;
@@ -171,8 +193,9 @@ preparation remains open or blocked truthfully and cannot close as success.
 
 ## Acceptance criteria
 
-- Separate activation precedes preparation; the ticket is inactive in this
-  shaping turn.
+- The recorded separate provider-free activation remains the only activation;
+  this ticket is active and no credential/model-construction/provider/network/
+  live authority is implied.
 - Exact reviewed VCS-aware commit/tree is clean and provides Hatch-VCS version
   authority without ref mutation or override.
 - Builds/runtimes use only an owned UV cache seeded by read-only copy; all writes
@@ -183,6 +206,9 @@ preparation remains open or blocked truthfully and cannot close as success.
   reviewed package safety is inherited and no novel archive classifier runs.
 - Exact isolated package, routing, installation, help/import, and strict receipt
   checks pass without retrieval or prohibited access.
+- Exact filesystem-only cache/ref/assets inspection and harness guards pass for
+  both pinned production models without importing or constructing either, and
+  reject every other model, download, or substitution.
 - No credential value, model construction/load, provider/DNS/TLS/network,
   telemetry DB/store/API/command, global install/tool, ref, source/test/spec, or
   external-state mutation occurs.
@@ -199,18 +225,21 @@ proof; bounded build/correction counts and generic outcomes; exact wheel and
 output inventory; inherited package-review reference; installed/runtime/routing/
 receipt results; no-prohibited-access and process/side-effect inventory; raw
 correction cleanup; retained immutable handoff identities; changed-path/status/
-privacy checks; and independent PASS/GO or NO-GO. No evidence contains a private
-path, credential, query, namespace, content/result, raw output/error, model or
-provider identifier beyond the ratified public model identity, or receipt bytes.
+privacy checks; and fresh independent PASS/GO or NO-GO. No evidence contains a
+private path, credential, query, namespace, content/result, raw output/error,
+model or provider identifier beyond the two ratified public model identities, or
+receipt bytes.
 
 ## Explicit exclusions
 
 Live command or GO issuance by the executor; predecessor resumption; metadata-
 free source; version override; tag/ref mutation; one-build/no-rebuild limit;
 novel archive classifier; source/test/spec/lock/routing/data change; credential
-value; model construction/load/inference; provider/network/retrieval; telemetry
-storage/API/commands; global install/tool/cache mutation; model-cache mutation;
-release/deployment/publication/push; private path in records; wire/SDK-retry/
+value; model import/construction/load/inference; provider/network/retrieval;
+telemetry storage/API/commands; global install/tool/cache mutation; model-cache
+mutation; any model beyond the two exact production identities; model download
+or substitution; release/deployment/publication/push; private path in records;
+wire/SDK-retry/
 billing/cost/rate-limit claim.
 
 ## Dependencies
@@ -224,16 +253,13 @@ not become authority.
 
 ## Blockers
 
-Provider-free repair established a real defect in the exact product candidate
-relative to the ratified live-command model boundary. The unchanged automatic
-path can construct a model distinct from the only authorized model, and the
-private one-shot case cannot safely be assumed to avoid all reachable routing,
-reranking, fallback, and evidence-assessment paths. Source change, alternate
-model authorization, and harness substitution are outside this ticket.
-
-The exact retained source and wheel remain unchanged. The corrected harness now
-binds the exact reviewed evidence commit/tree, but no PASS/GO may issue and live
-access remains blocked.
+None. The active authority-correction decision resolves the flawed one-model
+governing boundary without changing the exact product candidate or ordinary
+automatic behavior. The exact retained source, wheel, runtime, and evidence-gate
+repair remain valid. This active child must still complete provider-free exact
+cache/ref/assets inspection and harness guards for both authorized models,
+without constructing either, then obtain a fresh independent PASS/GO. Until
+then the dependent live child remains blocked and inactive.
 
 ## Progress and notes
 
@@ -288,3 +314,13 @@ access remains blocked.
   `.10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-repair.md`.
   The ticket is blocked; no PASS/GO issued; no credential, model, telemetry,
   provider/network, retrieval, global package/home, or live operation occurred.
+- 2026-08-25: Records-only authority correction established that the NO-GO was
+  correct against the then-governing flawed one-model ticket, while superseding
+  its product-defect classification. Active specs, decisions, and exact source
+  require both pinned production models for unchanged ordinary automatic
+  behavior. The ticket returned to `Status: active` under its existing repeatable
+  provider-free activation. The exact candidate remains retained; fresh dual-
+  model cache/ref/assets and harness-guard evidence plus independent PASS/GO are
+  still required. No immutable evidence was edited. No source/spec/test change,
+  model/cache access, build, credential read, telemetry, provider/network,
+  retrieval, GO, or live command occurred.

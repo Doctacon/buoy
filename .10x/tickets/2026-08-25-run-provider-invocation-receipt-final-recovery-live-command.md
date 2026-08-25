@@ -4,9 +4,10 @@ Updated: 2026-08-25
 Parent: .10x/tickets/2026-08-25-provider-invocation-receipt-final-recovery-plan.md
 Depends-On: .10x/tickets/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md
 Activation: inactive
-Eligibility: ineligible-until-exact-preparation-pass-go
-Decision: .10x/decisions/one-time-provider-invocation-receipt-final-recovery.md
+Eligibility: ineligible-until-fresh-corrected-preparation-pass-go
+Decision: .10x/decisions/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md
 Authorization: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-authorization.md
+Authority-Correction: .10x/evidence/2026-08-25-provider-invocation-receipt-model-authority-correction.md
 Shaping-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-activation-review.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
@@ -38,11 +39,14 @@ identities, then-current clean repository state, and unchanged operational
 pre-state. Neither this shaping turn, preparation activation, candidate PASS
 without GO, nor silence activates live execution.
 
-The blockers are:
+The exact candidate/runtime/harness remains retained, but this child cannot
+receive it yet. The blockers are:
 
-- no complete preparation evidence exists yet;
-- no exact independent candidate PASS/GO exists yet; and
-- no retained reviewed candidate/runtime/harness has been handed to this child.
+- no provider-free exact cache/ref/assets and corrected harness-guard evidence
+  exists yet for both authorized production models;
+- no fresh independent candidate PASS/GO exists for the corrected authority;
+  and
+- the retained handoff cannot be accepted by this child until those gates pass.
 
 Drift, deletion, NO-GO, qualified/stale review, unresolved finding, or inability
 to prove the same retained bytes keeps the ticket blocked.
@@ -68,23 +72,32 @@ The accepted wheel remains exactly:
 - SHA-256
   `42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87`.
 
-## Exact case, dataset, model, and command
+## Exact case, dataset, models, and command
 
 After exact GO and successful identity reproof, the private child may:
 
 1. remove inherited provider credentials and all telemetry enablement;
 2. load the existing intended credential value privately without placing it in
    argv, output, diagnostics, records, or retained files;
-3. construct only cached model `BAAI/bge-small-en-v1.5` at exact revision
+3. construct or reuse cached model `BAAI/bge-small-en-v1.5` at exact revision
    `5c38ec7c405ec4b44b94cc5a9bb96e735b38267a`, float32, with unchanged
    production automatic-device behavior and enforced offline/local-only/no-
-   download controls;
-4. privately load exact case `m01-dagster-turbopuffer-quality` from dataset
+   download controls, only where ordinary automatic routing/retrieval requires;
+4. construct or reuse cached model
+   `cross-encoder/ms-marco-MiniLM-L-6-v2` at exact revision
+   `c5ee24cb16019beea0893ab7796b1df96625c6b8`, CPU-only, local-files-only,
+   safetensors-only, remote code disabled, max-length 512, batch 8, and offline/
+   no-download controls, only where ordinary automatic
+   routing/retrieval requires;
+5. privately load exact case `m01-dagster-turbopuffer-quality` from dataset
    `automatic-multi-corpus-retrieval-v1` at SHA-256
    `29064e773a71e2f31a4e6af45db793cdb30436dbf9fc61e818a03dd127ce1e2b`;
-5. enter the underscore-prefixed private provider-invocation receipt scope; and
-6. run exactly one ordinary automatic live command against the current strong
+6. enter the underscore-prefixed private provider-invocation receipt scope; and
+7. run exactly one ordinary automatic live command against the current strong
    remote catalog and selected current content namespaces.
+
+The child MUST NOT preload either model merely to satisfy this ticket and MUST
+NOT construct, load, download, or substitute any other model.
 
 Command start consumes the sole live authority regardless of return, exception,
 interruption, process state, receipt, privacy, side effect, cleanup, or review
@@ -152,7 +165,8 @@ the terminal outcome and after cleanup. Equality MUST cover:
 - exact candidate/source/wheel/runtime/package/harness identities until their
   authorized cleanup;
 - owner-private UV cache and the read-only seed-source existing cache;
-- complete model cache roots/ref/assets/manifest and offline controls;
+- complete exact cache roots/refs/assets/manifests and offline controls for both
+  authorized production models;
 - telemetry root/store/queue/receipt/backup filesystem identity by filesystem
   inspection only, without telemetry DB/API open;
 - credential source identity without retained value;
@@ -195,8 +209,10 @@ failed/missing receipt as success.
 - The live child only re-proves and receives the candidate; no build/rebuild,
   install, cache seed/correction, harness correction, preparation rerun, or
   substitution occurs.
-- Exact approved case/dataset/model and intended credential are used privately
-  with telemetry off and offline/no-download model controls.
+- Exact approved case/dataset and the two exact production models are used
+  privately only as ordinary automatic routing/retrieval requires, with the
+  intended credential, telemetry off, offline/no-download controls, and no
+  other model, download, or substitution.
 - Exactly one ordinary automatic command begins in the private scope; provider
   activity is read-only; no preview/explicit/substitution/provider/command/
   receipt retry or second command occurs.
@@ -213,8 +229,9 @@ failed/missing receipt as success.
 
 ## Evidence expectations
 
-Record exact activation, preparation evidence commit/tree, candidate PASS/GO,
-wheel/runtime/harness identities, pre-command equality, one command-start and
+Record exact activation, corrected preparation evidence commit/tree, fresh
+candidate PASS/GO, wheel/runtime/harness identities, exact dual-model cache/ref/
+assets and guard identities, pre-command equality, one command-start and
 terminal ledger without argv/PID/time, generic truthful original outcome,
 canonical receipt and strict verdict, exact catalog/content counts/outcomes,
 provider-read/no-write inventory, cache/model/telemetry/credential/global/
@@ -225,27 +242,31 @@ private path or prohibited value.
 ## Explicit exclusions
 
 Preparation activation or repair; build/rebuild/install/reinstall; cache seeding
-or harness correction; alternate candidate/case/dataset/model; predecessor
-resumption; more than one command; preview/explicit/receipt-only retrieval;
-provider/command/receipt retry; public/CLI/env receipt activation; telemetry
-storage/API/command or v2 change; provider write/management; model download or
-cache mutation; credential output/persistence/mutation; global install/tool
-replacement; source/test/spec/lock/routing change; release/deployment/
+or harness correction; alternate candidate/case/dataset; any model beyond the
+two exact production identities; model download, cache mutation, or substitution;
+predecessor resumption; more than one command; preview/explicit/receipt-only
+retrieval; provider/command/receipt retry; public/CLI/env receipt activation;
+telemetry storage/API/command or v2 change; provider write/management; credential
+output/persistence/mutation; global install/tool replacement; source/test/spec/
+lock/routing change; release/deployment/
 publication/push/ref mutation; transport interception; wire/SDK-retry/billing/
 cost/rate-limit claim; unrelated cleanup.
 
 ## Dependencies
 
-Blocked on the provider-free candidate child reaching truthful `done` with exact
-sanitized preparation evidence and independent candidate PASS/GO while the same
-private immutable handoff remains available. No other artifact, review, or owner
-statement substitutes for that dependency.
+Blocked on the active provider-free candidate child reaching truthful `done`
+with corrected dual-model cache/ref/assets and harness-guard evidence plus a
+fresh independent candidate PASS/GO, while the same retained private immutable
+handoff remains available. No other artifact, review, or owner statement
+substitutes for that dependency.
 
 ## Blockers
 
-- Complete provider-free preparation evidence does not yet exist.
-- Independent candidate PASS/GO does not yet exist.
-- The exact reviewed immutable candidate/runtime/harness is not yet available.
+- Corrected provider-free cache/ref/assets and harness-guard evidence for both
+  exact production models does not yet exist.
+- Fresh independent candidate PASS/GO does not yet exist.
+- The retained immutable candidate/runtime/harness cannot be accepted by this
+  child until both gates pass.
 
 ## Progress and notes
 
@@ -254,3 +275,10 @@ statement substitutes for that dependency.
   `5eaf0f3ec6d7ee3a77cec04f5711782ceb5ad0ad`. No preparation or live child was
   activated; no candidate, GO, credential, model, telemetry, provider/network,
   retrieval, or command operation occurred.
+- 2026-08-25: Records-only authority correction preserved this child as
+  blocked/inactive and corrected its model boundary to the exact pinned BGE and
+  MiniLM production models. The retained candidate remains with the active
+  provider-free child pending exact dual-model cache/ref/assets and harness-
+  guard evidence plus fresh independent PASS/GO. No source/spec/test change,
+  model/cache access, build, credential read, telemetry, provider/network,
+  retrieval, GO, or live command occurred.
