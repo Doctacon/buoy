@@ -220,3 +220,82 @@ may activate.
   changed. `cli.py` remains SHA-256
   `c6b575e160c5379b8a7214b3434a06d47864f0414e1478f44bcddeff313609ce`;
   routing artifact recertification remains intentionally pending.
+- 2026-08-24: Independent pre-artifact CLI-byte review returned PASS with no
+  blocker at exact reviewed staging commit
+  `bb32b4f81fbb490472a68e7caaf00d0a4dfab379`. It accepted the repaired
+  explicit-preview case, automatic-retrieve-only observer caller inventory,
+  default-`None` isolation, integrated fake lifecycle/failure/concurrency/
+  privacy/public-surface coverage, and the intentionally stale pre-
+  recertification artifact.
+- 2026-08-24: Final artifact-only implementation is immutable commit
+  `0b27c4eaa2449493125f4040af3cd1f7c926b531`, tree
+  `9017c4a335938faca80cdded54545df8b79c12f8`. Exact final `cli.py` SHA-256 is
+  `c6b575e160c5379b8a7214b3434a06d47864f0414e1478f44bcddeff313609ce`;
+  `cli.py` is byte-identical to reviewed `bb32b4f`. The active schema-v3
+  artifact was restored from exact `develop@dd0e155` authority SHA-256
+  `62ec1fe8cb7e49247c24b633379a6b2553475bc0e25ce846998ea5dd77df8cf5`
+  and only JSON leaf `/receipts/cli_module_sha256` and text line 57 changed,
+  from `90e7b2dd...` to the measured CLI hash. Parsed deep equality and all-line
+  comparison proved every other field and line byte-equivalent. Final artifact
+  SHA-256 is
+  `79c780a5c3ffebfe5569d463663c30d681cf224aec3ddfb1e03202641b97ed1e`.
+- 2026-08-24: Credential-removed strict-offline focused validation used
+  temporary runtimes/homes outside the repository. The exact four-module core/
+  content/catalog/integration suite passed 91 tests on Python 3.11.5 and 91 on
+  Python 3.13.0 (log SHA-256 `674d11a1...` / `fcca4c53...`). The broader
+  20-module receipt/retriever/remote-catalog/CLI/apply/catalog/routing-artifact/
+  routing-quality/evidence/telemetry privacy-and-fault suite passed 535 tests on
+  each runtime (log SHA-256 `7cb37240...` / `9b73416a...`). At exact immutable
+  candidate `0b27c4e`, the unfiltered full repository suite passed 1,167 tests
+  on Python 3.11.5 in 96.361 seconds and 1,167 on Python 3.13.0 in 91.726
+  seconds (log SHA-256 `ccc086f9...` / `275a548a...`), with only the established
+  lxml `strip_cdata` deprecation and expected fake plan-cleanup warnings.
+- 2026-08-24: Harness failures were retained rather than hidden. An initial
+  Python 3.11 `uv run --with pytest` stopped before collection because strict
+  offline resolution lacked cached `torch==2.12.1`. Three subsequent 535-test
+  Python 3.11 focused harness runs reported respectively two failures/errors,
+  one failure, and one failure because a reused editable environment or an
+  environment-clearing subprocess resolved the wrong/no source package. A
+  temporary clean dependency bridge plus editable install of the exact copied
+  source corrected only the harness and produced the 535-test pass above. The
+  first 1,167-test Python 3.11 full run had exactly three dynamic-version
+  harness failures because the isolated empty UV cache lacked Hatch build
+  requirements; pointing strict-offline UV at the established package cache
+  corrected only dependency discovery and the full suite passed. Byte-
+  equivalent precommit full reruns also passed 1,167/1,167 before the exact-
+  commit reruns above.
+- 2026-08-24: Static and authority checks passed: offline frozen lock resolved
+  157 packages; ranking validation on both runtimes retained 13 datasets, 369
+  judgments, 90 identities, and bundle SHA-256 `5a79f58a...`; C6 validation on
+  both retained forecast SHA-256 `d5199276...`; both runtimes compiled all 110
+  tracked Python files; Ruff E9 over all source/tests, `git diff --check`, empty
+  staged diff checks, exact reviewed-CLI equality, the 14-caller AST inventory
+  with only `src/buoy_search/cli.py:1643` passing `_invocation_observer`, and
+  dual-runtime active-authority loading all passed. A broader non-gating Ruff
+  F/E9 diagnostic reported seven pre-existing F401 imports in independently
+  reviewed Python bytes; candidate `0b27c4e` changes no Python byte from
+  reviewed `bb32b4f`, so no unauthorized source cleanup was made.
+- 2026-08-24: Strict source validators on both Python runtimes and the isolated
+  installed-package validator accepted only the new receipt and rejected the
+  exact old `develop` receipt with `Routing activation source receipt
+  'cli_module_sha256' is incompatible.` Clean exact-candidate offline build
+  produced version `0.5.2.dev87+g0b27c4eaa`, a 730,602-byte 78-member wheel at
+  SHA-256 `42a4ba1...`, and a 1,301,691-byte 162-member sdist at SHA-256
+  `f8f1dfbf...`; members were unique, path/link-safe, and `.10x`-free. Source,
+  wheel, sdist, and isolated Python 3.13 install reproduced exact CLI, artifact,
+  private-receipt, remote-catalog, and retriever hashes, exact metadata version,
+  and console entry point `buoy = buoy_search.entrypoint:main`. The isolated
+  offline install resolved 107 cached packages, reported exact version, loaded
+  active revision `active-anchor-e559a8aa-v1`, passed executable/module help,
+  and completed an explicit JSON preview with four no-provider/no-content/
+  no-credential assertions, empty stderr, and no `.buoy` creation.
+- 2026-08-24: All build/runtime/log paths were mode-restricted temporary paths
+  outside the repository and are deleted after recording these results.
+  Credentials were removed; strict offline/model-offline controls remained set;
+  no provider, model, product cache, real telemetry/store/database, migration,
+  network, canary, release, installed/global-tool replacement, or remote Git
+  operation ran. Fake-only validation does not prove a live provider receipt,
+  physical wire attempts, billing, or rate-limit behavior; that remains owned
+  by the inactive downstream canary ticket. This ticket deliberately remains
+  `active` and its parent remains `open` pending fresh independent exact-
+  candidate integration review.
