@@ -5,7 +5,7 @@ Parent: None
 Depends-On: .10x/tickets/done/2026-08-24-integrate-retrieve-command-telemetry-into-develop.md
 Decisions: .10x/decisions/superseded/one-time-local-telemetry-v2-canary.md, .10x/decisions/local-telemetry-canary-budgets-logical-namespace-operations.md
 Authorization-Evidence: .10x/evidence/2026-08-24-local-telemetry-v2-canary-authorization.md, .10x/evidence/2026-08-24-local-telemetry-v2-canary-closure-authorization.md
-Follow-Up: .10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md
+Follow-Up: .10x/tickets/done/2026-08-24-define-physical-provider-attempt-accounting.md
 Knowledge: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
 Specifications: .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/specs/local-telemetry-writer.md
 Reviews: .10x/reviews/2026-08-24-local-telemetry-v2-canary-review.md, .10x/reviews/2026-08-24-local-telemetry-v2-canary-final-review.md, .10x/reviews/2026-08-24-local-telemetry-v2-canary-closure-rereview.md
@@ -237,7 +237,7 @@ policy; unrelated source, record, local-home, or GitHub changes.
   and
   `.10x/decisions/local-telemetry-canary-budgets-logical-namespace-operations.md`.
   The physical-attempt gap is durably owned by
-  `.10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md`.
+  `.10x/tickets/done/2026-08-24-define-physical-provider-attempt-accounting.md`.
   Ticket returned to active for records-only closure review; no operational
   authority was renewed.
 - 2026-08-24: Two fresh independent reviewers returned PASS at exact records
@@ -257,7 +257,7 @@ policy; unrelated source, record, local-home, or GitHub changes.
 
 None. The operational canary satisfies the owner-ratified logical-operation
 contract. Physical transport-attempt accounting is separate future work owned
-by `.10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md` and
+by `.10x/tickets/done/2026-08-24-define-physical-provider-attempt-accounting.md` and
 does not block this ticket.
 
 ## Retrospective
@@ -271,6 +271,6 @@ does not block this ticket.
   `.10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md`.
 - Future physical cost/rate-limit accounting requires transport-boundary count
   receipts retained through review. Shaping and implementation remain owned by
-  `.10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md`.
+  `.10x/tickets/done/2026-08-24-define-physical-provider-attempt-accounting.md`.
 - No retry, source repair, specification drift, instruction change, or release
   action was required for this closure.
