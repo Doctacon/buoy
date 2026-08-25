@@ -1,4 +1,4 @@
-Status: active
+Status: blocked
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
@@ -11,6 +11,7 @@ Historical-Canary: .10x/evidence/2026-08-24-local-telemetry-v2-canary.md
 Historical-Pilot: .10x/evidence/2026-08-24-v0-6-3-installed-telemetry-pilot.md
 Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
 Dependency-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-integration-closure.md
+Preflight-Failure: .10x/evidence/2026-08-24-provider-invocation-receipt-canary-preflight-failure.md
 Dependency-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integration-review.md
 Reviewed-Dependency: commit 0b27c4eaa2449493125f4040af3cd1f7c926b531, tree 9017c4a335938faca80cdded54545df8b79c12f8
 
@@ -290,8 +291,15 @@ claim; unrelated cleanup or source widening.
 
 ## Blockers
 
-None. The exact reviewed dependency and explicit activation gates are satisfied.
-The live command remains unstarted behind every preparation and preflight gate.
+Candidate identity/preflight validation returned nonzero after the ticket's one
+permitted wheel build. No rebuild, validation retry, alternate candidate, or
+resumption is authorized. The complete owned temporary root was removed; no
+isolated install, model/cache acceptance, credential read, telemetry/store
+operation, provider/network operation, or automatic command began.
+
+The one-time live command authority remains unconsumed, but this ticket cannot
+resume under its consumed no-rebuild/no-retry preparation contract. Any later
+attempt requires separately shaped and owner-ratified authority.
 
 ## Progress and notes
 
@@ -327,3 +335,15 @@ The live command remains unstarted behind every preparation and preflight gate.
   model/cache, credential, provider/network, telemetry/store/database, command,
   release, deployment, ref mutation, or canary operation began before this
   activation record.
+- 2026-08-24: Preparation stopped before isolated installation or any live
+  command with sanitized category `candidate_identity_validation_failure`.
+  Exactly one offline wheel build ran once from the exact reviewed source and
+  was not retried; complete candidate acceptance did not finish after local
+  validation returned nonzero. No model construction, accepted cache manifest,
+  credential value read, telemetry/store/database operation, provider/network
+  operation, global install, release, ref mutation, or automatic command began.
+  The complete owner-private temporary root was deleted and absence verified.
+  Sanitized failure evidence is recorded at
+  `.10x/evidence/2026-08-24-provider-invocation-receipt-canary-preflight-failure.md`.
+  The ticket is blocked with live authority unconsumed and no preparation retry
+  authority.
