@@ -6,6 +6,7 @@ Depends-On: None
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
+Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
 
 # Implement Private Provider Invocation Receipt Core
 
@@ -19,13 +20,22 @@ provider call site.
 
 - Add the smallest private internal module for the underscore-prefixed scope,
   handle, receipt-private `ContextVar`, thread-safe ledger, operation/attempt
-  registration/completion, and explicit worker-lease binder.
+  registration/completion, explicit worker-lease binder, and a ledger-bound
+  private catalog-observer capability that shared readers cannot discover
+  implicitly.
 - Implement no-op nested activation, independent top-level contexts, sealing,
   repeatable `bytes | None` handoff, and null-on-incomplete/fault behavior.
-- Implement exact content/catalog/top-level models, conditional bounds, sequence
-  grammar, fixed generic content error mapping, strict duplicate-key JSON
-  decode, canonical encode/re-encode validation, byte limit, and generic
-  non-echoing validation errors.
+- Implement exact content/catalog/top-level models, content sequence grammar,
+  fixed generic error mapping, and the catalog aggregate state machine with
+  per-category successful/terminal maxima and ordered L1 -> metadata -> card1
+  -> card2 -> L2 prerequisites.
+- Implement interruption precedence before generic `Exception` handling:
+  `asyncio.CancelledError`, `concurrent.futures.CancelledError`, all other
+  non-`Exception` `BaseException` values, and named control-flow exceptions are
+  interrupted; every remaining `Exception` is error; preserve the identical
+  object.
+- Implement strict duplicate-key JSON decode, canonical encode/re-encode
+  validation, byte limit, and generic non-echoing validation errors.
 - Add focused provider-free unit tests for the lifecycle and validator through
   direct private test seams only.
 
@@ -38,11 +48,21 @@ provider call site.
 - Separate contexts and explicitly bound workers remain isolated; leases,
   in-flight calls, late use, premature exit, and synchronization faults obey the
   no-wait unknown-receipt contract.
-- Exact object keys/types/enums/counts/order/sequence/conditional 40,001/40,002
-  bounds and canonical bytes validate; unknown/duplicate/noncanonical/
-  prohibited sentinel data reject without echo.
-- Error and interruption classification preserves the original exception
-  identity; every injected observer/encode/decode fault returns null.
+- Exact object keys/types/enums/counts/order/sequence and canonical bytes
+  validate; unknown/duplicate/noncanonical/prohibited sentinel data reject
+  without echo.
+- Exhaustive boundary tables prove successful list 2..20,000, metadata exactly
+  1, card 2..20,000; terminal list <=20,001, metadata <=1, card <=20,000;
+  every source-order prerequisite; mixed/later-stage impossibilities; exact
+  all-success 40,002 composition; ambiguous L1 10,001 rejection; and every
+  adjacent over-bound value.
+- Focused identity tests cover both cancellation classes, `KeyboardInterrupt`,
+  `SystemExit`, `GeneratorExit`, a custom non-`Exception` `BaseException`, and
+  representative remaining `Exception` values; every case has exact outcome
+  precedence and re-raises the identical object.
+- A private catalog capability is available only from a live active handle,
+  becomes unusable at sealing, and is never a package-public callback. Every
+  injected observer/encode/decode fault returns null.
 - No package-public export, CLI/env trigger, telemetry import dependency,
   automatic filesystem/database/network write, or provider call is introduced.
 
@@ -69,3 +89,8 @@ explicit activation of this child are required before execution.
 
 - 2026-08-24: Opened fully specified but inactive. No implementation is
   authorized by ticket creation.
+- 2026-08-24: FAIL review `29dbeef6-82a2-43b1-8fd3-b572f0d83f40`
+  required regeneration-grade aggregate catalog validation and exact
+  cancellation precedence/identity coverage. Scope and acceptance now own
+  those repairs plus the private non-ambient catalog capability. Ticket remains
+  open/inactive pending repaired-contract rereview.

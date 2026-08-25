@@ -4,6 +4,7 @@ Updated: 2026-08-24
 Authorization: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
+Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
 
 # Buoy Uses Private Canary Provider Invocation Receipts
 
@@ -75,6 +76,15 @@ authoritative, and best-effort failure isolation. A thread-safe ledger and
 worker leases make finalization authoritative only when all begun operations,
 propagated callbacks, and in-flight calls are terminal. Finalization does not
 wait, retry, cancel, or infer.
+
+Catalog observation is additionally capability-explicit. The shared
+`read_remote_catalog` reader and its helpers receive a private observer argument
+defaulting to `None` and never discover it from ambient receipt scope. Only the
+automatic-retrieve CLI branch passes the active capability; apply, catalog
+management, and direct callers remain unobserved. Final CLI wiring must follow
+`.10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md`: preserve the
+exact schema-v3 routing artifact and change only its final reviewed
+`receipts.cli_module_sha256` value.
 
 These are mechanical lifecycle rules needed to preserve the owner-approved
 private/default-off semantics. They do not authorize a broader diagnostics,

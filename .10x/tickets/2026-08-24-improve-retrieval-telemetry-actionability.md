@@ -8,6 +8,7 @@ Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.m
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Implementation-Plan: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
+Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
 
 # Improve Retrieval Telemetry Actionability
 
@@ -107,11 +108,23 @@ telemetry mutation, implementation, migration, release, or global-tool change.
   are open/inactive. Child 2 and this parent remain active pending independent
   review of the exact records-only commit. No source/test or operational work
   ran.
+- 2026-08-24: Independent run
+  `29dbeef6-82a2-43b1-8fd3-b572f0d83f40` failed the contract candidate on
+  aggregate catalog source-order validation, exact interruption precedence,
+  and shared-reader activation containment. The repaired active specs now make
+  the catalog aggregate state machine regeneration-grade, classify both
+  cancellation classes and all remaining non-`Exception` `BaseException`
+  values exactly, and require default-null explicit catalog observation from
+  automatic retrieve only. The integration child also owns frozen schema-v3
+  CLI receipt recertification. Both shaping tickets remain active and all
+  implementation tickets open/inactive pending fresh rereview. No source/test
+  or operational work ran.
 
 ## Blockers
 
-- Independent review of the exact records-only ratified-contract commit is
-  pending.
-- No implementation child may activate or execute until that review passes and
-  the selected child is explicitly activated. The parent remains active until
-  review and child-2 shaping coherence are recorded.
+- Independent review `29dbeef6-82a2-43b1-8fd3-b572f0d83f40` failed candidate
+  `a458aeba95844230271ad50d4364281f4462ad5e`; fresh rereview of the repaired
+  records-only contract is pending.
+- No implementation child may activate or execute until that rereview passes
+  and the selected child is explicitly activated. The parent remains active
+  until review and child-2 shaping coherence are recorded.

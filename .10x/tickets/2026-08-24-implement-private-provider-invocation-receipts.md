@@ -6,6 +6,8 @@ Depends-On: None
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
+Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+CLI-Receipt-Decision: .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md
 
 # Implement Private Provider Invocation Receipts
 
@@ -51,8 +53,16 @@ Each child must incorporate the reviewed predecessor state named by its
   remain unchanged.
 - Observer faults make the receipt unknown without changing retrieval,
   provider, routing, output, or exception behavior.
-- Validation distinguishes a 40,001 successful catalog operation from a 40,002
-  terminal failure even when all reached SDK expressions returned successfully.
+- Regeneration-grade aggregate validation enforces per-category bounds and the
+  exact L1 -> metadata -> card1 -> card2 -> L2 source prerequisites; the
+  all-success 40,002 shape is exactly list=20,001, metadata=1, card=20,000.
+- Interruption precedence names both cancellation classes and all non-
+  `Exception` `BaseException` values, while every other `Exception` is error;
+  observation preserves the identical exception.
+- Shared catalog readers use an explicit private observer argument defaulting to
+  null. Only automatic retrieve passes it; apply/catalog/direct callers remain
+  unobserved. Final CLI wiring recertifies only the governed CLI hash in the
+  otherwise frozen schema-v3 routing artifact.
 - No child performs live provider/model/catalog/content, canary, migration,
   release, installed-tool, or global-state operations.
 
@@ -60,8 +70,9 @@ Each child must incorporate the reviewed predecessor state named by its
 
 - Every child criterion maps to durable evidence at an exact commit.
 - Focused fake-only tests prove all governed call boundaries, fallback paths,
-  outcomes, conditional bounds, nested/concurrent lifecycle, strict canonical
-  validation, privacy, and observer failure isolation.
+  exact cancellation identity, aggregate source-order tables, conditional
+  bounds, nested/concurrent lifecycle, strict canonical validation, privacy,
+  caller isolation, and observer failure isolation.
 - Exact diff inspection proves no CLI/env/public API, automatic disk write,
   telemetry-v2 extension, production retention change, or unrelated source
   mutation.
@@ -80,9 +91,11 @@ main/develop integration are excluded.
 
 ## Blockers
 
-Independent review of the records-only ratified-contract candidate is pending.
-No child may move to `active` or execute until that review passes the exact
-contract commit and the owner/integration session activates the selected child.
+Independent review `29dbeef6-82a2-43b1-8fd3-b572f0d83f40` failed candidate
+`a458aeba95844230271ad50d4364281f4462ad5e` on three significant mechanical
+blockers. No child may move to `active` or execute until fresh independent
+rereview passes the repaired exact contract commit and the owner/integration
+session activates the selected child.
 
 ## Progress and notes
 
@@ -90,3 +103,10 @@ contract commit and the owner/integration session activates the selected child.
   ratification. The four bounded children are open but inactive. No source/test,
   build/test, telemetry/store, provider/model/network, migration, canary,
   release, or global-tool operation occurred in this records-only turn.
+- 2026-08-24: The FAIL review is recorded at
+  `.10x/reviews/2026-08-24-provider-client-invocation-contract-review.md`.
+  Governing specs/tickets now require an exact aggregate catalog state machine,
+  exact interruption precedence/identity, and automatic-retrieve-only explicit
+  catalog observer wiring with bounded final CLI receipt recertification. The
+  plan and every child remain open/inactive pending rereview; no implementation
+  or external operation ran.

@@ -4,6 +4,7 @@ Updated: 2026-08-24
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Research: .10x/research/2026-08-24-physical-provider-attempt-accounting-options.md
+Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
 
 # Provider Client Invocation Accounting
 
@@ -33,11 +34,14 @@ For every governed expression:
 
 - observer state is updated immediately before expression evaluation;
 - normal return records attempt outcome `success`;
-- a raised ordinary exception records `error`, except that a cancellation or
-  control-flow interruption records `interrupted`;
-- `KeyboardInterrupt`, `SystemExit`, `GeneratorExit`, and cancellation
-  exceptions are interruptions; other `Exception` instances are errors;
-- the original return value or the identical exception is passed through;
+- `asyncio.CancelledError` and `concurrent.futures.CancelledError` record
+  `interrupted`; this check MUST precede the generic `Exception` rule because
+  `concurrent.futures.CancelledError` is an `Exception`;
+- `KeyboardInterrupt`, `SystemExit`, `GeneratorExit`, and every other
+  `BaseException` that is not an `Exception` record `interrupted`;
+- every other `Exception` records `error`; and
+- the original return value or the identical exception object is passed through
+  without replacement or wrapping by the observer;
 - argument construction, validation, model work, resource acquisition, and a
   future that never reaches the expression count zero;
 - response parsing, ranking, normalization, and other post-return work add no
@@ -154,9 +158,24 @@ post-return work permits any terminal operation outcome.
 These route and invocation maxima are validator reachability limits, not
 operational budgets or permission for a canary to reach them.
 
-## Catalog-family boundary
+## Automatic-retrieve-only catalog boundary
 
-Only automatic retrieval's strong `read_remote_catalog` path is governed:
+Only automatic retrieve's strong `read_remote_catalog` call is governed. The
+shared reader is also called by apply and catalog-management code, so receipt
+scope activation alone MUST NOT cause catalog observation.
+
+`read_remote_catalog` MUST accept one private observer/ledger argument whose
+default is `None`. It MUST propagate that exact explicit argument through both
+namespace-list helpers, metadata observation, and both card-pass helpers. Those
+shared remote-catalog functions MUST NOT read the receipt `ContextVar` or obtain
+an active observer implicitly. Only the automatic-retrieve branch in
+`src/buoy_search/cli.py` may obtain the active private observer from the receipt
+scope and pass it. Apply, catalog CLI, direct-library, and every other caller
+MUST omit the argument and remain unobserved even when a receipt scope is
+active. The argument is an internal capability, not a public callback or new
+enablement surface.
+
+When that explicit observer is non-null, the governed expressions are:
 
 - `namespace_list_page`: each initial `client.namespaces(...)` expression and
   each reached `page.get_next_page()` continuation across both list passes;
@@ -165,17 +184,41 @@ Only automatic retrieval's strong `read_remote_catalog` path is governed:
   card-query passes.
 
 Client construction, `client.namespace(...)` resource acquisition, response
-normalization/iteration, eligibility work, catalog management calls, and
-catalog mutations count zero.
+normalization/iteration, eligibility work, catalog management calls, catalog
+mutations, and every shared-reader call with the default `None` observer count
+zero.
 
-A successful complete strong read processes at most 10,000 pages in each of
-four passes and one metadata expression, so its validator limit is 40,001. A
-terminal `error` or `interrupted` read may reach 40,002: the second namespace-
-list pass can successfully fetch the continuation after page 10,000 before the
-next-loop bound check fails. Therefore 40,002 may consist entirely of successful
-SDK expressions. The operation outcome, not invocation outcome totals, selects
-the 40,001 versus 40,002 validator bound. Neither value is an operational
-budget.
+The source order is exact:
+
+```text
+L1: first namespace-list pass
+M:  metadata call and schema validation
+C1: first card-query pass
+C2: second card-query pass
+L2: second namespace-list pass
+```
+
+Each successfully completed list or card pass contains 1..10,000 successful
+SDK expressions. `M` contains exactly one successful expression when complete.
+A provider expression error/interruption terminates the read. Local
+normalization, schema, consistency, or page-bound error/interruption can
+terminate after a successful expression without changing that expression's
+outcome.
+
+A successful complete read therefore reaches:
+
+- 2..20,000 successful `namespace_list_page` invocations, decomposable as
+  completed `L1` and `L2`, each 1..10,000;
+- exactly 1 successful `metadata` invocation; and
+- 2..20,000 successful `card_query_page` invocations, decomposable as completed
+  `C1` and `C2`, each 1..10,000.
+
+Its total is 5..40,001. A terminal read has per-category maxima 20,001 list,
+1 metadata, and 20,000 card invocations. The list maximum admits the final L2
+continuation fetched after page 10,000 and before the next-loop bound check.
+The 40,002 all-success terminal shape is exactly 20,001 list successes,
+1 metadata success, and 20,000 card successes. These are validator reachability
+limits, never operational budgets.
 
 ## Exact catalog object
 
@@ -197,23 +240,76 @@ error
 interrupted
 ```
 
-The nine counters sum to `invocation_count`; booleans are not integers.
-`metadata` totals zero or one. Across the family at most one invocation may be
-`error` or `interrupted`, because either stops the strong read. If an invocation
-is `error`, operation outcome MUST be `error`; if an invocation is
-`interrupted`, operation outcome MUST be `interrupted`.
+Booleans are not integers. The nine counters MUST sum to `invocation_count`.
+Across all three categories, the sum of `error` and `interrupted` MUST be at
+most one. If one invocation is `error`, operation outcome MUST be `error`; if
+one invocation is `interrupted`, operation outcome MUST be `interrupted`.
+A terminal operation MAY contain only successful invocations when local work
+fails or is interrupted after return.
 
-`outcome=null` means the catalog read was not begun and requires all counters
-and `invocation_count` to be zero. A begun read has a non-null outcome and may
-have zero calls only if it terminates before the first governed expression. A
-`success` read requires at least two successful namespace-list calls, exactly
-one successful metadata call, at least two successful card-query calls, no
-error/interrupted calls, and at most 40,001 total invocations. An `error` or
-`interrupted` read permits zero through 40,002 invocations, including successful
-calls followed by local post-return or page-bound failure/interruption.
+Per-category cardinalities are:
 
-Catalog aggregation MUST NOT retain pass number, cursor, namespace/card/provider
-identifier, page content, response, billing, URL, error detail, or timing.
+| Category | Successful operation | Terminal operation |
+| --- | --- | --- |
+| `namespace_list_page` | success 2..20,000; error=interrupted=0 | total 0..20,001; error+interrupted at most 1 |
+| `metadata` | success exactly 1; error=interrupted=0 | total 0..1 |
+| `card_query_page` | success 2..20,000; error=interrupted=0 | total 0..20,000; error+interrupted at most 1 |
+
+`outcome=null` means the catalog read was not begun and requires every counter
+and `invocation_count` to be zero. A begun terminal read may have zero calls
+only when it terminates before L1's first expression. `outcome=success` requires
+all invocations successful, exact metadata success, both list/card minimums,
+the two-pass decompositions above, and total at most 40,001.
+
+## Aggregate source-order validator
+
+Because the receipt intentionally retains no pass IDs, the validator MUST
+accept an aggregate only when its counters admit the ordered source execution
+`L1 -> M -> C1 -> C2 -> L2` under all rules below. It MUST reject an ambiguous
+or impossible aggregate rather than infer private stage identity; rejection
+makes the receipt unknown without affecting retrieval.
+
+1. Any metadata invocation requires a completed successful L1 of 1..10,000
+   list successes. Any card invocation requires that completed L1 and exactly
+   one successful metadata invocation.
+2. Aggregate list total greater than 10,000 is accepted as second-list reach
+   only when metadata succeeded and card successes can be decomposed into two
+   completed passes C1/C2, each 1..10,000. Thus list >10,000 with missing,
+   failed, interrupted, or fewer than two successful card calls is invalid.
+3. A metadata `error` or `interrupted` invocation is terminal: list calls MUST
+   all be successful with total 1..10,000, and every card counter MUST be zero.
+4. A card `error` or `interrupted` invocation is terminal: list calls MUST all
+   be successful with total 1..10,000, metadata MUST be one success, card total
+   MUST be 1..20,000, and no L2 call may be represented.
+5. A list `error` or `interrupted` with no metadata/card calls is an L1 terminal
+   and list total MUST be 1..10,000. A list `error` or `interrupted` after later
+   categories is an L2 terminal: metadata MUST be one success, cards MUST be
+   2..20,000 successes decomposable into completed C1/C2, and list total MUST be
+   2..20,001. No other category may contain a terminal invocation.
+6. With no invocation error/interruption, category presence still obeys the
+   same prerequisites: metadata cannot appear without 1..10,000 prior L1
+   successes; cards cannot appear without successful metadata; and list total
+   >10,000 cannot appear without two completed successful card passes.
+   Operation `error` or `interrupted` then represents local terminal work at or
+   after the last source-reachable stage.
+7. A success aggregate MUST be decomposable into L1/L2 list counts and C1/C2
+   card counts, each 1..10,000, with metadata exactly one success. A terminal
+   aggregate at the absolute 40,002 maximum MUST be exactly list 20,001,
+   metadata 1, card 20,000; any other composition totaling 40,002 is invalid.
+8. Mixed terminal invocations, a terminal invocation followed by evidence of a
+   later stage, metadata/card without prerequisites, successful operation with
+   a terminal invocation, any category overflow, and every total above 40,002
+   are invalid.
+
+The aggregate contract deliberately cannot authenticate an all-success 10,001-
+call L1 page-bound failure without retaining pass identity: rule 2 rejects that
+ambiguous shape unless successful metadata and two completed card passes prove
+L2 reach. Such a source-reachable but non-authoritative aggregate yields unknown
+rather than weakening source-order validation or adding pass IDs.
+
+Catalog aggregation MUST NOT retain pass number, stage marker, cursor,
+namespace/card/provider identifier, page content, response, billing, URL, error
+detail, or timing.
 
 ## Concurrency and failure isolation
 
@@ -237,17 +333,28 @@ failure.
    attempts even if SDK method-body entry did not occur for the first.
 3. One and two optional-schema fallbacks, with and without client-RRF fallback,
    validate the exact round grammar and 1..6 bound.
-4. Unrelated error, cancellation/control-flow interruption, post-response
-   failure, zero-attempt begun operation, explicit/automatic fanout, and
-   concurrent route ordering preserve exact outcomes without provider access.
-5. A minimum complete catalog read produces five successes; multipage fakes
-   produce exact aggregate categories.
-6. A successful catalog outcome validates through 40,001. A terminal local
-   page-bound failure with 40,002 successful expressions validates, while a
-   successful 40,002 and every total above 40,002 reject.
-7. Constructor/resource acquisition and response processing add zero.
-8. Exact-key, type, enum, count, sequence, privacy, disabled, and observer-fault
-   tests use local fakes only.
+4. `asyncio.CancelledError`, `concurrent.futures.CancelledError`,
+   `KeyboardInterrupt`, `SystemExit`, `GeneratorExit`, and another custom
+   non-`Exception` `BaseException` are interrupted; representative remaining
+   `Exception` types are errors; every case re-raises the identical object.
+5. Unrelated error, post-response failure, zero-attempt begun operation,
+   explicit/automatic fanout, and concurrent route ordering preserve exact
+   outcomes without provider access.
+6. A minimum complete catalog read produces five successes; multipage fakes
+   produce exact aggregate categories and two-pass decompositions.
+7. Validator tables cover every per-category boundary and reject metadata/card
+   without prerequisites, second-list-scale counts without successful metadata
+   and two completed card passes, terminal calls followed by later-stage
+   evidence, mixed terminal calls, and impossible 40,002 compositions.
+8. A successful catalog outcome validates through 40,001. The exact
+   list=20,001/metadata=1/card=20,000 all-success terminal shape validates at
+   40,002; a successful 40,002 and every total above 40,002 reject.
+9. Only automatic retrieve with an explicitly passed private observer records
+   catalog calls. Apply, catalog-management, direct-library, and default-`None`
+   calls remain zero even inside an active receipt scope.
+10. Constructor/resource acquisition and response processing add zero.
+11. Exact-key, type, enum, count, sequence, privacy, disabled, and observer-fault
+    tests use local fakes only.
 
 ## Explicit exclusions
 

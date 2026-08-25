@@ -4,6 +4,7 @@ Updated: 2026-08-24
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Authorization: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md
+Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
 
 # Private Canary Provider Client Invocation Receipt
 
@@ -56,6 +57,14 @@ automatic canary, import-time activation, process-global installation,
 automatic filesystem write, telemetry publication, database write, or network
 export. When no private scope is active, governed wrappers call their original
 expressions without allocating a ledger or serializing a receipt.
+
+The scope MAY expose one internal private catalog-observer capability bound to
+its ledger. Merely activating the scope MUST NOT make shared remote-catalog
+helpers consult the `ContextVar`. Only automatic retrieve's CLI branch may
+obtain and explicitly pass that capability to `read_remote_catalog`; the
+reader/helper argument defaults to `None`. Apply, catalog-management, and direct
+callers remain unobserved even inside an active scope. This capability is not a
+callback API and MUST NOT be retained or accepted after ledger sealing.
 
 Observer allocation or activation failure yields a disabled handle, runs the
 body unchanged, and returns null. Scope exit detaches activation and attempts
@@ -174,8 +183,8 @@ counting, completion, finalization, validation, encoding, decoding, or handoff
 failure MUST return null and MUST NOT change:
 
 - SDK call count, order, arguments, or fallback/pagination behavior;
-- result or exception identity, cancellation, worker submission, routing,
-  ranking, evidence, output, or exit behavior;
+- result or exception-object identity, traceback propagation, cancellation,
+  worker submission, routing, ranking, evidence, output, or exit behavior;
 - existing telemetry graph, timing boundaries, persistence, or enablement; or
 - provider, model, catalog, content, filesystem, database, network, credential,
   release, or global-tool behavior.
@@ -206,15 +215,22 @@ No receipt is automatically written to telemetry storage or any other path.
 4. Explicitly propagated concurrent workers produce deterministic canonical
    ordering; unpropagated or never-run workers cannot yield an authoritative
    receipt.
-5. Normal return, body error, interruption, observer failure, premature exit,
-   late call, process-incomplete simulation, overflow, and every injected
-   synchronization/serialization fault preserve original behavior and return
-   bytes only when terminal authority is complete.
-6. Strict decode rejects unknown/missing/duplicate keys, wrong types/enums,
+5. Focused classification tests prove both standard cancellation classes,
+   named control-flow exceptions, a custom non-`Exception` `BaseException`, and
+   representative ordinary exceptions have exact interrupted/error precedence
+   and re-raise the identical object.
+6. Normal return, body error, observer failure, premature exit, late call,
+   process-incomplete simulation, overflow, and every injected synchronization/
+   serialization fault preserve original behavior and return bytes only when
+   terminal authority is complete.
+7. An active scope alone observes no shared catalog read; only an explicitly
+   passed live private capability records automatic retrieve, and a sealed or
+   invalid capability yields no receipt without changing the read.
+8. Strict decode rejects unknown/missing/duplicate keys, wrong types/enums,
    inconsistent totals, invalid sequence/outcome, conditional-bound overflow,
    invalid UTF-8, noncanonical bytes, and prohibited-data sentinels without
    echoing them.
-7. Canonical round-trip and privacy tests inspect exact bytes and require no
+9. Canonical round-trip and privacy tests inspect exact bytes and require no
    provider/network access, credential, model asset, telemetry store, database,
    filesystem persistence, or global tool state.
 

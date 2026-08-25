@@ -11,6 +11,7 @@ Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.m
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Implementation-Plan: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
+Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
 
 # Define Physical Provider Attempt Accounting
 
@@ -69,9 +70,11 @@ The five semantic decisions are explicitly owner-ratified and recorded at
 `.10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md`.
 No semantic blocker remains.
 
-Independent review of the exact records-only ratified-contract commit is
-pending. Until that review passes, this shaping ticket remains active and no
-implementation child may activate or execute.
+Independent review `29dbeef6-82a2-43b1-8fd3-b572f0d83f40` failed exact
+candidate `a458aeba95844230271ad50d4364281f4462ad5e` on three significant
+mechanical blockers. The repaired records-only contract is pending fresh
+independent rereview. Until that rereview passes, this shaping ticket remains
+active and no implementation child may activate or execute.
 
 ## Progress and notes
 
@@ -131,6 +134,19 @@ implementation child may activate or execute.
   bounded open/inactive children own core/scope, content, catalog, and integrated
   validation. This shaping ticket is active pending independent review of the
   exact records-only contract commit; no source/test or operational work ran.
+- 2026-08-24: Independent contract review
+  `29dbeef6-82a2-43b1-8fd3-b572f0d83f40` returned FAIL for candidate
+  `a458aeba95844230271ad50d4364281f4462ad5e`. The review is recorded at
+  `.10x/reviews/2026-08-24-provider-client-invocation-contract-review.md` and
+  found three significant mechanical gaps: weak aggregate catalog source-order
+  validation, ambiguous cancellation precedence, and ambient widening risk in
+  the shared catalog reader. The active specs now require per-category maxima
+  plus exact L1 -> metadata -> card1 -> card2 -> L2 prerequisites; explicit
+  cancellation/control-flow precedence with identical-exception tests; and a
+  default-null private observer propagated only by automatic retrieve. The
+  integration child owns final CLI-byte review and exact schema-v3 CLI-hash-only
+  recertification. Owner semantics are unchanged. Ticket remains active pending
+  fresh independent rereview; no source/test or operational work ran.
 
 ## References
 
