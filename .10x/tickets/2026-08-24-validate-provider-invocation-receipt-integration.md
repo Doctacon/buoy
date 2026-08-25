@@ -4,6 +4,8 @@ Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
 Depends-On: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipt-core.md, .10x/tickets/2026-08-24-instrument-content-provider-invocations.md, .10x/tickets/2026-08-24-instrument-catalog-provider-invocations.md
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
+Authorization-Evidence: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md, .10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md
+Downstream-Canary: .10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
@@ -115,9 +117,11 @@ changes are excluded.
 
 The governing contract has independent PASS rereview at
 `.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md`.
-All three implementation predecessors must still be done at reviewed exact
-commits, and this child must be explicitly activated before execution. Ticket
-remains open/inactive.
+All three implementation predecessors must still be done at independently
+reviewed exact commits, and this child must be explicitly activated in a later
+turn before execution. Ticket remains open/inactive. Its exact final fake-only
+commit must pass independent integration review before the separate downstream
+live-canary ticket may activate.
 
 ## Progress and notes
 
@@ -134,3 +138,7 @@ remains open/inactive.
   a blocker; all predecessor dependencies and explicit activation remain. No
   CLI wiring, source/test implementation, validation, or CLI receipt
   recertification ran.
+- 2026-08-24: Current owner authorization links the separately bounded one-time
+  live canary as a downstream dependent. This integration child and canary both
+  remain open/inactive; canary activation requires this exact final fake-only
+  commit to pass independent review. No source/test or operational command ran.

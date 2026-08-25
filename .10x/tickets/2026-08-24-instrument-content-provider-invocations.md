@@ -4,6 +4,7 @@ Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
 Depends-On: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipt-core.md
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
+Authorization-Evidence: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md, .10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
@@ -72,8 +73,9 @@ generic retry, release, and global-tool changes are excluded.
 
 The governing contract has independent PASS rereview at
 `.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md`.
-The core child must still be done at a reviewed exact commit, and this child
-must be explicitly activated before execution. Ticket remains open/inactive.
+The core child must still be done at an independently reviewed exact commit,
+and this child must be explicitly activated in a later turn before execution.
+Ticket remains open/inactive.
 
 ## Progress and notes
 

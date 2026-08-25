@@ -4,6 +4,7 @@ Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
 Depends-On: None
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
+Authorization-Evidence: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md, .10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
@@ -102,3 +103,6 @@ open ticket remains inactive.
   commit `cb4a76b97f68fcdfc2816c49c33b5b23e9b5f899`. The review blocker is
   resolved; explicit activation remains required. Ticket stays open/inactive,
   and no implementation or validation ran.
+- 2026-08-24: Current owner authorization is linked. This core is the next
+  eligible source child, but it remains open/inactive and cannot activate in
+  this records-only turn. No source/test or operational command ran.

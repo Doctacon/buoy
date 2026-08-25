@@ -4,6 +4,7 @@ Updated: 2026-08-24
 Parent: None
 Depends-On: None
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
+Authorization-Evidence: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md, .10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
@@ -41,7 +42,18 @@ source work, provider access, canary execution, or activation of a child.
 
 Only one implementation child may be active in a writer worktree at a time.
 Each child must incorporate the reviewed predecessor state named by its
-`Depends-On` graph.
+`Depends-On` graph. The core is the next eligible source child, but it remains
+open/inactive and MUST be explicitly activated in a later implementation turn.
+Content and catalog may begin only after the exact core commit is independently
+reviewed. Integration may begin only after all three predecessors are done at
+reviewed exact commits.
+
+The separate one-time live canary at
+`.10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md`
+is not a fifth implementation child. It depends on this plan's final integration
+child and may activate only after the exact integrated fake-only commit passes
+independent review. No implementation or canary may activate in this
+records-only authorization turn.
 
 ## Integration and coherence requirements
 
@@ -118,3 +130,8 @@ activates that selected child.
   attached as prior review; current PASS is the governing review. The parent and
   all four children remain open/inactive. Dependency and explicit-activation
   gates remain unchanged; no implementation or operational work ran.
+- 2026-08-24: Current owner authorization is linked. Core is the next eligible
+  source child but remains open/inactive; content/catalog still require reviewed
+  core, integration still requires all predecessors, and the separate live
+  canary requires reviewed final integration. No child or canary activated and
+  no source/test or operational command ran in this records-only turn.
