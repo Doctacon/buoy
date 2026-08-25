@@ -1,4 +1,4 @@
-Status: open
+Status: active
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
@@ -230,3 +230,10 @@ turn does not activate or execute it.
   activation-ready but remains open/inactive and unrun; this reconciliation
   performed no probe, model, provider, network, telemetry/store, build, test,
   or global-tool operation.
+- 2026-08-24: Activated only this ticket for its exact one-discarded-warm-up
+  plus five-retained provider-free construction campaign from clean execution
+  HEAD `f43847767513a9e5d1854f928485692e12737e35`, bound to source commit
+  `dd0e155d26af6b0cfbc9872606c5861e0d3b4306` and tree
+  `f9edc5cbaa76d342239901d99f75013846c6e278`. No child/model process had
+  started when this activation was recorded; all preflight, no-retry, privacy,
+  cleanup, and failure rules remain controlling.
