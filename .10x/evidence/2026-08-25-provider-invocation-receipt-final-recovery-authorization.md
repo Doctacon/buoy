@@ -2,6 +2,7 @@ Status: recorded
 Created: 2026-08-25
 Updated: 2026-08-25
 Relates-To: .10x/decisions/one-time-provider-invocation-receipt-final-recovery.md, .10x/tickets/2026-08-25-provider-invocation-receipt-final-recovery-plan.md
+Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-activation-review.md
 
 # Provider Invocation Receipt Final Recovery Authorization
 

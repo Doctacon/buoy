@@ -3,6 +3,7 @@ Created: 2026-08-25
 Updated: 2026-08-25
 Supersedes: .10x/decisions/superseded/one-time-provider-invocation-receipt-canary-fix-offline-one-live.md
 Authorization: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-authorization.md
+Shaping-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-activation-review.md
 Plan: .10x/tickets/2026-08-25-provider-invocation-receipt-final-recovery-plan.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md

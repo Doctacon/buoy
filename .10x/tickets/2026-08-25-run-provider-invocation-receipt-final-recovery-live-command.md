@@ -7,6 +7,7 @@ Activation: inactive
 Eligibility: ineligible-until-exact-preparation-pass-go
 Decision: .10x/decisions/one-time-provider-invocation-receipt-final-recovery.md
 Authorization: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-authorization.md
+Shaping-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-activation-review.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Attempt-Accounting: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
