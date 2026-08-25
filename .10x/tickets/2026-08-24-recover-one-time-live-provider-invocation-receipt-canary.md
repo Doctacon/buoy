@@ -4,7 +4,9 @@ Updated: 2026-08-24
 Parent: None
 Depends-On: .10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-integration.md
 Activation: consumed
-Decision: .10x/decisions/one-time-live-provider-invocation-receipt-canary-recovery.md
+Eligibility: ineligible
+Decision: .10x/decisions/superseded/one-time-live-provider-invocation-receipt-canary-recovery.md
+Terminal-Decision: .10x/decisions/provider-invocation-receipt-live-canary-attempts-are-permanently-stopped.md
 Authorization-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-canary-recovery-authorization.md
 Authorization-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-canary-recovery-authorization-review.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
@@ -12,6 +14,9 @@ Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Blocked-Predecessor: .10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md
 Predecessor-Failure: .10x/evidence/2026-08-24-provider-invocation-receipt-canary-preflight-failure.md
 Preparation-Failure: .10x/evidence/2026-08-24-provider-invocation-receipt-canary-recovery-preparation-failure.md
+Post-Operation-Repository-State: .10x/evidence/2026-08-24-provider-invocation-receipt-canary-recovery-post-operation-repository-state.md
+Historical-Fail-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-canary-recovery-historical-fail-review.md
+Terminal-Pass-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-canary-recovery-terminal-pass-review.md
 Dependency-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-integration-closure.md
 Dependency-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integration-review.md
 Reviewed-Dependency: commit 0b27c4eaa2449493125f4040af3cd1f7c926b531, tree 9017c4a335938faca80cdded54545df8b79c12f8
@@ -394,7 +399,10 @@ unrelated cleanup; source/test/spec change.
 Recovery preparation returned nonzero after the one permitted wheel-only build.
 The build and preparation authorities are consumed. No build, validator,
 preflight, alternate inspector, candidate substitution, preparation GO, or live
-execution may resume under this ticket.
+execution may resume under this ticket. The owner-ratified terminal decision
+makes this ticket permanently ineligible and prohibits any retry, successor
+recovery, investigation rerun, or rebinding of the live command that never
+began.
 
 ## Progress and notes
 
@@ -442,3 +450,25 @@ execution may resume under this ticket.
   `.10x/evidence/2026-08-24-provider-invocation-receipt-canary-recovery-preparation-failure.md`.
   This ticket is blocked permanently; preparation GO and live execution are not
   eligible.
+- 2026-08-24: Terminal records-only reconciliation durably records the separate
+  historical FAIL at
+  `.10x/reviews/2026-08-24-provider-invocation-receipt-canary-recovery-historical-fail-review.md`
+  and fresh PASS at
+  `.10x/reviews/2026-08-24-provider-invocation-receipt-canary-recovery-terminal-pass-review.md`.
+  The PASS targets supplemental commit
+  `cade38ecb4509d340cb74c6873bddfb3d561ba91`, tree
+  `f938dfb968a0e60c6490632f82e30175b6ec9272`, and resolves only the historical
+  review's missing exact tree/status/diff attestation for failure commit
+  `5ec4ab335b8d3dceadc4115c1cf5691c4573ea68`, tree
+  `ba1982d33b0ad81300730ff56ae8b3b893396d37`. The current owner ratified
+  permanent stop in
+  `.10x/decisions/provider-invocation-receipt-live-canary-attempts-are-permanently-stopped.md`.
+  This ticket remains `blocked`, activation is `consumed`, and eligibility is
+  permanently `ineligible`. Exact source commit
+  `0b27c4eaa2449493125f4040af3cd1f7c926b531`, tree
+  `9017c4a335938faca80cdded54545df8b79c12f8`, remains independently reviewed
+  fake-only application-boundary implementation. No live command began, no
+  receipt or partial ledger exists, and no installed identity or live-provider
+  behavior is proved. This reconciliation creates no retry, investigation, GO,
+  or live authority and changes no immutable failure evidence, source, tests,
+  or specifications.

@@ -3,7 +3,10 @@ Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
 Depends-On: .10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-integration.md
-Decision: .10x/decisions/one-time-live-provider-invocation-receipt-canary.md
+Activation: consumed
+Eligibility: ineligible
+Decision: .10x/decisions/superseded/one-time-live-provider-invocation-receipt-canary.md
+Terminal-Decision: .10x/decisions/provider-invocation-receipt-live-canary-attempts-are-permanently-stopped.md
 Authorization-Evidence: .10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
@@ -13,6 +16,8 @@ Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activat
 Dependency-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-integration-closure.md
 Preflight-Failure: .10x/evidence/2026-08-24-provider-invocation-receipt-canary-preflight-failure.md
 Recovery-Successor: .10x/tickets/2026-08-24-recover-one-time-live-provider-invocation-receipt-canary.md
+Recovery-Historical-Fail-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-canary-recovery-historical-fail-review.md
+Recovery-Terminal-Pass-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-canary-recovery-terminal-pass-review.md
 Dependency-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integration-review.md
 Reviewed-Dependency: commit 0b27c4eaa2449493125f4040af3cd1f7c926b531, tree 9017c4a335938faca80cdded54545df8b79c12f8
 
@@ -298,9 +303,11 @@ resumption is authorized. The complete owned temporary root was removed; no
 isolated install, model/cache acceptance, credential read, telemetry/store
 operation, provider/network operation, or automatic command began.
 
-The one-time live command authority remains unconsumed, but this ticket cannot
-resume under its consumed no-rebuild/no-retry preparation contract. Any later
-attempt requires separately shaped and owner-ratified authority.
+The one-time live command never began and was not consumed by execution, but
+this ticket cannot resume under its consumed no-rebuild/no-retry preparation
+contract. The owner-ratified terminal decision makes this ticket permanently
+ineligible and prohibits rebinding the former conditional command availability
+to another recovery, retry, successor, or later execution.
 
 ## Progress and notes
 
@@ -358,3 +365,20 @@ attempt requires separately shaped and owner-ratified authority.
   credential, provider/network, telemetry/store/database, command, global-tool,
   release, deployment, publication, push, or ref mutation occurred in this
   records-only graph update.
+- 2026-08-24: Terminal records-only reconciliation preserves the separate
+  historical FAIL at
+  `.10x/reviews/2026-08-24-provider-invocation-receipt-canary-recovery-historical-fail-review.md`
+  and fresh PASS at
+  `.10x/reviews/2026-08-24-provider-invocation-receipt-canary-recovery-terminal-pass-review.md`.
+  The PASS resolves only the recovery review's missing exact target tree/status/
+  diff attestation; it does not erase the FAIL or prove a live operation. The
+  current owner ratified permanent stop in
+  `.10x/decisions/provider-invocation-receipt-live-canary-attempts-are-permanently-stopped.md`.
+  This ticket remains `blocked`, its preparation activation is `consumed`, and
+  it is permanently `ineligible`. Exact source commit
+  `0b27c4eaa2449493125f4040af3cd1f7c926b531`, tree
+  `9017c4a335938faca80cdded54545df8b79c12f8`, remains independently reviewed
+  fake-only application-boundary implementation. No live command began, no
+  receipt or partial ledger exists, and this reconciliation creates no retry,
+  investigation, GO, or live authority. Immutable failure evidence, source,
+  tests, and specifications were not changed.

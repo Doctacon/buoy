@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-24
 Updated: 2026-08-24
-Relates-To: .10x/tickets/2026-08-24-measure-provider-free-retriever-construction.md, .10x/decisions/one-time-live-provider-invocation-receipt-canary.md, .10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md, .10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipts.md, .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md
+Relates-To: .10x/tickets/2026-08-24-measure-provider-free-retriever-construction.md, .10x/decisions/superseded/one-time-live-provider-invocation-receipt-canary.md, .10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md, .10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipts.md, .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md
 Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
 
 # Provider-Free Probe and One-Time Live Receipt Canary Authorization
@@ -97,7 +97,7 @@ The owner separately ratified this exact contract:
 > created.
 
 That approval is implemented by
-`.10x/decisions/one-time-live-provider-invocation-receipt-canary.md` and
+`.10x/decisions/superseded/one-time-live-provider-invocation-receipt-canary.md` and
 `.10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md`.
 The previously owner-approved automatic case
 `m01-dagster-turbopuffer-quality`, loaded privately from the digest-bound
