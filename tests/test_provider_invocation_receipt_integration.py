@@ -209,6 +209,92 @@ class AutomaticReceiptIntegrationTests(unittest.TestCase):
         self.assertEqual(explicit["content"]["logical_operation_count"], 1)  # type: ignore[index]
         self.assertEqual(explicit["content"]["invocation_count"], 1)  # type: ignore[index]
 
+    def test_explicit_preview_constructs_no_retriever_or_provider_and_records_zero(self) -> None:
+        stdout = StringIO()
+        stderr = StringIO()
+        with receipt._provider_invocation_receipt_scope() as handle, patch(
+            "buoy_search.cli.HybridRetriever.from_config",
+            side_effect=AssertionError("explicit preview constructed retriever"),
+        ) as single_retriever, patch(
+            "buoy_search.cli.MultiNamespaceRetriever.from_configs",
+            side_effect=AssertionError("explicit preview constructed multi retriever"),
+        ) as multi_retriever, patch(
+            "buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY",
+            side_effect=AssertionError("explicit preview constructed provider client"),
+        ) as provider, patch.object(os, "environ", {}), redirect_stdout(
+            stdout
+        ), redirect_stderr(stderr):
+            result = cli.main(
+                [
+                    "retrieve",
+                    PRIVATE_QUERY,
+                    "--namespace",
+                    "site-explicit-preview-v1",
+                    "--dry-run",
+                    "--json",
+                ]
+            )
+
+        payload = decoded(handle)
+        preview = json.loads(stdout.getvalue())
+        self.assertEqual((result, stderr.getvalue()), (0, ""))
+        self.assertEqual(
+            {
+                key: preview[key]
+                for key in (
+                    "command",
+                    "dry_run",
+                    "plan",
+                    "credentials_required",
+                    "turbopuffer_api_calls",
+                    "api_calls_occurred",
+                    "query",
+                    "namespace",
+                    "content_retrieval_occurred",
+                )
+            },
+            {
+                "command": "retrieve",
+                "dry_run": True,
+                "plan": True,
+                "credentials_required": False,
+                "turbopuffer_api_calls": False,
+                "api_calls_occurred": False,
+                "query": PRIVATE_QUERY,
+                "namespace": "site-explicit-preview-v1",
+                "content_retrieval_occurred": False,
+            },
+        )
+        single_retriever.assert_not_called()
+        multi_retriever.assert_not_called()
+        provider.assert_not_called()
+        self.assertEqual(
+            payload["catalog"],
+            {
+                "outcome": None,
+                "invocation_count": 0,
+                "namespace_list_page": {
+                    "success": 0,
+                    "error": 0,
+                    "interrupted": 0,
+                },
+                "metadata": {"success": 0, "error": 0, "interrupted": 0},
+                "card_query_page": {
+                    "success": 0,
+                    "error": 0,
+                    "interrupted": 0,
+                },
+            },
+        )
+        self.assertEqual(
+            payload["content"],
+            {
+                "logical_operation_count": 0,
+                "invocation_count": 0,
+                "operations": [],
+            },
+        )
+
     def test_automatic_live_keeps_catalog_and_concurrent_worker_content_separate(self) -> None:
         barrier = threading.Barrier(3)
         cards = [make_card(f"site-live-{index}-v1") for index in range(1, 4)]

@@ -207,3 +207,16 @@ may activate.
   canary, routing-artifact, release, installed-tool, or global-tool operation
   ran. Ticket remains active for independent CLI-byte review and later governed
   artifact recertification; this source/test staging turn must not close it.
+- 2026-08-24: Repaired the exact staged-CLI review finding by adding the missing
+  explicit `--namespace ... --dry-run --json` fake receipt case. It proves exit
+  0 and expected local-preview output with no stderr, no content retriever or
+  remote provider construction, catalog outcome null with all counters zero,
+  and zero content operations/invocations. The four-module receipt suite now
+  passes 91 tests and 147 subtests independently on Python 3.11 and 3.13 in
+  credential-removed offline runs. The initial Python 3.11 collection attempt
+  lacked the normal ignored Hatch-generated `_version.py`; reruns used a
+  temporary ignored validation shim, which was removed with the generated
+  virtual environment afterward. No production source or routing artifact was
+  changed. `cli.py` remains SHA-256
+  `c6b575e160c5379b8a7214b3434a06d47864f0414e1478f44bcddeff313609ce`;
+  routing artifact recertification remains intentionally pending.
