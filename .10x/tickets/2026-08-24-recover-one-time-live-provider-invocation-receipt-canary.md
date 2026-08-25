@@ -6,6 +6,7 @@ Depends-On: .10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-in
 Activation: inactive
 Decision: .10x/decisions/one-time-live-provider-invocation-receipt-canary-recovery.md
 Authorization-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-canary-recovery-authorization.md
+Authorization-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-canary-recovery-authorization-review.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Blocked-Predecessor: .10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md
@@ -402,3 +403,12 @@ independent GO bound to its evidence commit/tree and still-identical candidate.
   source export, build, wheel, install, model/cache, credential, provider,
   network, telemetry/store/database, command, global-tool, release, deployment,
   publication, push, or ref mutation occurred in this records-only turn.
+- 2026-08-24: Independent review passed exact recovery-authorization candidate
+  commit `4ea0ff771f0d5559ecb04e32f105c76ed0d5148c`, tree
+  `941360b413c28e5b6781c8e6abd60f4f50443ff3`, with no blocker. The records
+  graph is recovery-activation-ready, but this ticket remains open/inactive
+  pending a separate authorized activation record. This PASS did not activate
+  preparation and is not the independent GO required after a future complete
+  preparation PASS. No build, install, model/cache, credential, provider,
+  network, telemetry/store/database, command, global-tool, release, deployment,
+  publication, push, or ref mutation occurred in this review reconciliation.

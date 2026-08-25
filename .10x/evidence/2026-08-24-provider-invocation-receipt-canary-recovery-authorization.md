@@ -2,6 +2,7 @@ Status: recorded
 Created: 2026-08-24
 Updated: 2026-08-24
 Relates-To: .10x/decisions/one-time-live-provider-invocation-receipt-canary-recovery.md, .10x/tickets/2026-08-24-recover-one-time-live-provider-invocation-receipt-canary.md, .10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md, .10x/evidence/2026-08-24-provider-invocation-receipt-canary-preflight-failure.md
+Review: .10x/reviews/2026-08-24-provider-invocation-receipt-canary-recovery-authorization-review.md
 
 # Provider Invocation Receipt Canary Recovery Authorization
 

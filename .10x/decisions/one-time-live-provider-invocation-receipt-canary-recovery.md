@@ -2,6 +2,7 @@ Status: active
 Created: 2026-08-24
 Updated: 2026-08-24
 Authorization: .10x/evidence/2026-08-24-provider-invocation-receipt-canary-recovery-authorization.md
+Review: .10x/reviews/2026-08-24-provider-invocation-receipt-canary-recovery-authorization-review.md
 Original-Decision: .10x/decisions/one-time-live-provider-invocation-receipt-canary.md
 Blocked-Predecessor: .10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md
 Predecessor-Failure: .10x/evidence/2026-08-24-provider-invocation-receipt-canary-preflight-failure.md
