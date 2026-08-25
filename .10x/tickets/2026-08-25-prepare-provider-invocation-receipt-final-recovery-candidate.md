@@ -21,6 +21,7 @@ Historical-Repair-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt
 Historical-Supplemental-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate.md
 Historical-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate-review.md
 Preflight-Failure: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-live-preflight-failure.md
+Current-Preparation-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-regression-candidate.md
 Historical-Reviewed-Evidence: commit fa70a8c3e79d2df4d5b643f7bc1cc8af462f51ec, tree 45b2684c7d2f71e7c03a65e2d9bd5e201b923ffa
 Historical-Candidate-GO: GO, wheel SHA-256 42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87, stale after retained handoff deletion
 Command-Start-Count: 0
@@ -435,6 +436,22 @@ is zero and live authority is unconsumed.
   deletion. The live child remains blocked/inactive and its sole authority is
   unconsumed. This records-only correction did not build, access any cache/model/
   credential/provider/network/telemetry behavior, issue GO, or run live.
+- 2026-08-25: Provider-free regression recovery rebuilt the exact VCS-aware
+  source and reproduced wheel SHA-256
+  `42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87`.
+  CPython 3.13 package/routing/help/import/strict-receipt checks and the 91/91
+  installed-wheel fake suite passed. Filesystem-only exact dual-model cache/ref/
+  asset inspection, source/owned UV-cache equality, telemetry-filesystem,
+  credential-presence metadata, global/tool/home, process, case/dataset, and
+  privacy gates passed. The complete explicit preflight-only run passed all ten
+  bounded categories; negative fixtures rejected candidate/evidence/model/
+  cache/telemetry/repository/credential/process/harness/case drift. The retained
+  immutable hashes and sanitized correction ledger are recorded at
+  `.10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-regression-candidate.md`.
+  No credential value, model import/construction, provider/network, telemetry
+  operation, retrieval, wrapper invocation, command start, or live receipt
+  occurred. The ticket remains active pending fresh independent exact-candidate
+  PASS/GO; the live child remains blocked/inactive.
 
 ## Historical acceptance mapping
 
