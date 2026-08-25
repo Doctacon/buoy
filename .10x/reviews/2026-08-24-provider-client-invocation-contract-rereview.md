@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-24
 Updated: 2026-08-24
-Target: commit cb4a76b97f68fcdfc2816c49c33b5b23e9b5f899, tree d0aa9598cbcc28bb35c16dd51d614980321abaad, .10x/specs/provider-client-invocation-accounting.md, .10x/specs/provider-client-invocation-receipt.md, .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
+Target: commit cb4a76b97f68fcdfc2816c49c33b5b23e9b5f899, tree d0aa9598cbcc28bb35c16dd51d614980321abaad, .10x/specs/provider-client-invocation-accounting.md, .10x/specs/provider-client-invocation-receipt.md, .10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipts.md
 Verdict: pass
 
 # Provider Client Invocation Contract Rereview

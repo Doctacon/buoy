@@ -7,7 +7,7 @@ Authorization: .10x/evidence/2026-08-24-provider-client-invocation-receipt-autho
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
-Implementation-Plan: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
+Implementation-Plan: .10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipts.md
 Prior-Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
 Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 

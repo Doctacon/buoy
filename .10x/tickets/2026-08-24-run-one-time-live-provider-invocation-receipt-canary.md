@@ -2,7 +2,7 @@ Status: open
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
-Depends-On: .10x/tickets/2026-08-24-validate-provider-invocation-receipt-integration.md
+Depends-On: .10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-integration.md
 Decision: .10x/decisions/one-time-live-provider-invocation-receipt-canary.md
 Authorization-Evidence: .10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
@@ -10,6 +10,9 @@ Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Historical-Canary: .10x/evidence/2026-08-24-local-telemetry-v2-canary.md
 Historical-Pilot: .10x/evidence/2026-08-24-v0-6-3-installed-telemetry-pilot.md
 Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
+Dependency-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-integration-closure.md
+Dependency-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integration-review.md
+Reviewed-Dependency: commit 0b27c4eaa2449493125f4040af3cd1f7c926b531, tree 9017c4a335938faca80cdded54545df8b79c12f8
 
 # Run One-Time Live Provider Invocation Receipt Canary
 
@@ -287,13 +290,10 @@ claim; unrelated cleanup or source widening.
 
 ## Blockers
 
-- `.10x/tickets/2026-08-24-validate-provider-invocation-receipt-integration.md`
-  and its three predecessors are open/inactive. The final integrated fake-only
-  commit does not exist and has not passed independent implementation review.
 - This canary ticket has not been explicitly activated.
 
-No semantic or operational-contract blocker remains. Satisfying the dependency
-does not automatically activate this ticket.
+No semantic, operational-contract, or dependency blocker remains. Dependency
+satisfaction does not automatically activate this ticket.
 
 ## Progress and notes
 
@@ -307,3 +307,17 @@ does not automatically activate this ticket.
   `4d044b44d492757dad80466968809aebdb76f161`, with no findings. This ticket
   remains open/inactive behind reviewed final integration and explicit later
   activation; no canary or external operation ran.
+- 2026-08-24: Fake-only dependency is now satisfied by done integration ticket
+  `.10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-integration.md`
+  at independently reviewed source commit
+  `0b27c4eaa2449493125f4040af3cd1f7c926b531`, tree
+  `9017c4a335938faca80cdded54545df8b79c12f8`, with exact records commit
+  `327bcf43b73b5941a0c94ab9fb4aa294456ea498`, tree
+  `0c187238d8abe09cf0d99aa8fdb53f1a5112900e`. Its focused evidence and final
+  PASS review confirm active-spec coherence, private/default-off behavior,
+  source-owned boundaries, concurrency/failure coverage, exact CLI receipt,
+  package reproduction, and no telemetry-v2 or routing-semantic change. This
+  repair satisfies only the dependency gate; the canary remains open/inactive
+  pending separate explicit activation. No build, model/cache, credential,
+  provider/network, telemetry/store/database, global-tool, release, or canary
+  operation ran.

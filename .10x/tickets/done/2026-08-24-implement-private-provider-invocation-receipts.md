@@ -1,4 +1,4 @@
-Status: open
+Status: done
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
@@ -8,9 +8,13 @@ Authorization-Evidence: .10x/evidence/2026-08-24-provider-client-invocation-rece
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
+Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
 CLI-Receipt-Decision: .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md
+Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-integration-closure.md
+Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integration-review.md
+Reviewed-Source: commit 0b27c4eaa2449493125f4040af3cd1f7c926b531, tree 9017c4a335938faca80cdded54545df8b79c12f8
+Reviewed-Records: commit 327bcf43b73b5941a0c94ab9fb4aa294456ea498, tree 0c187238d8abe09cf0d99aa8fdb53f1a5112900e
 
 # Implement Private Provider Invocation Receipts
 
@@ -45,23 +49,24 @@ source work, provider access, canary execution, or activation of a child.
      `1359284ad942224c6873ca810f7de93fd188ad9c`.
    These two children executed independently after the core was reviewed.
 3. After children 1-3,
-   `.10x/tickets/2026-08-24-validate-provider-invocation-receipt-integration.md`
-   performs integrated strict-model, privacy, concurrency, observer-fault, and
-   no-telemetry-v2 validation.
+   `.10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-integration.md`
+   performed integrated strict-model, privacy, concurrency, observer-fault, and
+   no-telemetry-v2 validation. It is done at independently reviewed exact source
+   commit `0b27c4eaa2449493125f4040af3cd1f7c926b531`, tree
+   `9017c4a335938faca80cdded54545df8b79c12f8`, with validation records commit
+   `327bcf43b73b5941a0c94ab9fb4aa294456ea498`, tree
+   `0c187238d8abe09cf0d99aa8fdb53f1a5112900e`.
 
-Only one implementation child may be active in a writer worktree at a time.
-Each child must incorporate the reviewed predecessor state named by its
-`Depends-On` graph. The core, content, and catalog dependencies are satisfied by
-their done tickets and independently reviewed exact source commits/trees.
-Integration is now dependency-eligible but remains open/inactive and MUST be
-explicitly activated in a later implementation turn.
+Only one implementation child was active in a writer worktree at a time. Each
+child incorporated the reviewed predecessor state named by its `Depends-On`
+graph. All four children are done at independently reviewed exact source
+commits/trees.
 
 The separate one-time live canary at
 `.10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md`
-is not a fifth implementation child. It depends on this plan's final integration
-child and may activate only after the exact integrated fake-only commit passes
-independent review. No implementation or canary may activate in this
-records-only authorization turn.
+is not a fifth implementation child. Its reviewed fake-only dependency is now
+satisfied. The canary remains open/inactive and still requires its own explicit
+later activation; this records-only closure runs no canary or external operation.
 
 ## Integration and coherence requirements
 
@@ -114,11 +119,6 @@ main/develop integration are excluded.
 
 None.
 
-The parent remains non-executable and open behind the integration child. Core,
-content, and catalog are done at independently reviewed exact source
-commits/trees. Integration remains open/inactive and may move to `active` or
-execute only when the owner/integration session explicitly activates it.
-
 ## Progress and notes
 
 - 2026-08-24: Opened as a non-executable parent after explicit owner
@@ -168,3 +168,34 @@ execute only when the owner/integration session explicitly activates it.
   but remains open/inactive pending separate explicit activation. No integration
   source/test, CLI receipt, routing artifact, validation, or operational work
   ran in this records-only closure.
+- 2026-08-24: Integration closed independently at exact source commit
+  `0b27c4eaa2449493125f4040af3cd1f7c926b531`, tree
+  `9017c4a335938faca80cdded54545df8b79c12f8`, with validation records commit
+  `327bcf43b73b5941a0c94ab9fb4aa294456ea498`, tree
+  `0c187238d8abe09cf0d99aa8fdb53f1a5112900e`. Focused evidence maps every child
+  and aggregate criterion and preserves exact dual-runtime 91/535/1,167 counts,
+  artifact-only equality, full package identities, and review history. Fresh
+  final review passed both active specs with no finding or repair. All four
+  children are done, aggregate blockers are none, and this non-executable parent
+  moves to `tickets/done`. The downstream live canary remains separate,
+  inactive, and unexecuted.
+
+## Retrospective
+
+- Splitting core, content, catalog, and integration kept lifecycle authority,
+  exact SDK boundaries, shared-reader capability, and aggregate coherence
+  independently reviewable while still converging on one exact receipt.
+- Narrow transformed-cancellation repairs discovered by content and catalog
+  execution show why child review must reconcile the outer sanitized exception
+  with the already-observed invocation outcome instead of assuming exception
+  class alone remains authoritative across layers.
+- The integration stage correctly owned the only shared-caller CLI wiring and
+  one-leaf source-receipt recertification. Keeping those out of earlier children
+  preserved their closure identities and made final scope containment exact.
+- Independent review at every child plus a fresh aggregate review prevented
+  predecessor PASS verdicts and raw test counts from substituting for integrated
+  acceptance and active-spec drift checks.
+- No new spec, decision, skill, or implementation ticket is needed from plan
+  closure. Live empirical limits remain durably isolated in the existing
+  one-time canary ticket, whose explicit activation and operational gates are
+  unchanged.

@@ -1,7 +1,7 @@
-Status: active
+Status: done
 Created: 2026-08-24
 Updated: 2026-08-24
-Parent: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
+Parent: .10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipts.md
 Depends-On: .10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipt-core.md, .10x/tickets/done/2026-08-24-instrument-content-provider-invocations.md, .10x/tickets/done/2026-08-24-instrument-catalog-provider-invocations.md
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
 Authorization-Evidence: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md, .10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md
@@ -9,9 +9,13 @@ Downstream-Canary: .10x/tickets/2026-08-24-run-one-time-live-provider-invocation
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
+Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
 CLI-Receipt-Decision: .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md
+Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-integration-closure.md
+Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integration-review.md
+Reviewed-Source: commit 0b27c4eaa2449493125f4040af3cd1f7c926b531, tree 9017c4a335938faca80cdded54545df8b79c12f8
+Reviewed-Records: commit 327bcf43b73b5941a0c94ab9fb4aa294456ea498, tree 0c187238d8abe09cf0d99aa8fdb53f1a5112900e
 
 # Validate Provider Invocation Receipt Integration
 
@@ -117,12 +121,6 @@ changes are excluded.
 ## Blockers
 
 None.
-
-Core, content, and catalog predecessors are done at independently reviewed exact
-commits/trees. This child remains open/inactive and must be explicitly activated
-in a later turn before execution. Its exact final fake-only commit must pass
-independent integration review before the separate downstream live-canary ticket
-may activate.
 
 ## Progress and notes
 
@@ -296,6 +294,39 @@ may activate.
   network, canary, release, installed/global-tool replacement, or remote Git
   operation ran. Fake-only validation does not prove a live provider receipt,
   physical wire attempts, billing, or rate-limit behavior; that remains owned
-  by the inactive downstream canary ticket. This ticket deliberately remains
-  `active` and its parent remains `open` pending fresh independent exact-
+  by the inactive downstream canary ticket. This ticket deliberately remained
+  `active` and its parent remained `open` pending fresh independent exact-
   candidate integration review.
+- 2026-08-24: Fresh independent exact-final review passed immutable source
+  commit `0b27c4eaa2449493125f4040af3cd1f7c926b531`, tree
+  `9017c4a335938faca80cdded54545df8b79c12f8`, using exact committed validation
+  records `327bcf43b73b5941a0c94ab9fb4aa294456ea498`, tree
+  `0c187238d8abe09cf0d99aa8fdb53f1a5112900e`. The review mapped all ten child
+  criteria and all five aggregate parent criteria, found both active specs
+  coherent, and reported no blocker or required repair. Focused integration
+  evidence preserves the historical staged-CLI FAIL, repaired staged-CLI PASS,
+  governing final PASS, exact commands/counts/package identities, artifact-only
+  equality, and residual fake-only limits. This records-only closure changed no
+  source, test, CLI, or routing-artifact byte; blockers are none and the ticket
+  moves to `tickets/done`.
+
+## Retrospective
+
+- The historical CLI review found one narrow acceptance gap that test counts did
+  not reveal: explicit preview had not been exercised under the private scope.
+  Adding that exact command path before artifact recertification kept the repair
+  test-only and prevented a final receipt from blessing incomplete coverage.
+- Explicit catalog capability made the shared-reader boundary mechanically
+  auditable: exhaustive AST inventory can prove one authorized caller instead
+  of relying on ambient-context intent.
+- Treating the routing receipt update as an artifact-only final commit allowed
+  parsed and text equality to prove that no routing semantic changed while
+  retaining byte identity with the independently reviewed CLI candidate.
+- Strict-offline validation exposed reusable harness hazards—editable-package
+  leakage and empty build caches. Recording failed attempts separately from the
+  corrected exact-source runs preserves evidence integrity without treating
+  environment discovery failures as implementation defects.
+- No new spec, decision, skill, or implementation follow-up is needed. The only
+  excluded empirical limits—live provider behavior, SDK retries, wire sends,
+  billing, and rate limits—already have the separately gated canary ticket as
+  their durable owner.
