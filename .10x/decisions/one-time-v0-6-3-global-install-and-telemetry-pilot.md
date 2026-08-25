@@ -1,8 +1,21 @@
-Status: active
+Status: superseded
 Created: 2026-08-24
 Updated: 2026-08-24
 
 # One-Time V0.6.3 Global Install and Telemetry Pilot
+
+## Disposition and consumed authority
+
+The sole global replacement, all three retrievals, and the sole flush began and
+completed under this decision. Exact `buoy-search 0.6.3` installed successfully;
+immediate acceptance passed; no rollback ran. All three commands exited zero
+and retained three private command-v2 observations. Independent review passed.
+
+Every execution authority is consumed, and unused rollback authority expired
+at successful candidate acceptance. This decision is superseded by consumption
+with no successor operational authority. It grants no reinstall, rollback,
+additional collection, provider/model access, telemetry operation, global-tool
+change, release action, or retry.
 
 ## Context
 
@@ -20,7 +33,7 @@ production-style read-only campaign retained as testing data.
 
 ## Decision
 
-Authorize `.10x/tickets/2026-08-24-install-v0-6-3-and-run-telemetry-pilot.md`
+Authorize `.10x/tickets/done/2026-08-24-install-v0-6-3-and-run-telemetry-pilot.md`
 to perform one exact release installation followed by one three-command pilot.
 
 ### Exact installation

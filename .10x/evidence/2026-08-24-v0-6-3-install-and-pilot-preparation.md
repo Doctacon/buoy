@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-24
 Updated: 2026-08-24
-Relates-To: .10x/tickets/2026-08-24-install-v0-6-3-and-run-telemetry-pilot.md, .10x/decisions/one-time-v0-6-3-global-install-and-telemetry-pilot.md, .10x/evidence/2026-08-24-buoy-v0-6-3-release-and-install-preflight.md
+Relates-To: .10x/tickets/done/2026-08-24-install-v0-6-3-and-run-telemetry-pilot.md, .10x/decisions/one-time-v0-6-3-global-install-and-telemetry-pilot.md, .10x/evidence/2026-08-24-buoy-v0-6-3-release-and-install-preflight.md
 
 # V0.6.3 Install and Telemetry Pilot Preparation
 

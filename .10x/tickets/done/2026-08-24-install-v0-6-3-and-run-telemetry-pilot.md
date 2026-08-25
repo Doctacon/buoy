@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
@@ -9,6 +9,8 @@ Preflight-Evidence: .10x/evidence/2026-08-24-buoy-v0-6-3-release-and-install-pre
 Execution-Evidence: .10x/evidence/2026-08-24-v0-6-3-installed-telemetry-pilot.md
 Specifications: .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/specs/local-telemetry-writer.md
 Knowledge: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
+Review: .10x/reviews/2026-08-24-v0-6-3-installed-telemetry-pilot-review.md
+Follow-Ups: .10x/tickets/2026-08-24-investigate-retrieve-command-outer-latency.md, .10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md
 
 # Install V0.6.3 and Run Telemetry Pilot
 
@@ -158,9 +160,37 @@ physical-attempt inference; recurring telemetry enablement; unrelated cleanup.
 - 2026-08-24: Global-install, all three retrieval, and sole flush authorities
   are consumed. Temporary private artifacts are pending removal after record
   commit; the accepted global installation and three telemetry rows remain.
+- 2026-08-24: Two independent reviewers returned PASS on exact execution commit
+  `084664c1c4c34400e768c840ff5c5bd8733ea5db`. Every criterion mapped to
+  evidence; both confirmed exact installed release identity, three once-only
+  successful commands, truthful telemetry, healthy persistence, privacy,
+  logical-operation bounds, side-effect invariants, and cleanup. Review is
+  recorded at
+  `.10x/reviews/2026-08-24-v0-6-3-installed-telemetry-pilot-review.md`.
+- 2026-08-24: Worker and parent workflow temporary roots/artifacts were removed.
+  Parent readback observed uv-managed `buoy-search v0.6.3`, exact clean task/root
+  Git state, and unchanged release refs without rerunning telemetry, retrieval,
+  flush, provider/model, credential, or database operations.
 
 ## Blockers
 
-- Mandatory independent final review is pending against the exact execution
-  evidence and record commit. No operational retry or additional collection is
-  authorized or required.
+None. Exact release installation and the three-command production telemetry
+pilot satisfy every acceptance criterion. Further collection or performance
+work requires separate authority.
+
+## Retrospective
+
+- Building and rehearsing exact tagged candidate/rollback wheels before the one
+  global replacement gave a bounded, reversible install without relying on an
+  attached GitHub release asset.
+- Command-level telemetry worked as designed and exposed the important result:
+  88.6%–96.7% of observed command latency was outside the nested pipeline. The
+  finding is owned by
+  `.10x/tickets/2026-08-24-investigate-retrieve-command-outer-latency.md` and is
+  not yet a latency distribution or optimization mandate.
+- Logical namespace spans remain distinct from physical provider attempts;
+  future transport accounting remains owned by
+  `.10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md`.
+- No instruction, specification, source, test, release, or rollback repair was
+  required. The installed release, three content-free rows, and immutable
+  backup are the intentional retained outcomes.
