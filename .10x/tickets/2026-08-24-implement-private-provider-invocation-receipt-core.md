@@ -9,6 +9,7 @@ Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
 Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
+Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
 
 # Implement Private Provider Invocation Receipt Core
 
@@ -106,3 +107,8 @@ open ticket remains inactive.
 - 2026-08-24: Current owner authorization is linked. This core is the next
   eligible source child, but it remains open/inactive and cannot activate in
   this records-only turn. No source/test or operational command ran.
+- 2026-08-24: Independent activation review passed exact authorization commit
+  `21f6a7b21d950f086ac6dfd7ab4f633883d6e066`, tree
+  `4d044b44d492757dad80466968809aebdb76f161`, with no findings. Core is the
+  next executable ticket but remains open/inactive pending explicit activation
+  in a later implementation turn; no implementation or operation ran.

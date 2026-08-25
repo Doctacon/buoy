@@ -9,6 +9,7 @@ Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
 Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
+Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
 
 # Instrument Content Provider Invocations
 
@@ -86,3 +87,8 @@ Ticket remains open/inactive.
   commit `cb4a76b97f68fcdfc2816c49c33b5b23e9b5f899`. Contract review is no longer
   a blocker; the reviewed-core dependency and explicit-activation gate remain.
   Ticket stays open/inactive, and no implementation or validation ran.
+- 2026-08-24: Independent activation review passed exact authorization commit
+  `21f6a7b21d950f086ac6dfd7ab4f633883d6e066`, tree
+  `4d044b44d492757dad80466968809aebdb76f161`, with no findings. This child
+  remains open/inactive behind independently reviewed core; no implementation
+  or operation ran.

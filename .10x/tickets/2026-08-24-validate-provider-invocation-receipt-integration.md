@@ -10,6 +10,7 @@ Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
 Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
+Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
 CLI-Receipt-Decision: .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md
 
 # Validate Provider Invocation Receipt Integration
@@ -142,3 +143,8 @@ live-canary ticket may activate.
   live canary as a downstream dependent. This integration child and canary both
   remain open/inactive; canary activation requires this exact final fake-only
   commit to pass independent review. No source/test or operational command ran.
+- 2026-08-24: Independent activation review passed exact authorization commit
+  `21f6a7b21d950f086ac6dfd7ab4f633883d6e066`, tree
+  `4d044b44d492757dad80466968809aebdb76f161`, with no findings. Integration
+  remains open/inactive behind all three reviewed predecessors; the canary
+  remains downstream and inactive. No implementation or operation ran.

@@ -6,6 +6,7 @@ Depends-On: .10x/tickets/done/2026-08-24-investigate-retrieve-command-outer-late
 Authorization-Evidence: .10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md
 Research: .10x/research/2026-08-24-retrieve-command-outer-latency-attribution.md
 Review: .10x/reviews/2026-08-24-retrieve-command-outer-latency-attribution-review.md
+Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
 
 # Measure Provider-Free Retriever Construction
 
@@ -223,3 +224,9 @@ turn does not activate or execute it.
   executable, and inactive; no child process, model, provider, network, store,
   telemetry, build, test, or global-tool operation ran in this records-only
   turn.
+- 2026-08-24: Independent activation review passed exact authorization commit
+  `21f6a7b21d950f086ac6dfd7ab4f633883d6e066`, tree
+  `4d044b44d492757dad80466968809aebdb76f161`, with no findings. The probe is
+  activation-ready but remains open/inactive and unrun; this reconciliation
+  performed no probe, model, provider, network, telemetry/store, build, test,
+  or global-tool operation.

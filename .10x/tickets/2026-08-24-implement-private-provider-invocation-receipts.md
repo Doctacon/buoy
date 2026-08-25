@@ -9,6 +9,7 @@ Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
 Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
+Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
 CLI-Receipt-Decision: .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md
 
 # Implement Private Provider Invocation Receipts
@@ -135,3 +136,8 @@ activates that selected child.
   core, integration still requires all predecessors, and the separate live
   canary requires reviewed final integration. No child or canary activated and
   no source/test or operational command ran in this records-only turn.
+- 2026-08-24: Independent activation review passed exact authorization commit
+  `21f6a7b21d950f086ac6dfd7ab4f633883d6e066`, tree
+  `4d044b44d492757dad80466968809aebdb76f161`, with no findings. The parent and
+  four children remain open/inactive. Core is the next executable ticket but
+  requires explicit later activation; no implementation or operation ran.
