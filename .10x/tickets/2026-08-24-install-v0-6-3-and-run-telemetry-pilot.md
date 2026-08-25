@@ -6,6 +6,7 @@ Depends-On: .10x/tickets/done/2026-08-24-run-local-telemetry-v2-canary.md
 Decision: .10x/decisions/one-time-v0-6-3-global-install-and-telemetry-pilot.md
 Authorization-Evidence: .10x/evidence/2026-08-24-v0-6-3-install-and-telemetry-pilot-authorization.md
 Preflight-Evidence: .10x/evidence/2026-08-24-buoy-v0-6-3-release-and-install-preflight.md, .10x/evidence/2026-08-24-v0-6-3-install-and-pilot-preparation.md
+Execution-Evidence: .10x/evidence/2026-08-24-v0-6-3-installed-telemetry-pilot.md
 Specifications: .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/specs/local-telemetry-writer.md
 Knowledge: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
 
@@ -133,9 +134,33 @@ physical-attempt inference; recurring telemetry enablement; unrelated cleanup.
   replacement, real-home telemetry inspection, provider/model operation,
   retrieval, or flush began; all one-time authorities remain unconsumed pending
   independent install gate.
+- 2026-08-24: Independent review issued `INSTALL-GO`. Fresh immutable bindings,
+  real compatible-v2/empty-queue/idle-writer state, old global identity,
+  rollback smoke, model cache, dataset, credential presence, refs, clean
+  worktrees, and process absence all passed immediately before replacement.
+- 2026-08-24: The sole global replacement exited zero and installed exact
+  uv-managed `buoy-search 0.6.3` on Python 3.13.0 with accepted source,
+  entry-point, dependency, help, status, and non-Buoy-tool identities. Immediate
+  acceptance passed, so no rollback ran.
+- 2026-08-24: All three authorized live commands began once, in order, and
+  exited zero with valid JSON-object results. Three new successful command-v2
+  rows recorded truthful enclosed command/pipeline timing, five logical
+  namespace spans, five hits each, zero failures, automatic fanout two,
+  supported automatic evidence, and no widening. The sole flush returned
+  `empty` because detached writers had already committed all rows.
+- 2026-08-24: Final schema-v2 snapshot/receipt count is 19 with empty queues,
+  idle/terminated writer, 12 preserved v1 runs, and byte-identical immutable
+  backup. Privacy scanning covered 87 private literals, five changed telemetry
+  artifacts, 5,781,571 bytes, and 488 exact new-trace string/JSON scalars with
+  zero matches. Model cache, refs, source, GitHub/release state, and non-Buoy
+  tools remained unchanged. Sanitized execution evidence is at
+  `.10x/evidence/2026-08-24-v0-6-3-installed-telemetry-pilot.md`.
+- 2026-08-24: Global-install, all three retrieval, and sole flush authorities
+  are consumed. Temporary private artifacts are pending removal after record
+  commit; the accepted global installation and three telemetry rows remain.
 
 ## Blockers
 
-None. Scope, effects, workload identities, logical-operation budget, failure
-behavior, privacy, retention, installation target, and acceptance evidence are
-explicitly user-ratified or record-backed.
+- Mandatory independent final review is pending against the exact execution
+  evidence and record commit. No operational retry or additional collection is
+  authorized or required.
