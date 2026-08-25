@@ -1,4 +1,4 @@
-Status: open
+Status: active
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
@@ -170,3 +170,9 @@ may activate.
   separately activated; no integration source/test, CLI receipt, routing
   artifact, validation, provider/network, canary, or operational work ran in
   this records-only closure.
+- 2026-08-24: Owner explicitly activated only this integration child for the
+  source/test staging portion from clean HEAD
+  `68a2d84a87c454d2d7dbea43fb6a1f7e67de6b8b`. CLI wiring and integrated local-
+  fake tests may proceed; routing calibration artifact mutation, provider,
+  network, credential, model, store, telemetry, canary, release, and global-
+  tool operations remain excluded. Source/test work has not begun.
