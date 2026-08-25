@@ -11,6 +11,9 @@ Authority-Correction: .10x/evidence/2026-08-25-provider-invocation-receipt-model
 Shaping-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-activation-review.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
+Candidate-Evidence: commit fa70a8c3e79d2df4d5b643f7bc1cc8af462f51ec, tree 45b2684c7d2f71e7c03a65e2d9bd5e201b923ffa
+Candidate-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate-review.md
+Candidate-GO: GO, wheel SHA-256 42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87
 
 # Provider Invocation Receipt Final Recovery Plan
 
@@ -24,22 +27,23 @@ credential, telemetry, provider/network, retrieval, GO, or live authority.
 
 ## Child sequence and dependencies
 
-1. `.10x/tickets/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md`
-   is the only provider-free preparation owner. It is active under its existing
-   separate provider-free activation and retains the exact candidate/runtime.
-   It must complete exact cache/ref/assets inspection and harness guards for both
-   authorized models without constructing either. It closes only with complete
-   sanitized evidence and a fresh independent candidate **PASS/GO** against the
-   retained immutable candidate/runtime, or reaches a truthful blocked outcome.
+1. `.10x/tickets/done/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md`
+   is `done`. It completed exact provider-free cache/ref/assets inspection and
+   harness guards for both authorized models without constructing either. Fresh
+   independent **PASS/GO** binds evidence commit
+   `fa70a8c3e79d2df4d5b643f7bc1cc8af462f51ec`, tree
+   `45b2684c7d2f71e7c03a65e2d9bd5e201b923ffa`, exact wheel SHA-256
+   `42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87`,
+   and the complete retained immutable handoff.
 2. `.10x/tickets/2026-08-25-run-provider-invocation-receipt-final-recovery-live-command.md`
-   depends on child 1 and begins blocked/inactive. It becomes eligible only when
-   child 1 has corrected exact preparation evidence and fresh independent
-   PASS/GO. It receives
-   the existing candidate and GO only, performs no build or harness correction,
-   and owns the sole live-command authority.
+   is open/inactive and eligible only for a separate future activation bound to
+   that exact GO, candidate, retained handoff, then-current clean repository
+   state, and unchanged operational pre-state. It may receive only the existing
+   candidate and GO, performs no build or harness correction, and owns the sole
+   live-command authority.
 
-The children are strictly sequential. Phase-1 activation is not live GO.
-Independent candidate review is not final execution review.
+The children remain strictly sequential. Phase-1 PASS/GO makes phase 2 eligible;
+it does not activate live execution and is not final execution review.
 
 ## Integration points and side-effect boundaries
 
@@ -108,8 +112,11 @@ SDK-retry, billing, cost, or rate-limit claim.
 
 ## Blockers
 
-None at the parent-planning level. Child 1 is active under its existing
-provider-free activation. Child 2 has the blockers recorded in its own ticket.
+None at the parent-planning level. Child 1 is done under exact fresh PASS/GO.
+Child 2 is open/inactive and eligible for separate activation; inactivity is a
+mandatory activation gate, not a blocker. The parent remains open until the live
+child reaches its truthful terminal disposition and aggregate closure criteria
+are reviewed.
 
 ## Progress and notes
 
@@ -125,3 +132,16 @@ provider-free activation. Child 2 has the blockers recorded in its own ticket.
   fresh independent PASS/GO. No source/spec/test change, model/cache access,
   build, credential read, telemetry, provider/network, retrieval, GO, or live
   command occurred.
+- 2026-08-25: Fresh independent review issued exact **PASS/GO** for corrected
+  dual-model evidence commit
+  `fa70a8c3e79d2df4d5b643f7bc1cc8af462f51ec`, tree
+  `45b2684c7d2f71e7c03a65e2d9bd5e201b923ffa`, exact wheel SHA-256
+  `42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87`,
+  and the unchanged retained handoff. The historical NO-GO remains truthful
+  against the superseded one-model contract. Child 1 mapped all ten criteria
+  and moved to `done`. Child 2 moved from blocked to open but remains inactive;
+  it is eligible only for separate activation bound to this exact GO/handoff
+  plus fresh current-state and operational pre-state reproof. The parent remains
+  open. No build, install, cache/model/credential/telemetry/provider/network/
+  retrieval/live command, receipt, handoff mutation, or other operation
+  occurred.

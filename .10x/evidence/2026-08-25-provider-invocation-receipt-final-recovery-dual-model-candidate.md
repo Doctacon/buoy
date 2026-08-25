@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-25
 Updated: 2026-08-25
-Relates-To: .10x/tickets/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md, .10x/decisions/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md, .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-preparation.md, .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-repair.md
+Relates-To: .10x/tickets/done/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md, .10x/decisions/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md, .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-preparation.md, .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-repair.md
 
 # Provider Invocation Receipt Final Recovery Dual-Model Candidate
 

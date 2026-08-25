@@ -67,7 +67,7 @@ and exactly its two sequential children.
 ### Phase 1: repeatable provider-free candidate preparation
 
 Only
-`.10x/tickets/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md`
+`.10x/tickets/done/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md`
 may prepare the candidate. Its existing provider-free activation remains active;
 this correction grants no new operational surface. Under that activation it
 MUST:

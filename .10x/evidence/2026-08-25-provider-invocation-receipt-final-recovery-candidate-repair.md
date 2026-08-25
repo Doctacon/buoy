@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-25
 Updated: 2026-08-25
-Relates-To: .10x/tickets/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md, .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-preparation.md, .10x/tickets/2026-08-25-run-provider-invocation-receipt-final-recovery-live-command.md
+Relates-To: .10x/tickets/done/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md, .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-preparation.md, .10x/tickets/2026-08-25-run-provider-invocation-receipt-final-recovery-live-command.md
 
 # Provider Invocation Receipt Final Recovery Candidate Repair
 

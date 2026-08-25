@@ -1,10 +1,10 @@
-Status: active
+Status: done
 Created: 2026-08-25
 Updated: 2026-08-25
 Parent: .10x/tickets/2026-08-25-provider-invocation-receipt-final-recovery-plan.md
 Depends-On: .10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-integration.md
-Activation: active
-Eligibility: eligible-under-existing-provider-free-activation
+Activation: complete
+Eligibility: completed-under-exact-dual-model-pass-go
 Decision: .10x/decisions/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md
 Authorization: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-authorization.md
 Authority-Correction: .10x/evidence/2026-08-25-provider-invocation-receipt-model-authority-correction.md
@@ -18,6 +18,9 @@ Implementation-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integ
 Preparation-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-preparation.md
 Repair-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-repair.md
 Supplemental-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate.md
+Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate-review.md
+Reviewed-Evidence: commit fa70a8c3e79d2df4d5b643f7bc1cc8af462f51ec, tree 45b2684c7d2f71e7c03a65e2d9bd5e201b923ffa
+Candidate-GO: GO, wheel SHA-256 42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87
 
 # Prepare Provider Invocation Receipt Final Recovery Candidate
 
@@ -254,13 +257,11 @@ not become authority.
 
 ## Blockers
 
-None. The active authority-correction decision resolves the flawed one-model
-governing boundary without changing the exact product candidate or ordinary
-automatic behavior. The exact retained source, wheel, runtime, and evidence-gate
-repair remain valid. This active child must still complete provider-free exact
-cache/ref/assets inspection and harness guards for both authorized models,
-without constructing either, then obtain a fresh independent PASS/GO. Until
-then the dependent live child remains blocked and inactive.
+None. Provider-free dual-model preparation passed and fresh independent PASS/GO
+is recorded against the exact evidence commit/tree, wheel SHA-256, and retained
+immutable handoff. The handoff remains retained and unchanged for the separately
+activated live child; this completed ticket grants no live activation or command
+authority.
 
 ## Progress and notes
 
@@ -343,3 +344,83 @@ then the dependent live child remains blocked and inactive.
   pending a fresh independent exact-candidate PASS/GO. No credential value,
   model import/construction/load, provider/network, telemetry operation,
   retrieval, global tool/install, or live command occurred.
+- 2026-08-25: Fresh independent review issued exact **PASS/GO** for evidence
+  commit `fa70a8c3e79d2df4d5b643f7bc1cc8af462f51ec`, tree
+  `45b2684c7d2f71e7c03a65e2d9bd5e201b923ffa`, and wheel SHA-256
+  `42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87`.
+  The review accepted both exact production models, complete provider-free
+  evidence, 91/91 fake-only results, equality and privacy claims, and retained
+  handoff hashes with no blocker. The prior NO-GO remains truthful historical
+  review against the superseded one-model contract. This candidate child closed
+  `done`; the complete owner-private source, wheel, owned cache, runtime,
+  installed package, harness, and content-free summary remain retained and
+  unchanged. The dependent live child became open/inactive and eligible only
+  for a separate future activation bound to this exact GO and handoff. No build,
+  install, cache/model/credential/telemetry/provider/network/retrieval/live
+  command, receipt, handoff mutation, or other operation occurred.
+
+## Acceptance mapping
+
+1. **Provider-free activation boundary — satisfied.** Activation commit
+   `38e3e144` and this ticket's progress show that only provider-free preparation
+   was activated. Supplemental evidence and fresh review confirm no credential,
+   model-construction, provider/network, retrieval, or live authority was used.
+2. **Exact VCS-aware source — satisfied.** Supplemental evidence and review bind
+   detached clean source commit `0b27c4eaa2449493125f4040af3cd1f7c926b531`,
+   tree `9017c4a335938faca80cdded54545df8b79c12f8`, with VCS-derived exact
+   package version and no source-ref mutation or override.
+3. **Owned isolated cache and write boundary — satisfied.** Preparation and
+   supplemental evidence bind the owned UV cache, read-only source-cache use,
+   contained writes, and exact existing-cache before/after equality; the fresh
+   review accepts those observations.
+4. **Repeatable provider-free correction — satisfied.** Preparation evidence
+   records three offline build attempts and bounded owned-state corrections;
+   supplemental evidence records only retained-harness correction against the
+   unchanged exact candidate. No one-build limit or product-source repair was
+   inferred.
+5. **Exact reviewed wheel — satisfied.** Evidence and GO bind exact filename,
+   version `0.5.2.dev87+g0b27c4eaa`, 730602 bytes, 78 inherited reviewed
+   members, and SHA-256
+   `42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87`;
+   no novel archive classifier ran.
+6. **Provider-free package and receipt validation — satisfied.** Exact isolated
+   distribution/module/entry-point, installed manifest, routing authority,
+   help/import, strict receipt behavior, and 91/91 fake-only tests passed as
+   recorded in preparation and supplemental evidence and accepted by review.
+7. **Exact dual-model readiness and guards — satisfied.** Supplemental evidence
+   binds complete BGE and MiniLM cache/ref/assets inventories and equality,
+   exact runtime settings, positive construction-shape checks, and rejection of
+   every other model, setting, substitution, and download without importing or
+   constructing a model. The fresh review accepts this corrected authority.
+8. **No prohibited operation or mutation — satisfied.** Evidence records no
+   credential-value access, model import/construction/load, provider/DNS/TLS/
+   network, telemetry operation, retrieval, global install/tool, repository-ref,
+   source/test/specification, external-state, or live operation. Equality,
+   process, cleanup, and privacy checks passed.
+9. **Complete immutable handoff — satisfied.** The exact retained source, wheel,
+   owned cache, runtime/dependencies, installed package, harness, and summary
+   remain private, immutable, and unchanged. Review binds Python harness SHA-256
+   `f6df9056e466212107be12b6a952e67278bfabb79d0d076801f9bb0400aedeb8`,
+   shell wrapper SHA-256
+   `d9f67cdc69d22b3f5ae0c9595571a7445fc0332b3b1028d75e6f66d7c3cd4345`,
+   harness manifest SHA-256
+   `7af3345fc072dc5a7e6a42ffea61b63c7963d58421472f1bc30408bb165da1aa`,
+   and summary SHA-256
+   `e962878fe94702fdffa79b384437c4db97a29315c5771e86d1806763650c1bb8`.
+10. **Fresh exact-candidate PASS/GO — satisfied.** Independent review
+    `.10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate-review.md`
+    records `VERDICT: GO` against exact evidence commit/tree, candidate digest,
+    and retained handoff with no blocker. Phase 2 is only eligible; it remains
+    inactive until separately activated with current-state reproof.
+
+## Retrospective
+
+- A candidate review must follow the complete production model authority, not a
+  narrower plausible constructor set. Correcting the authority while preserving
+  the historical NO-GO kept both the old contract failure and current readiness
+  legible.
+- Exact evidence commit/tree, candidate digest, and immutable handoff hashes make
+  the provider-free-to-live gate auditable without touching private retained
+  state.
+- Phase-1 GO is eligibility, not phase-2 activation. Keeping those states
+  separate preserves the one-command fail-closed boundary.

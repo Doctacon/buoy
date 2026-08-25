@@ -67,7 +67,7 @@ archive member-type classifier.
 ### Isolated provider-free preparation
 
 **PASS — severity: none.**
-`.10x/tickets/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md`
+`.10x/tickets/done/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md`
 is open and inactive. After a separate activation, it may repeat only provider-
 free build/runtime/harness correction in owned state. It forbids credential,
 model, telemetry, provider/network, retrieval, global-tool, source, ref, and
@@ -151,7 +151,7 @@ minor, privacy, or reference finding. No repair is required.
 
 **FINAL-RECOVERY-SHAPED.** The records graph is
 **FINAL-CANDIDATE-PREPARATION-ACTIVATION-READY**. The next executable ticket is
-`.10x/tickets/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md`,
+`.10x/tickets/done/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md`,
 but it remains open/inactive until a separate authorized activation binds this
 reviewed target and then-current clean HEAD/tree/ref/worktree state. This review
 is not activation, preparation evidence, candidate PASS/GO, or live GO.

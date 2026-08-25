@@ -1,10 +1,10 @@
-Status: blocked
+Status: open
 Created: 2026-08-25
 Updated: 2026-08-25
 Parent: .10x/tickets/2026-08-25-provider-invocation-receipt-final-recovery-plan.md
-Depends-On: .10x/tickets/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md
+Depends-On: .10x/tickets/done/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md
 Activation: inactive
-Eligibility: ineligible-until-fresh-corrected-preparation-pass-go
+Eligibility: eligible-for-separate-live-activation-under-exact-candidate-go
 Decision: .10x/decisions/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md
 Authorization: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-authorization.md
 Authority-Correction: .10x/evidence/2026-08-25-provider-invocation-receipt-model-authority-correction.md
@@ -14,6 +14,13 @@ Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Attempt-Accounting: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
 Implementation-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-integration-closure.md
 Implementation-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integration-review.md
+Candidate-Evidence: commit fa70a8c3e79d2df4d5b643f7bc1cc8af462f51ec, tree 45b2684c7d2f71e7c03a65e2d9bd5e201b923ffa
+Candidate-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate-review.md
+Candidate-GO: GO, wheel SHA-256 42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87
+Handoff-Python-SHA-256: f6df9056e466212107be12b6a952e67278bfabb79d0d076801f9bb0400aedeb8
+Handoff-Shell-SHA-256: d9f67cdc69d22b3f5ae0c9595571a7445fc0332b3b1028d75e6f66d7c3cd4345
+Handoff-Manifest-SHA-256: 7af3345fc072dc5a7e6a42ffea61b63c7963d58421472f1bc30408bb165da1aa
+Handoff-Summary-SHA-256: e962878fe94702fdffa79b384437c4db97a29315c5771e86d1806763650c1bb8
 
 # Run Provider Invocation Receipt Final Recovery Live Command
 
@@ -28,35 +35,34 @@ and independent final review.
 
 ## Dependency, blocker, and activation gate
 
-This live child is blocked and inactive. It becomes eligible only when
-`.10x/tickets/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md`
-truthfully closes after complete sanitized preparation evidence and an
-independent **PASS/GO** bound to that exact evidence commit/tree and the retained
-immutable candidate/runtime/harness.
+This live child is open, inactive, and eligible only for separate future live
+activation. Its provider-free dependency is done at
+`.10x/tickets/done/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md`.
+Fresh independent **PASS/GO** binds exact evidence commit
+`fa70a8c3e79d2df4d5b643f7bc1cc8af462f51ec`, tree
+`45b2684c7d2f71e7c03a65e2d9bd5e201b923ffa`, wheel SHA-256
+`42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87`,
+and the complete retained immutable candidate/runtime/harness.
 
-A separate future activation MUST bind the exact GO, candidate/runtime/harness
-identities, then-current clean repository state, and unchanged operational
-pre-state. Neither this shaping turn, preparation activation, candidate PASS
-without GO, nor silence activates live execution.
+A separate future activation MUST bind that exact GO, all candidate/runtime/
+harness identities, then-current clean repository state, and unchanged
+operational pre-state. Neither this records-only eligibility transition,
+provider-free preparation activation, phase-1 PASS/GO, nor silence activates
+live execution. No live operation may begin while `Activation: inactive`.
 
-The exact candidate/runtime/harness remains retained, but this child cannot
-receive it yet. The blockers are:
-
-- no provider-free exact cache/ref/assets and corrected harness-guard evidence
-  exists yet for both authorized production models;
-- no fresh independent candidate PASS/GO exists for the corrected authority;
-  and
-- the retained handoff cannot be accepted by this child until those gates pass.
-
-Drift, deletion, NO-GO, qualified/stale review, unresolved finding, or inability
-to prove the same retained bytes keeps the ticket blocked.
+The exact candidate/runtime/harness remains retained and is now the sole
+eligible phase-2 handoff. It has not been received, reproved, altered, or run by
+this child. Drift, deletion, stale or qualified review, unresolved finding, or
+inability to prove the same retained bytes stops future activation or execution.
 
 ## Immutable handoff: no preparation in the live child
 
-Receive only the already prepared VCS-aware source, exact wheel, owned cache,
-isolated runtime/dependencies, installed package, live harness, sanitized
-preparation evidence, and exact PASS/GO. Reprove their bound identities and
-current-state equality without mutation.
+Under a separate future activation, receive only the already prepared VCS-aware
+source, exact wheel, owned cache, isolated runtime/dependencies, installed
+package, live harness, sanitized preparation evidence, and exact PASS/GO. Reprove
+their bound identities and current-state equality without mutation. The
+immutable evidence-time handoff summary is preserved unchanged; ticket-graph
+eligibility does not rewrite a reviewed handoff byte.
 
 This child MUST NOT build or rebuild; seed or correct a cache; install or
 reinstall a package; modify or correct the harness; rerun a failed preparation
@@ -254,19 +260,20 @@ cost/rate-limit claim; unrelated cleanup.
 
 ## Dependencies
 
-Blocked on the active provider-free candidate child reaching truthful `done`
-with corrected dual-model cache/ref/assets and harness-guard evidence plus a
-fresh independent candidate PASS/GO, while the same retained private immutable
-handoff remains available. No other artifact, review, or owner statement
-substitutes for that dependency.
+Satisfied but identity-bound. The provider-free candidate child is `done` with
+corrected dual-model cache/ref/assets and harness-guard evidence plus fresh
+independent candidate PASS/GO, while the same private immutable handoff remains
+retained. No other artifact, review, candidate, or owner statement substitutes
+for that exact dependency. Separate activation and then-current identity/state
+reproof remain mandatory execution gates.
 
 ## Blockers
 
-- Corrected provider-free cache/ref/assets and harness-guard evidence for both
-  exact production models does not yet exist.
-- Fresh independent candidate PASS/GO does not yet exist.
-- The retained immutable candidate/runtime/harness cannot be accepted by this
-  child until both gates pass.
+None. The ticket is open and eligible, but deliberately inactive. A separate
+future live activation bound to the exact GO, retained handoff, then-current
+clean repository state, and unchanged operational pre-state is required before
+any handoff receipt, credential/model/provider access, retrieval, or live
+command. Inactivity grants no operation authority.
 
 ## Progress and notes
 
@@ -282,3 +289,16 @@ substitutes for that dependency.
   guard evidence plus fresh independent PASS/GO. No source/spec/test change,
   model/cache access, build, credential read, telemetry, provider/network,
   retrieval, GO, or live command occurred.
+- 2026-08-25: Records-only closure accepted fresh independent **PASS/GO** for
+  exact dual-model evidence commit
+  `fa70a8c3e79d2df4d5b643f7bc1cc8af462f51ec`, tree
+  `45b2684c7d2f71e7c03a65e2d9bd5e201b923ffa`, wheel SHA-256
+  `42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87`,
+  and the unchanged retained Python harness, shell wrapper, harness manifest,
+  and summary identities recorded in this ticket's headers. The provider-free
+  child moved to `done`; this child moved to `Status: open` while remaining
+  `Activation: inactive`. It is eligible only for separate future activation
+  with exact handoff and current-state reproof. The historical NO-GO remains
+  truthful against the superseded one-model contract. No handoff byte changed;
+  no build, install, cache/model/credential/telemetry/provider/network/
+  retrieval/live command, receipt, or other operation occurred.
