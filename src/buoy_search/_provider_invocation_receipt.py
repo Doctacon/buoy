@@ -437,6 +437,9 @@ class _Ledger:
 _ACTIVE_LEDGER: ContextVar[_Ledger | None] = ContextVar(
     "buoy_private_provider_invocation_receipt_ledger", default=None
 )
+_ACTIVE_LEDGER_FAULT_TARGET: ContextVar[_Ledger | None] = ContextVar(
+    "buoy_private_provider_invocation_receipt_fault_target", default=None
+)
 
 
 class _ReceiptHandle:
@@ -461,32 +464,58 @@ class _ReceiptHandle:
             return None
 
 
+_DISABLED_RECEIPT_HANDLE = _ReceiptHandle()
+
+
 @contextmanager
 def _provider_invocation_receipt_scope() -> Iterator[_ReceiptHandle]:
     try:
         active = _ACTIVE_LEDGER.get()
     except BaseException:
-        yield _ReceiptHandle()
+        # A nested setup/read fault must not invalidate the outer authority.
+        yield _DISABLED_RECEIPT_HANDLE
         return
     if active is not None:
-        yield _ReceiptHandle()
+        yield _DISABLED_RECEIPT_HANDLE
         return
 
+    ledger: _Ledger | None = None
+    token = None
+    fault_target_token = None
     try:
         ledger = _Ledger()
+        fault_target_token = _ACTIVE_LEDGER_FAULT_TARGET.set(ledger)
         token = _ACTIVE_LEDGER.set(ledger)
     except BaseException:
-        if "ledger" in locals():
+        if ledger is not None:
             ledger._fault()
-        yield _ReceiptHandle()
+        if token is not None:
+            try:
+                _ACTIVE_LEDGER.reset(token)
+            except BaseException:
+                pass
+        if fault_target_token is not None:
+            try:
+                _ACTIVE_LEDGER_FAULT_TARGET.reset(fault_target_token)
+            except BaseException:
+                pass
+        yield _DISABLED_RECEIPT_HANDLE
         return
 
-    handle = _ReceiptHandle(ledger)
     try:
+        try:
+            handle = _ReceiptHandle(ledger)
+        except BaseException:
+            ledger._fault()
+            handle = _DISABLED_RECEIPT_HANDLE
         yield handle
     finally:
         try:
             _ACTIVE_LEDGER.reset(token)
+        except BaseException:
+            ledger._fault()
+        try:
+            _ACTIVE_LEDGER_FAULT_TARGET.reset(fault_target_token)
         except BaseException:
             ledger._fault()
         ledger._seal()
@@ -496,7 +525,33 @@ def _active_ledger() -> _Ledger | None:
     try:
         return _ACTIVE_LEDGER.get()
     except BaseException:
+        try:
+            fault_target = _ACTIVE_LEDGER_FAULT_TARGET.get()
+        except BaseException:
+            fault_target = None
+        if fault_target is not None:
+            try:
+                fault_target._fault()
+            except BaseException:
+                pass
         return None
+
+
+class _NoOpContentOperationObserver:
+    __slots__ = ()
+
+    def _invoke(
+        self,
+        _request_form: _RequestForm,
+        _trigger: _Trigger,
+        callback: Callable[_P, _R],
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> _R:
+        return callback(*args, **kwargs)
+
+
+_NOOP_CONTENT_OPERATION_OBSERVER = _NoOpContentOperationObserver()
 
 
 class _ContentOperationObserver:
@@ -548,7 +603,9 @@ class _ContentOperationObserver:
 
 
 @contextmanager
-def _content_operation(route_rank: int) -> Iterator[_ContentOperationObserver]:
+def _content_operation(
+    route_rank: int,
+) -> Iterator[_ContentOperationObserver | _NoOpContentOperationObserver]:
     ledger = _active_ledger()
     operation: _MutableContentOperation | None = None
     if ledger is not None:
@@ -556,7 +613,12 @@ def _content_operation(route_rank: int) -> Iterator[_ContentOperationObserver]:
             operation = ledger._begin_content(route_rank)
         except BaseException:
             ledger._fault()
-    observer = _ContentOperationObserver(ledger, operation)
+    try:
+        observer = _ContentOperationObserver(ledger, operation)
+    except BaseException:
+        if ledger is not None:
+            ledger._fault()
+        observer = _NOOP_CONTENT_OPERATION_OBSERVER
     try:
         yield observer
     except BaseException as exc:
@@ -579,18 +641,40 @@ def _content_operation(route_rank: int) -> Iterator[_ContentOperationObserver]:
                 ledger._fault()
 
 
+class _NoOpCatalogOperationObserver:
+    __slots__ = ()
+
+    def _invoke(
+        self,
+        _category: _CatalogCategory,
+        callback: Callable[_P, _R],
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> _R:
+        return callback(*args, **kwargs)
+
+
+_NOOP_CATALOG_OPERATION_OBSERVER = _NoOpCatalogOperationObserver()
+
+
 class _CatalogObserver:
     def __init__(self, ledger: _Ledger) -> None:
         self._ledger = ledger
 
     @contextmanager
-    def _operation(self) -> Iterator[_CatalogOperationObserver]:
+    def _operation(
+        self,
+    ) -> Iterator[_CatalogOperationObserver | _NoOpCatalogOperationObserver]:
         operation: _MutableCatalogOperation | None = None
         try:
             operation = self._ledger._begin_catalog()
         except BaseException:
             self._ledger._fault()
-        observer = _CatalogOperationObserver(self._ledger, operation)
+        try:
+            observer = _CatalogOperationObserver(self._ledger, operation)
+        except BaseException:
+            self._ledger._fault()
+            observer = _NOOP_CATALOG_OPERATION_OBSERVER
         try:
             yield observer
         except BaseException as exc:
@@ -671,6 +755,7 @@ def _bind_receipt_worker(callback: Callable[_P, _R]) -> Callable[_P, _R]:
     def run(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         claimed = False
         token = None
+        fault_target_token = None
         try:
             try:
                 claimed = ledger._claim_lease(lease)
@@ -678,6 +763,7 @@ def _bind_receipt_worker(callback: Callable[_P, _R]) -> Callable[_P, _R]:
                 ledger._fault()
             if claimed:
                 try:
+                    fault_target_token = _ACTIVE_LEDGER_FAULT_TARGET.set(ledger)
                     token = _ACTIVE_LEDGER.set(ledger)
                 except BaseException:
                     ledger._fault()
@@ -686,6 +772,11 @@ def _bind_receipt_worker(callback: Callable[_P, _R]) -> Callable[_P, _R]:
             if token is not None:
                 try:
                     _ACTIVE_LEDGER.reset(token)
+                except BaseException:
+                    ledger._fault()
+            if fault_target_token is not None:
+                try:
+                    _ACTIVE_LEDGER_FAULT_TARGET.reset(fault_target_token)
                 except BaseException:
                     ledger._fault()
             if claimed:

@@ -127,3 +127,16 @@ the owner explicitly activated only this core child for execution at clean HEAD
   catalog, store, telemetry, persistence, routing-artifact, or latency-probe
   operation ran. The ticket remains active pending independent review; exact
   candidate commit/tree and diff are reported in the implementation handoff.
+- 2026-08-24: Repaired only the independent core review's fault-isolation
+  findings. A separate receipt-private scope fault target now makes transient
+  governed active-ledger lookup failure permanently unknown without weakening
+  nested-scope read-failure isolation. Active handle, content observer, and
+  catalog-operation observer construction faults now use preallocated disabled
+  fallbacks that preserve body/callback result and exception identity. Focused
+  credential-free offline tests passed 45/45 on Python 3.11 and 3.13 using only
+  direct private seams and an in-memory generated-version stub; static checks
+  passed 44 private definitions, standard-library-only imports, unchanged
+  package/CLI/telemetry boundaries, and current-develop ancestry. No provider,
+  model, network, content, catalog, store, telemetry, persistence, routing,
+  canary, or latency-probe operation ran. Ticket remains active pending fresh
+  independent review of the repaired commit.

@@ -338,6 +338,70 @@ class ReceiptLifecycleTests(unittest.TestCase):
                 body.append("also-ran")
         self.assertIsNone(broken.receipt())
 
+    def test_active_lookup_fault_around_governed_call_invalidates_receipt(self) -> None:
+        class BrokenLookup:
+            def get(self):
+                raise RuntimeError("private")
+
+        marker = object()
+        calls = 0
+        with receipt._provider_invocation_receipt_scope() as handle:
+            def callback() -> object:
+                nonlocal calls
+                calls += 1
+                return marker
+
+            with patch.object(receipt, "_ACTIVE_LEDGER", BrokenLookup()):
+                with receipt._content_operation(1) as observer:
+                    self.assertIs(
+                        observer._invoke("server_rrf", "initial", callback), marker
+                    )
+        self.assertEqual(calls, 1)
+        self.assertIsNone(handle.receipt())
+
+    def test_nested_scope_lookup_fault_does_not_fault_outer_scope(self) -> None:
+        class BrokenLookup:
+            def get(self):
+                raise RuntimeError("private")
+
+        body = []
+        with receipt._provider_invocation_receipt_scope() as outer:
+            with patch.object(receipt, "_ACTIVE_LEDGER", BrokenLookup()):
+                with receipt._provider_invocation_receipt_scope() as inner:
+                    body.append("ran")
+            with receipt._content_operation(1) as observer:
+                observer._invoke("server_rrf", "initial", lambda: None)
+        self.assertEqual(body, ["ran"])
+        self.assertIsNone(inner.receipt())
+        self.assertIsNotNone(outer.receipt())
+
+    def test_handle_constructor_fault_preserves_body_result_and_exception(self) -> None:
+        marker = object()
+        calls = 0
+
+        def callback() -> object:
+            nonlocal calls
+            calls += 1
+            return marker
+
+        with patch.object(receipt, "_ReceiptHandle", side_effect=RuntimeError("private")):
+            with receipt._provider_invocation_receipt_scope() as handle:
+                result = callback()
+        self.assertIs(result, marker)
+        self.assertEqual(calls, 1)
+        self.assertIsNone(handle.receipt())
+
+        exc = RuntimeError("original")
+        caught = None
+        with patch.object(receipt, "_ReceiptHandle", side_effect=RuntimeError("private")):
+            try:
+                with receipt._provider_invocation_receipt_scope() as raised_handle:
+                    raise exc
+            except RuntimeError as raised:
+                caught = raised
+        self.assertIs(caught, exc)
+        self.assertIsNone(raised_handle.receipt())
+
     def test_lock_and_serialization_faults_return_null(self) -> None:
         class BrokenLock:
             def __enter__(self):
@@ -378,6 +442,39 @@ class ReceiptLifecycleTests(unittest.TestCase):
                             )
                 self.assertEqual(calls, 1)
                 self.assertIsNone(handle.receipt())
+
+    def test_content_observer_constructor_fault_preserves_callback_identity(self) -> None:
+        marker = object()
+        calls = 0
+        with receipt._provider_invocation_receipt_scope() as handle:
+            def callback() -> object:
+                nonlocal calls
+                calls += 1
+                return marker
+
+            with patch.object(
+                receipt, "_ContentOperationObserver", side_effect=RuntimeError("private")
+            ):
+                with receipt._content_operation(1) as observer:
+                    self.assertIs(
+                        observer._invoke("server_rrf", "initial", callback), marker
+                    )
+        self.assertEqual(calls, 1)
+        self.assertIsNone(handle.receipt())
+
+        exc = RuntimeError("original")
+        caught = None
+        with receipt._provider_invocation_receipt_scope() as raised_handle:
+            with patch.object(
+                receipt, "_ContentOperationObserver", side_effect=RuntimeError("private")
+            ):
+                try:
+                    with receipt._content_operation(1) as observer:
+                        observer._invoke("server_rrf", "initial", self._raising(exc))
+                except RuntimeError as raised:
+                    caught = raised
+        self.assertIs(caught, exc)
+        self.assertIsNone(raised_handle.receipt())
 
     def test_duplicate_completion_and_duplicate_operation_are_unknown(self) -> None:
         with receipt._provider_invocation_receipt_scope() as handle:
@@ -741,6 +838,48 @@ class CatalogValidatorTests(unittest.TestCase):
                     self.assertIs(operation_observer._invoke("metadata", callback), marker)
         self.assertEqual(calls, 1)
         self.assertIsNone(handle.receipt())
+
+    def test_catalog_observer_constructor_fault_preserves_callback_identity(self) -> None:
+        marker = object()
+        calls = 0
+        with receipt._provider_invocation_receipt_scope() as handle:
+            observer = handle._catalog_observer()
+            assert observer is not None
+
+            def callback() -> object:
+                nonlocal calls
+                calls += 1
+                return marker
+
+            with patch.object(
+                receipt, "_CatalogOperationObserver", side_effect=RuntimeError("private")
+            ):
+                with observer._operation() as operation_observer:
+                    self.assertIs(operation_observer._invoke("metadata", callback), marker)
+        self.assertEqual(calls, 1)
+        self.assertIsNone(handle.receipt())
+
+        exc = RuntimeError("original")
+        caught = None
+        with receipt._provider_invocation_receipt_scope() as raised_handle:
+            observer = raised_handle._catalog_observer()
+            assert observer is not None
+            with patch.object(
+                receipt, "_CatalogOperationObserver", side_effect=RuntimeError("private")
+            ):
+                try:
+                    with observer._operation() as operation_observer:
+                        operation_observer._invoke("metadata", self._raise_exact(exc))
+                except RuntimeError as raised:
+                    caught = raised
+        self.assertIs(caught, exc)
+        self.assertIsNone(raised_handle.receipt())
+
+    @staticmethod
+    def _raise_exact(exc: BaseException):
+        def callback() -> None:
+            raise exc
+        return callback
 
 
 class StrictModelAndCanonicalTests(unittest.TestCase):
