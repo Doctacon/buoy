@@ -17,6 +17,7 @@ Implementation-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-in
 Implementation-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integration-review.md
 Preparation-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-preparation.md
 Repair-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-repair.md
+Supplemental-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate.md
 
 # Prepare Provider Invocation Receipt Final Recovery Candidate
 
@@ -324,3 +325,21 @@ then the dependent live child remains blocked and inactive.
   still required. No immutable evidence was edited. No source/spec/test change,
   model/cache access, build, credential read, telemetry, provider/network,
   retrieval, GO, or live command occurred.
+- 2026-08-25: Provider-free dual-model correction passed without changing the
+  exact source, wheel, runtime, installed package, owned cache, routing, lock,
+  test, specification, or dataset bytes. Filesystem-only inspection proved
+  complete exact cached refs/assets and before/after equality for both pinned
+  production models. The retained harness now binds exact evidence commit
+  `5e2259d5422a3f3b649c521422a868d770dc7d0d`, tree
+  `cc80dc4bf49ed3eec63b8d379b30af0e82f23f4d`, permits only exact BGE float32
+  automatic-device and MiniLM CPU/local/safetensors/max-512/batch-8 construction,
+  and rejects every other model, revision, setting, substitution, or download.
+  Construction-only positive and negative guards, exact candidate/package/
+  routing/receipt checks, 91/91 installed-wheel fake tests, source/owned/source-
+  cache/model-cache/telemetry/credential-presence/repository/process/case/dataset
+  equality, cleanup, and immutable handoff checks passed. Supplemental evidence
+  is at `.10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate.md`.
+  The candidate remains `Status: active`, privately retained, and live-ineligible
+  pending a fresh independent exact-candidate PASS/GO. No credential value,
+  model import/construction/load, provider/network, telemetry operation,
+  retrieval, global tool/install, or live command occurred.
