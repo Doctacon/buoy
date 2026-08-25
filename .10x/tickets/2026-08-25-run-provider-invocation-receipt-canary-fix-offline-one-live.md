@@ -6,9 +6,11 @@ Depends-On: .10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-in
 Activation: consumed
 Eligibility: ineligible
 Preparation-Failure: .10x/evidence/2026-08-25-provider-invocation-receipt-successor-preparation-failure.md
+Failure-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-successor-preparation-failure-review.md
 Decision: .10x/decisions/one-time-provider-invocation-receipt-canary-fix-offline-one-live.md
 Authorization-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-renewed-canary-authorization.md
 Knowledge: .10x/knowledge/exact-reproduced-package-digests-inherit-reviewed-safety.md
+Preparation-Knowledge: .10x/knowledge/provider-free-candidate-readiness-before-one-shot-authority.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Implementation-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-integration-closure.md
@@ -425,3 +427,18 @@ decision govern execution. No implementation dependency remains unresolved.
   This ticket is blocked; activation and build authority are consumed, live
   authority is unconsumed but ineligible, and no rebuild, retry, GO, or live
   access may resume.
+- 2026-08-25: Independent PASS review of exact failure-record commit
+  `b93c63d475086eaac9587458f5c2a54b0c77d7b3`, tree
+  `5bfde1193334a72a7326e24fb2b182ecbe6927b3`, is recorded at
+  `.10x/reviews/2026-08-25-provider-invocation-receipt-successor-preparation-failure-review.md`.
+  The PASS accepts truthful terminal evidence; it does not establish a
+  preparation PASS, product defect, candidate, GO, retry, rebuild, or live
+  authority. Focused knowledge at
+  `.10x/knowledge/provider-free-candidate-readiness-before-one-shot-authority.md`
+  requires provider-free proof of exact VCS-version discovery and an isolated
+  UV cache before one-build/no-rebuild authority, and a fully prepared,
+  validated, retained immutable candidate with independent provider-free review
+  before one-shot live authority. This ticket remains `Status: blocked`,
+  `Activation: consumed`, and `Eligibility: ineligible`. Its current one-time
+  decision remains active only as fail-closed no-rebuild/no-live authority until
+  explicit owner supersession through separately shaped authority.
