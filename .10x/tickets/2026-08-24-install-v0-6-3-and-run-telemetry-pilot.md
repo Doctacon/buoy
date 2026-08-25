@@ -1,4 +1,4 @@
-Status: open
+Status: active
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
@@ -117,6 +117,11 @@ physical-attempt inference; recurring telemetry enablement; unrelated cleanup.
   CI, source continuity, and the old global-tool baseline. No installation,
   real-home inspection, credential/model access, retrieval, telemetry write, or
   provider operation has begun.
+- 2026-08-24: Activated at records commit
+  `aa13d6a69494eceaf2a22abb243d6f3dbce1443b` on clean
+  `work/v0-6-3-telemetry-pilot`, based on exact `develop@4171555a`. Execution
+  must use exact tagged release source, not this records commit. Forward install,
+  each retrieval, and flush remain individually unconsumed.
 
 ## Blockers
 
