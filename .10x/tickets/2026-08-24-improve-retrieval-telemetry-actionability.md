@@ -3,6 +3,11 @@ Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
 Depends-On: None
+Authorization: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md
+Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
+Accounting: .10x/specs/provider-client-invocation-accounting.md
+Lifecycle: .10x/specs/provider-client-invocation-receipt.md
+Implementation-Plan: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
 
 # Improve Retrieval Telemetry Actionability
 
@@ -20,9 +25,9 @@ conflating it with unresolved physical wire, provider-cost, or rate-limit use.
    measurement requires a separate owner checkpoint.
 2. `.10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md`
    starts only after the latency investigation reaches a reviewed conclusion.
-   It may inspect source and shape options, but product-surface, persistence,
-   retention, and compatibility semantics remain blocked until explicitly
-   ratified.
+   It inspected source, shaped options, and now owns the explicitly ratified
+   records/specification graph pending independent review. Its separate
+   implementation plan remains open and non-executable.
 
 The children are sequential. Neither child grants provider/model operations,
 telemetry mutation, implementation, migration, release, or global-tool change.
@@ -36,16 +41,17 @@ telemetry mutation, implementation, migration, release, or global-tool change.
   and unresolved physical wire sends/provider accounting.
 - Findings, source authority, and unresolved choices must be durable before the
   next child advances.
-- Any implementation outcome requires its own focused specification and bounded
-  executable ticket after semantics are ratified.
+- The ratified implementation outcome is governed by two focused active specs
+  and a separate open non-executable parent with four bounded open/inactive
+  children. No implementation child activates under this shaping parent.
 
 ## Aggregate acceptance criteria
 
 - The first child has independently reviewed research that either attributes the
   existing latency gap or precisely defines the missing observation boundary.
-- The second child presents a source-complete, privacy-safe semantic contract
-  with explicit product-surface and retention choices; it becomes executable
-  only after the owner ratifies those choices.
+- The second child records a source-complete, owner-ratified privacy-safe
+  contract with explicit product-surface, lifecycle, and retention choices, and
+  receives independent review before implementation may activate.
 - No external operation or source mutation occurs under the parent plan.
 - Child statuses, evidence/research, reviews, dependencies, and follow-ups are
   coherent at closure.
@@ -88,13 +94,24 @@ telemetry mutation, implementation, migration, release, or global-tool change.
   truthful and all four findings are repaired. The minor candidate-surface
   wording now reflects that active v2 is exact/non-extensible: recurring
   production telemetry is possible only under a separately specified
-  compatible schema. Child 2 remains blocked on exactly five owner decisions.
+  compatible schema. Child 2 remained blocked on exactly five owner decisions
+  at that checkpoint.
+- 2026-08-24: The owner explicitly ratified the complete reviewed package and a
+  default-off private in-process activation/delivery scope. Exact authorization,
+  one active ADR, two active focused specifications, and an open implementation
+  graph now record the contract. The accounting spec owns both separate family
+  shapes because they share one call-attempt unit/outcome boundary; the lifecycle
+  spec independently owns private activation, finalization, canonical handoff,
+  authority, privacy, and retention. The implementation parent is
+  non-executable; its core, content, catalog, and integrated-validation children
+  are open/inactive. Child 2 and this parent remain active pending independent
+  review of the exact records-only commit. No source/test or operational work
+  ran.
 
 ## Blockers
 
-- Owner ratification of the five child decisions: attempt unit, product surface,
-  catalog-family scope, bounded detail/failure semantics, and retention.
-- After ratification, a focused active specification and bounded executable
-  implementation ticket must be created and reviewed before any source or
-  operational work. The parent remains active until those prerequisites and
-  child outcome are coherent.
+- Independent review of the exact records-only ratified-contract commit is
+  pending.
+- No implementation child may activate or execute until that review passes and
+  the selected child is explicitly activated. The parent remains active until
+  review and child-2 shaping coherence are recorded.

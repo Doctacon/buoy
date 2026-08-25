@@ -1,20 +1,26 @@
-Status: blocked
+Status: active
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-improve-retrieval-telemetry-actionability.md
 Depends-On: .10x/tickets/done/2026-08-24-run-local-telemetry-v2-canary.md
 Knowledge: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
 Research: .10x/research/2026-08-24-physical-provider-attempt-accounting-options.md
-Review: .10x/reviews/2026-08-24-physical-provider-attempt-accounting-shaping-rereview.md
+Prior-Review: .10x/reviews/2026-08-24-physical-provider-attempt-accounting-shaping-rereview.md
+Authorization: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md
+Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
+Accounting: .10x/specs/provider-client-invocation-accounting.md
+Lifecycle: .10x/specs/provider-client-invocation-receipt.md
+Implementation-Plan: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
 
 # Define Physical Provider Attempt Accounting
 
 ## Outcome
 
-Shape a privacy-safe, testable contract for counting Buoy SDK call attempts
-(`provider_client_invocation`) separately from logical namespace operations,
-without misrepresenting that application-boundary count as physical wire sends,
-provider cost, or rate-limit usage. Actual wire accounting remains unresolved.
+Record and independently review the owner-ratified privacy-safe contract for
+counting Buoy SDK call attempts (`provider_client_invocation`) separately from
+logical namespace operations, without misrepresenting that application-boundary
+count as physical wire sends, provider cost, or rate-limit usage. Actual wire
+accounting remains unresolved.
 
 ## Scope
 
@@ -59,29 +65,13 @@ is authorized by this ticket.
 
 ## Blockers
 
-Source-only shaping is complete, but the semantic contract is not ratified.
-The owner must confirm or correct:
+The five semantic decisions are explicitly owner-ratified and recorded at
+`.10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md`.
+No semantic blocker remains.
 
-1. whether the governed unit is `provider_client_invocation`: each Buoy SDK call
-   attempt counted immediately before call-expression evaluation, including
-   local signature rejection and excluding unknown SDK-internal retries; if the
-   requirement is actual HTTP sends, provider cost, or rate-limit usage, whether
-   to authorize separate transport-boundary research instead;
-2. whether the first product surface is the recommended canary-only terminal
-   receipt or recurring production telemetry;
-3. whether separately categorized automatic-catalog invocations are included
-   alongside content invocations;
-4. route-rank-only bounded content detail, aggregate catalog detail, the
-   40,001-success/40,002-terminal-failure catalog bounds, increment-before-call-
-   expression semantics, `success|error|interrupted`, and absent/incomplete
-   receipt meaning unknown; and
-5. indefinite retention of only the sanitized canary receipt with durable
-   evidence, deletion of raw artifacts, and no recurring production retention
-   or purge change.
-
-No focused specification may become active and no executable implementation
-ticket may open until these cost, lifecycle, privacy, and compatibility choices
-are explicit.
+Independent review of the exact records-only ratified-contract commit is
+pending. Until that review passes, this shaping ticket remains active and no
+implementation child may activate or execute.
 
 ## Progress and notes
 
@@ -127,9 +117,20 @@ are explicit.
   `.10x/reviews/2026-08-24-physical-provider-attempt-accounting-shaping-rereview.md`.
   Closure reconciliation corrected the candidate-surface wording: active v2 is
   exact/non-extensible, so the alternative is recurring production telemetry
-  only under a separately specified compatible schema. The ticket remains
+  only under a separately specified compatible schema. The ticket remained
   blocked on exactly the five owner decisions above; no specification or
-  executable ticket is active.
+  executable ticket was active at that checkpoint.
+- 2026-08-24: The owner explicitly ratified all five reviewed decisions plus the
+  private activation/delivery boundary. Exact authority is recorded in
+  `.10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md`.
+  The active ADR selects a default-off private in-process scope returning only a
+  validated canonical receipt to an authorized harness, with no CLI/env/public
+  API, automatic persistence, telemetry-v2 extension, or recurring retention
+  change. Two active focused specs now separate call-attempt accounting from
+  private receipt lifecycle. A non-executable implementation parent and four
+  bounded open/inactive children own core/scope, content, catalog, and integrated
+  validation. This shaping ticket is active pending independent review of the
+  exact records-only contract commit; no source/test or operational work ran.
 
 ## References
 
@@ -137,4 +138,12 @@ are explicit.
 - `.10x/evidence/2026-08-24-local-telemetry-v2-canary.md`
 - `.10x/reviews/2026-08-24-local-telemetry-v2-canary-final-review.md`
 - `src/buoy_search/retriever.py`
+- `src/buoy_search/remote_catalog.py`
 - `tests/test_retriever.py`
+- `tests/test_multi_namespace_retrieval.py`
+- `tests/test_remote_catalog.py`
+- `.10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md`
+- `.10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md`
+- `.10x/specs/provider-client-invocation-accounting.md`
+- `.10x/specs/provider-client-invocation-receipt.md`
+- `.10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md`
