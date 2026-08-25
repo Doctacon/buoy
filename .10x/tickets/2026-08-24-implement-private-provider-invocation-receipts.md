@@ -26,9 +26,12 @@ source work, provider access, canary execution, or activation of a child.
 
 ## Child sequence and dependencies
 
-1. `.10x/tickets/2026-08-24-implement-private-provider-invocation-receipt-core.md`
+1. `.10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipt-core.md`
    implements the private scope, ledger, immutable model, strict validator, and
-   canonical in-process serialization with no call-site instrumentation.
+   canonical in-process serialization with no call-site instrumentation. It is
+   done at independently reviewed source commit
+   `8953e9336354f2a2e0604a54be9cd882a97a7985`, tree
+   `66fb2d0dcca5d397132f60eb0be6d22a5b69479b`.
 2. After child 1:
    - `.10x/tickets/2026-08-24-instrument-content-provider-invocations.md`
      instruments content logical-operation/call boundaries and worker
@@ -43,11 +46,11 @@ source work, provider access, canary execution, or activation of a child.
 
 Only one implementation child may be active in a writer worktree at a time.
 Each child must incorporate the reviewed predecessor state named by its
-`Depends-On` graph. The core is the next eligible source child, but it remains
-open/inactive and MUST be explicitly activated in a later implementation turn.
-Content and catalog may begin only after the exact core commit is independently
-reviewed. Integration may begin only after all three predecessors are done at
-reviewed exact commits.
+`Depends-On` graph. The core dependency is satisfied by its done ticket and
+independently reviewed exact source commit/tree. Content and catalog are now the
+next dependency-eligible children, but each remains open/inactive and MUST be
+explicitly activated in a later implementation turn. Integration may begin only
+after all three predecessors are done at reviewed exact commits.
 
 The separate one-time live canary at
 `.10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md`
@@ -107,10 +110,12 @@ main/develop integration are excluded.
 
 The records-contract review gate is satisfied by independent PASS rereview
 `.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md` for
-exact commit `cb4a76b97f68fcdfc2816c49c33b5b23e9b5f899`. This parent remains
-non-executable and open. No child may move to `active` or execute until its
-`Depends-On` graph is satisfied and the owner/integration session explicitly
-activates that selected child.
+exact commit `cb4a76b97f68fcdfc2816c49c33b5b23e9b5f899`. The core child is done at
+independently reviewed source commit `8953e9336354f2a2e0604a54be9cd882a97a7985`,
+tree `66fb2d0dcca5d397132f60eb0be6d22a5b69479b`. This parent remains
+non-executable and open. A remaining child may move to `active` or execute only
+when its `Depends-On` graph is satisfied and the owner/integration session
+explicitly activates that selected child.
 
 ## Progress and notes
 
@@ -141,3 +146,9 @@ activates that selected child.
   `4d044b44d492757dad80466968809aebdb76f161`, with no findings. The parent and
   four children remain open/inactive. Core is the next executable ticket but
   requires explicit later activation; no implementation or operation ran.
+- 2026-08-24: Core closed at independently reviewed source commit
+  `8953e9336354f2a2e0604a54be9cd882a97a7985`, tree
+  `66fb2d0dcca5d397132f60eb0be6d22a5b69479b`; its done ticket, evidence, and
+  PASS review are linked in the child sequence. Content and catalog are now
+  dependency-eligible but remain open/inactive pending separate explicit
+  activation. Integration remains blocked on both instrumentation children.

@@ -2,7 +2,7 @@ Status: open
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
-Depends-On: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipt-core.md, .10x/tickets/2026-08-24-instrument-content-provider-invocations.md, .10x/tickets/2026-08-24-instrument-catalog-provider-invocations.md
+Depends-On: .10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipt-core.md, .10x/tickets/2026-08-24-instrument-content-provider-invocations.md, .10x/tickets/2026-08-24-instrument-catalog-provider-invocations.md
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
 Authorization-Evidence: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md, .10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md
 Downstream-Canary: .10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md
@@ -118,11 +118,14 @@ changes are excluded.
 
 The governing contract has independent PASS rereview at
 `.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md`.
-All three implementation predecessors must still be done at independently
-reviewed exact commits, and this child must be explicitly activated in a later
-turn before execution. Ticket remains open/inactive. Its exact final fake-only
-commit must pass independent integration review before the separate downstream
-live-canary ticket may activate.
+The core predecessor is done at independently reviewed source commit
+`8953e9336354f2a2e0604a54be9cd882a97a7985`, tree
+`66fb2d0dcca5d397132f60eb0be6d22a5b69479b`. The content and catalog
+predecessors must still be done at independently reviewed exact commits, and
+this child must be explicitly activated in a later turn before execution.
+Ticket remains open/inactive. Its exact final fake-only commit must pass
+independent integration review before the separate downstream live-canary
+ticket may activate.
 
 ## Progress and notes
 
@@ -148,3 +151,10 @@ live-canary ticket may activate.
   `4d044b44d492757dad80466968809aebdb76f161`, with no findings. Integration
   remains open/inactive behind all three reviewed predecessors; the canary
   remains downstream and inactive. No implementation or operation ran.
+- 2026-08-24: Core predecessor satisfied by
+  `.10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipt-core.md`
+  at reviewed source commit `8953e9336354f2a2e0604a54be9cd882a97a7985`,
+  tree `66fb2d0dcca5d397132f60eb0be6d22a5b69479b`. Integration remains
+  open/inactive behind the content and catalog children; no integration
+  source/test, CLI receipt, artifact, or operational work ran in this
+  records-only closure.

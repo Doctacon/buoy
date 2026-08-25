@@ -130,7 +130,7 @@ are under `.10x/`; the three new paths were absent at the exact base.
 minor, or privacy finding. No exact repair is required.
 
 The records graph is activation-ready. The next executable ticket is
-`.10x/tickets/2026-08-24-implement-private-provider-invocation-receipt-core.md`,
+`.10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipt-core.md`,
 but it remains open/inactive until a later authorized implementation turn
 explicitly activates it. The provider-free probe is also executable but remains
 open/inactive and unrun. Content, catalog, integration, and live-canary tickets

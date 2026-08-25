@@ -2,7 +2,7 @@ Status: open
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
-Depends-On: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipt-core.md
+Depends-On: .10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipt-core.md
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
 Authorization-Evidence: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md, .10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
@@ -91,9 +91,11 @@ excluded.
 
 The governing contract has independent PASS rereview at
 `.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md`.
-The core child must still be done at an independently reviewed exact commit,
-and this child must be explicitly activated in a later turn before execution.
-Ticket remains open/inactive.
+The core dependency is satisfied by its done ticket at independently reviewed
+source commit `8953e9336354f2a2e0604a54be9cd882a97a7985`, tree
+`66fb2d0dcca5d397132f60eb0be6d22a5b69479b`. This child must still be
+explicitly activated in a later turn before execution. Ticket remains
+open/inactive.
 
 ## Progress and notes
 
@@ -115,3 +117,9 @@ Ticket remains open/inactive.
   `4d044b44d492757dad80466968809aebdb76f161`, with no findings. This child
   remains open/inactive behind independently reviewed core; no implementation
   or operation ran.
+- 2026-08-24: Core dependency satisfied by
+  `.10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipt-core.md`
+  at reviewed source commit `8953e9336354f2a2e0604a54be9cd882a97a7985`,
+  tree `66fb2d0dcca5d397132f60eb0be6d22a5b69479b`. This child remains
+  open/inactive pending separate explicit activation; no catalog source/test or
+  operational work ran in the records-only core closure.

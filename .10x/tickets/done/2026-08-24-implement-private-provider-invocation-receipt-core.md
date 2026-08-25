@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
@@ -8,8 +8,11 @@ Authorization-Evidence: .10x/evidence/2026-08-24-provider-client-invocation-rece
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
+Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
+Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-core-closure.md
+Review: .10x/reviews/2026-08-24-provider-invocation-receipt-core-review.md
+Reviewed-Source: commit 8953e9336354f2a2e0604a54be9cd882a97a7985, tree 66fb2d0dcca5d397132f60eb0be6d22a5b69479b
 
 # Implement Private Provider Invocation Receipt Core
 
@@ -85,10 +88,7 @@ global-tool changes are excluded.
 
 ## Blockers
 
-None. The governing records-contract review gate is satisfied by PASS rereview
-`.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md`, and
-the owner explicitly activated only this core child for execution at clean HEAD
-`022095ed4c3fe606a1744f3818c6ec1ecdf3d085`.
+None.
 
 ## Progress and notes
 
@@ -153,3 +153,28 @@ the owner explicitly activated only this core child for execution at clean HEAD
   both frozen-contract validators. No provider, network, credential, model,
   content, catalog, store, telemetry, persistence, canary, or probe operation
   ran. Ticket remains active pending independent review of this bounded repair.
+- 2026-08-24: Independent review passed exact source commit
+  `8953e9336354f2a2e0604a54be9cd882a97a7985`, tree
+  `66fb2d0dcca5d397132f60eb0be6d22a5b69479b`, with no blocker or code-level
+  residual risk. Focused closure evidence maps all eight acceptance criteria,
+  preserves the prior FAIL lineage, confirms both active specs remain coherent,
+  and records the no-rerun validation limit. This records-only closure preserves
+  the reviewed source/test blobs, sets blockers to none, and moves the ticket to
+  `tickets/done`.
+
+## Retrospective
+
+- Constructor and registration fault injection exposed that disabled fallbacks
+  are part of the callable compatibility contract: parity requires exact
+  keyword names as well as result/exception and exactly-once behavior.
+- The smallest effective repair was to compare normal and no-op signatures and
+  invoke both fallbacks by keyword in focused regressions; no public abstraction
+  or broader integration seam was needed.
+- Separating the core from content/catalog instrumentation kept default-off and
+  provider-free behavior independently reviewable. The downstream content,
+  catalog, integration, and canary tickets remain the correct owners for work
+  intentionally excluded here.
+- No new reusable skill, specification change, or follow-up ticket is needed
+  from this closure. The durable evidence and review records capture the exact
+  source identity, criterion mapping, historical failures, and validation
+  limits needed by downstream executors.
