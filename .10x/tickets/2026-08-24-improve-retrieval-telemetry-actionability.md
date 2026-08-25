@@ -65,9 +65,18 @@ telemetry mutation, implementation, migration, release, or global-tool change.
   `.10x/tickets/2026-08-24-measure-provider-free-retriever-construction.md`.
   Child 2 may now perform source-only shaping. No product-surface, persistence,
   retention, implementation, provider, model, or telemetry authority is implied.
+- 2026-08-24: Child 2 completed source-only attempt-path and product-surface
+  shaping in
+  `.10x/research/2026-08-24-physical-provider-attempt-accounting-options.md`.
+  The candidate recommends counting Buoy-to-SDK request-method entries in a
+  canary-only sanitized terminal receipt, with content and catalog families
+  separate. Exact wire sends remain unprovable at that boundary. Child 2 stays
+  blocked pending owner decisions and independent review of this candidate.
 
 ## Blockers
 
-None for source-only shaping of child 2. Parent completion depends on child 2
-reaching a truthful terminal state and on owner ratification of any semantics
-required to make its focused specification active.
+- Independent review of child 2's source-completeness, privacy, and semantic
+  checkpoint is pending.
+- Parent completion then requires owner ratification of attempt unit, product
+  surface, catalog scope, failure/detail semantics, and retention before a
+  focused specification can become active.

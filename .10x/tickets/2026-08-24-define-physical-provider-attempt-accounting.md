@@ -4,6 +4,7 @@ Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-improve-retrieval-telemetry-actionability.md
 Depends-On: .10x/tickets/done/2026-08-24-run-local-telemetry-v2-canary.md
 Knowledge: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
+Research: .10x/research/2026-08-24-physical-provider-attempt-accounting-options.md
 
 # Define Physical Provider Attempt Accounting
 
@@ -51,11 +52,26 @@ is authorized by this ticket.
 
 ## Blockers
 
-- The owner has not selected the durable product surface: production telemetry,
-  canary-only evidence, or provider-client diagnostics.
-- Persistence/retention and compatibility requirements for a new count or
-  receipt are not yet ratified.
-- A focused specification does not yet exist.
+Source-only shaping is complete, but the semantic contract is not ratified.
+The owner must confirm or correct:
+
+1. whether the governed unit is each entered Buoy-to-SDK request method
+   invocation (including local SDK rejection, excluding unknown SDK-internal
+   retries) or actual HTTP sends;
+2. whether the first product surface is the recommended canary-only terminal
+   receipt or recurring production telemetry;
+3. whether separately categorized automatic-catalog invocations are included
+   alongside content invocations;
+4. route-rank-only bounded content detail, aggregate catalog detail,
+   count-before-entry, `success|error|interrupted`, and absent/incomplete
+   receipt meaning unknown; and
+5. indefinite retention of only the sanitized canary receipt with durable
+   evidence, deletion of raw artifacts, and no recurring production retention
+   or purge change.
+
+No focused specification may become active and no executable implementation
+ticket may open until these cost, lifecycle, privacy, and compatibility choices
+are explicit.
 
 ## Progress and notes
 
@@ -70,6 +86,19 @@ is authorized by this ticket.
   shaping. Product-surface, persistence, retention, compatibility,
   specification, implementation, and external-operation authority remain
   blocked.
+- 2026-08-24: Completed source-only shaping at
+  `.10x/research/2026-08-24-physical-provider-attempt-accounting-options.md`.
+  One logical content operation can make 1..6 Buoy-to-SDK `multi_query`
+  invocations; explicit/automatic fanout can reach three logical operations and
+  therefore 1..18 content client invocations. Automatic routing also makes a
+  separate bounded strong-read family: namespace-list pages, one metadata
+  request, and two card-query passes. Repository source has no generic content
+  retry, but locked SDK-internal HTTP retries remain unobservable. Recommended
+  candidate: count source-owned SDK request-method entries, keep catalog/content
+  separate, and emit a private canary-only sanitized terminal receipt first.
+  Ticket remains blocked on the five explicit semantic decisions above; no
+  specification, implementation, source/test edit, or external operation was
+  authorized.
 
 ## References
 
