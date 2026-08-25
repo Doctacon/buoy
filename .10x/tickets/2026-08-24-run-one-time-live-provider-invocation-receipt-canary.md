@@ -12,6 +12,7 @@ Historical-Pilot: .10x/evidence/2026-08-24-v0-6-3-installed-telemetry-pilot.md
 Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
 Dependency-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-integration-closure.md
 Preflight-Failure: .10x/evidence/2026-08-24-provider-invocation-receipt-canary-preflight-failure.md
+Recovery-Successor: .10x/tickets/2026-08-24-recover-one-time-live-provider-invocation-receipt-canary.md
 Dependency-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integration-review.md
 Reviewed-Dependency: commit 0b27c4eaa2449493125f4040af3cd1f7c926b531, tree 9017c4a335938faca80cdded54545df8b79c12f8
 
@@ -347,3 +348,13 @@ attempt requires separately shaped and owner-ratified authority.
   `.10x/evidence/2026-08-24-provider-invocation-receipt-canary-preflight-failure.md`.
   The ticket is blocked with live authority unconsumed and no preparation retry
   authority.
+- 2026-08-24: Exact current owner approval created the separate open/inactive
+  recovery successor
+  `.10x/tickets/2026-08-24-recover-one-time-live-provider-invocation-receipt-canary.md`.
+  This predecessor remains blocked and did not resume; its preparation attempt
+  and immutable failure evidence remain historical truth. The same unconsumed
+  single live-command authority is assigned exclusively to the successor and is
+  not duplicated. No recovery activation, build, install, model/cache,
+  credential, provider/network, telemetry/store/database, command, global-tool,
+  release, deployment, publication, push, or ref mutation occurred in this
+  records-only graph update.
