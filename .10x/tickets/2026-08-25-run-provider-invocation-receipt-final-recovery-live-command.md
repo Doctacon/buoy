@@ -1,10 +1,10 @@
-Status: open
+Status: active
 Created: 2026-08-25
 Updated: 2026-08-25
 Parent: .10x/tickets/2026-08-25-provider-invocation-receipt-final-recovery-plan.md
 Depends-On: .10x/tickets/done/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md
-Activation: inactive
-Eligibility: eligible-for-separate-live-activation-under-exact-candidate-go
+Activation: active
+Eligibility: activated-under-exact-candidate-go
 Decision: .10x/decisions/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md
 Authorization: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-authorization.md
 Authority-Correction: .10x/evidence/2026-08-25-provider-invocation-receipt-model-authority-correction.md
@@ -269,11 +269,10 @@ reproof remain mandatory execution gates.
 
 ## Blockers
 
-None. The ticket is open and eligible, but deliberately inactive. A separate
-future live activation bound to the exact GO, retained handoff, then-current
-clean repository state, and unchanged operational pre-state is required before
-any handoff receipt, credential/model/provider access, retrieval, or live
-command. Inactivity grants no operation authority.
+None. Separate live activation is recorded in the progress history and binds the
+exact GO, retained handoff identities, clean repository state, and unchanged
+operational pre-state. Execution remains subject to every identity reproof and
+one-command fail-closed gate in this ticket.
 
 ## Progress and notes
 
@@ -302,3 +301,27 @@ command. Inactivity grants no operation authority.
   truthful against the superseded one-model contract. No handoff byte changed;
   no build, install, cache/model/credential/telemetry/provider/network/
   retrieval/live command, receipt, or other operation occurred.
+- 2026-08-25: Separate owner-directed live activation bound clean pre-activation
+  HEAD `0efb82f746095cb5807f35c88b92657d3ec8b11b`, tree
+  `6e5750738107bbd07bfd7216e934d3de8092588b`, exact task ref
+  `refs/heads/work/provider-invocation-receipts-execution`, registered task
+  worktree, empty status, and the 67-entry worktree inventory SHA-256
+  `d5b8f3b2c5a71d7d2f54261e81313bf45598b731eb1de5404f5c5dae7a459765`.
+  Activation accepts only candidate evidence commit
+  `fa70a8c3e79d2df4d5b643f7bc1cc8af462f51ec`, tree
+  `45b2684c7d2f71e7c03a65e2d9bd5e201b923ffa`, independent `VERDICT: GO`,
+  wheel SHA-256
+  `42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87`,
+  Python harness SHA-256
+  `f6df9056e466212107be12b6a952e67278bfabb79d0d076801f9bb0400aedeb8`,
+  shell wrapper SHA-256
+  `d9f67cdc69d22b3f5ae0c9595571a7445fc0332b3b1028d75e6f66d7c3cd4345`,
+  harness-manifest SHA-256
+  `7af3345fc072dc5a7e6a42ffea61b63c7963d58421472f1bc30408bb165da1aa`,
+  and handoff-summary SHA-256
+  `e962878fe94702fdffa79b384437c4db97a29315c5771e86d1806763650c1bb8`.
+  Exactly one retained wrapper matched the approved identity without disclosure
+  of its private path. This activation consumes no command authority: no handoff
+  byte changed; no build, install, credential value, model construction,
+  telemetry, provider/network, retrieval, live command, or receipt operation
+  occurred.
