@@ -1,12 +1,14 @@
 Status: blocked
 Created: 2026-08-24
-Updated: 2026-08-24
+Updated: 2026-08-25
 Parent: None
 Depends-On: .10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-integration.md
 Activation: consumed
 Eligibility: ineligible
 Decision: .10x/decisions/superseded/one-time-live-provider-invocation-receipt-canary.md
-Terminal-Decision: .10x/decisions/provider-invocation-receipt-live-canary-attempts-are-permanently-stopped.md
+Superseded-Terminal-Decision: .10x/decisions/superseded/provider-invocation-receipt-live-canary-attempts-are-permanently-stopped.md
+Renewed-Decision: .10x/decisions/one-time-provider-invocation-receipt-canary-fix-offline-one-live.md
+Renewed-Successor: .10x/tickets/2026-08-25-run-provider-invocation-receipt-canary-fix-offline-one-live.md
 Authorization-Evidence: .10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
@@ -297,17 +299,18 @@ claim; unrelated cleanup or source widening.
 
 ## Blockers
 
-Candidate identity/preflight validation returned nonzero after the ticket's one
-permitted wheel build. No rebuild, validation retry, alternate candidate, or
-resumption is authorized. The complete owned temporary root was removed; no
-isolated install, model/cache acceptance, credential read, telemetry/store
-operation, provider/network operation, or automatic command began.
+Candidate identity/preflight validation returned nonzero after this ticket's one
+permitted wheel build. This ticket remains consumed and cannot rebuild,
+validate, resume, seek GO, or execute live. The complete owned temporary root
+was removed; no isolated install, model/cache acceptance, credential read,
+telemetry/store operation, provider/network operation, or automatic command
+began.
 
-The one-time live command never began and was not consumed by execution, but
-this ticket cannot resume under its consumed no-rebuild/no-retry preparation
-contract. The owner-ratified terminal decision makes this ticket permanently
-ineligible and prohibits rebinding the former conditional command availability
-to another recovery, retry, successor, or later execution.
+The current owner superseded the former permanent-stop decision by creating one
+separate successor ticket. That supersession does not reopen this ticket or
+restore any of its consumed preparation authority. This ticket remains
+permanently blocked and ineligible; all renewed build, preparation, GO, and live
+authority exists only in the linked successor decision/ticket.
 
 ## Progress and notes
 
@@ -382,3 +385,12 @@ to another recovery, retry, successor, or later execution.
   receipt or partial ledger exists, and this reconciliation creates no retry,
   investigation, GO, or live authority. Immutable failure evidence, source,
   tests, and specifications were not changed.
+- 2026-08-25: Current owner authorization superseded the former permanent-stop
+  decision and created the separate open/inactive successor
+  `.10x/tickets/2026-08-25-run-provider-invocation-receipt-canary-fix-offline-one-live.md`.
+  This consumed predecessor was not reopened: it remains `Status: blocked`,
+  `Activation: consumed`, and `Eligibility: ineligible`, and grants no build,
+  preparation, GO, provider/network, live-command, or retry authority. Its
+  immutable failure outcome and cleanup evidence remain unchanged. This
+  records-only successor note ran no build, validator, model, credential,
+  provider/network, telemetry, global, or canary operation.
