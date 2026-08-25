@@ -5,6 +5,7 @@ Parent: .10x/tickets/2026-08-24-improve-retrieval-telemetry-actionability.md
 Depends-On: .10x/tickets/done/2026-08-24-install-v0-6-3-and-run-telemetry-pilot.md
 Evidence: .10x/evidence/2026-08-24-v0-6-3-installed-telemetry-pilot.md
 Review: .10x/reviews/2026-08-24-v0-6-3-installed-telemetry-pilot-review.md
+Research: .10x/research/2026-08-24-retrieve-command-outer-latency-attribution.md
 
 # Investigate Retrieve Command Outer Latency
 
@@ -60,9 +61,10 @@ performance target is authorized by this shaping ticket.
 
 ## Blockers
 
-None for read-only analysis of existing retained evidence and source. Any new
-live retrieval, provider/model operation, cache effect, or measurement campaign
-remains blocked pending a separate owner-ratified design.
+Independent review is pending on the exact research candidate. Any provider-
+free model probe, new live retrieval, provider/model operation, cache effect,
+or measurement campaign remains blocked pending a separate owner-ratified
+design.
 
 ## Progress and notes
 
@@ -73,3 +75,14 @@ remains blocked pending a separate owner-ratified design.
   Activated for source and existing-store read-only attribution only; no new
   command sample, provider access, telemetry mutation, or optimization is
   authorized.
+- 2026-08-24: Read-only analysis of all seven retained command-v2 rows found
+  that `buoy.retrieve.prepare` explains 96.18%–99.27% of measured live command
+  time outside the pipeline. Direct-root interval-union residual is only
+  22.064–48.295 ms. Automatic preparation is further attributable to routing-
+  model construction and catalog reading; explicit preparation lacks a child
+  boundary separating model load from client/config construction. Research is
+  recorded at
+  `.10x/research/2026-08-24-retrieve-command-outer-latency-attribution.md`.
+  No additional live campaign is recommended before a separately authorized
+  provider-free attribution probe. Ticket remains active for independent
+  review.

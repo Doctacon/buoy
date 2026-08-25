@@ -55,6 +55,10 @@ telemetry mutation, implementation, migration, release, or global-tool change.
   recommended order. This authorizes the first child's existing read-only
   analysis. It does not silently ratify new live samples or the second child's
   unresolved persistence/product-surface semantics.
+- 2026-08-24: Child 1 produced a records-only research candidate from all seven
+  retained command-v2 rows. The coarse gap is attributable to prepare; no new
+  live measurement is recommended before provider-free sub-boundary
+  attribution. Independent child review is pending before child 2 may start.
 
 ## Blockers
 
