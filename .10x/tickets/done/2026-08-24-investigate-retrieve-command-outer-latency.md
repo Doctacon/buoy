@@ -1,11 +1,12 @@
-Status: active
+Status: done
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-improve-retrieval-telemetry-actionability.md
 Depends-On: .10x/tickets/done/2026-08-24-install-v0-6-3-and-run-telemetry-pilot.md
 Evidence: .10x/evidence/2026-08-24-v0-6-3-installed-telemetry-pilot.md
-Review: .10x/reviews/2026-08-24-v0-6-3-installed-telemetry-pilot-review.md
+Review: .10x/reviews/2026-08-24-v0-6-3-installed-telemetry-pilot-review.md, .10x/reviews/2026-08-24-retrieve-command-outer-latency-attribution-review.md
 Research: .10x/research/2026-08-24-retrieve-command-outer-latency-attribution.md
+Follow-Up: .10x/tickets/2026-08-24-measure-provider-free-retriever-construction.md
 
 # Investigate Retrieve Command Outer Latency
 
@@ -61,10 +62,10 @@ performance target is authorized by this shaping ticket.
 
 ## Blockers
 
-Independent review is pending on the exact research candidate. Any provider-
-free model probe, new live retrieval, provider/model operation, cache effect,
-or measurement campaign remains blocked pending a separate owner-ratified
-design.
+None. The read-only attribution and independent review satisfy every criterion.
+The provider-free construction probe is distinct unfinished work owned by
+`.10x/tickets/2026-08-24-measure-provider-free-retriever-construction.md` and
+remains blocked pending separate owner ratification.
 
 ## Progress and notes
 
@@ -86,3 +87,27 @@ design.
   No additional live campaign is recommended before a separately authorized
   provider-free attribution probe. Ticket remains active for independent
   review.
+- 2026-08-24: Independent review of exact candidate
+  `8fe2b06ed907460c2858f6e3779bc29e56c657ef` returned PASS with no critical or
+  significant findings. It confirmed interval-union arithmetic, source and
+  store-schema attribution, privacy, measured/unmeasured separation, limits,
+  and all five acceptance criteria. Review is recorded at
+  `.10x/reviews/2026-08-24-retrieve-command-outer-latency-attribution-review.md`.
+- 2026-08-24: Opened the separately blocked provider-free construction probe
+  owner, closed this investigation, and released child 2 of the parent plan for
+  source-only shaping. No model/cache operation, new retrieval, provider call,
+  telemetry mutation, optimization, or live campaign is authorized.
+
+## Retrospective
+
+- Direct-root interval unions gave truthful coverage without double-counting
+  nested stages; the 22–48 ms residual rules out missing in-root telemetry as
+  the multi-second gap.
+- Existing command telemetry was sufficient to locate the dominant boundary:
+  prepare explains 96.18%–99.27% of command-minus-pipeline time.
+- Automatic preparation is actionable at current granularity, while explicit
+  preparation needs one provider-free model/client construction boundary before
+  an optimization can be justified.
+- Repeating the ordered live workload would preserve mode/cache confounding and
+  add provider effects without resolving the question, so no live rerun was
+  opened.

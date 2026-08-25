@@ -15,7 +15,7 @@ future performance, cost, retry, and rate-limit decisions are evidence-backed.
 
 ## Child sequence
 
-1. `.10x/tickets/2026-08-24-investigate-retrieve-command-outer-latency.md`
+1. `.10x/tickets/done/2026-08-24-investigate-retrieve-command-outer-latency.md`
    performs read-only attribution from existing evidence first. Any new live
    measurement requires a separate owner checkpoint.
 2. `.10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md`
@@ -59,8 +59,15 @@ telemetry mutation, implementation, migration, release, or global-tool change.
   retained command-v2 rows. The coarse gap is attributable to prepare; no new
   live measurement is recommended before provider-free sub-boundary
   attribution. Independent child review is pending before child 2 may start.
+- 2026-08-24: Independent review passed child 1 at exact candidate
+  `8fe2b06ed907460c2858f6e3779bc29e56c657ef`. The child moved to `done`; its
+  recommended model/client sub-boundary is separately owned by blocked ticket
+  `.10x/tickets/2026-08-24-measure-provider-free-retriever-construction.md`.
+  Child 2 may now perform source-only shaping. No product-surface, persistence,
+  retention, implementation, provider, model, or telemetry authority is implied.
 
 ## Blockers
 
-None for starting child 1. Parent completion depends on both children reaching
-truthful terminal states.
+None for source-only shaping of child 2. Parent completion depends on child 2
+reaching a truthful terminal state and on owner ratification of any semantics
+required to make its focused specification active.

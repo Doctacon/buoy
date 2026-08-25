@@ -51,8 +51,6 @@ is authorized by this ticket.
 
 ## Blockers
 
-- Sequencing: the parent plan requires the outer-latency investigation and its
-  review to finish before this shaping child starts.
 - The owner has not selected the durable product surface: production telemetry,
   canary-only evidence, or provider-client diagnostics.
 - Persistence/retention and compatibility requirements for a new count or
@@ -67,6 +65,11 @@ is authorized by this ticket.
   closure under the logical-operation budget and separate tracking of this
   future observability work. No implementation or external operation is
   authorized.
+- 2026-08-24: The outer-latency child closed after independent PASS review, so
+  the parent sequence now permits source-only attempt-path and contract-option
+  shaping. Product-surface, persistence, retention, compatibility,
+  specification, implementation, and external-operation authority remain
+  blocked.
 
 ## References
 
