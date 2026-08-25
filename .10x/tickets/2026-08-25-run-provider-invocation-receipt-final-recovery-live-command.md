@@ -1,10 +1,10 @@
-Status: active
+Status: blocked
 Created: 2026-08-25
 Updated: 2026-08-25
 Parent: .10x/tickets/2026-08-25-provider-invocation-receipt-final-recovery-plan.md
 Depends-On: .10x/tickets/done/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md
-Activation: active
-Eligibility: activated-under-exact-candidate-go
+Activation: terminated-before-command-start
+Eligibility: ineligible-after-preflight-failure-and-required-cleanup
 Decision: .10x/decisions/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md
 Authorization: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-authorization.md
 Authority-Correction: .10x/evidence/2026-08-25-provider-invocation-receipt-model-authority-correction.md
@@ -269,10 +269,12 @@ reproof remain mandatory execution gates.
 
 ## Blockers
 
-None. Separate live activation is recorded in the progress history and binds the
-exact GO, retained handoff identities, clean repository state, and unchanged
-operational pre-state. Execution remains subject to every identity reproof and
-one-command fail-closed gate in this ticket.
+The separately activated exact-candidate reproof failed closed at the generic
+`preflight` stage before wrapper invocation or command start. Required cleanup
+deleted the retained candidate and every owned private/raw artifact; no receipt
+is retained. This activation is ineligible for retry. Any future operation would
+require new owner authority, a new separately prepared and reviewed candidate,
+and a new executable ticket.
 
 ## Progress and notes
 
@@ -325,3 +327,21 @@ one-command fail-closed gate in this ticket.
   byte changed; no build, install, credential value, model construction,
   telemetry, provider/network, retrieval, live command, or receipt operation
   occurred.
+- 2026-08-25: Exact-candidate and current-state reproof failed closed at the
+  generic `preflight` stage before the reviewed wrapper was invoked. The
+  command-start ledger was absent, so no ordinary automatic command began and
+  no credential value, model import/construction/load, telemetry operation,
+  DNS/TLS/provider/catalog/content/retrieval access, provider/command/receipt
+  retry, or receipt occurred. Privacy-preserving failure handling retained no
+  raw exception or path-bearing diagnostic and does not infer the individual
+  failed assertion after cleanup. Required fail-closed cleanup deleted the
+  complete retained candidate/source/wheel/owned-cache/runtime/harness/live
+  state and every transient private/raw artifact. Post-cleanup verification
+  found zero exact retained-wrapper matches, no receipt or partial ledger, no
+  transient live-execution artifact, and no staged file; the repository remained
+  clean at activation commit
+  `446c1e5b84f123c075ac2d80857c3fc95fc16121`, tree
+  `e1da91d254c511d2fc62a1adeb2a91ff34a2d3e2` before bounded failure evidence
+  was written. Evidence is at
+  `.10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-live-preflight-failure.md`.
+  This ticket is blocked and ineligible for retry; no receipt is retained.
