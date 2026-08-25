@@ -273,13 +273,15 @@ The content-free handoff summary SHA-256 is
 It contains no private path. The handoff location is deliberately withheld from
 durable records and is supplied only to the sequential orchestrator.
 
-## What this supports and remaining gate
+## What this supported before independent review
 
-This supports complete provider-free candidate **PASS** for the exact wheel and
-retained immutable handoff. It does not activate or close the live child. The
-candidate ticket remains active pending an independent reviewer inspecting this
-exact evidence commit/tree and recording explicit **PASS/GO** tied to that
-commit/tree, wheel SHA-256, and unchanged retained handoff identities.
+This originally supported provider-free candidate **PASS** for the exact wheel
+and then-retained handoff, pending independent review. Independent review later
+returned NO-GO. The current disposition and corrected retained harness
+identities are recorded in
+`.10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-repair.md`,
+which supersedes this record's candidate-PASS conclusion. The source and wheel
+identities recorded here remain unchanged and valid.
 
 This evidence proves only provider-free package and application-boundary fake
 behavior. It proves no live provider behavior, physical wire send, SDK-internal

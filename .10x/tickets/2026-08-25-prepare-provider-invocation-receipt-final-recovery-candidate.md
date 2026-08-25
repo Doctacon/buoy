@@ -1,4 +1,4 @@
-Status: active
+Status: blocked
 Created: 2026-08-25
 Updated: 2026-08-25
 Parent: .10x/tickets/2026-08-25-provider-invocation-receipt-final-recovery-plan.md
@@ -15,6 +15,7 @@ Package-Inheritance: .10x/knowledge/exact-reproduced-package-digests-inherit-rev
 Implementation-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-integration-closure.md
 Implementation-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integration-review.md
 Preparation-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-preparation.md
+Repair-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-repair.md
 
 # Prepare Provider Invocation Receipt Final Recovery Candidate
 
@@ -223,10 +224,16 @@ not become authority.
 
 ## Blockers
 
-Provider-free preparation passed and the exact immutable handoff is retained.
-This ticket remains active until an independent reviewer records exact PASS/GO
-against the committed evidence and unchanged handoff. Live access remains
-blocked.
+Provider-free repair established a real defect in the exact product candidate
+relative to the ratified live-command model boundary. The unchanged automatic
+path can construct a model distinct from the only authorized model, and the
+private one-shot case cannot safely be assumed to avoid all reachable routing,
+reranking, fallback, and evidence-assessment paths. Source change, alternate
+model authorization, and harness substitution are outside this ticket.
+
+The exact retained source and wheel remain unchanged. The corrected harness now
+binds the exact reviewed evidence commit/tree, but no PASS/GO may issue and live
+access remains blocked.
 
 ## Progress and notes
 
@@ -264,5 +271,20 @@ blocked.
   network/telemetry/retrieval access. The complete owner-private immutable
   handoff remains retained. Sanitized evidence is at
   `.10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-preparation.md`.
-  This ticket remains active pending independent exact-candidate PASS/GO. The
-  live child remains blocked/inactive and was not moved or edited.
+  This ticket remained active pending independent exact-candidate PASS/GO. The
+  live child remained blocked/inactive and was not moved or edited.
+- 2026-08-25: Independent review returned NO-GO. Provider-free repair replaced
+  shape-only harness evidence values with exact equality to reviewed preparation
+  evidence commit `5e2259d5422a3f3b649c521422a868d770dc7d0d`, tree
+  `cc80dc4bf49ed3eec63b8d379b30af0e82f23f4d`; arbitrary lowercase 40-hex
+  substitutes were rejected before execution state, and construction-only
+  self-check passed. Static inspection of the exact unchanged source then
+  confirmed reachable production construction of a distinct second model in
+  automatic routing, multi-corpus reranking/fallback, and evidence assessment.
+  Because the live child authorizes only `BAAI/bge-small-en-v1.5`, preparation
+  cannot guarantee the one-model boundary without changing source, authority,
+  or ordinary automatic behavior. This is a real exact-candidate defect, not a
+  harness-mechanics issue. Supplemental sanitized evidence is at
+  `.10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-repair.md`.
+  The ticket is blocked; no PASS/GO issued; no credential, model, telemetry,
+  provider/network, retrieval, global package/home, or live operation occurred.
