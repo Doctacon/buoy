@@ -1,4 +1,4 @@
-Status: open
+Status: active
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
@@ -85,10 +85,10 @@ global-tool changes are excluded.
 
 ## Blockers
 
-The governing records-contract review gate is satisfied by PASS rereview
-`.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md`.
-Explicit activation of this child is still required before execution; this
-open ticket remains inactive.
+None. The governing records-contract review gate is satisfied by PASS rereview
+`.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md`, and
+the owner explicitly activated only this core child for execution at clean HEAD
+`022095ed4c3fe606a1744f3818c6ec1ecdf3d085`.
 
 ## Progress and notes
 
@@ -112,3 +112,7 @@ open ticket remains inactive.
   `4d044b44d492757dad80466968809aebdb76f161`, with no findings. Core is the
   next executable ticket but remains open/inactive pending explicit activation
   in a later implementation turn; no implementation or operation ran.
+- 2026-08-24: Owner explicitly activated only this core child for implementation
+  from clean HEAD `022095ed4c3fe606a1744f3818c6ec1ecdf3d085`. The separate
+  provider-free latency probe remains blocked and MUST NOT be rerun or repaired.
+  Source work has not begun; this activation record is committed separately.
