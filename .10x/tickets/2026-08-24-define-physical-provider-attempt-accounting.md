@@ -1,7 +1,7 @@
 Status: blocked
 Created: 2026-08-24
 Updated: 2026-08-24
-Parent: None
+Parent: .10x/tickets/2026-08-24-improve-retrieval-telemetry-actionability.md
 Depends-On: .10x/tickets/done/2026-08-24-run-local-telemetry-v2-canary.md
 Knowledge: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
 
@@ -51,6 +51,8 @@ is authorized by this ticket.
 
 ## Blockers
 
+- Sequencing: the parent plan requires the outer-latency investigation and its
+  review to finish before this shaping child starts.
 - The owner has not selected the durable product surface: production telemetry,
   canary-only evidence, or provider-client diagnostics.
 - Persistence/retention and compatibility requirements for a new count or

@@ -1,7 +1,7 @@
-Status: blocked
+Status: active
 Created: 2026-08-24
 Updated: 2026-08-24
-Parent: None
+Parent: .10x/tickets/2026-08-24-improve-retrieval-telemetry-actionability.md
 Depends-On: .10x/tickets/done/2026-08-24-install-v0-6-3-and-run-telemetry-pilot.md
 Evidence: .10x/evidence/2026-08-24-v0-6-3-installed-telemetry-pilot.md
 Review: .10x/reviews/2026-08-24-v0-6-3-installed-telemetry-pilot-review.md
@@ -60,13 +60,16 @@ performance target is authorized by this shaping ticket.
 
 ## Blockers
 
-- The owner has not prioritized latency investigation or ratified further
-  measurement effects/sample size.
-- Existing retained stage rows have not yet been assessed for sufficient
-  attribution coverage.
+None for read-only analysis of existing retained evidence and source. Any new
+live retrieval, provider/model operation, cache effect, or measurement campaign
+remains blocked pending a separate owner-ratified design.
 
 ## Progress and notes
 
 - 2026-08-24: Opened from the independently reviewed installed-release pilot so
   the material outside-pipeline latency finding has a durable owner. No further
   performance experiment or optimization is authorized.
+- 2026-08-24: The owner prioritized and directed this investigation first.
+  Activated for source and existing-store read-only attribution only; no new
+  command sample, provider access, telemetry mutation, or optimization is
+  authorized.
