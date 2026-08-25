@@ -14,6 +14,7 @@ Candidate-Readiness: .10x/knowledge/provider-free-candidate-readiness-before-one
 Package-Inheritance: .10x/knowledge/exact-reproduced-package-digests-inherit-reviewed-safety.md
 Implementation-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-integration-closure.md
 Implementation-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integration-review.md
+Preparation-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-preparation.md
 
 # Prepare Provider Invocation Receipt Final Recovery Candidate
 
@@ -222,8 +223,10 @@ not become authority.
 
 ## Blockers
 
-None for provider-free preparation. Live access remains blocked until complete
-preparation evidence and exact independent PASS/GO.
+Provider-free preparation passed and the exact immutable handoff is retained.
+This ticket remains active until an independent reviewer records exact PASS/GO
+against the committed evidence and unchanged handoff. Live access remains
+blocked.
 
 ## Progress and notes
 
@@ -243,3 +246,23 @@ preparation evidence and exact independent PASS/GO.
   clone source, access or seed a cache, build or install a wheel, run a validator
   or harness, read credentials, construct a model, open telemetry, access
   provider/network, issue PASS/GO, or start a live command.
+- 2026-08-25: Provider-free preparation passed. A VCS-aware clone remained
+  detached/clean at exact source commit
+  `0b27c4eaa2449493125f4040af3cd1f7c926b531`, tree
+  `9017c4a335938faca80cdded54545df8b79c12f8`. Three offline wheel-build
+  attempts corrected only owned cache material and produced exact wheel
+  `buoy_search-0.5.2.dev87+g0b27c4eaa-py3-none-any.whl`, 730602 bytes, 78
+  inherited reviewed members, SHA-256
+  `42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87`.
+  Isolated installation, exact installed/package/routing identities,
+  executable/module help, strict receipt validation, and the established 91
+  fake-only tests passed. Existing UV cache content/type equality passed without
+  claiming atime equality; model and telemetry filesystem equality,
+  credential-source presence-only, exact case/dataset, offline float32 automatic-
+  device source posture, process guards, raw-diagnostic deletion, and guarded
+  one-command harness construction passed without credential/model/provider/
+  network/telemetry/retrieval access. The complete owner-private immutable
+  handoff remains retained. Sanitized evidence is at
+  `.10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-preparation.md`.
+  This ticket remains active pending independent exact-candidate PASS/GO. The
+  live child remains blocked/inactive and was not moved or edited.
