@@ -1,9 +1,11 @@
-Status: active
+Status: blocked
 Created: 2026-08-25
 Updated: 2026-08-25
 Parent: None
 Depends-On: .10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-integration.md
-Activation: active
+Activation: consumed
+Eligibility: ineligible
+Preparation-Failure: .10x/evidence/2026-08-25-provider-invocation-receipt-successor-preparation-failure.md
 Decision: .10x/decisions/one-time-provider-invocation-receipt-canary-fix-offline-one-live.md
 Authorization-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-renewed-canary-authorization.md
 Knowledge: .10x/knowledge/exact-reproduced-package-digests-inherit-reviewed-safety.md
@@ -374,14 +376,12 @@ decision govern execution. No implementation dependency remains unresolved.
 
 ## Blockers
 
-- Preparation is active under the exact separately committed activation recorded
-  below.
-- Live access is blocked until complete provider-free preparation passes and an
-  independent reviewer records exact GO for its evidence commit/tree and the
-  still-identical wheel.
-- Any one-build identity failure, real candidate defect, NO-GO, candidate/state
-  drift, or later command/receipt failure is terminal and grants no rebuild or
-  retry.
+- Preparation is terminally blocked after the separately activated one-build
+  authority was consumed by a nonzero offline wheel-only build.
+- No candidate wheel, retained runtime/harness, preparation PASS, or independent
+  GO exists. Credential/model/provider/network/live access remains forbidden.
+- This ticket is ineligible to rebuild, re-export, substitute, resume validation,
+  seek GO, or execute the live command.
 
 ## Progress and notes
 
@@ -409,3 +409,19 @@ decision govern execution. No implementation dependency remains unresolved.
   provider-free preparation only; it did not export source, build/install a
   wheel, run a validator or harness, read credentials, construct a model, open
   telemetry, access provider/network, seek GO, or start a live command.
+- 2026-08-25: Provider-free preparation exported exact reviewed source through a
+  no-ref archive, passed all seven required source/package hashes, and passed the
+  frozen offline lock check. Exactly one wheel-only offline build began once and
+  exited nonzero with sanitized category
+  `build_environment_version_discovery_failure`; no rebuild, corrected command,
+  substitution, wheel acceptance, installation, candidate validator, or live
+  operation followed. The build also used the established offline package cache,
+  creating a transient build workspace that was absent afterward; this crossed
+  the stricter no-global-cache-touch boundary, and complete cache-wide equality
+  was not established. The complete owner-private root was deleted and absence
+  verified. No credential value, model construction, telemetry store/API,
+  provider/network, retrieval, or live command occurred. Failure evidence is at
+  `.10x/evidence/2026-08-25-provider-invocation-receipt-successor-preparation-failure.md`.
+  This ticket is blocked; activation and build authority are consumed, live
+  authority is unconsumed but ineligible, and no rebuild, retry, GO, or live
+  access may resume.
