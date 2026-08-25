@@ -10,6 +10,7 @@ Authorization: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recove
 Authority-Correction: .10x/evidence/2026-08-25-provider-invocation-receipt-model-authority-correction.md
 Preflight-Failure: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-live-preflight-failure.md
 Shaping-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-activation-review.md
+Boundary-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-precommand-boundary-review.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Historical-Candidate-Evidence: commit fa70a8c3e79d2df4d5b643f7bc1cc8af462f51ec, tree 45b2684c7d2f71e7c03a65e2d9bd5e201b923ffa

@@ -9,6 +9,7 @@ Decision: .10x/decisions/one-time-provider-invocation-receipt-final-recovery-pre
 Authorization: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-authorization.md
 Authority-Correction: .10x/evidence/2026-08-25-provider-invocation-receipt-model-authority-correction.md
 Shaping-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-activation-review.md
+Boundary-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-precommand-boundary-review.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Candidate-Readiness: .10x/knowledge/provider-free-candidate-readiness-before-one-shot-authority.md

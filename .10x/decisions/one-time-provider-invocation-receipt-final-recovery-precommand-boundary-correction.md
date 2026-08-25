@@ -3,6 +3,7 @@ Created: 2026-08-25
 Updated: 2026-08-25
 Supersedes: .10x/decisions/superseded/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md
 Authorization: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-authorization.md
+Boundary-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-precommand-boundary-review.md
 Preflight-Failure: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-live-preflight-failure.md
 Historical-Candidate-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate.md
 Historical-Candidate-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate-review.md
