@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-25
 Updated: 2026-08-25
-Relates-To: .10x/tickets/2026-08-25-run-provider-invocation-receipt-final-recovery-live-command.md, .10x/decisions/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md
+Relates-To: .10x/tickets/2026-08-25-run-provider-invocation-receipt-final-recovery-live-command.md, .10x/tickets/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md, .10x/decisions/one-time-provider-invocation-receipt-final-recovery-precommand-boundary-correction.md, .10x/decisions/superseded/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md
 Activation: commit 446c1e5b84f123c075ac2d80857c3fc95fc16121, tree e1da91d254c511d2fc62a1adeb2a91ff34a2d3e2
 
 # Provider Invocation Receipt Final Recovery Live Preflight Failure
@@ -59,10 +59,29 @@ and no staged files. The task repository remained clean at activation commit
 `e1da91d254c511d2fc62a1adeb2a91ff34a2d3e2` before this bounded failure record
 was written.
 
-No receipt or partial ledger is retained. This failed activation is ineligible
-for retry under the user instruction and owning ticket. A new operation would
-require new owner authority, a new separately prepared and reviewed candidate,
-and a new executable ticket; none is created or authorized here.
+No receipt or partial ledger is retained. Under the then-governing decision and
+ticket, this failed activation was classified as ineligible for retry and a new
+operation was said to require new owner authority, a separately prepared and
+reviewed candidate, and a new executable ticket. That was the recorded
+disposition at the time; no such operation was created or authorized by this
+evidence.
+
+## Subsequent execution-boundary correction
+
+The owner subsequently clarified that every check before credential-value
+access, model construction, provider/network access, wrapper invocation, and
+ordinary-command start belongs to repeatable provider-free preparation. The
+observations above remain unchanged: generic `preflight` failed, cleanup deleted
+the retained candidate, no wrapper or command started, no prohibited access
+occurred, and no receipt exists.
+
+The active corrected decision supersedes only the terminal authority
+interpretation. Command-start count remains exactly zero and the sole live
+command authority remains unconsumed. The deleted handoff is now a regression
+owned by the reopened provider-free candidate ticket, which must rebuild the
+exact candidate, pass complete repeatable pre-wrapper preflight, retain the
+handoff, and obtain fresh independent GO. The existing live ticket remains
+blocked/inactive; no new live ticket or widened command count exists.
 
 ## Limits
 

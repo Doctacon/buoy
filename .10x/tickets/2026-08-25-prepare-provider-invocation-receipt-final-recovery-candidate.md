@@ -1,11 +1,11 @@
-Status: done
+Status: active
 Created: 2026-08-25
 Updated: 2026-08-25
 Parent: .10x/tickets/2026-08-25-provider-invocation-receipt-final-recovery-plan.md
 Depends-On: .10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-integration.md
-Activation: complete
-Eligibility: completed-under-exact-dual-model-pass-go
-Decision: .10x/decisions/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md
+Activation: active-provider-free-regression-recovery
+Eligibility: rebuilding-deleted-handoff-and-complete-prewrapper-preflight
+Decision: .10x/decisions/one-time-provider-invocation-receipt-final-recovery-precommand-boundary-correction.md
 Authorization: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-authorization.md
 Authority-Correction: .10x/evidence/2026-08-25-provider-invocation-receipt-model-authority-correction.md
 Shaping-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-activation-review.md
@@ -15,31 +15,43 @@ Candidate-Readiness: .10x/knowledge/provider-free-candidate-readiness-before-one
 Package-Inheritance: .10x/knowledge/exact-reproduced-package-digests-inherit-reviewed-safety.md
 Implementation-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-integration-closure.md
 Implementation-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integration-review.md
-Preparation-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-preparation.md
-Repair-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-repair.md
-Supplemental-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate.md
-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate-review.md
-Reviewed-Evidence: commit fa70a8c3e79d2df4d5b643f7bc1cc8af462f51ec, tree 45b2684c7d2f71e7c03a65e2d9bd5e201b923ffa
-Candidate-GO: GO, wheel SHA-256 42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87
+Historical-Preparation-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-preparation.md
+Historical-Repair-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-repair.md
+Historical-Supplemental-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate.md
+Historical-Review: .10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate-review.md
+Preflight-Failure: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-live-preflight-failure.md
+Historical-Reviewed-Evidence: commit fa70a8c3e79d2df4d5b643f7bc1cc8af462f51ec, tree 45b2684c7d2f71e7c03a65e2d9bd5e201b923ffa
+Historical-Candidate-GO: GO, wheel SHA-256 42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87, stale after retained handoff deletion
+Command-Start-Count: 0
+Live-Authority: unconsumed
 
 # Prepare Provider Invocation Receipt Final Recovery Candidate
 
 ## Outcome
 
-In owned isolated provider-free state, iteratively produce and validate the exact
-reviewed wheel and complete immutable runtime/harness handoff. Retain that exact
-candidate privately until an independent reviewer records PASS/GO against the
-complete sanitized evidence. Do not consume or approach live authority.
+In owned isolated provider-free state, rebuild and validate the exact reviewed
+wheel and complete runtime/harness/wrapper handoff deleted after the historical
+generic preflight failure. Repeatedly exercise and correct the complete pre-
+wrapper preflight until it passes without credential-value, model, telemetry,
+provider/network, retrieval, wrapper, or command access. Retain the exact
+candidate through failed preparation assertions and until a fresh independent
+reviewer records PASS/GO against the complete sanitized evidence. Command-start
+count remains zero; do not consume or approach live authority.
 
 ## Scope and activation gate
 
-This is the sole executable preparation child under the parent plan. It is
-active under the existing owner-directed provider-free activation recorded in
-its progress history. That activation remains bounded to this provider-free
-phase and is never credential/model-construction/provider/network/live GO. The
-exact retained candidate/runtime/harness remains the only candidate authority;
-this correction authorizes only the unresolved provider-free dual-model cache/
-ref/assets inspection and harness-guard correction described below.
+This is the sole executable preparation child under the parent plan and the
+active regression owner for the wrongly deleted retained handoff. It remains
+active under the owner's repeatable provider-free preparation authority. That
+authority includes rebuild, diagnosis, correction, validation, and complete pre-
+wrapper preflight reruns, but is never credential-value, model-construction,
+telemetry-operation, provider/network, wrapper, command, or live GO authority.
+
+The historical exact candidate and PASS/GO remain truthful for the bytes that
+existed at review time, but cleanup after the generic preflight failure deleted
+those bytes. They cannot be reused or treated as current GO. This ticket must
+rebuild the exact product candidate and retain its corrected complete handoff
+through fresh independent review.
 
 All three predecessor attempts remain blocked, consumed, and ineligible. Do not
 resume, edit, or infer authority from them. Do not change implementation source,
@@ -150,9 +162,39 @@ Inspection reads model cache files only to establish exact public model assets;
 it MUST NOT import a model library, construct, load, or run either model, or
 read unrelated credential-bearing cache content.
 
-Validators and harnesses may be corrected and rerun against the same exact
-source/candidate. After exact candidate acceptance, corrections MUST NOT mutate
-or substitute wheel bytes. Every rerun rebinds the exact candidate digest.
+Validators, harnesses, wrappers, manifests, content-free summaries, and
+provider-free assertion mechanics may be corrected and rerun against the same
+exact source/candidate. After exact candidate acceptance, corrections MUST NOT
+mutate or substitute wheel bytes. Every rerun rebinds the exact candidate
+digest.
+
+## Complete repeatable pre-wrapper preflight
+
+Every assertion before credential-value access, model import or construction/
+load/inference, telemetry access, DNS/TLS/provider/network access, wrapper
+invocation, or ordinary-command start belongs to this repeatable provider-free
+phase. The rebuilt handoff MUST exercise in one bound run every pre-wrapper
+assertion formerly left to the live runner, including exact candidate and
+wrapper identity, repository/current state, owned and source UV cache equality,
+both authorized model-cache filesystem identities, telemetry-filesystem
+equality, credential-source metadata equality without value access, global/
+tool/home equality, process state, and exact case/dataset identity.
+
+A failed assertion MAY be diagnosed, corrected in owned provider-free material,
+rebuilt when needed, and rerun without a preflight-attempt limit. Sanitized
+records may retain only bounded content-free assertion categories—candidate,
+repository/current state, UV cache, model cache, telemetry filesystem,
+credential-source metadata, global/tool/home, process, case/dataset, or wrapper/
+harness identity—and generic outcomes/counts. They MUST NOT retain a private
+path, checked value, manifest body, credential, query, namespace, content,
+result, receipt bytes, raw exception, raw output, or other prohibited detail.
+
+A provider-free assertion failure MUST retain the exact candidate and all
+necessary handoff material for correction and rerun. Delete only raw diagnostics
+and unnecessary correction scratch. The candidate becomes immutable after the
+complete pre-wrapper PASS and remains retained through fresh independent GO.
+Only a reproducible defect in the exact reviewed product candidate may block
+instead of continuing provider-free correction.
 
 Throughout preparation MUST NOT:
 
@@ -162,7 +204,8 @@ Throughout preparation MUST NOT:
 - perform DNS, TLS, provider, catalog, content, or any other network access;
 - open or invoke telemetry database, store, API, status, migration, flush,
   writer, queue, receipt, backup, export, or purge behavior;
-- run preview, explicit, automatic, or other retrieval;
+- invoke the retained wrapper, run preview, explicit, automatic, or other
+  retrieval, or create a command-start marker;
 - install, replace, uninstall, or invoke a user/global Buoy or tool;
 - mutate a source or task repository ref/worktree, existing UV cache, model
   cache, credential source, telemetry filesystem, home/global state, or
@@ -172,12 +215,14 @@ Throughout preparation MUST NOT:
 
 ## Immutable handoff and independent PASS/GO
 
-After all checks pass, retain the complete accepted VCS-aware source, wheel,
-owned cache needed by the runtime, isolated runtime/dependencies, installed
-package, and live harness privately and immutably. Delete correction diagnostics
-and other unnecessary raw material before review. Sanitized evidence MUST bind
-the complete retained candidate/runtime/harness by exact content-free identities
-without a private path.
+Retain the complete accepted VCS-aware source, wheel, owned cache needed by the
+runtime, isolated runtime/dependencies, installed package, harness, wrapper,
+manifests, and content-free summary throughout correction. A failed provider-
+free assertion never authorizes candidate deletion. After one complete pre-
+wrapper PASS, make the handoff private and immutable. Delete correction
+diagnostics and other unnecessary raw material before review. Sanitized evidence
+MUST bind the complete retained candidate/runtime/harness/wrapper by exact
+content-free identities without a private path.
 
 An independent reviewer MUST inspect the exact evidence commit/tree, this
 ticket/decision, active specs and knowledge, source/candidate/runtime identities,
@@ -186,82 +231,98 @@ access proof, side-effect inventory, retained handoff, privacy, and current
 repository state. The reviewer performs no build, correction, credential/model/
 telemetry/provider/network operation.
 
-The reviewer MUST record explicit **PASS/GO** tied to the exact evidence
-commit/tree, candidate SHA-256, and retained runtime/harness identity. A general
-PASS without GO, qualified/stale review, drift, deletion, unresolved finding,
-NO-GO, or a real product defect leaves the live child blocked.
+The reviewer MUST record explicit **PASS/GO** tied to the new exact evidence
+commit/tree, candidate SHA-256, complete pre-wrapper PASS, and retained runtime/
+harness/wrapper identities. The historical GO is stale after deletion and cannot
+substitute. A general PASS without GO, qualified/stale review, drift, deletion,
+unresolved finding, NO-GO, or a real product defect leaves the live child
+blocked.
 
-This ticket may close `done` only after that exact independent PASS/GO and while
-the complete handoff remains retained and unchanged. A failed/defective
-preparation remains open or blocked truthfully and cannot close as success.
+This ticket may close `done` again only after that fresh exact independent PASS/
+GO and while the complete handoff remains retained and unchanged. A failed
+provider-free assertion remains active for bounded correction; a real product
+defect remains open or blocked truthfully and cannot close as success.
 
 ## Acceptance criteria
 
-- The recorded separate provider-free activation remains the only activation;
-  this ticket is active and no credential/model-construction/provider/network/
-  live authority is implied.
+- The existing provider-free activation remains the only activation; command-
+  start count is zero and no credential/model-construction/telemetry/provider/
+  network/wrapper/live authority is implied.
 - Exact reviewed VCS-aware commit/tree is clean and provides Hatch-VCS version
   authority without ref mutation or override.
 - Builds/runtimes use only an owned UV cache seeded by read-only copy; all writes
   stay in owned temporary state and existing cache equality holds.
-- Iterative builds/rebuilds and provider-free harness corrections continue until
-  exact PASS or a real product defect, with no build-count limit.
-- Exact filename/version/730602-byte/78-member/SHA-256 wheel is produced; prior
+- Iterative builds/rebuilds and owned provider-free harness/wrapper/assertion
+  corrections continue until exact PASS or a real product defect, without a
+  build, correction, or preflight-run limit.
+- Exact filename/version/730602-byte/78-member/SHA-256 wheel is rebuilt; prior
   reviewed package safety is inherited and no novel archive classifier runs.
-- Exact isolated package, routing, installation, help/import, and strict receipt
-  checks pass without retrieval or prohibited access.
-- Exact filesystem-only cache/ref/assets inspection and harness guards pass for
-  both pinned production models without importing or constructing either, and
-  reject every other model, download, or substitution.
-- No credential value, model construction/load, provider/DNS/TLS/network,
-  telemetry DB/store/API/command, global install/tool, ref, source/test/spec, or
-  external-state mutation occurs.
-- The complete candidate/runtime/harness is retained privately and immutably;
-  sanitized evidence contains no private path or prohibited value.
-- Independent exact-candidate PASS/GO is recorded before truthful closure or
-  live eligibility.
+- Exact isolated package, routing, installation, help/import, fake-only tests,
+  and strict receipt checks pass without retrieval or prohibited access.
+- Exact filesystem-only cache/ref/assets inspection and guards pass for both
+  pinned production models without importing or constructing either and reject
+  every other model, download, or substitution.
+- The complete pre-wrapper preflight is exercised repeatedly until every
+  candidate/current-state/cache/model-cache/telemetry-filesystem/credential-
+  source-metadata/global/process/case/dataset/wrapper assertion passes in one
+  bound provider-free run.
+- Failed pre-wrapper assertions retain only bounded content-free categories and
+  generic outcomes; the exact candidate and necessary handoff remain available
+  for correction and rerun.
+- No credential value, model import/construction/load, provider/DNS/TLS/network,
+  telemetry DB/store/API/command, wrapper invocation, retrieval, global install/
+  tool, ref, source/test/spec, or external-state mutation occurs.
+- The rebuilt complete candidate/runtime/harness/wrapper is retained privately
+  and immutably after final pre-wrapper PASS; sanitized evidence contains no
+  private path or prohibited value.
+- Fresh independent exact-candidate PASS/GO binds the new evidence commit/tree,
+  complete pre-wrapper PASS, and retained handoff before truthful closure or
+  live eligibility; the historical GO does not satisfy this criterion.
 
 ## Evidence expectations
 
-Record activation and clean repository identities; exact VCS-aware source and
-reviewed hashes; owned-cache seed source identity/equality and write-boundary
-proof; bounded build/correction counts and generic outcomes; exact wheel and
-output inventory; inherited package-review reference; installed/runtime/routing/
-receipt results; no-prohibited-access and process/side-effect inventory; raw
-correction cleanup; retained immutable handoff identities; changed-path/status/
+Record activation, command-start count zero, and clean repository identities;
+exact VCS-aware source and reviewed hashes; owned-cache seed source identity/
+equality and write-boundary proof; bounded build/correction/preflight counts and
+content-free category outcomes; exact wheel and output inventory; inherited
+package-review reference; installed/runtime/routing/receipt results; complete
+pre-wrapper assertion inventory and one bound final PASS; no-prohibited-access
+and process/side-effect inventory; candidate retention across failures; raw-
+diagnostic cleanup; retained immutable handoff identities; changed-path/status/
 privacy checks; and fresh independent PASS/GO or NO-GO. No evidence contains a
 private path, credential, query, namespace, content/result, raw output/error,
-model or provider identifier beyond the two ratified public model identities, or
-receipt bytes.
+manifest body, model or provider identifier beyond the two ratified public model
+identities, or receipt bytes.
 
 ## Explicit exclusions
 
-Live command or GO issuance by the executor; predecessor resumption; metadata-
-free source; version override; tag/ref mutation; one-build/no-rebuild limit;
-novel archive classifier; source/test/spec/lock/routing/data change; credential
-value; model import/construction/load/inference; provider/network/retrieval;
-telemetry storage/API/commands; global install/tool/cache mutation; model-cache
-mutation; any model beyond the two exact production identities; model download
-or substitution; release/deployment/publication/push; private path in records;
-wire/SDK-retry/
-billing/cost/rate-limit claim.
+Live command or GO issuance by the executor; wrapper invocation or command-start
+marker; predecessor resumption; metadata-free source; version override; tag/ref
+mutation; one-build/no-rebuild/preflight limit; novel archive classifier;
+source/test/spec/lock/routing/data change; credential value; model import/
+construction/load/inference; provider/network/retrieval; telemetry storage/API/
+commands; global install/tool/cache mutation; model-cache mutation; candidate
+deletion after a provider-free assertion failure; any model beyond the two exact
+production identities; model download or substitution; release/deployment/
+publication/push; private path in records; wire/SDK-retry/billing/cost/rate-
+limit claim.
 
 ## Dependencies
 
 The fake-only implementation is done and independently passed at exact source
 commit/tree above. Its evidence/review and both active specifications govern
-this ticket. All known prior preparation failures are resolved by the expressly
-ratified VCS-aware source, owned cache, repeatable build, inherited exact-digest
-package safety, and split candidate/live gates; they remain historical and do
-not become authority.
+this ticket. Historical preparation and GO establish exact identities but do
+not supply current bytes after deletion. The active precommand-boundary decision
+owns the exact rebuild, repeatable complete pre-wrapper preflight, retention, and
+fresh GO regression.
 
 ## Blockers
 
-None. Provider-free dual-model preparation passed and fresh independent PASS/GO
-is recorded against the exact evidence commit/tree, wheel SHA-256, and retained
-immutable handoff. The handoff remains retained and unchanged for the separately
-activated live child; this completed ticket grants no live activation or command
-authority.
+None within provider-free execution. This ticket is active to rebuild the exact
+deleted candidate, pass the complete pre-wrapper preflight, retain the handoff,
+and obtain fresh independent PASS/GO. A reproducible exact-product defect would
+block it truthfully. The live child remains blocked/inactive; command-start count
+is zero and live authority is unconsumed.
 
 ## Progress and notes
 
@@ -358,8 +419,27 @@ authority.
   for a separate future activation bound to this exact GO and handoff. No build,
   install, cache/model/credential/telemetry/provider/network/retrieval/live
   command, receipt, handoff mutation, or other operation occurred.
+- 2026-08-25: The later live runner returned generic `preflight` before wrapper
+  invocation and with no command-start ledger. No credential value, model
+  import/construction, telemetry operation, provider/network/retrieval, command,
+  or receipt occurred. Fail-closed cleanup deleted the complete retained
+  candidate and private/raw state. The evidence remains truthful; command-start
+  count is zero.
+- 2026-08-25: Owner-directed records-only boundary correction established that
+  all checks before credential-value/model/telemetry/provider/network access,
+  wrapper invocation, and command start are repeatable provider-free
+  preparation. This ticket moved canonically from `done` to `active` as the
+  regression owner for exact rebuild, complete repeatable pre-wrapper PASS,
+  retention, and fresh independent GO. The historical GO is stale after
+  deletion. The live child remains blocked/inactive and its sole authority is
+  unconsumed. This records-only correction did not build, access any cache/model/
+  credential/provider/network/telemetry behavior, issue GO, or run live.
 
-## Acceptance mapping
+## Historical acceptance mapping
+
+The mapping below records why the prior exact candidate truthfully reached
+`done` before its handoff was later deleted. It does not satisfy the reopened
+criteria above and is not current GO authority.
 
 1. **Provider-free activation boundary — satisfied.** Activation commit
    `38e3e144` and this ticket's progress show that only provider-free preparation
@@ -397,9 +477,9 @@ authority.
    network, telemetry operation, retrieval, global install/tool, repository-ref,
    source/test/specification, external-state, or live operation. Equality,
    process, cleanup, and privacy checks passed.
-9. **Complete immutable handoff — satisfied.** The exact retained source, wheel,
-   owned cache, runtime/dependencies, installed package, harness, and summary
-   remain private, immutable, and unchanged. Review binds Python harness SHA-256
+9. **Complete immutable handoff — historically satisfied.** At review time the
+   exact retained source, wheel, owned cache, runtime/dependencies, installed
+   package, harness, and summary remained private, immutable, and unchanged. Review binds Python harness SHA-256
    `f6df9056e466212107be12b6a952e67278bfabb79d0d076801f9bb0400aedeb8`,
    shell wrapper SHA-256
    `d9f67cdc69d22b3f5ae0c9595571a7445fc0332b3b1028d75e6f66d7c3cd4345`,
@@ -407,11 +487,11 @@ authority.
    `7af3345fc072dc5a7e6a42ffea61b63c7963d58421472f1bc30408bb165da1aa`,
    and summary SHA-256
    `e962878fe94702fdffa79b384437c4db97a29315c5771e86d1806763650c1bb8`.
-10. **Fresh exact-candidate PASS/GO — satisfied.** Independent review
-    `.10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate-review.md`
-    records `VERDICT: GO` against exact evidence commit/tree, candidate digest,
-    and retained handoff with no blocker. Phase 2 is only eligible; it remains
-    inactive until separately activated with current-state reproof.
+10. **Fresh exact-candidate PASS/GO — historically satisfied.** Independent
+    review `.10x/reviews/2026-08-25-provider-invocation-receipt-final-recovery-dual-model-candidate-review.md`
+    recorded `VERDICT: GO` against exact evidence commit/tree, candidate digest,
+    and the then-retained handoff with no blocker. Later deletion made that GO
+    stale; it grants no current live eligibility.
 
 ## Retrospective
 

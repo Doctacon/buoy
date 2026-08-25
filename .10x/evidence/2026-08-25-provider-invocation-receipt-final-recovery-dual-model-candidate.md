@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-25
 Updated: 2026-08-25
-Relates-To: .10x/tickets/done/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md, .10x/decisions/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md, .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-preparation.md, .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-repair.md
+Relates-To: .10x/tickets/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md, .10x/decisions/superseded/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md, .10x/decisions/one-time-provider-invocation-receipt-final-recovery-precommand-boundary-correction.md, .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-preparation.md, .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-candidate-repair.md
 
 # Provider Invocation Receipt Final Recovery Dual-Model Candidate
 
@@ -199,3 +199,13 @@ phase 2 can become eligible.
 This evidence proves only provider-free filesystem, package, fake receipt, and
 construction-guard behavior. It proves no provider behavior, physical wire
 send, SDK retry, billing, cost, or rate-limit effect.
+
+## Subsequent disposition
+
+The exact observations and candidate identities above remain historical truth.
+A later generic pre-wrapper failure occurred before any command start, and
+cleanup deleted this retained handoff. The associated GO is therefore stale and
+non-transferable, not retroactively invalid. The active precommand-boundary
+decision reopens the canonical candidate ticket to rebuild the exact candidate,
+pass complete repeatable pre-wrapper preflight, retain the handoff, and obtain
+fresh independent GO. Command-start count remains zero.

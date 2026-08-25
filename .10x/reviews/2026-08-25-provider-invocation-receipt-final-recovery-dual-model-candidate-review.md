@@ -5,6 +5,9 @@ Target: commit fa70a8c3e79d2df4d5b643f7bc1cc8af462f51ec, tree 45b2684c7d2f71e7c0
 Verdict: pass
 Candidate-GO: GO
 Candidate-SHA-256: 42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87
+Reviewed-Decision: .10x/decisions/superseded/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md
+Current-Decision: .10x/decisions/one-time-provider-invocation-receipt-final-recovery-precommand-boundary-correction.md
+Current-Applicability: stale-after-reviewed-handoff-deletion
 
 # Provider Invocation Receipt Final Recovery Dual-Model Candidate Review
 
@@ -99,10 +102,10 @@ corrected dual-model candidate bound above.
 and the retained handoff identities above receive fresh independent
 **PASS/GO**. Blockers: none.
 
-This GO satisfies only the provider-free candidate gate required by
-`.10x/decisions/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md`.
-Phase 2 remains inactive and requires separate live activation plus current-state
-and exact-handoff reproof before any command may begin.
+This GO satisfied only the provider-free candidate gate then required by
+`.10x/decisions/superseded/one-time-provider-invocation-receipt-final-recovery-model-authority-correction.md`.
+At review time phase 2 remained inactive and required separate live activation
+plus current-state and exact-handoff reproof before any command could begin.
 
 ## Residual limits and no-operation statement
 
@@ -116,3 +119,14 @@ access or mutate a cache; read a credential; import, construct, load, or run a
 model; open telemetry; access DNS, TLS, provider, or network behavior; run
 retrieval or a live command; create a receipt; alter the retained handoff; or
 activate phase 2.
+
+## Subsequent disposition
+
+This review and GO remain truthful for the exact handoff present at review time.
+A later generic pre-wrapper failure occurred before wrapper invocation or
+command start, and cleanup deleted that handoff. The GO is consequently stale
+and non-transferable, not retroactively changed to NO-GO. Under the active
+precommand-boundary decision, the canonical candidate ticket is active to
+rebuild the exact candidate, pass complete repeatable pre-wrapper preflight,
+retain it, and obtain fresh independent GO. The existing live ticket remains
+blocked/inactive with command-start count zero and authority unconsumed.
