@@ -1,9 +1,9 @@
-Status: open
+Status: active
 Created: 2026-08-25
 Updated: 2026-08-25
 Parent: .10x/tickets/2026-08-25-provider-invocation-receipt-final-recovery-plan.md
 Depends-On: .10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-integration.md
-Activation: inactive
+Activation: active
 Eligibility: eligible-after-explicit-activation
 Decision: .10x/decisions/one-time-provider-invocation-receipt-final-recovery.md
 Authorization: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-authorization.md
@@ -222,8 +222,8 @@ not become authority.
 
 ## Blockers
 
-None in the execution contract. The ticket has not been activated, so no
-preparation operation is currently authorized.
+None for provider-free preparation. Live access remains blocked until complete
+preparation evidence and exact independent PASS/GO.
 
 ## Progress and notes
 
@@ -232,3 +232,14 @@ preparation operation is currently authorized.
   `5eaf0f3ec6d7ee3a77cec04f5711782ceb5ad0ad`. No clone, cache access, build,
   install, validator/test, credential, model, telemetry, provider/network,
   retrieval, GO, or live operation occurred.
+- 2026-08-25: Explicit owner-directed activation marks only this candidate child
+  active for provider-free preparation. The pre-activation repository was clean
+  at exact HEAD `68ee19ffcca3bc9178a5c7335f6d8747f925728d`, tree
+  `54dcb5e9a1b00f7b38e5635da59acc3c5044c58f`, branch ref
+  `refs/heads/work/provider-invocation-receipts-execution`, in its registered
+  task worktree. The complete 67-worktree porcelain inventory SHA-256 was
+  `a9e7c5049c79917a2092fffa4e50e9e7e8ca2e00d7de8b2938695822017c2ac5`.
+  This separate activation authorizes provider-free preparation only. It did not
+  clone source, access or seed a cache, build or install a wheel, run a validator
+  or harness, read credentials, construct a model, open telemetry, access
+  provider/network, issue PASS/GO, or start a live command.
