@@ -7,14 +7,33 @@ process state; callers resolve and inject the client configuration explicitly.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field, fields, replace
 from functools import wraps
 import hashlib
 import math
 import re
 import struct
-from typing import Any, Callable, Iterable, Mapping, Protocol, Sequence, TypeVar
+import sys
+from types import TracebackType
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    Iterator,
+    Mapping,
+    Protocol,
+    Sequence,
+    TypeVar,
+    cast,
+)
 
+from buoy_search._provider_invocation_receipt import (
+    _CatalogCategory,
+    _CatalogObserver,
+    _CatalogOperationObserver,
+    _NoOpCatalogOperationObserver,
+)
 from buoy_search.catalog import (
     CatalogError,
     NamespaceCard,
@@ -567,55 +586,170 @@ def validate_remote_schema(metadata: object) -> dict[str, dict[str, object]]:
     return schema
 
 
+def _fault_invocation_observer(observer: object) -> None:
+    try:
+        ledger = getattr(observer, "_ledger", None)
+        fault = getattr(ledger, "_fault", None)
+        if callable(fault):
+            fault()
+    except BaseException:
+        pass
+
+
+@contextmanager
+def _catalog_operation(
+    observer: _CatalogObserver | None,
+) -> Iterator[_CatalogOperationObserver | _NoOpCatalogOperationObserver | None]:
+    if observer is None:
+        yield None
+        return
+    try:
+        context = observer._operation()
+        operation = context.__enter__()
+    except BaseException:
+        _fault_invocation_observer(observer)
+        yield None
+        return
+    try:
+        yield operation
+    except BaseException:
+        try:
+            context.__exit__(*sys.exc_info())
+        except BaseException:
+            _fault_invocation_observer(observer)
+        raise
+    else:
+        try:
+            context.__exit__(None, None, None)
+        except BaseException:
+            _fault_invocation_observer(observer)
+
+
+def _invoke_catalog_expression(
+    observer: _CatalogOperationObserver | _NoOpCatalogOperationObserver | None,
+    category: _CatalogCategory,
+    callback: Callable[..., T],
+    *args: object,
+    **kwargs: object,
+) -> T:
+    if observer is None:
+        return callback(*args, **kwargs)
+
+    called = False
+    returned = False
+    result: object = None
+    error: BaseException | None = None
+    traceback: TracebackType | None = None
+
+    def evaluate() -> T:
+        nonlocal called, returned, result, error, traceback
+        if called:
+            if error is not None:
+                raise error.with_traceback(traceback)
+            return cast(T, result)
+        called = True
+        try:
+            result = callback(*args, **kwargs)
+        except BaseException as exc:
+            error = exc
+            traceback = exc.__traceback__
+            raise
+        returned = True
+        return cast(T, result)
+
+    try:
+        observed = observer._invoke(category, evaluate)
+    except BaseException as exc:
+        if error is not None and exc is error:
+            raise
+        _fault_invocation_observer(observer)
+        if error is not None:
+            raise error.with_traceback(traceback) from None
+        if returned:
+            return cast(T, result)
+        return evaluate()
+    if error is not None:
+        _fault_invocation_observer(observer)
+        raise error.with_traceback(traceback)
+    if not called:
+        _fault_invocation_observer(observer)
+        return evaluate()
+    if observed is not result:
+        _fault_invocation_observer(observer)
+    return cast(T, result)
+
+
 @_sanitized_remote_operation("catalog read processing")
 def read_remote_catalog(
     client: RemoteClient,
     *,
     region: str,
     compatibility: CompatibilityContract,
+    _invocation_observer: _CatalogObserver | None = None,
 ) -> RemoteCatalogSnapshot:
-    first_ids, first_pages = _list_namespaces(client)
-    if REMOTE_CATALOG_NAMESPACE not in first_ids:
-        raise RemoteCatalogMissingError(
-            f"remote catalog namespace {REMOTE_CATALOG_NAMESPACE!r} does not exist in region {region!r}"
+    with _catalog_operation(_invocation_observer) as operation:
+        first_ids, first_pages = _list_namespaces(
+            client, _invocation_observer=operation
         )
-    resource = remote_catalog_resource(client)
-    metadata = _call("metadata read", lambda: resource.metadata())
-    schema = validate_remote_schema(metadata)
-    schema_version = (
-        REMOTE_SCHEMA_V3
-        if schema == REMOTE_CATALOG_SCHEMA_V3
-        else REMOTE_SCHEMA_V2
-        if schema == REMOTE_CATALOG_SCHEMA_V2
-        else REMOTE_SCHEMA_V1
-    )
-    first_cards, first_card_pages, first_billing = _read_card_pass(
-        resource, region=region, schema_version=schema_version
-    )
-    second_cards, second_card_pages, second_billing = _read_card_pass(
-        resource, region=region, schema_version=schema_version
-    )
-    first_identity = [(card.namespace, card.card_revision) for card in first_cards]
-    second_identity = [(card.namespace, card.card_revision) for card in second_cards]
-    first_revision = catalog_revision(first_cards)
-    second_revision = catalog_revision(second_cards)
-    if first_identity != second_identity or first_revision != second_revision:
-        raise RemoteCatalogError("remote catalog changed between strong-consistency read passes")
-    second_ids, second_pages = _list_namespaces(client)
-    if first_ids != second_ids:
-        raise RemoteCatalogError("remote namespace listing changed between read passes")
-    return classify_remote_catalog(
-        live_namespace_ids=first_ids,
-        cards=first_cards,
-        compatibility=compatibility,
-        metrics=ReadMetrics(
-            namespace_list_pages=first_pages + second_pages,
-            metadata_requests=1,
-            card_query_pages=first_card_pages + second_card_pages,
-            billing=tuple([*first_billing, *second_billing]),
-        ),
-        catalog_schema_version=schema_version,
-    )
+        if REMOTE_CATALOG_NAMESPACE not in first_ids:
+            raise RemoteCatalogMissingError(
+                f"remote catalog namespace {REMOTE_CATALOG_NAMESPACE!r} does not exist in region {region!r}"
+            )
+        resource = remote_catalog_resource(client)
+        metadata = _call(
+            "metadata read",
+            _invoke_catalog_expression,
+            operation,
+            "metadata",
+            resource.metadata,
+        )
+        schema = validate_remote_schema(metadata)
+        schema_version = (
+            REMOTE_SCHEMA_V3
+            if schema == REMOTE_CATALOG_SCHEMA_V3
+            else REMOTE_SCHEMA_V2
+            if schema == REMOTE_CATALOG_SCHEMA_V2
+            else REMOTE_SCHEMA_V1
+        )
+        first_cards, first_card_pages, first_billing = _read_card_pass(
+            resource,
+            region=region,
+            schema_version=schema_version,
+            _invocation_observer=operation,
+        )
+        second_cards, second_card_pages, second_billing = _read_card_pass(
+            resource,
+            region=region,
+            schema_version=schema_version,
+            _invocation_observer=operation,
+        )
+        first_identity = [
+            (card.namespace, card.card_revision) for card in first_cards
+        ]
+        second_identity = [
+            (card.namespace, card.card_revision) for card in second_cards
+        ]
+        first_revision = catalog_revision(first_cards)
+        second_revision = catalog_revision(second_cards)
+        if first_identity != second_identity or first_revision != second_revision:
+            raise RemoteCatalogError("remote catalog changed between strong-consistency read passes")
+        second_ids, second_pages = _list_namespaces(
+            client, _invocation_observer=operation
+        )
+        if first_ids != second_ids:
+            raise RemoteCatalogError("remote namespace listing changed between read passes")
+        return classify_remote_catalog(
+            live_namespace_ids=first_ids,
+            cards=first_cards,
+            compatibility=compatibility,
+            metrics=ReadMetrics(
+                namespace_list_pages=first_pages + second_pages,
+                metadata_requests=1,
+                card_query_pages=first_card_pages + second_card_pages,
+                billing=tuple([*first_billing, *second_billing]),
+            ),
+            catalog_schema_version=schema_version,
+        )
 
 
 def require_eligible(snapshot: RemoteCatalogSnapshot) -> RemoteCatalogSnapshot:
@@ -919,10 +1053,20 @@ def _namespace_page_cursor(page: object) -> str | None:
     return cursor
 
 
-def _list_namespaces(client: RemoteClient) -> tuple[tuple[str, ...], int]:
+def _list_namespaces(
+    client: RemoteClient,
+    *,
+    _invocation_observer: (
+        _CatalogOperationObserver | _NoOpCatalogOperationObserver | None
+    ) = None,
+) -> tuple[tuple[str, ...], int]:
     page = _call(
         "namespace listing",
-        lambda: client.namespaces(page_size=NAMESPACE_PAGE_SIZE),
+        _invoke_catalog_expression,
+        _invocation_observer,
+        "namespace_list_page",
+        client.namespaces,
+        page_size=NAMESPACE_PAGE_SIZE,
     )
     pages = 0
     values: list[str] = []
@@ -986,7 +1130,13 @@ def _list_namespaces(client: RemoteClient) -> tuple[tuple[str, ...], int]:
         )
         if not callable(getter):
             raise RemoteCatalogError("namespace listing advertised a next page without a getter")
-        page = _call("namespace listing pagination", getter)
+        page = _call(
+            "namespace listing pagination",
+            _invoke_catalog_expression,
+            _invocation_observer,
+            "namespace_list_page",
+            getter,
+        )
     return tuple(sorted(values)), pages
 
 
@@ -995,6 +1145,9 @@ def _read_card_pass(
     *,
     region: str,
     schema_version: int,
+    _invocation_observer: (
+        _CatalogOperationObserver | _NoOpCatalogOperationObserver | None
+    ) = None,
 ) -> tuple[tuple[NamespaceCard, ...], int, tuple[dict[str, object], ...]]:
     attributes = _remote_card_attributes(schema_version)
     cards: list[NamespaceCard] = []
@@ -1019,7 +1172,11 @@ def _read_card_pass(
             kwargs["filters"] = ("id", "Gt", last_id)
         response = _call(
             "card page query",
-            lambda: resource.query(**kwargs),
+            _invoke_catalog_expression,
+            _invocation_observer,
+            "card_query_page",
+            resource.query,
+            **kwargs,
         )
         pages += 1
         plain = _call("card page response normalization", _plain, response)

@@ -89,13 +89,7 @@ excluded.
 
 ## Blockers
 
-The governing contract has independent PASS rereview at
-`.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md`.
-The core dependency is satisfied by its done ticket at independently reviewed
-source commit `8953e9336354f2a2e0604a54be9cd882a97a7985`, tree
-`66fb2d0dcca5d397132f60eb0be6d22a5b69479b`. This child must still be
-explicitly activated in a later turn before execution. Ticket remains
-open/inactive.
+None.
 
 ## Progress and notes
 
@@ -127,3 +121,34 @@ open/inactive.
   implementation from clean HEAD `9273afe0a5ff8495c48a2ffa057e2240d128a57c`.
   Catalog source/test work has not begun; integration, CLI wiring, and
   operational children remain inactive and excluded.
+- 2026-08-24: Implemented the one private default-`None` catalog observer
+  keyword and propagated only its explicit operation capability through the
+  two namespace-list passes, metadata expression, and both card-query passes.
+  Observation wraps only initial/continuation list, metadata, and card-query SDK
+  expressions; source order, `_call` sanitization, strong duplication,
+  pagination, caller defaults, and all processing remain unchanged. Added 12
+  focused local-fake tests covering minimum/multipage aggregates, exhaustive
+  conditional bounds and ordered prerequisites, 40,001/40,002, SDK and local
+  terminal outcomes, both cancellation classes, control-flow identity,
+  observer faults, default/active-scope isolation, exact bytes, and caller
+  containment.
+- 2026-08-24: Execution proved one blocking reviewed-core defect allowed by
+  this ticket's exclusion boundary. A catalog SDK
+  `concurrent.futures.CancelledError` was recorded as an interrupted invocation,
+  but existing `_call` sanitization made the outer exception a
+  `RemoteCatalogError`, so catalog operation completion incorrectly became
+  `error` and invalidated the receipt. Supervisor approved the mirrored minimal
+  repair: exceptional catalog completion now prefers an already recorded
+  interrupted invocation; all other outer-exception classification and caller-
+  visible sanitization remain unchanged. Focused regression proves the receipt
+  is authoritative interrupted while caller type/message behavior is baseline-
+  equivalent and unrelated ordinary errors remain error.
+- 2026-08-24: Final credential-removed, telemetry-independent strict-offline
+  validation passed remote-catalog plus core/content/catalog receipt tests
+  130/130 on Python 3.13 and 130/130 on Python 3.11, exact AST/default/caller/
+  source-order static checks, both frozen-contract validators, and
+  `git diff --check`. Tests used local fakes; generated version and isolated
+  environment artifacts were removed. No provider, network, credential, model,
+  catalog/content operation, store, telemetry, database, persistence, canary,
+  CLI wiring, routing, release, or global-tool operation ran. Ticket remains
+  active pending independent review.

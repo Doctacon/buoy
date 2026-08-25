@@ -682,10 +682,14 @@ class _CatalogObserver:
             yield observer
         except BaseException as exc:
             if operation is not None:
+                outcome = _exception_outcome(exc)
+                if any(
+                    counts["interrupted"]
+                    for counts in operation.counts.values()
+                ):
+                    outcome = "interrupted"
                 try:
-                    self._ledger._complete_catalog(
-                        operation, _exception_outcome(exc)
-                    )
+                    self._ledger._complete_catalog(operation, outcome)
                 except BaseException:
                     self._ledger._fault()
             raise
