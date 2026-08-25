@@ -116,3 +116,14 @@ the owner explicitly activated only this core child for execution at clean HEAD
   from clean HEAD `022095ed4c3fe606a1744f3818c6ec1ecdf3d085`. The separate
   provider-free latency probe remains blocked and MUST NOT be rerun or repaired.
   Source work has not begun; this activation record is committed separately.
+- 2026-08-24: Implemented the private core in
+  `src/buoy_search/_provider_invocation_receipt.py` and focused direct-seam tests
+  in `tests/test_provider_invocation_receipt_core.py`. Final credential-removed,
+  offline runs passed all 40 tests on Python 3.11 and 3.13. A static AST/scope
+  inspection passed 42 private definitions, standard-library-only imports, no
+  package/CLI exposure, and exactly the two intended uncommitted source/test
+  paths before this progress update. Both repository frozen-contract static
+  validators also passed. No provider, model, network, content,
+  catalog, store, telemetry, persistence, routing-artifact, or latency-probe
+  operation ran. The ticket remains active pending independent review; exact
+  candidate commit/tree and diff are reported in the implementation handoff.
