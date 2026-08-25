@@ -1,4 +1,4 @@
-Status: open
+Status: active
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
@@ -100,3 +100,7 @@ open/inactive.
   tree `66fb2d0dcca5d397132f60eb0be6d22a5b69479b`. This child remains
   open/inactive pending separate explicit activation; no content source/test or
   operational work ran in the records-only core closure.
+- 2026-08-24: Owner explicitly activated only this content child for
+  implementation from clean HEAD `54a19f705c7bccd1ee50b27485bda6ec30db1361`.
+  Content source/test work has not begun; catalog, integration, and operational
+  children remain inactive and excluded.
