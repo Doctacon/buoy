@@ -10,8 +10,8 @@ Depends-On: None
 
 Turn the completed `v0.6.3` production-style telemetry findings into two
 truthful, bounded outcomes: explain the dominant command time outside the nested
-pipeline, then define privacy-safe physical provider-attempt accounting so
-future performance, cost, retry, and rate-limit decisions are evidence-backed.
+pipeline, then define privacy-safe Buoy SDK call-attempt accounting without
+conflating it with unresolved physical wire, provider-cost, or rate-limit use.
 
 ## Child sequence
 
@@ -31,8 +31,9 @@ telemetry mutation, implementation, migration, release, or global-tool change.
 
 - The latency child must distinguish measured stage time from unmeasured command
   residual and must not turn three production samples into a distribution.
-- The attempt-accounting child must preserve the established distinction between
-  logical namespace operations and physical client invocations.
+- The attempt-accounting child must preserve the distinction among logical
+  namespace operations, Buoy SDK call attempts (`provider_client_invocation`),
+  and unresolved physical wire sends/provider accounting.
 - Findings, source authority, and unresolved choices must be durable before the
   next child advances.
 - Any implementation outcome requires its own focused specification and bounded
@@ -68,15 +69,24 @@ telemetry mutation, implementation, migration, release, or global-tool change.
 - 2026-08-24: Child 2 completed source-only attempt-path and product-surface
   shaping in
   `.10x/research/2026-08-24-physical-provider-attempt-accounting-options.md`.
-  The candidate recommends counting Buoy-to-SDK request-method entries in a
-  canary-only sanitized terminal receipt, with content and catalog families
-  separate. Exact wire sends remain unprovable at that boundary. Child 2 stays
-  blocked pending owner decisions and independent review of this candidate.
+  The candidate recommends counting Buoy SDK call attempts immediately before
+  call-expression evaluation in a canary-only sanitized terminal receipt, with
+  content and catalog families separate. Exact wire sends, provider cost, and
+  rate-limit usage remain unprovable at that boundary. Child 2 stays blocked
+  pending owner decisions and independent review of this candidate.
+- 2026-08-24: Independent review run
+  `f17899d7-59f5-43c0-b8f9-66e68f844887` returned FAIL on catalog failure
+  cardinality, CLI-versus-generic fanout, method-entry wording, and wire-unit
+  overstatement. The records-only candidate was repaired to record 40,001
+  successful/40,002 terminal-failure catalog bounds, explicit-multi CLI 2..3
+  versus generic 1..3 fanout, increment-before-call-expression semantics, and
+  the non-wire `provider_client_invocation` unit. Child 2 remains blocked and
+  requires fresh independent review.
 
 ## Blockers
 
-- Independent review of child 2's source-completeness, privacy, and semantic
-  checkpoint is pending.
+- Fresh independent review of repaired child 2 source-completeness, privacy,
+  bounds, and semantic checkpoint is pending.
 - Parent completion then requires owner ratification of attempt unit, product
   surface, catalog scope, failure/detail semantics, and retention before a
   focused specification can become active.

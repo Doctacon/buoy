@@ -31,21 +31,32 @@ read, telemetry command, provider/model/credential/network operation, or
 external operation ran. The locked SDK implementation is not vendored, so its
 internal HTTP sends/retries were not treated as source-proven.
 
-## Terminology finding: client invocation is not necessarily a wire send
+After independent FAIL review `f17899d7-59f5-43c0-b8f9-66e68f844887`, the
+records-only repair reinspected unchanged exact source at candidate
+`947322ca6d41eb90c5c539efb79cf55d64491936`, tree
+`a64232188c35fa1ff61d6ca647ab8b79b65840c7`. It corrected catalog terminal-
+failure cardinality, CLI-versus-generic fanout, call-expression timing, and the
+application-boundary unit without running source/tests or external operations.
 
-Buoy can completely observe each call it makes to a provider SDK method. It
-cannot currently prove how many HTTP transmissions that SDK performs internally
-for one method call. Conversely, the server-RRF compatibility call may raise a
-local argument `TypeError` before any network send. Therefore the smallest
-source-owned, deterministic unit is **provider client invocation**:
+## Terminology finding: a Buoy SDK call attempt is not a wire send
 
-> One entry into a governed provider request method made by Buoy, counted before
-> the method returns or raises.
+Buoy can completely observe each SDK call expression it evaluates. It cannot
+currently prove whether that expression enters the SDK method body or how many
+HTTP transmissions the SDK performs internally. In particular, Python argument
+binding may raise the server-RRF call's local signature `TypeError` before SDK
+method-body entry and before any network send. Therefore the smallest
+source-owned, deterministic unit is **Buoy SDK call attempt**, with durable name
+`provider_client_invocation`:
 
-This is a conservative application-boundary attempt count. It includes local
-SDK rejection and excludes invisible SDK-internal retries. It MUST NOT be
-reported as exact HTTP/wire-request count unless a separately verified SDK
-transport boundary proves one-to-one behavior.
+> One attempt by Buoy to invoke a governed provider SDK call expression, counted
+> immediately before evaluating that expression and finalized after it returns
+> or raises.
+
+This is a conservative application-boundary count. It includes local signature
+rejection and excludes invisible SDK-internal retries. It MUST NOT be reported
+as a physical wire send, provider-billed request, or rate-limit unit. Those
+claims require a separately verified SDK transport boundary; actual wire
+accounting remains unresolved.
 
 The completed canary has neither unit: its `buoy.namespace.query` spans prove
 logical operations only.
@@ -61,7 +72,7 @@ bounded loop at `src/buoy_search/retriever.py:744-775`.
    calls `run_multi_query` (`retriever.py:752-763`, `1792-1817`).
 2. `run_multi_query` first invokes
    `namespace.multi_query(..., rerank_by=("RRF",))`
-   (`retriever.py:1833-1836`). This is one provider client invocation with
+   (`retriever.py:1833-1836`). This is one Buoy SDK call attempt with
    request form `server_rrf`.
 3. Only a `TypeError` classified as unsupported server reranking causes the
    second invocation `namespace.multi_query(queries=...)`
@@ -74,8 +85,8 @@ bounded loop at `src/buoy_search/retriever.py:744-775`.
    repeated, or required-attribute errors terminate the logical operation.
 5. Consequently one logical namespace operation has one through three outer
    request iterations; each iteration has one or two SDK invocations. The
-   source-reachable bound is **1 through 6 provider client invocations per
-   logical namespace operation**. Six is possible when both optional fields are
+   source-reachable bound is **1 through 6 `provider_client_invocation` units
+   per logical namespace operation**. Six is possible when both optional fields are
    rejected in separate iterations and server RRF is unsupported in every
    iteration. This is an SDK-invocation bound, not a proven wire-send bound.
 
@@ -89,8 +100,8 @@ Focused tests establish the branches:
 - one invocation then failure for unrelated schema errors:
   `tests/test_retriever.py:1030-1048`.
 
-The two ANN/BM25 subqueries are one `multi_query` invocation, not two physical
-client invocations.
+The two ANN/BM25 subqueries are one `multi_query` SDK call attempt, not two
+`provider_client_invocation` units and not evidence of wire sends.
 
 ### Explicit single
 
@@ -105,8 +116,10 @@ call to `retrieve_embedded` (`retriever.py:687-742`). Therefore:
 
 ### Explicit multi
 
-Live explicit-multi constructs `MultiNamespaceRetriever`; at most three unique
-namespace configs are allowed (`retriever.py:62`, `887-924`). `_retrieve_batch`
+The CLI classifies `explicit_multi` only when the resolved explicit namespace
+list has two or three members (`cli.py:932-950`, `2504-2512`). Live explicit-
+multi constructs `MultiNamespaceRetriever`; at most three unique namespace
+configs are allowed (`retriever.py:62`, `887-924`). `_retrieve_batch`
 submits one target task per selected namespace and no namespace twice
 (`retriever.py:1234-1289`). Each target invokes `retrieve_embedded` once inside
 one logical `buoy.namespace.query` span (`retriever.py:1291-1310`). Therefore:
@@ -114,13 +127,18 @@ one logical `buoy.namespace.query` span (`retriever.py:1291-1310`). Therefore:
 - preview: zero content invocations;
 - reranker/model failure before batch: zero content invocations
   (`tests/test_multi_namespace_retrieval.py:587-606`);
-- live fanout `N` (1..3): exactly `N` logical operations, concurrent where
-  `N>1`, with `N..6N` client invocations; and
+- CLI explicit-multi fanout `N` is 2..3: exactly `N` logical operations,
+  concurrent, with `N..6N` client invocations (2..18 total); and
 - provider failure does not cause a generic namespace retry. The failed target
   is retained as one failed logical outcome while other targets finish.
 
 Concurrency is proven by `tests/test_multi_namespace_retrieval.py:140-165`;
-partial/all failure behavior by lines 558-585 and 632-650.
+partial/all failure behavior by lines 558-585 and 632-650. The generic
+`MultiNamespaceRetriever` constructors accept one config/retriever
+(`retriever.py:850-924`), so the non-CLI context remains 1..3 logical operations
+and 1..18 client invocations;
+that generic lower bound does not apply to CLI mode `explicit_multi`, which by
+definition has at least two explicit namespaces.
 
 ### Automatic live and preview
 
@@ -138,7 +156,7 @@ initial fanout into `MultiNamespaceRetriever.retrieve`
   may widen once to the remaining targets (`retriever.py:1091-1120`). Each
   added namespace is queried once logically.
 - Thus automatic live reaches 1..3 logical namespace operations and 1..18
-  provider client invocations. A namespace is never queried twice by routing
+  `provider_client_invocation` units. A namespace is never queried twice by routing
   widening, but its one logical operation may still contain compatibility and
   optional-schema attempts.
 - Missing reranker after top-1 can stop before added targets; the first logical
@@ -162,12 +180,22 @@ The strong catalog read at `src/buoy_search/remote_catalog.py:570-618` performs:
 - two card-query passes, each invoking `resource.query(...)` once per page
   (`remote_catalog.py:592-597`, `993-1070`).
 
-The source bounds each pass to 10,000 pages and reports successful-read counts
-as `namespace_list_pages`, `metadata_requests`, and `card_query_pages`
-(`remote_catalog.py:35-40`, `611-615`). The minimum complete one-page read is
-five catalog request-method invocations: two list pages, one metadata, and two
-card-query pages. The source maximum is 40,001 across the four bounded passes
-plus metadata. These are deliberate strong reads, not retries.
+The source bounds each pass to 10,000 processed pages and reports
+successful-read counts as `namespace_list_pages`, `metadata_requests`, and
+`card_query_pages` (`remote_catalog.py:35-40`, `611-615`). The minimum complete
+one-page read is five catalog SDK call attempts: two list pages, one metadata,
+and two card-query pages. The maximum successful complete read is **40,001**:
+10,000 calls in each of the four passes plus metadata.
+
+A terminal bounded failure can reach **40,002**. In the final second namespace-
+list pass, `_list_namespaces` may fetch the continuation after processing page
+10,000; only the next loop iteration rechecks `pages >= 10_000` and raises
+(`remote_catalog.py:929-990`).
+That failing path therefore reaches 10,001 list SDK call attempts after the
+prior 30,001 successful-family calls. Card-query passes recheck before their
+next `resource.query` expression and do not have this extra fetch. Error or
+interrupted receipt bounds MUST admit 40,002; 40,001 is only the successful
+complete-read maximum. These are deliberate strong reads, not retries.
 
 `client` construction and `client.namespace(...)` resource acquisition are not
 classified as request attempts: source calls the SDK constructor inert for
@@ -187,23 +215,27 @@ interpret.
 
 ## Error, interruption, cancellation, and retry semantics
 
-- A client invocation is counted immediately before entering the governed SDK
-  request method. Return, governed exception, `TypeError`, or interruption does
-  not erase it.
-- Validation/model/configuration failure before method entry counts zero.
+- A `provider_client_invocation` increments immediately before Buoy evaluates
+  each governed SDK call expression. Return, governed exception, local signature
+  `TypeError`, or interruption does not erase it.
+- Validation/model/configuration failure before that call expression counts
+  zero. A signature `TypeError` during expression evaluation counts one even if
+  Python argument binding prevents SDK method-body entry.
 - Response parsing/ranking failure after a returned response adds no attempt.
 - Compatibility and optional-schema paths are **fallbacks**, each counted as a
   new invocation; repository source has no generic content retry loop.
 - `_retrieve_batch` catches only `ProviderCallError` and `RuntimeError` as
   per-namespace failures (`retriever.py:1270-1287`). Other interruption escapes.
   No source-reachable call invokes `Future.cancel` or resubmits a target.
-- An invocation interrupted after entry counts with terminal outcome
-  `interrupted`. A future that never begins provider method entry counts zero.
+- An invocation whose call expression is interrupted after increment counts
+  with terminal outcome `interrupted`. A future that never reaches the governed
+  call expression counts zero.
 - Process death before a terminal receipt makes the receipt incomplete or
   absent; a canary must report the attempt count as unknown rather than infer a
   bound.
-- The locked SDK may retry internally or reject locally. Neither event is
-  distinguishable at Buoy's current method-call boundary. Exact wire attempts
+- The locked SDK may retry internally or reject locally. Internal retries are
+  not distinguishable at Buoy's call-expression boundary, while local signature
+  rejection still counts as one Buoy SDK call attempt. Exact wire attempts
   therefore require SDK HTTP-transport instrumentation, not merely retriever
   wrapping.
 
@@ -224,13 +256,15 @@ retention/purge policy, so permanent production persistence cannot be inferred.
 
 ## Candidate observation boundaries
 
-### A. Buoy SDK-method boundary
+### A. Buoy SDK call-expression boundary
 
-Wrap the exact content `namespace.multi_query` calls and catalog request-method
-calls listed above. This is source-complete, deterministic, fake-testable, and
-can be content-free. It counts local SDK rejection and cannot see SDK-internal
-HTTP retries. This boundary supports conservative Buoy-issued invocation
-budgets but not exact wire-cost claims.
+Wrap the exact content `namespace.multi_query` expressions and catalog SDK call
+expressions listed above, incrementing immediately before Buoy evaluates each
+one. This is source-complete, deterministic, fake-testable, and can be content-
+free. It counts local signature rejection even when SDK method-body entry never
+occurs, and it cannot see SDK-internal HTTP retries. This boundary supports
+conservative Buoy-issued SDK-call budgets but not wire-send, provider-cost, or
+rate-limit claims.
 
 ### B. SDK HTTP transport boundary
 
@@ -276,8 +310,9 @@ public callback before a concrete consumer exists.
 
 ## Recommended candidate contract (unratified)
 
-Use **Boundary A** and name the unit `provider_client_invocation`, not exact
-wire request. Start with a **canary-only terminal receipt**, not production
+Use **Boundary A** and name the unit `provider_client_invocation`, meaning one
+Buoy SDK call attempt—not a physical wire request, billed operation, or rate-
+limit unit. Start with a **canary-only terminal receipt**, not production
 telemetry. Count content and catalog families separately.
 
 For content, retain at most three route-rank-only logical entries and at most
@@ -290,40 +325,52 @@ six attempts per entry. Each attempt contains only:
 - outcome `success`, `error`, or `interrupted`; and
 - nullable governed generic error category.
 
-The receipt also records logical-operation count and total content client
-invocations. It never records namespace, optional attribute name, query, argv,
+The receipt also records logical-operation count and total content
+`provider_client_invocation` units. It never records namespace, optional
+attribute name, query, argv,
 credential, URL, request/response payload, raw error, stack, path, or provider
 identifier.
 
 For catalog, retain only aggregate reached invocation counts by
 `namespace_list_page`, `metadata`, and `card_query_page`, plus aggregate
-success/error/interrupted totals. Do not retain cards, namespaces, cursors,
-billing payload, URLs, or page contents.
+success/error/interrupted totals. A successful complete receipt permits at most
+40,001 catalog invocations; a terminal error/interrupted receipt permits 40,002
+to cover the second-list continuation fetched before the bound recheck. Do not
+retain cards, namespaces, cursors, billing payload, URLs, or page contents.
 
-Increment before method entry; finalize outcome after return/raise. A terminal
-receipt is authoritative only when internal totals equal its bounded entries
-and the command result is known. Missing/incomplete receipt means unknown and
-cannot satisfy a physical-attempt acceptance gate. Observer failure must not
-change retrieval behavior; it only makes the accounting receipt unavailable.
-Retain the sanitized receipt with durable canary evidence and delete raw
-runtime logs/artifacts. Do not add recurring production retention.
+Increment immediately before evaluating each governed SDK call expression;
+finalize outcome after return/raise. A local signature `TypeError` after the
+increment remains one call attempt even without SDK method-body entry. A
+terminal receipt is authoritative only when internal totals equal its bounded
+entries and the command result is known. Missing/incomplete receipt means
+unknown and cannot satisfy a `provider_client_invocation` acceptance gate.
+Observer failure must not change retrieval behavior; it only makes the
+accounting receipt unavailable. Retain the sanitized receipt with durable
+canary evidence and delete raw runtime logs/artifacts. Do not add recurring
+production retention.
 
-If the owner requires exact HTTP/wire sends rather than conservative SDK
-invocations, reject this recommendation and first investigate Boundary B; no
-current record can truthfully specify it.
+If the owner requires exact HTTP/wire sends, provider cost, or rate-limit usage
+rather than conservative Buoy SDK call attempts, reject this recommendation and
+first investigate Boundary B. No current record can truthfully specify or bound
+those physical transport semantics; actual wire accounting remains unresolved.
 
 ## Exact decisions still required
 
-1. **Unit:** Is one entered Buoy-to-SDK request method the accepted attempt
-   unit, explicitly including local SDK rejection and excluding unknown
-   SDK-internal retries, or must the count mean actual HTTP sends?
+1. **Unit:** Is `provider_client_invocation`—one Buoy SDK call attempt counted
+   immediately before call-expression evaluation, explicitly including local
+   signature rejection and excluding unknown SDK-internal retries—the accepted
+   application-boundary unit? If the requirement is actual wire sends, provider
+   cost, or rate-limit usage instead, authorize separate transport-boundary
+   research rather than relabel this count.
 2. **Surface:** Is the first implementation a canary-only terminal receipt, or
    must ordinary opted-in production telemetry persist it?
 3. **Families:** Must the receipt include separate content and automatic-catalog
    invocation families, or content only?
 4. **Detail and failure semantics:** Confirm route-rank-only bounded content
-   attempts, aggregate catalog categories, count-before-entry, terminal
-   `success|error|interrupted`, and absent/incomplete receipt => unknown.
+   attempts, aggregate catalog categories, 40,001 successful/40,002 terminal-
+   failure catalog bounds, increment-before-call-expression evaluation,
+   terminal `success|error|interrupted`, and absent/incomplete receipt =>
+   unknown.
 5. **Retention:** Confirm indefinite retention of only the sanitized canary
    receipt with evidence, deletion of raw artifacts, and no recurring
    production retention/purge change.
