@@ -5,6 +5,7 @@ Parent: .10x/tickets/2026-08-24-improve-retrieval-telemetry-actionability.md
 Depends-On: .10x/tickets/done/2026-08-24-run-local-telemetry-v2-canary.md
 Knowledge: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
 Research: .10x/research/2026-08-24-physical-provider-attempt-accounting-options.md
+Review: .10x/reviews/2026-08-24-physical-provider-attempt-accounting-shaping-rereview.md
 
 # Define Physical Provider Attempt Accounting
 
@@ -20,8 +21,10 @@ provider cost, or rate-limit usage. Actual wire accounting remains unresolved.
 - Enumerate every Buoy SDK call-attempt path reachable from retrieval, including
   the initial request, server-side-fusion compatibility fallback, optional-
   schema fallback, and any governed retry path.
-- Decide whether the count belongs in production telemetry v2, a canary-only
-  receipt/harness, provider-client diagnostics, or another focused surface.
+- Decide whether the count belongs in recurring production telemetry under a
+  separately specified compatible schema, a canary-only receipt/harness,
+  provider-client diagnostics, or another focused surface. Active telemetry v2
+  is exact and non-extensible.
 - Define exact count semantics, lifecycle, failure handling, privacy fields,
   retention, and evidence requirements.
 - Derive a focused specification and bounded executable implementation ticket
@@ -116,6 +119,17 @@ are explicit.
   from unproven wire sends/cost/rate-limit usage. Ticket remains blocked pending
   fresh independent review and owner decisions; no specification or executable
   ticket exists.
+- 2026-08-24: Independent rereview
+  `e91d4f44-e594-4d62-a282-d63236cd0581` returned PASS for repaired commit
+  `0ed20c4d2d68a4a823f689b372095e777a48d459`. The prior FAIL remains truthful
+  for its original candidate, and all four findings are repaired. Rereview is
+  recorded at
+  `.10x/reviews/2026-08-24-physical-provider-attempt-accounting-shaping-rereview.md`.
+  Closure reconciliation corrected the candidate-surface wording: active v2 is
+  exact/non-extensible, so the alternative is recurring production telemetry
+  only under a separately specified compatible schema. The ticket remains
+  blocked on exactly the five owner decisions above; no specification or
+  executable ticket is active.
 
 ## References
 

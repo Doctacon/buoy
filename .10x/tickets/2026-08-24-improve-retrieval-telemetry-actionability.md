@@ -82,11 +82,19 @@ telemetry mutation, implementation, migration, release, or global-tool change.
   versus generic 1..3 fanout, increment-before-call-expression semantics, and
   the non-wire `provider_client_invocation` unit. Child 2 remains blocked and
   requires fresh independent review.
+- 2026-08-24: Independent rereview
+  `e91d4f44-e594-4d62-a282-d63236cd0581` passed repaired child 2 commit
+  `0ed20c4d2d68a4a823f689b372095e777a48d459`; the historical FAIL remains
+  truthful and all four findings are repaired. The minor candidate-surface
+  wording now reflects that active v2 is exact/non-extensible: recurring
+  production telemetry is possible only under a separately specified
+  compatible schema. Child 2 remains blocked on exactly five owner decisions.
 
 ## Blockers
 
-- Fresh independent review of repaired child 2 source-completeness, privacy,
-  bounds, and semantic checkpoint is pending.
-- Parent completion then requires owner ratification of attempt unit, product
-  surface, catalog scope, failure/detail semantics, and retention before a
-  focused specification can become active.
+- Owner ratification of the five child decisions: attempt unit, product surface,
+  catalog-family scope, bounded detail/failure semantics, and retention.
+- After ratification, a focused active specification and bounded executable
+  implementation ticket must be created and reviewed before any source or
+  operational work. The parent remains active until those prerequisites and
+  child outcome are coherent.
