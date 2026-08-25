@@ -2,7 +2,7 @@ Status: open
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
-Depends-On: .10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipt-core.md, .10x/tickets/2026-08-24-instrument-content-provider-invocations.md, .10x/tickets/2026-08-24-instrument-catalog-provider-invocations.md
+Depends-On: .10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipt-core.md, .10x/tickets/done/2026-08-24-instrument-content-provider-invocations.md, .10x/tickets/2026-08-24-instrument-catalog-provider-invocations.md
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
 Authorization-Evidence: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md, .10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md
 Downstream-Canary: .10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md
@@ -120,12 +120,14 @@ The governing contract has independent PASS rereview at
 `.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md`.
 The core predecessor is done at independently reviewed source commit
 `8953e9336354f2a2e0604a54be9cd882a97a7985`, tree
-`66fb2d0dcca5d397132f60eb0be6d22a5b69479b`. The content and catalog
-predecessors must still be done at independently reviewed exact commits, and
-this child must be explicitly activated in a later turn before execution.
-Ticket remains open/inactive. Its exact final fake-only commit must pass
-independent integration review before the separate downstream live-canary
-ticket may activate.
+`66fb2d0dcca5d397132f60eb0be6d22a5b69479b`; the content predecessor is done at
+independently reviewed source commit
+`e72841d2c4553c66f99be9f57efc1cd137fd543d`, tree
+`8fea9db249214a6d633a7d34d2c014fbcd6e816b`. The catalog predecessor must still
+be done at an independently reviewed exact commit, and this child must be
+explicitly activated in a later turn before execution. Ticket remains
+open/inactive. Its exact final fake-only commit must pass independent integration
+review before the separate downstream live-canary ticket may activate.
 
 ## Progress and notes
 
@@ -158,3 +160,10 @@ ticket may activate.
   open/inactive behind the content and catalog children; no integration
   source/test, CLI receipt, artifact, or operational work ran in this
   records-only closure.
+- 2026-08-24: Content predecessor satisfied by
+  `.10x/tickets/done/2026-08-24-instrument-content-provider-invocations.md` at
+  reviewed source commit `e72841d2c4553c66f99be9f57efc1cd137fd543d`, tree
+  `8fea9db249214a6d633a7d34d2c014fbcd6e816b`. Integration remains open/inactive
+  behind only catalog and still requires separate explicit activation; no
+  integration source/test, CLI receipt, routing artifact, validation, or
+  operational work ran in this records-only closure.

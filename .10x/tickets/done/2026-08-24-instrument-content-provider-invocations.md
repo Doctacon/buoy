@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
@@ -8,8 +8,11 @@ Authorization-Evidence: .10x/evidence/2026-08-24-provider-client-invocation-rece
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
+Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
+Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-content-closure.md
+Review: .10x/reviews/2026-08-24-provider-invocation-receipt-content-review.md
+Reviewed-Source: commit e72841d2c4553c66f99be9f57efc1cd137fd543d, tree 8fea9db249214a6d633a7d34d2c014fbcd6e816b
 
 # Instrument Content Provider Invocations
 
@@ -72,13 +75,7 @@ generic retry, release, and global-tool changes are excluded.
 
 ## Blockers
 
-The governing contract has independent PASS rereview at
-`.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md`.
-The core dependency is satisfied by its done ticket at independently reviewed
-source commit `8953e9336354f2a2e0604a54be9cd882a97a7985`, tree
-`66fb2d0dcca5d397132f60eb0be6d22a5b69479b`. This child must still be
-explicitly activated in a later turn before execution. Ticket remains
-open/inactive.
+None.
 
 ## Progress and notes
 
@@ -131,3 +128,34 @@ open/inactive.
   network, credential, model, content store, telemetry store, database,
   persistence, canary, catalog, routing/ranking, release, or global-tool
   operation ran. Ticket remains active pending independent content review.
+- 2026-08-24: Independent review passed exact source commit
+  `e72841d2c4553c66f99be9f57efc1cd137fd543d`, tree
+  `8fea9db249214a6d633a7d34d2c014fbcd6e816b`, with no blocker or required
+  repair. Focused closure evidence maps all seven acceptance criteria, including
+  the authorized transformed-cancellation core defect; confirms both active
+  specs remain coherent; preserves the historical contract FAIL and repair
+  lineage; and records the no-rerun/raw-output limit. This records-only closure
+  preserves reviewed source/test blobs, sets blockers to none, and moves the
+  ticket to `tickets/done`.
+
+## Retrospective
+
+- Exact call-expression observation required registration before Python could
+  reject the SDK keyword signature; method-body-entry counting would have
+  silently undercounted compatibility fallback.
+- Existing outer exception sanitization can transform cancellation after the
+  governed attempt has already recorded authoritative interruption. The narrow
+  repair is to prefer only an already-recorded final `interrupted` attempt for
+  operation completion, while preserving the external exception type, chain,
+  message, and call count and leaving ordinary errors unchanged.
+- Composing receipt-only worker binding inside the existing private telemetry
+  callable preserved both independently governed contexts without copying
+  ambient context or introducing a replacement worker abstraction.
+- A focused 23-test local-fake matrix was sufficient to make grammar, fanout,
+  concurrency, privacy, and observer-fault equivalence independently
+  reviewable. Catalog, integrated CLI/final validation, and live-canary behavior
+  remain correctly isolated in downstream tickets.
+- No new reusable skill, specification change, or follow-up ticket is needed.
+  The closure evidence and PASS review retain the exact source identity,
+  criterion mapping, historical FAIL/repair lineage, and residual evidence
+  limits needed by downstream executors.
