@@ -140,3 +140,16 @@ the owner explicitly activated only this core child for execution at clean HEAD
   model, network, content, catalog, store, telemetry, persistence, routing,
   canary, or latency-probe operation ran. Ticket remains active pending fresh
   independent review of the repaired commit.
+- 2026-08-24: Repaired the exact remaining no-op observer keyword-signature
+  blocker. The preallocated content fallback now names `request_form` and
+  `trigger`, and the catalog fallback now names `category`, exactly matching
+  their normal observer signatures. The two constructor-fault regressions now
+  invoke the selected no-op fallbacks by keyword and prove callback execution
+  exactly once for both identity-preserving return and identical-exception
+  propagation. Inspection found no other fallback/signature pair under this
+  contract. Credential-removed, telemetry-disabled, offline/no-model/no-store
+  runs passed the two focused regressions and all 45 core tests on Python 3.11,
+  all 45 on Python 3.13, exact signature/private-module static inspection, and
+  both frozen-contract validators. No provider, network, credential, model,
+  content, catalog, store, telemetry, persistence, canary, or probe operation
+  ran. Ticket remains active pending independent review of this bounded repair.

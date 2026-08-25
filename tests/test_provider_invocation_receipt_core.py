@@ -4,6 +4,7 @@ import asyncio
 from concurrent.futures import CancelledError as FuturesCancelledError, ThreadPoolExecutor
 from contextvars import Context
 from dataclasses import FrozenInstanceError
+import inspect
 import itertools
 import json
 from pathlib import Path
@@ -444,6 +445,10 @@ class ReceiptLifecycleTests(unittest.TestCase):
                 self.assertIsNone(handle.receipt())
 
     def test_content_observer_constructor_fault_preserves_callback_identity(self) -> None:
+        self.assertEqual(
+            inspect.signature(receipt._NoOpContentOperationObserver._invoke),
+            inspect.signature(receipt._ContentOperationObserver._invoke),
+        )
         marker = object()
         calls = 0
         with receipt._provider_invocation_receipt_scope() as handle:
@@ -457,22 +462,39 @@ class ReceiptLifecycleTests(unittest.TestCase):
             ):
                 with receipt._content_operation(1) as observer:
                     self.assertIs(
-                        observer._invoke("server_rrf", "initial", callback), marker
+                        observer._invoke(
+                            request_form="server_rrf",
+                            trigger="initial",
+                            callback=callback,
+                        ),
+                        marker,
                     )
         self.assertEqual(calls, 1)
         self.assertIsNone(handle.receipt())
 
         exc = RuntimeError("original")
         caught = None
+        calls = 0
+
+        def raising_callback() -> None:
+            nonlocal calls
+            calls += 1
+            raise exc
+
         with receipt._provider_invocation_receipt_scope() as raised_handle:
             with patch.object(
                 receipt, "_ContentOperationObserver", side_effect=RuntimeError("private")
             ):
                 try:
                     with receipt._content_operation(1) as observer:
-                        observer._invoke("server_rrf", "initial", self._raising(exc))
+                        observer._invoke(
+                            request_form="server_rrf",
+                            trigger="initial",
+                            callback=raising_callback,
+                        )
                 except RuntimeError as raised:
                     caught = raised
+        self.assertEqual(calls, 1)
         self.assertIs(caught, exc)
         self.assertIsNone(raised_handle.receipt())
 
@@ -840,6 +862,10 @@ class CatalogValidatorTests(unittest.TestCase):
         self.assertIsNone(handle.receipt())
 
     def test_catalog_observer_constructor_fault_preserves_callback_identity(self) -> None:
+        self.assertEqual(
+            inspect.signature(receipt._NoOpCatalogOperationObserver._invoke),
+            inspect.signature(receipt._CatalogOperationObserver._invoke),
+        )
         marker = object()
         calls = 0
         with receipt._provider_invocation_receipt_scope() as handle:
@@ -855,12 +881,24 @@ class CatalogValidatorTests(unittest.TestCase):
                 receipt, "_CatalogOperationObserver", side_effect=RuntimeError("private")
             ):
                 with observer._operation() as operation_observer:
-                    self.assertIs(operation_observer._invoke("metadata", callback), marker)
+                    self.assertIs(
+                        operation_observer._invoke(
+                            category="metadata", callback=callback
+                        ),
+                        marker,
+                    )
         self.assertEqual(calls, 1)
         self.assertIsNone(handle.receipt())
 
         exc = RuntimeError("original")
         caught = None
+        calls = 0
+
+        def raising_callback() -> None:
+            nonlocal calls
+            calls += 1
+            raise exc
+
         with receipt._provider_invocation_receipt_scope() as raised_handle:
             observer = raised_handle._catalog_observer()
             assert observer is not None
@@ -869,9 +907,12 @@ class CatalogValidatorTests(unittest.TestCase):
             ):
                 try:
                     with observer._operation() as operation_observer:
-                        operation_observer._invoke("metadata", self._raise_exact(exc))
+                        operation_observer._invoke(
+                            category="metadata", callback=raising_callback
+                        )
                 except RuntimeError as raised:
                     caught = raised
+        self.assertEqual(calls, 1)
         self.assertIs(caught, exc)
         self.assertIsNone(raised_handle.receipt())
 

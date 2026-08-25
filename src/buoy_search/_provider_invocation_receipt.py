@@ -542,8 +542,8 @@ class _NoOpContentOperationObserver:
 
     def _invoke(
         self,
-        _request_form: _RequestForm,
-        _trigger: _Trigger,
+        request_form: _RequestForm,
+        trigger: _Trigger,
         callback: Callable[_P, _R],
         *args: _P.args,
         **kwargs: _P.kwargs,
@@ -646,7 +646,7 @@ class _NoOpCatalogOperationObserver:
 
     def _invoke(
         self,
-        _category: _CatalogCategory,
+        category: _CatalogCategory,
         callback: Callable[_P, _R],
         *args: _P.args,
         **kwargs: _P.kwargs,
