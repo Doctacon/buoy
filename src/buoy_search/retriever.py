@@ -16,6 +16,11 @@ import re
 from typing import Any, Callable, Literal, Mapping, Protocol, Sequence
 import unicodedata
 
+from buoy_search._provider_invocation_receipt import (
+    _active_ledger,
+    _bind_receipt_worker,
+    _content_operation,
+)
 from buoy_search.config import RuntimeConfig
 from buoy_search.chunker import SentenceTransformerEmbedder
 from buoy_search.cross_encoder import (
@@ -710,11 +715,13 @@ class HybridRetriever:
                 {"buoy.route.rank": 1},
             ) as namespace_span:
                 try:
-                    result = self.retrieve_embedded(
-                        cleaned_query,
-                        vectors[0],
-                        options,
-                    )
+                    with _content_operation(1) as content_observer:
+                        result = self.retrieve_embedded(
+                            cleaned_query,
+                            vectors[0],
+                            options,
+                            _content_observer=content_observer,
+                        )
                 except BaseException:
                     namespace_span.set_attribute("buoy.namespace.status", "failed")
                     trace_span.set_attributes(
@@ -746,10 +753,15 @@ class HybridRetriever:
         query: str,
         query_vector: Sequence[float],
         options: RetrievalOptions,
+        *,
+        _content_observer: object | None = None,
     ) -> RetrievalResult:
         """Query one namespace with an already-computed query vector."""
 
         include_attributes = list(RETRIEVAL_ATTRIBUTES)
+        attempt_trigger: Literal["initial", "optional_schema_compatibility"] = (
+            "initial"
+        )
         while True:
             subqueries = build_multi_query_subqueries(
                 query=query,
@@ -759,7 +771,12 @@ class HybridRetriever:
                 include_attributes=include_attributes,
             )
             try:
-                response, fusion = run_multi_query(self._namespace, subqueries)
+                response, fusion = run_multi_query(
+                    self._namespace,
+                    subqueries,
+                    _content_observer=_content_observer,
+                    attempt_trigger=attempt_trigger,
+                )
                 break
             except Exception as exc:  # pragma: no cover - SDK/network/schema failure paths are integration-tested.
                 missing_attribute = missing_schema_attribute(exc)
@@ -773,6 +790,7 @@ class HybridRetriever:
                     for attribute in include_attributes
                     if attribute != missing_attribute
                 ]
+                attempt_trigger = "optional_schema_compatibility"
 
         try:
             result_lists = extract_result_lists(response)
@@ -1258,7 +1276,9 @@ class MultiNamespaceRetriever:
                 )
                 future = executor.submit(
                     copied_context_callable(
-                        MultiNamespaceRetriever._retrieve_target
+                        _bind_receipt_worker(
+                            MultiNamespaceRetriever._retrieve_target
+                        )
                     ),
                     target,
                     query,
@@ -1300,11 +1320,13 @@ class MultiNamespaceRetriever:
             {"buoy.route.rank": target.route_rank},
         ) as namespace_span:
             try:
-                result = target.retriever.retrieve_embedded(
-                    query,
-                    query_vector,
-                    options,
-                )
+                with _content_operation(target.route_rank) as content_observer:
+                    result = target.retriever.retrieve_embedded(
+                        query,
+                        query_vector,
+                        options,
+                        _content_observer=content_observer,
+                    )
             except BaseException:
                 namespace_span.set_attribute("buoy.namespace.status", "failed")
                 raise
@@ -1830,15 +1852,61 @@ def bm25_rank_by(query: str) -> tuple[object, ...]:
     )
 
 
-def run_multi_query(namespace: object, subqueries: Sequence[dict[str, object]]) -> tuple[object, str]:
+def _invoke_content_expression(
+    content_observer: object | None,
+    *,
+    request_form: Literal["server_rrf", "client_rrf"],
+    trigger: Literal[
+        "initial", "server_rrf_unsupported", "optional_schema_compatibility"
+    ],
+    callback: Callable[[], object],
+) -> object:
+    if content_observer is None:
+        ledger = _active_ledger()
+        if ledger is not None:
+            ledger._fault()
+        return callback()
+    try:
+        invoke = content_observer._invoke  # type: ignore[attr-defined]
+    except BaseException:
+        ledger = _active_ledger()
+        if ledger is not None:
+            ledger._fault()
+        return callback()
+    if request_form == "server_rrf":
+        return invoke(request_form, trigger, callback)
+    return invoke(request_form=request_form, trigger=trigger, callback=callback)
+
+
+def run_multi_query(
+    namespace: object,
+    subqueries: Sequence[dict[str, object]],
+    *,
+    _content_observer: object | None = None,
+    attempt_trigger: Literal["initial", "optional_schema_compatibility"] = "initial",
+) -> tuple[object, str]:
     fusion = "server_rrf"
     try:
-        return namespace.multi_query(queries=subqueries, rerank_by=("RRF",)), fusion  # type: ignore[attr-defined]
+        response = _invoke_content_expression(
+            _content_observer,
+            request_form="server_rrf",
+            trigger=attempt_trigger,
+            callback=lambda: namespace.multi_query(  # type: ignore[attr-defined]
+                queries=subqueries, rerank_by=("RRF",)
+            ),
+        )
+        return response, fusion
     except TypeError as exc:
         if not is_unsupported_rerank_type_error(exc):
             raise
         fusion = "client_rrf"
-        return namespace.multi_query(queries=subqueries), fusion  # type: ignore[attr-defined]
+        response = _invoke_content_expression(
+            _content_observer,
+            request_form="client_rrf",
+            trigger="server_rrf_unsupported",
+            callback=lambda: namespace.multi_query(queries=subqueries),  # type: ignore[attr-defined]
+        )
+        return response, fusion
 
 
 def build_namespace(*, config: RuntimeConfig, api_key: str) -> object:

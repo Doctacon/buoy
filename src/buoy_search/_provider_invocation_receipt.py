@@ -623,8 +623,11 @@ def _content_operation(
         yield observer
     except BaseException as exc:
         if ledger is not None and operation is not None:
+            outcome = _exception_outcome(exc)
+            if operation.attempts and operation.attempts[-1].outcome == "interrupted":
+                outcome = "interrupted"
             try:
-                ledger._complete_content(operation, _exception_outcome(exc))
+                ledger._complete_content(operation, outcome)
             except BaseException:
                 ledger._fault()
         raise

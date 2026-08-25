@@ -104,3 +104,30 @@ open/inactive.
   implementation from clean HEAD `54a19f705c7bccd1ee50b27485bda6ec30db1361`.
   Content source/test work has not begun; catalog, integration, and operational
   children remain inactive and excluded.
+- 2026-08-24: Implemented route-rank content operation registration at exact
+  `HybridRetriever.retrieve` and `MultiNamespaceRetriever._retrieve_target`
+  boundaries, exact server/client `namespace.multi_query` expression
+  observation, optional-schema trigger threading, and receipt-only worker lease
+  composition with the unchanged private telemetry callable. Added 23 local-
+  fake content tests covering exact 1..6 grammar, one/two schema removals,
+  1..3 routes and 18 attempts, CLI explicit multi, automatic top-1/widening,
+  reranker pre-call stops, partial/all failure, concurrency, privacy,
+  cancellation/control flow, and observer/submission/bind/reset/lease faults.
+- 2026-08-24: Execution proved one blocking reviewed-core defect allowed by this
+  ticket's exclusion boundary: a final `concurrent.futures.CancelledError`
+  attempt was interrupted, but pre-existing `HybridRetriever` wrapping made the
+  outer exception an error and therefore made the receipt invalid. Supervisor
+  approved the minimal spec-required repair: exceptional operation completion
+  now prefers an already recorded final interrupted attempt while every other
+  outer-exception classification is unchanged. Focused regression proves the
+  caller still receives the existing sanitized `ProviderCallError` behavior
+  and exception chain while the authoritative attempt/operation are both
+  interrupted; unrelated errors remain errors.
+- 2026-08-24: Final credential-removed, telemetry-disabled, strict-offline
+  validation passed core+content 68/68 on Python 3.11 and 68/68 on Python 3.13,
+  retriever+multi 57/57, local retrieval telemetry 15/15, both frozen-contract
+  validators, AST exact-boundary/context-copy inspection, `git diff --check`,
+  and generated-version cleanup. Tests used local fakes only. No provider,
+  network, credential, model, content store, telemetry store, database,
+  persistence, canary, catalog, routing/ranking, release, or global-tool
+  operation ran. Ticket remains active pending independent content review.
