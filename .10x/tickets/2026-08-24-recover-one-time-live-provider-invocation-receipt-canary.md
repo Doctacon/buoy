@@ -1,9 +1,9 @@
-Status: open
+Status: active
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
 Depends-On: .10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-integration.md
-Activation: inactive
+Activation: active
 Decision: .10x/decisions/one-time-live-provider-invocation-receipt-canary-recovery.md
 Authorization-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-canary-recovery-authorization.md
 Authorization-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-canary-recovery-authorization-review.md
@@ -390,10 +390,8 @@ unrelated cleanup; source/test/spec change.
 
 ## Blockers
 
-Independent review of this records-only recovery authorization and a separate
-preparation activation are required before the one preparation attempt. Live
-execution is additionally blocked on a complete preparation PASS and exact
-independent GO bound to its evidence commit/tree and still-identical candidate.
+Live execution is blocked on a complete preparation PASS and exact independent
+GO bound to its evidence commit/tree and still-identical candidate.
 
 ## Progress and notes
 
@@ -412,3 +410,16 @@ independent GO bound to its evidence commit/tree and still-identical candidate.
   preparation PASS. No build, install, model/cache, credential, provider,
   network, telemetry/store/database, command, global-tool, release, deployment,
   publication, push, or ref mutation occurred in this review reconciliation.
+- 2026-08-24: The owner explicitly activated only this recovery ticket for its
+  single preparation attempt from clean HEAD
+  `f7b70620a75bae5c84455ee835d183cc030ef2b0`. Activation binds the independently
+  passed recovery-authorization candidate commit
+  `4ea0ff771f0d5559ecb04e32f105c76ed0d5148c`, tree
+  `941360b413c28e5b6781c8e6abd60f4f50443ff3`, and exact reviewed dependency
+  commit `0b27c4eaa2449493125f4040af3cd1f7c926b531`, tree
+  `9017c4a335938faca80cdded54545df8b79c12f8`. No source export, build,
+  install, model/cache, credential, provider/network, telemetry/store/database,
+  live command, global-tool, release, deployment, publication, push, or ref
+  mutation began before this activation record. This activation authorizes only
+  preparation; live execution remains blocked on complete PASS evidence and
+  exact independent GO.
