@@ -35,7 +35,7 @@ within that operation are not this canary's budget or acceptance unit.
 The five retained namespace spans therefore satisfy the ratified six-operation
 limit. This decision does not claim, infer, or retroactively establish the
 number of physical provider attempts. That separate observability gap is owned
-by `.10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md`.
+by `.10x/tickets/done/2026-08-24-define-physical-provider-attempt-accounting.md`.
 
 This is an acceptance clarification only. It grants no migration, retrieval,
 flush, provider/model access, credential operation, global-tool change, release,

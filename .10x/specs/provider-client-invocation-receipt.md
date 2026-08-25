@@ -4,7 +4,8 @@ Updated: 2026-08-24
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Authorization: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md
-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 
 # Private Canary Provider Client Invocation Receipt
 

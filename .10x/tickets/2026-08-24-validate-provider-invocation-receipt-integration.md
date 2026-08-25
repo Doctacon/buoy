@@ -6,7 +6,8 @@ Depends-On: .10x/tickets/2026-08-24-implement-private-provider-invocation-receip
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 CLI-Receipt-Decision: .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md
 
 # Validate Provider Invocation Receipt Integration
@@ -112,9 +113,11 @@ changes are excluded.
 
 ## Blockers
 
-All three implementation predecessors must be done at reviewed exact commits,
-the governing contract must have independent PASS review, and this child must
-be explicitly activated before execution.
+The governing contract has independent PASS rereview at
+`.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md`.
+All three implementation predecessors must still be done at reviewed exact
+commits, and this child must be explicitly activated before execution. Ticket
+remains open/inactive.
 
 ## Progress and notes
 
@@ -125,3 +128,9 @@ be explicitly activated before execution.
   exact state/identity matrices, and final CLI receipt recertification. This
   ticket now owns that bounded integration work under the active recertification
   decision. It remains open/inactive pending repaired-contract rereview.
+- 2026-08-24: PASS rereview
+  `a4331cfc-d12b-4209-8e5a-8cb66655cf76` accepted exact repaired contract
+  commit `cb4a76b97f68fcdfc2816c49c33b5b23e9b5f899`. Contract review is no longer
+  a blocker; all predecessor dependencies and explicit activation remain. No
+  CLI wiring, source/test implementation, validation, or CLI receipt
+  recertification ran.

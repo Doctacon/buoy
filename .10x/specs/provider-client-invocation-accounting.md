@@ -4,7 +4,8 @@ Updated: 2026-08-24
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Research: .10x/research/2026-08-24-physical-provider-attempt-accounting-options.md
-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 
 # Provider Client Invocation Accounting
 

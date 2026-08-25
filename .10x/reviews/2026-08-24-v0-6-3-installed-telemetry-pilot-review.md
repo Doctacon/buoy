@@ -100,7 +100,7 @@ authorized.
   the consistently dominant outside-pipeline time is owned by
   `.10x/tickets/done/2026-08-24-investigate-retrieve-command-outer-latency.md`.
 - Physical transport-attempt count remains unknown and is owned by
-  `.10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md`.
+  `.10x/tickets/done/2026-08-24-define-physical-provider-attempt-accounting.md`.
 - Automatic catalog accounting remains source-bounded rather than packet-
   observed.
 - This review grants no recurring collection, retention-policy change, provider

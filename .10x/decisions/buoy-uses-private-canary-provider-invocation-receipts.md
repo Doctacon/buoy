@@ -4,7 +4,8 @@ Updated: 2026-08-24
 Authorization: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 
 # Buoy Uses Private Canary Provider Invocation Receipts
 

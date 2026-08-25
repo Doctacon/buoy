@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-24
 Updated: 2026-08-24
-Target: .10x/research/2026-08-24-physical-provider-attempt-accounting-options.md, .10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md, commit 0ed20c4d2d68a4a823f689b372095e777a48d459
+Target: .10x/research/2026-08-24-physical-provider-attempt-accounting-options.md, .10x/tickets/done/2026-08-24-define-physical-provider-attempt-accounting.md, commit 0ed20c4d2d68a4a823f689b372095e777a48d459
 Verdict: pass
 
 # Physical Provider Attempt Accounting Shaping Rereview

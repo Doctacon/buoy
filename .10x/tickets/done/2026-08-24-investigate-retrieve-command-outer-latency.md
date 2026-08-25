@@ -1,7 +1,7 @@
 Status: done
 Created: 2026-08-24
 Updated: 2026-08-24
-Parent: .10x/tickets/2026-08-24-improve-retrieval-telemetry-actionability.md
+Parent: .10x/tickets/done/2026-08-24-improve-retrieval-telemetry-actionability.md
 Depends-On: .10x/tickets/done/2026-08-24-install-v0-6-3-and-run-telemetry-pilot.md
 Evidence: .10x/evidence/2026-08-24-v0-6-3-installed-telemetry-pilot.md
 Review: .10x/reviews/2026-08-24-v0-6-3-installed-telemetry-pilot-review.md, .10x/reviews/2026-08-24-retrieve-command-outer-latency-attribution-review.md

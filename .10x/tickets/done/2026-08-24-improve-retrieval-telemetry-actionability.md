@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
@@ -8,7 +8,8 @@ Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.m
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Implementation-Plan: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
-Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Prior-Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 
 # Improve Retrieval Telemetry Actionability
 
@@ -24,10 +25,10 @@ conflating it with unresolved physical wire, provider-cost, or rate-limit use.
 1. `.10x/tickets/done/2026-08-24-investigate-retrieve-command-outer-latency.md`
    performs read-only attribution from existing evidence first. Any new live
    measurement requires a separate owner checkpoint.
-2. `.10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md`
+2. `.10x/tickets/done/2026-08-24-define-physical-provider-attempt-accounting.md`
    starts only after the latency investigation reaches a reviewed conclusion.
-   It inspected source, shaped options, and now owns the explicitly ratified
-   records/specification graph pending independent review. Its separate
+   It inspected source, shaped options, and closed the explicitly ratified
+   records/specification graph after independent PASS rereview. Its separate
    implementation plan remains open and non-executable.
 
 The children are sequential. Neither child grants provider/model operations,
@@ -119,12 +120,54 @@ telemetry mutation, implementation, migration, release, or global-tool change.
   CLI receipt recertification. Both shaping tickets remain active and all
   implementation tickets open/inactive pending fresh rereview. No source/test
   or operational work ran.
+- 2026-08-24: Independent contract rereview
+  `a4331cfc-d12b-4209-8e5a-8cb66655cf76` passed exact repair commit
+  `cb4a76b97f68fcdfc2816c49c33b5b23e9b5f899`. The physical-accounting child
+  mapped all five criteria and moved to `done`; its prior FAIL remains truthful.
+  Parent closure reconciliation mapped all four aggregate criteria, retained
+  two active specs and the open/inactive five-ticket implementation graph, and
+  left the provider-free construction probe blocked and distinct. This parent
+  moved to `done`. No implementation, source/test/build, store, provider/model,
+  network, credential, telemetry, global-tool, canary, release, or CLI receipt
+  recertification operation occurred.
+
+## Acceptance mapping
+
+1. **Reviewed outer-latency attribution — satisfied.** Done child
+   `.10x/tickets/done/2026-08-24-investigate-retrieve-command-outer-latency.md`
+   and its independent review establish that prepare owns the measured outer
+   latency while preserving measured/unmeasured and sample-limit distinctions.
+2. **Reviewed physical-accounting contract — satisfied.** Done child
+   `.10x/tickets/done/2026-08-24-define-physical-provider-attempt-accounting.md`,
+   owner authorization, ADR, two active specs, and PASS rereview define the
+   explicit unit, private surface, family separation, exact lifecycle/privacy/
+   retention semantics, and bounded implementation graph.
+3. **No external operation or source mutation — satisfied.** Both children and
+   this closure are records/read-only outcomes. Their progress and exclusions
+   record no retrieval, provider/model, telemetry/store, migration, source/test,
+   release, canary, CLI-recertification, or global-tool action.
+4. **Graph coherence — satisfied.** Both shaping children are done; historical
+   FAIL and current PASS reviews target their exact candidates; active specs and
+   ADR agree; the implementation parent and four children remain open/inactive
+   with dependencies and activation gates; and the provider-free construction
+   probe remains separately blocked.
+
+## Retrospective
+
+- Small telemetry samples support bounded attribution, not a latency
+  distribution; the provider-free construction probe remains the correct owner
+  for the unresolved prepare sub-boundary.
+- Logical namespace operations, Buoy SDK call attempts, and physical transport/
+  billing units must remain separate terms with separate evidence boundaries.
+- Shaping closure can coexist with open implementation when active specs,
+  reviewed executable tickets, dependencies, and explicit activation gates are
+  coherent.
+- Historical FAIL reviews remain immutable evidence; repaired candidates gain a
+  new PASS rereview rather than rewriting prior verdicts.
 
 ## Blockers
 
-- Independent review `29dbeef6-82a2-43b1-8fd3-b572f0d83f40` failed candidate
-  `a458aeba95844230271ad50d4364281f4462ad5e`; fresh rereview of the repaired
-  records-only contract is pending.
-- No implementation child may activate or execute until that rereview passes
-  and the selected child is explicitly activated. The parent remains active
-  until review and child-2 shaping coherence are recorded.
+None. Both shaping children are done with independent PASS reviews, all four
+aggregate criteria map to durable evidence, and the separate implementation
+graph remains coherently open/inactive. The provider-free construction probe
+remains a distinct blocked ticket and does not block this parent.

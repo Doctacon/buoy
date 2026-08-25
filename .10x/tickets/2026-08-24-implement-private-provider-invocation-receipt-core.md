@@ -6,7 +6,8 @@ Depends-On: None
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 
 # Implement Private Provider Invocation Receipt Core
 
@@ -82,8 +83,10 @@ global-tool changes are excluded.
 
 ## Blockers
 
-Independent PASS review of the governing records-only contract commit and
-explicit activation of this child are required before execution.
+The governing records-contract review gate is satisfied by PASS rereview
+`.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md`.
+Explicit activation of this child is still required before execution; this
+open ticket remains inactive.
 
 ## Progress and notes
 
@@ -94,3 +97,8 @@ explicit activation of this child are required before execution.
   cancellation precedence/identity coverage. Scope and acceptance now own
   those repairs plus the private non-ambient catalog capability. Ticket remains
   open/inactive pending repaired-contract rereview.
+- 2026-08-24: PASS rereview
+  `a4331cfc-d12b-4209-8e5a-8cb66655cf76` accepted exact repaired contract
+  commit `cb4a76b97f68fcdfc2816c49c33b5b23e9b5f899`. The review blocker is
+  resolved; explicit activation remains required. Ticket stays open/inactive,
+  and no implementation or validation ran.

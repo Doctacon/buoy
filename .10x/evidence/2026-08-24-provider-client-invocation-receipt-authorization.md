@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-24
 Updated: 2026-08-24
-Relates-To: .10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md, .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md, .10x/specs/provider-client-invocation-accounting.md, .10x/specs/provider-client-invocation-receipt.md
+Relates-To: .10x/tickets/done/2026-08-24-define-physical-provider-attempt-accounting.md, .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md, .10x/specs/provider-client-invocation-accounting.md, .10x/specs/provider-client-invocation-receipt.md
 
 # Provider Client Invocation Receipt Authorization
 

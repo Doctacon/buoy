@@ -1,7 +1,7 @@
-Status: active
+Status: done
 Created: 2026-08-24
 Updated: 2026-08-24
-Parent: .10x/tickets/2026-08-24-improve-retrieval-telemetry-actionability.md
+Parent: .10x/tickets/done/2026-08-24-improve-retrieval-telemetry-actionability.md
 Depends-On: .10x/tickets/done/2026-08-24-run-local-telemetry-v2-canary.md
 Knowledge: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
 Research: .10x/research/2026-08-24-physical-provider-attempt-accounting-options.md
@@ -11,7 +11,8 @@ Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.m
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Implementation-Plan: .10x/tickets/2026-08-24-implement-private-provider-invocation-receipts.md
-Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Prior-Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 
 # Define Physical Provider Attempt Accounting
 
@@ -66,15 +67,11 @@ is authorized by this ticket.
 
 ## Blockers
 
-The five semantic decisions are explicitly owner-ratified and recorded at
-`.10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md`.
-No semantic blocker remains.
-
-Independent review `29dbeef6-82a2-43b1-8fd3-b572f0d83f40` failed exact
-candidate `a458aeba95844230271ad50d4364281f4462ad5e` on three significant
-mechanical blockers. The repaired records-only contract is pending fresh
-independent rereview. Until that rereview passes, this shaping ticket remains
-active and no implementation child may activate or execute.
+None. The owner-ratified semantics are active, all five shaping criteria map to
+durable records, and independent rereview
+`.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md`
+passed exact repair commit `cb4a76b97f68fcdfc2816c49c33b5b23e9b5f899`.
+Implementation remains separate open/inactive work and is not a closure blocker.
 
 ## Progress and notes
 
@@ -147,6 +144,63 @@ active and no implementation child may activate or execute.
   integration child owns final CLI-byte review and exact schema-v3 CLI-hash-only
   recertification. Owner semantics are unchanged. Ticket remains active pending
   fresh independent rereview; no source/test or operational work ran.
+- 2026-08-24: Independent rereview
+  `a4331cfc-d12b-4209-8e5a-8cb66655cf76` returned PASS for exact repair commit
+  `cb4a76b97f68fcdfc2816c49c33b5b23e9b5f899`, tree
+  `d0aa9598cbcc28bb35c16dd51d614980321abaad`. The historical FAIL remains
+  truthful for `a458aeba`; all three significant findings are repaired. Closure
+  reconciliation mapped all five criteria, confirmed active specs and the open/
+  inactive implementation graph, and moved this ticket to `done`. No source,
+  test, build, provider/model/catalog/content, store, telemetry, network,
+  credential, canary, release, CLI-recertification, or global-tool operation
+  occurred.
+
+## Acceptance mapping
+
+1. **Unit and paths — satisfied.** Reviewed research
+   `.10x/research/2026-08-24-physical-provider-attempt-accounting-options.md`
+   and active `.10x/specs/provider-client-invocation-accounting.md` define
+   logical operations and every governed SDK-call expression, including
+   compatibility/schema fallback, exact cancellation precedence, failure, and
+   the absence of a generic content retry, while excluding wire/cost/rate-limit
+   claims.
+2. **Increment boundary — satisfied.** The accounting spec requires one
+   increment immediately before call-expression evaluation and counts local
+   signature rejection even without SDK method-body entry. Independent PASS
+   rereview confirms the repaired contract is regeneration-grade.
+3. **Privacy — satisfied.** Both active specs use exact bounded, content-free
+   models and prohibit query, argv, namespace/provider/card identity,
+   credentials, content/payload, URL/path, billing, raw error/stack, timestamp,
+   and ambient context. Catalog retains aggregates only; content identity is
+   route rank only.
+4. **Provider-free verification contract — satisfied.** The open/inactive core,
+   content, catalog, and integration children define fake-only tests for one-call
+   success, two-call compatibility fallback, optional-schema fallback, exact
+   error/interruption identity, source-order catalog validation, retries/fanout,
+   privacy, and observer failure without live provider dependence.
+5. **Future canary authority — satisfied.** The receipt spec makes absent,
+   incomplete, invalid, or observer-failed receipt unknown; permits indefinite
+   retention only of canonical sanitized bytes bound to durable canary evidence;
+   requires raw-artifact deletion; and requires separate authority/budget for
+   any canary. Actual transport evidence remains a separately excluded boundary.
+
+## Retrospective
+
+- Aggregate maxima are insufficient when privacy removes stage IDs; a validator
+  must encode an ordered source-reachable state machine and reject ambiguous
+  aggregates as unknown.
+- A shared provider helper must receive observation as an explicit default-None
+  capability from the authorized caller; ambient scope lookup silently widens
+  product semantics.
+- Exception taxonomy must account for inheritance: cancellation classes are
+  named before generic `Exception`, and identical-object propagation is an
+  acceptance requirement.
+- Two focused specs are the minimal durable split: accounting owns unit/data/
+  source order, while receipt lifecycle owns activation/authority/retention.
+- Actual wire, billing, and rate-limit evidence remains intentionally excluded.
+  No follow-up is opened because the owner ratified the SDK-call unit and has
+  not requested transport-boundary work; such work requires new shaping and
+  authority.
 
 ## References
 

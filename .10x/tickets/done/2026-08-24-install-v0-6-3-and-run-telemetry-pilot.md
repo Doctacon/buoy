@@ -10,7 +10,7 @@ Execution-Evidence: .10x/evidence/2026-08-24-v0-6-3-installed-telemetry-pilot.md
 Specifications: .10x/specs/retrieve-command-telemetry.md, .10x/specs/local-telemetry-v2-storage-and-migration.md, .10x/specs/local-telemetry-writer.md
 Knowledge: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
 Review: .10x/reviews/2026-08-24-v0-6-3-installed-telemetry-pilot-review.md
-Follow-Ups: .10x/tickets/done/2026-08-24-investigate-retrieve-command-outer-latency.md, .10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md
+Follow-Ups: .10x/tickets/done/2026-08-24-investigate-retrieve-command-outer-latency.md, .10x/tickets/done/2026-08-24-define-physical-provider-attempt-accounting.md
 
 # Install V0.6.3 and Run Telemetry Pilot
 
@@ -190,7 +190,7 @@ work requires separate authority.
   not yet a latency distribution or optimization mandate.
 - Logical namespace spans remain distinct from physical provider attempts;
   future transport accounting remains owned by
-  `.10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md`.
+  `.10x/tickets/done/2026-08-24-define-physical-provider-attempt-accounting.md`.
 - No instruction, specification, source, test, release, or rollback repair was
   required. The installed release, three content-free rows, and immutable
   backup are the intentional retained outcomes.

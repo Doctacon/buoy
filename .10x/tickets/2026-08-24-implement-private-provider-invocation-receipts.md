@@ -6,7 +6,8 @@ Depends-On: None
 Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
+Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 CLI-Receipt-Decision: .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md
 
 # Implement Private Provider Invocation Receipts
@@ -91,11 +92,12 @@ main/develop integration are excluded.
 
 ## Blockers
 
-Independent review `29dbeef6-82a2-43b1-8fd3-b572f0d83f40` failed candidate
-`a458aeba95844230271ad50d4364281f4462ad5e` on three significant mechanical
-blockers. No child may move to `active` or execute until fresh independent
-rereview passes the repaired exact contract commit and the owner/integration
-session activates the selected child.
+The records-contract review gate is satisfied by independent PASS rereview
+`.10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md` for
+exact commit `cb4a76b97f68fcdfc2816c49c33b5b23e9b5f899`. This parent remains
+non-executable and open. No child may move to `active` or execute until its
+`Depends-On` graph is satisfied and the owner/integration session explicitly
+activates that selected child.
 
 ## Progress and notes
 
@@ -110,3 +112,9 @@ session activates the selected child.
   catalog observer wiring with bounded final CLI receipt recertification. The
   plan and every child remain open/inactive pending rereview; no implementation
   or external operation ran.
+- 2026-08-24: Independent rereview
+  `a4331cfc-d12b-4209-8e5a-8cb66655cf76` passed repaired contract commit
+  `cb4a76b97f68fcdfc2816c49c33b5b23e9b5f899`. Historical FAIL remains
+  attached as prior review; current PASS is the governing review. The parent and
+  all four children remain open/inactive. Dependency and explicit-activation
+  gates remain unchanged; no implementation or operational work ran.
