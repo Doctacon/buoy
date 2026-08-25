@@ -1,9 +1,9 @@
-Status: active
+Status: blocked
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
 Depends-On: .10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-integration.md
-Activation: active
+Activation: consumed
 Decision: .10x/decisions/one-time-live-provider-invocation-receipt-canary-recovery.md
 Authorization-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-canary-recovery-authorization.md
 Authorization-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-canary-recovery-authorization-review.md
@@ -11,6 +11,7 @@ Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Blocked-Predecessor: .10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md
 Predecessor-Failure: .10x/evidence/2026-08-24-provider-invocation-receipt-canary-preflight-failure.md
+Preparation-Failure: .10x/evidence/2026-08-24-provider-invocation-receipt-canary-recovery-preparation-failure.md
 Dependency-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-integration-closure.md
 Dependency-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integration-review.md
 Reviewed-Dependency: commit 0b27c4eaa2449493125f4040af3cd1f7c926b531, tree 9017c4a335938faca80cdded54545df8b79c12f8
@@ -390,8 +391,10 @@ unrelated cleanup; source/test/spec change.
 
 ## Blockers
 
-Live execution is blocked on a complete preparation PASS and exact independent
-GO bound to its evidence commit/tree and still-identical candidate.
+Recovery preparation returned nonzero after the one permitted wheel-only build.
+The build and preparation authorities are consumed. No build, validator,
+preflight, alternate inspector, candidate substitution, preparation GO, or live
+execution may resume under this ticket.
 
 ## Progress and notes
 
@@ -423,3 +426,19 @@ GO bound to its evidence commit/tree and still-identical candidate.
   mutation began before this activation record. This activation authorizes only
   preparation; live execution remains blocked on complete PASS evidence and
   exact independent GO.
+- 2026-08-24: Recovery preparation stopped at the first nonzero candidate
+  validator with sanitized category `archive_member_type_validation_failure`
+  within `candidate_identity_validation_failure`. Exactly one wheel-only offline
+  build began once from the exact no-ref archive export and was not retried. The
+  wheel and corrected output-marker enumeration had accepted the exact expected
+  wheel identity and expected uv marker before the archive member-type assertion
+  returned nonzero; complete candidate acceptance did not finish. No alternate
+  inspector or validator rerun occurred. No install, source/installed routing
+  validator, help/import/preview/strict-receipt gate, device probe, model
+  construction, credential open/value read, telemetry store/database/API,
+  provider/network access, live command, global tool, release, deployment,
+  publication, push, or ref mutation occurred. The complete owner-private root
+  was deleted and absence verified. Sanitized failure evidence is recorded at
+  `.10x/evidence/2026-08-24-provider-invocation-receipt-canary-recovery-preparation-failure.md`.
+  This ticket is blocked permanently; preparation GO and live execution are not
+  eligible.
