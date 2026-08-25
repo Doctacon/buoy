@@ -1,4 +1,4 @@
-Status: active
+Status: blocked
 Created: 2026-08-24
 Updated: 2026-08-24
 Parent: None
@@ -7,6 +7,7 @@ Authorization-Evidence: .10x/evidence/2026-08-24-provider-invocation-probe-and-l
 Research: .10x/research/2026-08-24-retrieve-command-outer-latency-attribution.md
 Review: .10x/reviews/2026-08-24-retrieve-command-outer-latency-attribution-review.md
 Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
+Execution-Evidence: .10x/evidence/2026-08-24-provider-free-retriever-construction-probe-failure.md
 
 # Measure Provider-Free Retriever Construction
 
@@ -207,10 +208,17 @@ build/install, global-tool change, release, or deployment.
 
 ## Blockers
 
-None. The owner-ratified execution contract is recorded at
-`.10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md`.
-This ticket is fully executable but remains open/inactive. This records-only
-turn does not activate or execute it.
+The first and only child start consumed the discarded warm-up authority and
+ended with sanitized category `child_nonzero_exit`. No timing was retained, no
+later child started, and no retry, replacement, or substitution is permitted.
+The failed-child path also did not retain a post-child full-cache comparison,
+so terminal cache equality is not established. The external runtime artifacts
+were removed and the repository was clean after cleanup.
+
+There is no complete five-sample result. This ticket cannot resume under its
+consumed no-retry authority. Any later campaign requires separately shaped and
+owner-ratified new execution authority; this ticket remains the durable owner
+of the failed attempt and its unresolved attribution outcome.
 
 ## Progress and notes
 
@@ -237,3 +245,13 @@ turn does not activate or execute it.
   `f9edc5cbaa76d342239901d99f75013846c6e278`. No child/model process had
   started when this activation was recorded; all preflight, no-retry, privacy,
   cleanup, and failure rules remain controlling.
+- 2026-08-24: Activation commit
+  `d6bf3c59168877b2db2936fdae67cd0ee3653ad7`, tree
+  `06fddfa32ba60bfad1b80aee02737e9f1aaada7d`, preceded every model child.
+  The first discarded warm-up child consumed its authority and terminated
+  nonzero. The campaign stopped immediately: zero retained observations, zero
+  retries/replacements, and no five-sample result. Raw detail and partial timing
+  were discarded. External harness/runtime artifacts were deleted and verified
+  absent; repository status was clean. Sanitized failure evidence is recorded
+  at
+  `.10x/evidence/2026-08-24-provider-free-retriever-construction-probe-failure.md`.
