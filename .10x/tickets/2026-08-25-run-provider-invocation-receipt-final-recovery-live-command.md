@@ -1,0 +1,255 @@
+Status: blocked
+Created: 2026-08-25
+Updated: 2026-08-25
+Parent: .10x/tickets/2026-08-25-provider-invocation-receipt-final-recovery-plan.md
+Depends-On: .10x/tickets/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md
+Activation: inactive
+Eligibility: ineligible-until-exact-preparation-pass-go
+Decision: .10x/decisions/one-time-provider-invocation-receipt-final-recovery.md
+Authorization: .10x/evidence/2026-08-25-provider-invocation-receipt-final-recovery-authorization.md
+Accounting: .10x/specs/provider-client-invocation-accounting.md
+Lifecycle: .10x/specs/provider-client-invocation-receipt.md
+Attempt-Accounting: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-transport-attempts.md
+Implementation-Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-integration-closure.md
+Implementation-Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integration-review.md
+
+# Run Provider Invocation Receipt Final Recovery Live Command
+
+## Outcome
+
+After exact independent preparation PASS/GO, use only the already prepared
+immutable candidate/runtime/harness to run exactly one ordinary automatic live
+command through the private receipt scope. PASS only with a truthful successful
+original outcome, one strict canonical content-free all-success receipt within
+the 5/18 gates, exact post-state equality, complete bounded cleanup/retention,
+and independent final review.
+
+## Dependency, blocker, and activation gate
+
+This live child is blocked and inactive. It becomes eligible only when
+`.10x/tickets/2026-08-25-prepare-provider-invocation-receipt-final-recovery-candidate.md`
+truthfully closes after complete sanitized preparation evidence and an
+independent **PASS/GO** bound to that exact evidence commit/tree and the retained
+immutable candidate/runtime/harness.
+
+A separate future activation MUST bind the exact GO, candidate/runtime/harness
+identities, then-current clean repository state, and unchanged operational
+pre-state. Neither this shaping turn, preparation activation, candidate PASS
+without GO, nor silence activates live execution.
+
+The blockers are:
+
+- no complete preparation evidence exists yet;
+- no exact independent candidate PASS/GO exists yet; and
+- no retained reviewed candidate/runtime/harness has been handed to this child.
+
+Drift, deletion, NO-GO, qualified/stale review, unresolved finding, or inability
+to prove the same retained bytes keeps the ticket blocked.
+
+## Immutable handoff: no preparation in the live child
+
+Receive only the already prepared VCS-aware source, exact wheel, owned cache,
+isolated runtime/dependencies, installed package, live harness, sanitized
+preparation evidence, and exact PASS/GO. Reprove their bound identities and
+current-state equality without mutation.
+
+This child MUST NOT build or rebuild; seed or correct a cache; install or
+reinstall a package; modify or correct the harness; rerun a failed preparation
+validator; substitute source, wheel, runtime, dependency, case, dataset, model,
+or credential source; or change any candidate byte. A handoff/reproof mismatch
+stops before command start and grants no preparation repair under this ticket.
+
+The accepted wheel remains exactly:
+
+- `buoy_search-0.5.2.dev87+g0b27c4eaa-py3-none-any.whl`;
+- version `0.5.2.dev87+g0b27c4eaa`;
+- 730602 bytes and the established 78 reviewed members; and
+- SHA-256
+  `42a4ba1be691de541c17df1e3d9858e3bf88e7a7b758461f7ccc19b899533f87`.
+
+## Exact case, dataset, model, and command
+
+After exact GO and successful identity reproof, the private child may:
+
+1. remove inherited provider credentials and all telemetry enablement;
+2. load the existing intended credential value privately without placing it in
+   argv, output, diagnostics, records, or retained files;
+3. construct only cached model `BAAI/bge-small-en-v1.5` at exact revision
+   `5c38ec7c405ec4b44b94cc5a9bb96e735b38267a`, float32, with unchanged
+   production automatic-device behavior and enforced offline/local-only/no-
+   download controls;
+4. privately load exact case `m01-dagster-turbopuffer-quality` from dataset
+   `automatic-multi-corpus-retrieval-v1` at SHA-256
+   `29064e773a71e2f31a4e6af45db793cdb30436dbf9fc61e818a03dd127ce1e2b`;
+5. enter the underscore-prefixed private provider-invocation receipt scope; and
+6. run exactly one ordinary automatic live command against the current strong
+   remote catalog and selected current content namespaces.
+
+Command start consumes the sole live authority regardless of return, exception,
+interruption, process state, receipt, privacy, side effect, cleanup, or review
+outcome. There is no preview, explicit command, alternate case/dataset/model,
+substitution, second command, provider retry, command retry, receipt-only retry,
+receipt retry, rebuild, or corrected harness run. Any uncertainty or failure
+stops without retry.
+
+## Provider, telemetry, network, and side-effect boundary
+
+Telemetry remains disabled. Do not open or invoke telemetry database, store,
+API, status, migration, flush, writer, queue, receipt, backup, export, or purge
+behavior. No remote telemetry export is allowed.
+
+Network is limited to DNS/TLS/provider endpoints reached by the unchanged
+ordinary automatic path. Provider activity is read-only and limited to current
+strong catalog reads and selected content retrieval reads. No catalog/card/
+namespace/content/provider create, update, upsert, delete, repair, migration,
+management, or other write operation is allowed. No model download, cache
+mutation, package/global install, tool replacement, release, deployment,
+publication, push, ref mutation, or unrelated operation is allowed.
+
+The receipt counts governed Buoy SDK call expressions. It does not intercept
+transport and MUST NOT support claims about physical wire sends, SDK-internal
+retries, provider billing, cost, or rate-limit effects. Existing provider access
+may have unobserved billing or rate-limit effects; those effects are neither
+measured nor claimed.
+
+## Truthful original outcome and strict receipt
+
+Preserve the original command return/exception/exit outcome truthfully and
+separately from receipt acceptance. Receipt handling MUST NOT replace, wrap,
+suppress, relabel, or rewrite it. PASS requires a known successful original
+outcome. Error, interruption, nonterminal/uncertain process state, or any other
+non-success fails with no retry.
+
+After terminal scope exit, obtain the same immutable receipt bytes once and use
+the reviewed strict validator. PASS requires:
+
+- one non-null terminal receipt satisfying both active specifications;
+- canonical compact sorted-key UTF-8 JSON no larger than 65,536 bytes with
+  strict duplicate/unknown/missing-key rejection and byte-identical decode,
+  validate, and re-encode;
+- exact schema version integer `1`, unit `provider_client_invocation`, exact
+  family keys/types/counts/order/grammar, and the complete privacy contract;
+- automatic catalog begun with valid source-order grammar and
+  `catalog.invocation_count <= 5`;
+- valid content route/attempt grammar and `content.invocation_count <= 18`; and
+- every represented catalog/content operation and invocation outcome exactly
+  `success`, with no `error` or `interrupted` outcome.
+
+Missing, incomplete, observer-failed, malformed, noncanonical, over-bound,
+privacy-unsafe, error, or interrupted receipt fails without inference or retry.
+Command success, output, source maxima, telemetry, or provider behavior cannot
+substitute for receipt bytes. The 5/18 values are post-operation receipt gates,
+not pre-operation transport budgets.
+
+## Exact post-state equality
+
+Bind exact content-free pre-state before command start and compare again after
+the terminal outcome and after cleanup. Equality MUST cover:
+
+- repository HEAD/tree/ref/worktree/status and no changed source/records outside
+  authorized evidence/review progress;
+- exact candidate/source/wheel/runtime/package/harness identities until their
+  authorized cleanup;
+- owner-private UV cache and the read-only seed-source existing cache;
+- complete model cache roots/ref/assets/manifest and offline controls;
+- telemetry root/store/queue/receipt/backup filesystem identity by filesystem
+  inspection only, without telemetry DB/API open;
+- credential source identity without retained value;
+- global tools/packages/home state, process baseline and no surviving owned
+  descendant; and
+- unrelated filesystem/state identity within the authorized bounded inventory.
+
+Provider effects must reconcile as reads only. Any unexpected mutation,
+surviving process, ambiguity, or inability to prove equality fails and does not
+widen cleanup beyond owned temporary artifacts.
+
+## Retention, cleanup, and independent final review
+
+Record bounded sanitized evidence before deleting the only private sources of
+truth. On PASS retain indefinitely only one exact canonical validated receipt
+plus content-free candidate/model/cache/telemetry identities, generic original
+and receipt outcomes, exact family counts/outcomes, read-only/process/post-state/
+privacy/cleanup results, and record references. On failure retain no receipt or
+partial ledger.
+
+Delete and verify absence of every private source clone/checkout, wheel, owned
+cache, build/install/runtime, harness/script, temporary receipt, raw output/log/
+error/stack, process sample, path-bearing manifest, query/argv/namespace/card/
+catalog/content/result value, credential material, private path, and analysis
+artifact after sanitized evidence is durable. Cleanup touches only owned
+artifacts. The canonical PASS receipt must remain strictly content-free.
+
+An independent reviewer MUST inspect the exact execution evidence commit/tree,
+GO and candidate identity, truthful original outcome, strict canonical receipt,
+5/18 and all-success gates, exact pre/post equality, provider read-only boundary,
+privacy, retention, cleanup, changed paths/status, and no-claim limit. Close this
+ticket only after that review passes and every criterion maps to evidence.
+Otherwise retain its truthful open/blocked terminal state; never retry or close a
+failed/missing receipt as success.
+
+## Acceptance criteria
+
+- Exact preparation evidence, retained immutable handoff, and independent
+  PASS/GO satisfy the dependency before separate live activation.
+- The live child only re-proves and receives the candidate; no build/rebuild,
+  install, cache seed/correction, harness correction, preparation rerun, or
+  substitution occurs.
+- Exact approved case/dataset/model and intended credential are used privately
+  with telemetry off and offline/no-download model controls.
+- Exactly one ordinary automatic command begins in the private scope; provider
+  activity is read-only; no preview/explicit/substitution/provider/command/
+  receipt retry or second command occurs.
+- Command start consumes authority; the original outcome is known, truthful,
+  separate, and successful.
+- One terminal canonical content-free receipt passes both specs, catalog <=5,
+  content <=18, and all represented operations/attempts successful.
+- Exact pre/post/cleanup equality holds for repository, candidate, caches, model,
+  telemetry filesystem, credential source, global/process, and unrelated state;
+  provider effects reconcile read-only.
+- Retention and raw/private cleanup pass, followed by independent final review.
+- Evidence makes no wire-send, SDK-internal-retry, billing, cost, or rate-limit
+  claim.
+
+## Evidence expectations
+
+Record exact activation, preparation evidence commit/tree, candidate PASS/GO,
+wheel/runtime/harness identities, pre-command equality, one command-start and
+terminal ledger without argv/PID/time, generic truthful original outcome,
+canonical receipt and strict verdict, exact catalog/content counts/outcomes,
+provider-read/no-write inventory, cache/model/telemetry/credential/global/
+repository post-state equality, cleanup absence, retained artifacts, privacy
+scan, changed paths/status, and independent final review. No record contains a
+private path or prohibited value.
+
+## Explicit exclusions
+
+Preparation activation or repair; build/rebuild/install/reinstall; cache seeding
+or harness correction; alternate candidate/case/dataset/model; predecessor
+resumption; more than one command; preview/explicit/receipt-only retrieval;
+provider/command/receipt retry; public/CLI/env receipt activation; telemetry
+storage/API/command or v2 change; provider write/management; model download or
+cache mutation; credential output/persistence/mutation; global install/tool
+replacement; source/test/spec/lock/routing change; release/deployment/
+publication/push/ref mutation; transport interception; wire/SDK-retry/billing/
+cost/rate-limit claim; unrelated cleanup.
+
+## Dependencies
+
+Blocked on the provider-free candidate child reaching truthful `done` with exact
+sanitized preparation evidence and independent candidate PASS/GO while the same
+private immutable handoff remains available. No other artifact, review, or owner
+statement substitutes for that dependency.
+
+## Blockers
+
+- Complete provider-free preparation evidence does not yet exist.
+- Independent candidate PASS/GO does not yet exist.
+- The exact reviewed immutable candidate/runtime/harness is not yet available.
+
+## Progress and notes
+
+- 2026-08-25: Created blocked/inactive at clean records-only shaping baseline
+  HEAD `da928dd1ef339e16d525ba6c95f2bf42e90ab667`, tree
+  `5eaf0f3ec6d7ee3a77cec04f5711782ceb5ad0ad`. No preparation or live child was
+  activated; no candidate, GO, credential, model, telemetry, provider/network,
+  retrieval, or command operation occurred.
