@@ -1,9 +1,9 @@
-Status: open
+Status: active
 Created: 2026-08-25
 Updated: 2026-08-25
 Parent: None
 Depends-On: .10x/tickets/done/2026-08-24-validate-provider-invocation-receipt-integration.md
-Activation: inactive
+Activation: active
 Decision: .10x/decisions/one-time-provider-invocation-receipt-canary-fix-offline-one-live.md
 Authorization-Evidence: .10x/evidence/2026-08-25-provider-invocation-receipt-renewed-canary-authorization.md
 Knowledge: .10x/knowledge/exact-reproduced-package-digests-inherit-reviewed-safety.md
@@ -374,8 +374,8 @@ decision govern execution. No implementation dependency remains unresolved.
 
 ## Blockers
 
-- Preparation is blocked until a separate explicit activation binds this exact
-  record graph and then-current clean repository/ref state.
+- Preparation is active under the exact separately committed activation recorded
+  below.
 - Live access is blocked until complete provider-free preparation passes and an
   independent reviewer records exact GO for its evidence commit/tree and the
   still-identical wheel.
@@ -394,3 +394,18 @@ decision govern execution. No implementation dependency remains unresolved.
   export source, build/install a wheel, run validators/tests/model/credential/
   provider/network/telemetry/global operations, activate this ticket, seek GO,
   or execute a canary.
+- 2026-08-25: Explicit owner-directed activation marks only this successor
+  active for provider-free preparation. The pre-activation repository was clean
+  at exact HEAD `7723bd96f00fa72d4c280f4a227f5f767f4ecf52`, tree
+  `57627acf1bacf378cd0227f8aa5f1919d1f2cd8a`, branch ref
+  `refs/heads/work/provider-invocation-receipts-execution`, registered worktree
+  `/private/tmp/buoy-provider-invocation-receipts-execution`. The complete
+  67-worktree porcelain inventory SHA-256 was
+  `dec7f4ab5581e82aece682cbe95ce99325a0aa47cb354dd418cee72b6f3bf74b`.
+  Exact package-relevant paths were byte-identical to reviewed source commit
+  `0b27c4eaa2449493125f4040af3cd1f7c926b531`, tree
+  `9017c4a335938faca80cdded54545df8b79c12f8`. Both consumed predecessors remain
+  blocked, consumed, and ineligible. This separate activation commit authorizes
+  provider-free preparation only; it did not export source, build/install a
+  wheel, run a validator or harness, read credentials, construct a model, open
+  telemetry, access provider/network, seek GO, or start a live command.
