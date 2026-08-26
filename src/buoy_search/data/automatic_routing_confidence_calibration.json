@@ -54,7 +54,7 @@
     "evaluator_runner_sha256": "6f179cb93ef85754e05e86bf8f300f1d430aefa34cccbf3ae7e23feb618402cc",
     "evaluator_scorer_sha256": "5d53624613bf5a80ad80e6d103d07cb0fab2d2a6ae2a1456e6c2709147d67aa7",
     "routing_module_sha256": "e0711bc40a90c364ca52c7a9884d29342be21e3df43950ec26033a70c2b6e9fd",
-    "cli_module_sha256": "90e7b2ddf7bbde2daaf0ccd78aa2a779d9e61946a8b7f7ae8f3512dec431ebf9",
+    "cli_module_sha256": "c6b575e160c5379b8a7214b3434a06d47864f0414e1478f44bcddeff313609ce",
     "evidence_module_sha256": "78b792098ee0c49bedc7c135dffc33f4096f7d92222bc437f5d8438f1e015c7b",
     "collect_artifact_sha256": "23fb14c49263933a2adb2299a9c04089888fb2ec734b790d9eadda2df295cbed"
   }

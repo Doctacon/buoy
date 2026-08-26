@@ -14,6 +14,7 @@ import time
 from typing import TextIO, Sequence
 
 from buoy_search import __version__
+from buoy_search._provider_invocation_receipt import _active_catalog_observer
 from buoy_search.applied_state import AppliedStateError, resolve_state_root
 from buoy_search.apply import (
     ApplyCleanupBinding,
@@ -1643,6 +1644,7 @@ def _run_retrieve(
                             client,
                             region=base_config.region,
                             compatibility=compatibility,
+                            _invocation_observer=_active_catalog_observer(),
                         )
                         snapshot = require_eligible(snapshot)
                 except (RemoteCatalogError, CatalogError, RuntimeError, ValueError) as exc:
