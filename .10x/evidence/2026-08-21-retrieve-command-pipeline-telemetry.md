@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-08-21
 Updated: 2026-08-23
-Relates-To: .10x/tickets/done/2026-08-20-instrument-retrieve-command-pipeline-latency.md, .10x/specs/retrieve-command-telemetry.md, .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-for-command-telemetry.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-rereview.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-final-review.md, .10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-acceptance-review.md, .10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-source-reachability-review.md, .10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-source-reachability-rereview.md, .10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-source-reachability-final-review.md, .10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-final-acceptance-review.md
+Relates-To: .10x/tickets/done/2026-08-20-instrument-retrieve-command-pipeline-latency.md, .10x/specs/retrieve-command-telemetry.md, .10x/decisions/superseded/buoy-recertifies-final-reviewed-cli-receipt.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-receipt-under-provisional-policy.md, .10x/decisions/superseded/buoy-recertifies-routing-cli-for-command-telemetry.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-review.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-rereview.md, .10x/reviews/2026-08-22-retrieve-command-pipeline-telemetry-final-review.md, .10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-acceptance-review.md, .10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-source-reachability-review.md, .10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-source-reachability-rereview.md, .10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-source-reachability-final-review.md, .10x/reviews/2026-08-23-retrieve-command-pipeline-telemetry-final-acceptance-review.md
 
 # Retrieve Command and Pipeline Telemetry Implementation
 
@@ -145,7 +145,7 @@ recorded as intentionally unregistered during catalog-v3 migration.
 The owner selected local CLI-receipt recertification after this was explained.
 No card semantics were invented and no card repair or further live run is
 authorized. Current execution authority is
-`.10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md`.
+`.10x/decisions/superseded/buoy-recertifies-final-reviewed-cli-receipt.md`.
 The live stop remains valid evidence of zero mutation and no report; it is not a
 routing-quality failure or permission to backfill.
 

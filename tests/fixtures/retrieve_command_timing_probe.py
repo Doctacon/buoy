@@ -16,9 +16,9 @@ if "--stage" in sys.argv and sys.argv[sys.argv.index("--stage") + 1] == "bootstr
     delay_index = sys.argv.index("--delay-ms") + 1
     time.sleep(int(sys.argv[delay_index]) / 1000)
 
-from buoy_search import telemetry
-from buoy_search.cli import main
-from buoy_search.telemetry import (
+from buoy_search.telemetry import producer as telemetry
+from buoy_search.cli.main import main
+from buoy_search.telemetry.producer import (
     EVIDENCE_SPAN_NAME,
     NAMESPACE_QUERY_SPAN_NAME,
     QUERY_EMBED_SPAN_NAME,
@@ -26,8 +26,8 @@ from buoy_search.telemetry import (
     retrieval_trace,
     telemetry_span,
 )
-from buoy_search.telemetry_envelope import decode_trace_envelope_v2
-from buoy_search.telemetry_queue import PublicationResult
+from buoy_search.telemetry.envelope import decode_trace_envelope_v2
+from buoy_search.telemetry.queue import PublicationResult
 
 
 class ControlledRetriever:
@@ -153,17 +153,17 @@ def _routing_patches(stage: str, delay_ms: int) -> tuple[object, ...]:
 
     return (
         patch(
-            "buoy_search.cli.ROUTING_CONFIDENCE_FACTORY",
+            "buoy_search.cli.main.ROUTING_CONFIDENCE_FACTORY",
             return_value=SimpleNamespace(mode="collect"),
         ),
-        patch("buoy_search.cli.load_evidence_calibration", return_value=calibration),
-        patch("buoy_search.cli.REMOTE_CATALOG_CLIENT_FACTORY", return_value=object()),
-        patch("buoy_search.cli.read_remote_catalog", return_value=snapshot),
-        patch("buoy_search.cli.require_eligible", side_effect=lambda value: value),
-        patch("buoy_search.cli.ROUTING_EMBEDDER_FACTORY", return_value=object()),
-        patch("buoy_search.cli.hybrid_route", side_effect=route),
+        patch("buoy_search.cli.main.load_evidence_calibration", return_value=calibration),
+        patch("buoy_search.cli.main.REMOTE_CATALOG_CLIENT_FACTORY", return_value=object()),
+        patch("buoy_search.cli.main.read_remote_catalog", return_value=snapshot),
+        patch("buoy_search.cli.main.require_eligible", side_effect=lambda value: value),
+        patch("buoy_search.cli.main.ROUTING_EMBEDDER_FACTORY", return_value=object()),
+        patch("buoy_search.cli.main.hybrid_route", side_effect=route),
         patch(
-            "buoy_search.cli.MultiNamespaceRetriever.from_configs",
+            "buoy_search.cli.main.MultiNamespaceRetriever.from_configs",
             return_value=ControlledRetriever("automatic", stage, delay_ms),
         ),
     )
@@ -195,9 +195,9 @@ def run(stage: str, delay_ms: int) -> dict[str, object]:
 
     with ExitStack() as stack:
         stack.enter_context(
-            patch("buoy_search.cli.HybridRetriever.from_config", side_effect=construct)
+            patch("buoy_search.cli.main.HybridRetriever.from_config", side_effect=construct)
         )
-        stack.enter_context(patch("buoy_search.cli._print_json", side_effect=render))
+        stack.enter_context(patch("buoy_search.cli.main._print_json", side_effect=render))
         stack.enter_context(patch.object(telemetry, "publish_envelope", side_effect=publish))
         stack.enter_context(patch.object(telemetry, "request_writer_start"))
         for routing_patch in _routing_patches(stage, delay_ms):

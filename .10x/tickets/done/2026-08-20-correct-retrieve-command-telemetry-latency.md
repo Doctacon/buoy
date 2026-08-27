@@ -150,7 +150,7 @@ for its completion.
   provides precedent for local source-receipt revision while preserving the
   frozen anchor. The owner selected local CLI receipt recertification and no
   card backfill. Current authority is
-  `.10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md`.
+  `.10x/decisions/superseded/buoy-recertifies-final-reviewed-cli-receipt.md`.
 - 2026-08-22: Candidate `40ef5f74` locally reactivated the exact schema-v3
   artifact with only the final CLI receipt changed and passed worker-reported
   dual-runtime/full/package validation. Three fresh reviews nevertheless

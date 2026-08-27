@@ -1,0 +1,28 @@
+{
+  "baseline_status": "pending",
+  "dataset_id": "buoy-search-repo-search-seed",
+  "dataset_version": 3,
+  "manifest_id": "buoy-search-repo-search-path-membership-v3",
+  "manifest_kind": "active-path-membership-v1",
+  "path_set_sha256": "2a3f7ba108368b400059a6f445a9d6fc44d5f865e2b64d016d033d6b1e365c55",
+  "promotion_eligible": false,
+  "schema_version": 1,
+  "selected_path_count": 15,
+  "selected_repo_paths": [
+    "README.md",
+    "src/buoy_search/cli/main.py",
+    "src/buoy_search/evals/core.py",
+    "src/buoy_search/indexing/chunker.py",
+    "src/buoy_search/indexing/crawler.py",
+    "src/buoy_search/indexing/github_repo.py",
+    "src/buoy_search/planning/applied_state.py",
+    "src/buoy_search/planning/apply.py",
+    "src/buoy_search/planning/plan_artifacts.py",
+    "src/buoy_search/retrieval/retriever.py",
+    "tests/cli/test_cli.py",
+    "tests/evals/test_evals.py",
+    "tests/indexing/test_crawler.py",
+    "tests/indexing/test_github_repo.py",
+    "tests/retrieval/test_retriever.py"
+  ]
+}

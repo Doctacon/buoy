@@ -216,6 +216,6 @@ Original ratification provenance is recorded in `.10x/evidence/2026-07-20-python
 - `src/buoy_search/github_repo.py`
 - `src/buoy_search/chunker.py`
 - `src/buoy_search/plan_artifacts.py`
-- `tests/test_github_repo.py`
-- `tests/test_chunker.py`
+- `tests/indexing/test_github_repo.py`
+- `tests/indexing/test_chunker.py`
 - `.github/workflows/ci.yml`

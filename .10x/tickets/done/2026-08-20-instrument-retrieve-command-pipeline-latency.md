@@ -6,7 +6,7 @@ Depends-On: .10x/tickets/done/2026-08-20-implement-local-telemetry-v2-storage-mi
 Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md
 Specification: .10x/specs/retrieve-command-telemetry.md
 Storage: .10x/specs/local-telemetry-v2-storage-and-migration.md
-Routing-Decision: .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md
+Routing-Decision: .10x/decisions/superseded/buoy-recertifies-final-reviewed-cli-receipt.md
 Routing-Specification: .10x/specs/automatic-routing-after-apply.md
 
 # Instrument Retrieve Command and Pipeline Latency

@@ -22,8 +22,8 @@ import tempfile
 import time
 from typing import Mapping, Sequence
 
-from buoy_search import routing_quality as routing_quality_module
-from buoy_search.catalog import (
+from buoy_search.evals import routing_quality as routing_quality_module
+from buoy_search.catalog.local import (
     ROUTING_DIMENSIONS,
     ROUTING_MODEL,
     ROUTING_MODEL_REVISION,
@@ -33,7 +33,7 @@ from buoy_search.catalog import (
     load_routing_embedder,
 )
 from buoy_search.config import load_config
-from buoy_search.cross_encoder import (
+from buoy_search.retrieval.cross_encoder import (
     CROSS_ENCODER_BATCH_SIZE,
     CROSS_ENCODER_MAX_LENGTH,
     CROSS_ENCODER_MODEL,
@@ -41,9 +41,9 @@ from buoy_search.cross_encoder import (
     CrossEncoderReranker,
     load_cross_encoder_reranker,
 )
-from buoy_search.multi_corpus_evals import DEFAULT_MULTI_CORPUS_EVAL_DATASET
-from buoy_search.plan_artifacts import stable_hash
-from buoy_search.remote_catalog import (
+from buoy_search.evals.multi_corpus import DEFAULT_MULTI_CORPUS_EVAL_DATASET
+from buoy_search.planning.plan_artifacts import stable_hash
+from buoy_search.catalog.remote import (
     REMOTE_CATALOG_NAMESPACE,
     CompatibilityContract,
     RemoteCatalogSnapshot,
@@ -51,7 +51,7 @@ from buoy_search.remote_catalog import (
     read_remote_catalog,
     require_complete_routing_coverage,
 )
-from buoy_search.routing import (
+from buoy_search.retrieval.routing import (
     DEFAULT_ROUTE_TOP_K,
     ROUTING_PROTOTYPE_CONTRACT,
     PrototypeRouteScore,
@@ -60,7 +60,7 @@ from buoy_search.routing import (
     prototype_route_scores,
     semantic_route,
 )
-from buoy_search.routing_quality import (
+from buoy_search.evals.routing_quality import (
     DEFAULT_ROUTING_CALIBRATION,
     DEFAULT_ROUTING_CANARY_DIR,
     ROUTING_MAX_EXAMPLES,
@@ -83,6 +83,7 @@ from buoy_search.routing_quality import (
     load_routing_quality_dataset,
     routing_catalog_projection_sha256,
     routing_certification_dataset,
+    routing_semantic_compatibility_descriptor,
     score_route_selection_quality,
     score_routing_quality,
     validate_canary_catalog_contract,
@@ -574,12 +575,13 @@ def _activation_verdict(
         and confidence_artifact.certification_verdict_sha256
         == quality_verdict_sha256
     )
-    receipts = confidence_artifact.receipts
-    evaluator_receipts_bound = bool(
-        receipts is not None
-        and receipts.evaluator_runner_sha256 == _file_sha256(Path(__file__))
-        and receipts.evaluator_scorer_sha256
-        == _file_sha256(Path(str(routing_quality_module.__file__)))
+    semantic_compatibility_bound = bool(
+        confidence_artifact.semantic_compatibility is not None
+        and {
+            field: getattr(confidence_artifact.semantic_compatibility, field)
+            for field in routing_semantic_compatibility_descriptor()
+        }
+        == routing_semantic_compatibility_descriptor()
     )
     provider = calls["provider"]
     if not isinstance(provider, Mapping):
@@ -673,26 +675,19 @@ def _activation_verdict(
                 "verdict_sha256": quality_verdict_sha256,
             },
         },
-        "confidence_evaluator_source_receipts": {
-            "passed": not active_authority or evaluator_receipts_bound,
-            "observed": {
-                "runner_sha256": (
-                    receipts.evaluator_runner_sha256
-                    if receipts is not None
-                    else None
-                ),
-                "scorer_sha256": (
-                    receipts.evaluator_scorer_sha256
-                    if receipts is not None
-                    else None
-                ),
-            },
-            "required": {
-                "runner_sha256": _file_sha256(Path(__file__)),
-                "scorer_sha256": _file_sha256(
-                    Path(str(routing_quality_module.__file__))
-                ),
-            },
+        "confidence_semantic_compatibility": {
+            "passed": not active_authority or semantic_compatibility_bound,
+            "observed": (
+                {
+                    field: getattr(
+                        confidence_artifact.semantic_compatibility, field
+                    )
+                    for field in routing_semantic_compatibility_descriptor()
+                }
+                if confidence_artifact.semantic_compatibility is not None
+                else None
+            ),
+            "required": routing_semantic_compatibility_descriptor(),
         },
         "clean_source_checkout": {
             "passed": code.get("working_tree_clean") is True,
@@ -765,7 +760,7 @@ def _provenance(
     collector_invocation: Sequence[str],
     code: Mapping[str, object],
 ) -> dict[str, object]:
-    package_dir = Path(str(routing_quality_module.__file__)).resolve().parent
+    package_dir = Path(str(routing_quality_module.__file__)).resolve().parent.parent
     return {
         "origin": LIVE_COLLECTOR_PROVENANCE_MARKER,
         "collector_produced": True,
@@ -818,9 +813,13 @@ def _provenance(
                 Path(str(routing_quality_module.__file__))
             ),
             "artifact_sha256": _file_sha256(DEFAULT_ROUTING_CALIBRATION),
-            "routing_module_sha256": _file_sha256(package_dir / "routing.py"),
-            "cli_module_sha256": _file_sha256(package_dir / "cli.py"),
-            "evidence_module_sha256": _file_sha256(package_dir / "evidence.py"),
+            "routing_module_sha256": _file_sha256(
+                package_dir / "retrieval" / "routing.py"
+            ),
+            "cli_module_sha256": _file_sha256(package_dir / "cli" / "main.py"),
+            "evidence_module_sha256": _file_sha256(
+                package_dir / "retrieval" / "evidence.py"
+            ),
         },
     }
 
@@ -853,6 +852,14 @@ def _confidence_artifact_dict(
                 value.bindings.catalog_projection_sha256
             ),
         },
+        "semantic_compatibility": (
+            {
+                field: getattr(value.semantic_compatibility, field)
+                for field in routing_semantic_compatibility_descriptor()
+            }
+            if value.semantic_compatibility is not None
+            else None
+        ),
         "certification": {
             "passed": value.certification_passed,
             "case_count": value.certification_case_count,
@@ -889,11 +896,6 @@ def _confidence_artifact_dict(
             "certified_dormant_working_tree_clean": (
                 value.receipts.certified_dormant_working_tree_clean
             ),
-            "evaluator_runner_sha256": value.receipts.evaluator_runner_sha256,
-            "evaluator_scorer_sha256": value.receipts.evaluator_scorer_sha256,
-            "routing_module_sha256": value.receipts.routing_module_sha256,
-            "cli_module_sha256": value.receipts.cli_module_sha256,
-            "evidence_module_sha256": value.receipts.evidence_module_sha256,
             "collect_artifact_sha256": value.receipts.collect_artifact_sha256,
         }
     return payload

@@ -22,7 +22,7 @@ import threading
 import time
 from typing import Mapping, Sequence
 
-from buoy_search.catalog import (
+from buoy_search.catalog.local import (
     ROUTING_DIMENSIONS,
     ROUTING_MODEL,
     ROUTING_MODEL_REVISION,
@@ -30,9 +30,9 @@ from buoy_search.catalog import (
     ROUTING_QUERY_PREFIX,
     load_routing_embedder,
 )
-from buoy_search.chunker import SentenceTransformerEmbedder
+from buoy_search.indexing.chunker import SentenceTransformerEmbedder
 from buoy_search.config import load_config
-from buoy_search.cross_encoder import (
+from buoy_search.retrieval.cross_encoder import (
     CROSS_ENCODER_BATCH_SIZE,
     CROSS_ENCODER_MAX_LENGTH,
     CROSS_ENCODER_MODEL,
@@ -40,8 +40,8 @@ from buoy_search.cross_encoder import (
     CrossEncoderReranker,
     load_cross_encoder_reranker,
 )
-from buoy_search.evidence import load_evidence_calibration
-from buoy_search.multi_corpus_evals import (
+from buoy_search.retrieval.evidence import load_evidence_calibration
+from buoy_search.evals.multi_corpus import (
     DEFAULT_MULTI_CORPUS_EVAL_DATASET,
     EVAL_RUN_SCHEMA_VERSION,
     EVALUATOR_VERSION,
@@ -54,13 +54,13 @@ from buoy_search.multi_corpus_evals import (
     evaluator_sha256,
     load_multi_corpus_eval_dataset,
 )
-from buoy_search.remote_catalog import (
+from buoy_search.catalog.remote import (
     CompatibilityContract,
     RemoteCatalogSnapshot,
     create_client,
     read_remote_catalog,
 )
-from buoy_search.retriever import (
+from buoy_search.retrieval.retriever import (
     CalibratedEvidenceAssessor,
     CROSS_NAMESPACE_FUSION_COMPONENTS,
     CROSS_NAMESPACE_FUSION_METHOD,
@@ -76,7 +76,7 @@ from buoy_search.retriever import (
     build_namespace,
     rerank_dedupe_key,
 )
-from buoy_search.routing import (
+from buoy_search.retrieval.routing import (
     DEFAULT_ROUTE_TOP_K,
     SEMANTIC_CONFIDENCE_FLOOR,
     SEMANTIC_MARGIN_FLOOR,

@@ -1,0 +1,283 @@
+{
+  "artifact": {
+    "baseline_status": "pending",
+    "dataset_id": "buoy-search-repo-search-seed",
+    "dataset_version": 3,
+    "derived_from": {
+      "dataset_id": "buoy-search-repo-search-seed",
+      "dataset_path": "src/buoy_search/data/buoy_search_repo_search_v2.json",
+      "dataset_sha256": "691566d85d1187717cfc06daebeb8bb965d9b337787050fab071afe8fad4d0ae",
+      "dataset_version": 2,
+      "path_membership_manifest_path": "src/buoy_search/data/buoy_search_repo_search_v2_path_membership.json",
+      "path_membership_manifest_sha256": "4b7739515d15cd14b9cf9e374e5318c7fa9e7a3bb7e208f25878e6489751068b"
+    },
+    "migration": {
+      "kind": "repo-path-map-v1",
+      "path_map": [
+        {
+          "from": "tests/test_cli.py",
+          "to": "tests/cli/test_cli.py"
+        },
+        {
+          "from": "tests/test_crawler.py",
+          "to": "tests/indexing/test_crawler.py"
+        },
+        {
+          "from": "tests/test_evals.py",
+          "to": "tests/evals/test_evals.py"
+        },
+        {
+          "from": "tests/test_github_repo.py",
+          "to": "tests/indexing/test_github_repo.py"
+        },
+        {
+          "from": "tests/test_retriever.py",
+          "to": "tests/retrieval/test_retriever.py"
+        }
+      ]
+    },
+    "schema_version": 1,
+    "path_membership_manifest_path": "src/buoy_search/data/buoy_search_repo_search_v3_path_membership.json",
+    "path_membership_manifest_sha256": "896fa063e78ab734cdb7b8efa04267a3f673c11eb01bb294bc7967ffb6b9ef10",
+    "promotion_eligible": false
+  },
+  "metadata": {
+    "id": "buoy-search-repo-search-seed-v3",
+    "status": "seed-draft",
+    "target_repo": "buoy-search",
+    "human_approved_ground_truth": false,
+    "notes": "Initial assistant-drafted graded relevance labels for repository search evaluation. These are seed labels for review and calibration, not final human-approved ground truth."
+  },
+  "cases": [
+    {
+      "id": "github-url-routing",
+      "question": "Where does Buoy detect GitHub repository URLs and turn them into repo-specific namespace defaults?",
+      "coverage_area": "github_repository_ingestion_flow",
+      "judgments": [
+        {
+          "repo_path": "src/buoy_search/indexing/crawler.py",
+          "grade": 3,
+          "reason": "Defines GitHubRepoSource, parse_github_repo_url, detect_source, source_id_for_url, default_out_dir, and namespace_candidate for GitHub repositories."
+        },
+        {
+          "repo_path": "src/buoy_search/indexing/github_repo.py",
+          "grade": 2,
+          "reason": "Consumes GitHubRepoSource after routing and reports repo-specific crawl summary metadata."
+        },
+        {
+          "repo_path": "tests/indexing/test_crawler.py",
+          "grade": 2,
+          "reason": "Documents expected GitHub URL parsing, routing, namespace, and invalid URL behavior in tests."
+        }
+      ]
+    },
+    {
+      "id": "github-local-acquisition",
+      "question": "Which code clones a public GitHub repository locally and resolves branch, commit, and metadata before indexing?",
+      "coverage_area": "github_repository_ingestion_flow",
+      "judgments": [
+        {
+          "repo_path": "src/buoy_search/indexing/github_repo.py",
+          "grade": 3,
+          "reason": "Implements metadata resolution, git ls-remote fallback, shallow clone, commit SHA capture, subdir validation, and public/private error handling."
+        },
+        {
+          "repo_path": "src/buoy_search/indexing/crawler.py",
+          "grade": 2,
+          "reason": "Provides the parsed GitHubRepoSource fields that acquisition uses for clone URL, requested ref, and repository subdirectory."
+        },
+        {
+          "repo_path": "tests/indexing/test_github_repo.py",
+          "grade": 2,
+          "reason": "Exercises acquisition with local git remotes, blob/subdir failure cases, metadata fallback, and user-friendly errors."
+        }
+      ]
+    },
+    {
+      "id": "repo-file-selection-corpus",
+      "question": "Where are tracked repository files selected, filtered, and rendered into the Markdown corpus for chunking?",
+      "coverage_area": "github_repository_ingestion_flow",
+      "judgments": [
+        {
+          "repo_path": "src/buoy_search/indexing/github_repo.py",
+          "grade": 3,
+          "reason": "Contains list_tracked_files, repo_file_skip_reason, default exclusion rules, language detection, blob URL generation, and Markdown rendering for selected repo files."
+        },
+        {
+          "repo_path": "tests/indexing/test_github_repo.py",
+          "grade": 2,
+          "reason": "Validates filtering, include/exclude behavior, repo subdirectories, parseable generated Markdown, and corpus chunking."
+        },
+        {
+          "repo_path": "src/buoy_search/indexing/chunker.py",
+          "grade": 1,
+          "reason": "Parses the generated Markdown corpus and creates chunks after repository files have been rendered."
+        }
+      ]
+    },
+    {
+      "id": "plan-command-local-only",
+      "question": "How does the plan command fetch website and GitHub sources while keeping planning local with respect to Turbopuffer?",
+      "coverage_area": "plan_apply_safety_local_only_behavior",
+      "judgments": [
+        {
+          "repo_path": "src/buoy_search/cli/main.py",
+          "grade": 3,
+          "reason": "Implements _run_plan, source detection, source-specific caps, local crawl/repo corpus processing, local diffing, artifact writing, and no live turbopuffer calls."
+        },
+        {
+          "repo_path": "src/buoy_search/planning/plan_artifacts.py",
+          "grade": 2,
+          "reason": "Builds deterministic plan, manifest, chunks JSONL, artifact hash, namespace, and state path without reading credentials."
+        },
+        {
+          "repo_path": "README.md",
+          "grade": 1,
+          "reason": "Documents source fetching and the plan/apply/apply --approve boundary: planning does not read Turbopuffer credentials, load embeddings, or contact Turbopuffer."
+        }
+      ]
+    },
+    {
+      "id": "apply-preflight-approved-safety",
+      "question": "Where is apply preflight separated from approved live turbopuffer writes and stale deletion guardrails?",
+      "coverage_area": "plan_apply_safety_local_only_behavior",
+      "judgments": [
+        {
+          "repo_path": "src/buoy_search/planning/apply.py",
+          "grade": 3,
+          "reason": "Verifies saved plans locally, computes diffs, keeps preflight no-write, reads credentials only in run_approved_apply, and gates stale deletes."
+        },
+        {
+          "repo_path": "src/buoy_search/cli/main.py",
+          "grade": 2,
+          "reason": "Exposes apply, --approve, --delete-stale, state-root, and JSON/text behavior while routing preflight versus approved apply."
+        },
+        {
+          "repo_path": "src/buoy_search/planning/applied_state.py",
+          "grade": 2,
+          "reason": "Defines the local applied-state ledger that apply preflight and approved apply use for incremental safety."
+        },
+        {
+          "repo_path": "README.md",
+          "grade": 1,
+          "reason": "Explains the safe apply sequence and explicit stale-delete command."
+        }
+      ]
+    },
+    {
+      "id": "plan-artifacts-github-metadata",
+      "question": "Which code propagates GitHub repo metadata into plan manifests, chunk rows, and turbopuffer row fields?",
+      "coverage_area": "chunking_artifact_generation",
+      "judgments": [
+        {
+          "repo_path": "src/buoy_search/planning/plan_artifacts.py",
+          "grade": 3,
+          "reason": "Defines source_metadata on page/chunk records, GitHub metadata row fields, build_chunk_record propagation, and build_generic_site_row row output."
+        },
+        {
+          "repo_path": "src/buoy_search/indexing/github_repo.py",
+          "grade": 2,
+          "reason": "Writes repository frontmatter such as source_kind, repo_full_name, repo_ref, commit_sha, repo_path, language, and fetcher into generated pages."
+        },
+        {
+          "repo_path": "tests/indexing/test_github_repo.py",
+          "grade": 2,
+          "reason": "Checks GitHub source metadata propagation into chunks and generic site rows."
+        }
+      ]
+    },
+    {
+      "id": "chunking-code-and-markdown",
+      "question": "Where are Markdown docs and code files chunked for retrieval, including line-range code sections?",
+      "coverage_area": "chunking_artifact_generation",
+      "judgments": [
+        {
+          "repo_path": "src/buoy_search/indexing/chunker.py",
+          "grade": 3,
+          "reason": "Owns Markdown parsing, heading-aware chunking, chunk IDs, source hashes, doc_kind inference, and embedding text preparation."
+        },
+        {
+          "repo_path": "src/buoy_search/indexing/github_repo.py",
+          "grade": 2,
+          "reason": "Renders non-Markdown repository files as Markdown with repository path, language, and line-range fenced code sections before chunking."
+        },
+        {
+          "repo_path": "tests/indexing/test_github_repo.py",
+          "grade": 1,
+          "reason": "Covers repository corpus rendering and confirms generated pages can be processed into chunks."
+        }
+      ]
+    },
+    {
+      "id": "retrieval-hybrid-command",
+      "question": "How does Buoy retrieve from an indexed namespace using hybrid ANN plus BM25 with RRF?",
+      "coverage_area": "retrieval_command_behavior",
+      "judgments": [
+        {
+          "repo_path": "src/buoy_search/retrieval/retriever.py",
+          "grade": 3,
+          "reason": "Builds ANN and boosted BM25 subqueries, calls turbopuffer multi_query with server-side RRF, and falls back to client-side RRF when needed."
+        },
+        {
+          "repo_path": "src/buoy_search/cli/main.py",
+          "grade": 2,
+          "reason": "Implements the retrieve CLI, dry-run/live gating, namespace/runtime overrides, JSON output, and rendering of hits."
+        },
+        {
+          "repo_path": "README.md",
+          "grade": 1,
+          "reason": "Shows the user-facing retrieve command for live and dry-run indexed-site search."
+        },
+        {
+          "repo_path": "tests/retrieval/test_retriever.py",
+          "grade": 2,
+          "reason": "Validates retrieval planning, subquery construction, client-side RRF fallback, and hit normalization behavior."
+        }
+      ]
+    },
+    {
+      "id": "evals-composite-metrics",
+      "question": "Where is the repository search composite eval metric implemented and validated?",
+      "coverage_area": "eval_autoresearch_behavior",
+      "judgments": [
+        {
+          "repo_path": "src/buoy_search/evals/core.py",
+          "grade": 3,
+          "reason": "Implements graded judgments, deterministic matching, NDCG@10, Recall@10, MRR@10, Precision@5, repo_search_score, and aggregate repo metrics."
+        },
+        {
+          "repo_path": "tests/evals/test_evals.py",
+          "grade": 2,
+          "reason": "Covers graded dataset loading, metric math, no-match behavior, duplicate handling, section matching, and invalid judgment validation."
+        }
+      ]
+    },
+    {
+      "id": "evals-cli-safety",
+      "question": "How does the evals command list cases safely by default and run live retrieval only when requested?",
+      "coverage_area": "eval_autoresearch_behavior",
+      "judgments": [
+        {
+          "repo_path": "src/buoy_search/cli/main.py",
+          "grade": 3,
+          "reason": "Implements the evals CLI, dry-run/list default, --live gating, dataset loading, runtime config overrides, and report printing."
+        },
+        {
+          "repo_path": "src/buoy_search/evals/core.py",
+          "grade": 2,
+          "reason": "Provides build_dry_run_eval_report and run_live_evals, preserving no-credential dry-run behavior and live retrieval-only scoring."
+        },
+        {
+          "repo_path": "src/buoy_search/retrieval/retriever.py",
+          "grade": 1,
+          "reason": "Live evals rely on the retriever for credential-gated turbopuffer queries, but eval command control lives elsewhere."
+        },
+        {
+          "repo_path": "tests/cli/test_cli.py",
+          "grade": 2,
+          "reason": "Tests eval CLI dry-run behavior, dataset overrides, runtime overrides, and API-key gating for live mode."
+        }
+      ]
+    }
+  ]
+}

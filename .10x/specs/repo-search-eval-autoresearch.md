@@ -1,8 +1,11 @@
 Status: active
 Created: 2026-06-28
-Updated: 2026-07-14
+Updated: 2026-08-27
+Amended-By: .10x/specs/versioned-repository-evaluations-and-promotion-gate.md
 
 # Repo Search Composite Eval and Config Autoresearch
+
+> Current authority note: `.10x/specs/versioned-repository-evaluations-and-promotion-gate.md` governs dataset/corpus versioning, historical-versus-current path validation, `baseline_pending`, and default-promotion benchmarking. The scoring and matching behavior below remains active.
 
 ## Purpose and scope
 
