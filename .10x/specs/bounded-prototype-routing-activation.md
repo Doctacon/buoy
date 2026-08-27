@@ -3,8 +3,11 @@ Created: 2026-08-15
 Updated: 2026-08-15
 Decision: .10x/decisions/buoy-activates-certified-bounded-prototype-routing.md
 Amends: .10x/specs/scalable-routing-quality.md
+Amended-By: .10x/specs/routing-semantic-compatibility.md
 
 # Bounded Prototype Routing Activation
+
+> Current authority note: `.10x/specs/routing-semantic-compatibility.md` replaces this specification's active Python-file receipt fields, runtime installed-byte hashing, and receipt-recertification gates. Historical report/source hashes remain provenance. All other routing behavior and safety boundaries below remain active.
 
 ## Frozen authorization envelope
 

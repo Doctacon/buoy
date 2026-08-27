@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "calibration_id": "automatic-routing-confidence-v2",
   "calibration_revision": "active-anchor-e559a8aa-v1",
   "mode": "active",
@@ -32,6 +32,26 @@
     "certified_catalog_projection_sha256": "e559a8aac5a4f7fb808f137b1c6a3710b6cd5b6764fc84f7f06120e33307ef7c",
     "catalog_policy": "certified-exact-otherwise-provisional-v1"
   },
+  "semantic_compatibility": {
+    "contract_revision": "bounded-prototype-routing-v1",
+    "artifact_schema": "automatic-routing-confidence-v4",
+    "routing_algorithm": "bounded-prototype-singleton-or-top3-v1",
+    "schema_contract": "remote-routing-card-schema-v1-v2",
+    "projection": "separate_prototype_vector_normalized_mean_v1",
+    "feature_contract": "max_prototype_score_and_margin_v1",
+    "score_field": "reranker_score",
+    "margin_field": "reranker_margin",
+    "routing_model": "BAAI/bge-small-en-v1.5",
+    "routing_model_revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+    "routing_reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    "routing_reranker_revision": "c5ee24cb16019beea0893ab7796b1df96625c6b8",
+    "shortlist_limit": 12,
+    "max_examples": 8,
+    "confident_selection": "singleton_when_score_and_margin_meet_floors",
+    "fallback_selection": "top3_or_all_when_fewer",
+    "explicit_namespace_behavior": "bypass_automatic_routing",
+    "catalog_policy": "certified-exact-otherwise-provisional-v1"
+  },
   "calibration": {
     "case_count": 6,
     "case_ids_sha256": "23a863f53b44ec741185bf27f903824931dd9d84bd08e907c8f2b94e1f70ce1f",
@@ -51,11 +71,6 @@
     "certified_dormant_source_commit": "d171cd887f615158a196dbeef8fa93830818ea64",
     "certified_dormant_source_tree": "184c7cd83ad5d93591d05bb1d286d07941c360b1",
     "certified_dormant_working_tree_clean": true,
-    "evaluator_runner_sha256": "6f179cb93ef85754e05e86bf8f300f1d430aefa34cccbf3ae7e23feb618402cc",
-    "evaluator_scorer_sha256": "5d53624613bf5a80ad80e6d103d07cb0fab2d2a6ae2a1456e6c2709147d67aa7",
-    "routing_module_sha256": "e0711bc40a90c364ca52c7a9884d29342be21e3df43950ec26033a70c2b6e9fd",
-    "cli_module_sha256": "c6b575e160c5379b8a7214b3434a06d47864f0414e1478f44bcddeff313609ce",
-    "evidence_module_sha256": "78b792098ee0c49bedc7c135dffc33f4096f7d92222bc437f5d8438f1e015c7b",
     "collect_artifact_sha256": "23fb14c49263933a2adb2299a9c04089888fb2ec734b790d9eadda2df295cbed"
   }
 }

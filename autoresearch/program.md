@@ -72,7 +72,7 @@ Minimal fixture-mode example:
   "question": "Does the baseline config retrieve expected implementation files?",
   "hypothesis": "The baseline top_k/candidates config should rank direct source files highly.",
   "mode": "fixture",
-  "dataset_path": "src/buoy_search/data/buoy_search_repo_search_seed_evals.json",
+  "dataset_path": "src/buoy_search/data/buoy_search_repo_search_v3.json",
   "config": {
     "namespace": "github-owner-buoy-search-v1",
     "region": "gcp-us-central1",
@@ -85,7 +85,7 @@ Minimal fixture-mode example:
   },
   "fixture_hits": {
     "github-url-routing": [
-      {"path": "src/buoy_search/crawler.py", "title": "crawler.py"}
+      {"path": "src/buoy_search/indexing/crawler.py", "title": "crawler.py"}
     ]
   }
 }
@@ -100,7 +100,7 @@ Live mode is retrieval-only and requires current human authorization plus
   "question": "How does the baseline live namespace score?",
   "hypothesis": "The indexed repo namespace should retrieve grade-3 source files in the top results.",
   "mode": "live",
-  "dataset_path": "src/buoy_search/data/buoy_search_repo_search_seed_evals.json",
+  "dataset_path": "src/buoy_search/data/buoy_search_repo_search_v3.json",
   "config": {
     "namespace": "github-owner-buoy-search-v1",
     "region": "gcp-us-central1",

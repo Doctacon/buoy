@@ -83,7 +83,7 @@ Catalog observation is additionally capability-explicit. The shared
 defaulting to `None` and never discover it from ambient receipt scope. Only the
 automatic-retrieve CLI branch passes the active capability; apply, catalog
 management, and direct callers remain unobserved. Final CLI wiring must follow
-`.10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md`: preserve the
+`.10x/decisions/superseded/buoy-recertifies-final-reviewed-cli-receipt.md`: preserve the
 exact schema-v3 routing artifact and change only its final reviewed
 `receipts.cli_module_sha256` value.
 

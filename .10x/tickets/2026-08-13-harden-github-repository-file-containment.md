@@ -41,7 +41,7 @@ entry, without changing ordinary repository-plan output.
 ## Owned paths
 
 - `src/buoy_search/github_repo.py`
-- `tests/test_github_repo.py`
+- `tests/indexing/test_github_repo.py`
 - `docs/indexing.md`
 - `CHANGELOG.md`
 - `.10x/evidence/2026-08-13-github-repository-file-containment.md`

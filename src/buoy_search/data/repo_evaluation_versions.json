@@ -1,0 +1,43 @@
+{
+  "active_buoy_dataset_id": "buoy-search-repo-search-seed",
+  "active_buoy_dataset_version": 3,
+  "schema_version": 1,
+  "versions": [
+    {
+      "baseline_status": "pending",
+      "corpus_manifest_path": ".10x/evidence/.storage/2026-07-20-repo-ranking-source-path-manifests.json",
+      "corpus_manifest_sha256": "1af85ca5e1f282e18c4eaa3c634b3da9b0ffb30de09389c799bd34fe3513c697",
+      "dataset_id": "buoy-search-repo-search-seed",
+      "dataset_path": ".10x/evidence/.storage/2026-08-27-buoy-repo-eval-v1.json",
+      "dataset_sha256": "60008af2950ae8fa27da59c0af737ebf5b4a3e618680bfa113ec75951d338792",
+      "dataset_version": 1,
+      "historical_contract_inventory_path": ".10x/evidence/.storage/2026-07-20-repo-ranking-experiment-contract-inventory.json",
+      "historical_contract_inventory_sha256": "e6f97842ec90f0558f51e70f93ea6b8f09f82f63019a27d0738d2b1efb427608",
+      "source_snapshot": {
+        "kind": "git-commit",
+        "selected_corpus_artifact_hash": "b6c5d128295f442fcae21472c9bcb037ecb44101ca648115e8f666ba59a6f0ce",
+        "source_commit": "fcb7abbe1652d2eab4ee23816b6d992d893603ac"
+      }
+    },
+    {
+      "baseline_status": "pending",
+      "dataset_id": "buoy-search-repo-search-seed",
+      "dataset_path": "src/buoy_search/data/buoy_search_repo_search_v2.json",
+      "dataset_sha256": "691566d85d1187717cfc06daebeb8bb965d9b337787050fab071afe8fad4d0ae",
+      "dataset_version": 2,
+      "path_membership_manifest_path": "src/buoy_search/data/buoy_search_repo_search_v2_path_membership.json",
+      "path_membership_manifest_sha256": "4b7739515d15cd14b9cf9e374e5318c7fa9e7a3bb7e208f25878e6489751068b",
+      "promotion_eligible": false
+    },
+    {
+      "baseline_status": "pending",
+      "dataset_id": "buoy-search-repo-search-seed",
+      "dataset_path": "src/buoy_search/data/buoy_search_repo_search_v3.json",
+      "dataset_sha256": "d3e1b63a5e2c70c586dfeb588991c16173d06e749bb520a802e79149594fc184",
+      "dataset_version": 3,
+      "path_membership_manifest_path": "src/buoy_search/data/buoy_search_repo_search_v3_path_membership.json",
+      "path_membership_manifest_sha256": "896fa063e78ab734cdb7b8efa04267a3f673c11eb01bb294bc7967ffb6b9ef10",
+      "promotion_eligible": false
+    }
+  ]
+}

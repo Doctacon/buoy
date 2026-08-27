@@ -1,7 +1,8 @@
 Status: active
 Created: 2026-08-20
-Updated: 2026-08-20
+Updated: 2026-08-27
 Decision: .10x/decisions/buoy-records-command-and-pipeline-retrieve-latency.md
+Amended-By: .10x/specs/routing-semantic-compatibility.md
 Storage: .10x/specs/local-telemetry-v2-storage-and-migration.md
 Amends: .10x/specs/local-telemetry-writer.md
 
@@ -244,13 +245,15 @@ established behavior.
 
 ## Routing certification compatibility
 
+> Current authority note: `.10x/specs/routing-semantic-compatibility.md` supersedes the Python-byte receipt and CLI recertification requirements in this section. Command telemetry must preserve the semantic routing descriptor and established routing behavior instead.
+
 Command instrumentation changes the exact `src/buoy_search/cli.py` bytes bound
 by the active schema-v3 routing artifact. The implementation MUST NOT bypass or
 weaken that receipt. Under the newer provisional-routing amendment in
 `.10x/specs/automatic-routing-after-apply.md`, it MUST preserve the frozen
 seven-namespace certified anchor and replace only `cli_module_sha256` with the
 measured final CLI receipt, as authorized by
-`.10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md`.
+`.10x/decisions/superseded/buoy-recertifies-final-reviewed-cli-receipt.md`.
 
 The final active artifact MUST retain every non-CLI semantic and receipt:
 schema/revision, certified namespaces, provisional policy, models, thresholds,

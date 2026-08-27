@@ -1,0 +1,18 @@
+{
+  "authority_revision": "repo-and-website-ranking-defaults-v1",
+  "repository": {
+    "candidates": 200,
+    "ranking_aggregation": "adaptive_sum_3",
+    "ranking_mode": "file",
+    "ranking_pool": 100,
+    "ranking_profile": "repo_code"
+  },
+  "schema_version": 1,
+  "website": {
+    "candidates": 200,
+    "ranking_aggregation": "max",
+    "ranking_mode": "page",
+    "ranking_pool": 20,
+    "ranking_profile": "none"
+  }
+}

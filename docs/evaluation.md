@@ -41,10 +41,10 @@ Repository datasets use a natural-language `question` and graded `judgments`. Ea
 The seed dataset for this codebase is:
 
 ```text
-src/buoy_search/data/buoy_search_repo_search_seed_evals.json
+src/buoy_search/data/buoy_search_repo_search_v3.json
 ```
 
-Its labels are assistant-drafted and marked `human_approved_ground_truth: false`; treat them as calibration data until a person reviews them.
+Its labels are assistant-drafted and marked `human_approved_ground_truth: false`; treat them as calibration data until a person reviews them. Version 2 carries the version-1 judgments forward through an explicit path map for the subpackage layout and remains `baseline_status: pending`. Its path-membership manifest proves only that current judged paths exist; it is not a corpus identity or source snapshot and cannot support promotion. Historical version-1 bytes remain immutable evidence and are validated against their recorded manifest rather than against the current checkout.
 
 ## Repository score
 
@@ -66,7 +66,7 @@ NDCG rewards correct graded ordering, recall checks whether relevant files were 
 Autoresearch runs one declared retrieval configuration and writes a reproducible report. The fixture baseline is safe and requires no credentials:
 
 ```bash
-uv run python -m buoy_search.autoresearch \
+uv run python -m buoy_search.evals.autoresearch \
   --experiment autoresearch/experiments/repo-search-fixture-baseline.json \
   --out /tmp/buoy-repo-search-fixture-baseline \
   --json
@@ -89,5 +89,21 @@ The runner is config-only and one-shot. Live mode is retrieval-only against an e
 3. Change one ranking parameter.
 4. Re-run the same dataset.
 5. Inspect both aggregate metrics and per-question regressions before promoting a default.
+
+## Default promotion gate
+
+Active repository and website defaults have one packaged authority:
+
+```text
+src/buoy_search/data/ranking_defaults.json
+```
+
+Changing ranking implementation or adding an experimental option does not promote it. Every pull request runs the same fast local checks; the full promotion gate applies only when this authority file differs from the pull request's merge base.
+
+A promotion must check in one matching immutable artifact under `.10x/evidence/.storage/ranking-promotions/` and reference a basket in `src/buoy_search/data/repo_ranking_promotion_baskets.json`. Every registered basket has exactly 13 repositories. Each recorded member names actual versioned dataset, corpus-manifest, and baseline-benchmark files whose raw hashes are reproduced by CI. CI also validates dataset identity and cases/judgments plus corpus repository/source identity and its nonempty canonical path/content-hash inventory; consistently rehashing unrelated or malformed JSON does not make it valid evidence. Missing, tampered, path-only, or self-declared files are categorically ineligible. The production registry remains empty while current Buoy v2 is pending.
+
+The artifact also binds the old and proposed authority bytes and requires exactly equal non-authority baseline/candidate inputs. Retrieval options use only the closed `top_k`, `candidates`, `use_ann`, and `use_bm25` schema. URLs, headers, arbitrary objects, credentials, and credential-like values are rejected. CI recomputes basket, benchmark, and distribution-aware policy identities offline; it does not run retrieval or load a model.
+
+Pull requests compare against their merge base. Protected-branch pushes compare against the event's previous SHA. A missing comparison base fails closed. The one-time authority introduction is explicit and accepted only when its exact bytes match the reviewed pre-file defaults hash.
 
 See [Retrieve and rank results](retrieval.md) for ranking controls.

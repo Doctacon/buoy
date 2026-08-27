@@ -10,7 +10,7 @@ Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
 Contract-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 Activation-Review: .10x/reviews/2026-08-24-provider-invocation-execution-activation-review.md
-CLI-Receipt-Decision: .10x/decisions/buoy-recertifies-final-reviewed-cli-receipt.md
+CLI-Receipt-Decision: .10x/decisions/superseded/buoy-recertifies-final-reviewed-cli-receipt.md
 Evidence: .10x/evidence/2026-08-24-provider-invocation-receipt-integration-closure.md
 Review: .10x/reviews/2026-08-24-provider-invocation-receipt-integration-review.md
 Reviewed-Source: commit 0b27c4eaa2449493125f4040af3cd1f7c926b531, tree 9017c4a335938faca80cdded54545df8b79c12f8
