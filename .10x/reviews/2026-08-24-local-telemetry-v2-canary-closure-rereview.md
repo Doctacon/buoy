@@ -84,7 +84,7 @@ references are repaired.
 
 - Historical physical provider-attempt count remains unknown. This does not
   block the ratified canary outcome and is owned by
-  `.10x/tickets/2026-08-24-define-physical-provider-attempt-accounting.md`.
+  `.10x/tickets/done/2026-08-24-define-physical-provider-attempt-accounting.md`.
 - Catalog read accounting remains source-bounded rather than packet-observed,
   as already disclosed and accepted.
 - This PASS grants no retry, new canary, implementation, provider/model access,
