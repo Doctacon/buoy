@@ -1,0 +1,168 @@
+{
+  "experiment_id": "repo-search-fixture-baseline",
+  "question": "Does the fixture baseline prove the graded repo-search metric and runner wiring?",
+  "hypothesis": "When each seed eval case receives all relevant judged files in ideal grade order as fixture hits, the composite repo search score should be 100 without credentials or turbopuffer calls.",
+  "mode": "fixture",
+  "dataset_path": "src/buoy_search/data/buoy_search_repo_search_seed_evals.json",
+  "config": {
+    "namespace": "github-owner-buoy-search-v1",
+    "region": "gcp-us-central1",
+    "embedding_model": "BAAI/bge-small-en-v1.5"
+  },
+  "retrieval_options": {
+    "top_k": 5,
+    "candidates": 100,
+    "doc_kind": null
+  },
+  "fixture_hits": {
+    "github-url-routing": [
+      {
+        "path": "src/buoy_search/crawler.py",
+        "title": "crawler.py"
+      },
+      {
+        "path": "src/buoy_search/github_repo.py",
+        "title": "github_repo.py"
+      },
+      {
+        "path": "tests/test_crawler.py",
+        "title": "test_crawler.py"
+      }
+    ],
+    "github-local-acquisition": [
+      {
+        "path": "src/buoy_search/github_repo.py",
+        "title": "github_repo.py"
+      },
+      {
+        "path": "src/buoy_search/crawler.py",
+        "title": "crawler.py"
+      },
+      {
+        "path": "tests/test_github_repo.py",
+        "title": "test_github_repo.py"
+      }
+    ],
+    "repo-file-selection-corpus": [
+      {
+        "path": "src/buoy_search/github_repo.py",
+        "title": "github_repo.py"
+      },
+      {
+        "path": "tests/test_github_repo.py",
+        "title": "test_github_repo.py"
+      },
+      {
+        "path": "src/buoy_search/chunker.py",
+        "title": "chunker.py"
+      }
+    ],
+    "plan-command-local-only": [
+      {
+        "path": "src/buoy_search/cli.py",
+        "title": "cli.py"
+      },
+      {
+        "path": "src/buoy_search/plan_artifacts.py",
+        "title": "plan_artifacts.py"
+      },
+      {
+        "path": "README.md",
+        "title": "README.md"
+      }
+    ],
+    "apply-preflight-approved-safety": [
+      {
+        "path": "src/buoy_search/apply.py",
+        "title": "apply.py"
+      },
+      {
+        "path": "src/buoy_search/applied_state.py",
+        "title": "applied_state.py"
+      },
+      {
+        "path": "src/buoy_search/cli.py",
+        "title": "cli.py"
+      },
+      {
+        "path": "README.md",
+        "title": "README.md"
+      }
+    ],
+    "plan-artifacts-github-metadata": [
+      {
+        "path": "src/buoy_search/plan_artifacts.py",
+        "title": "plan_artifacts.py"
+      },
+      {
+        "path": "src/buoy_search/github_repo.py",
+        "title": "github_repo.py"
+      },
+      {
+        "path": "tests/test_github_repo.py",
+        "title": "test_github_repo.py"
+      }
+    ],
+    "chunking-code-and-markdown": [
+      {
+        "path": "src/buoy_search/chunker.py",
+        "title": "chunker.py"
+      },
+      {
+        "path": "src/buoy_search/github_repo.py",
+        "title": "github_repo.py"
+      },
+      {
+        "path": "tests/test_github_repo.py",
+        "title": "test_github_repo.py"
+      }
+    ],
+    "retrieval-hybrid-command": [
+      {
+        "path": "src/buoy_search/retriever.py",
+        "title": "retriever.py"
+      },
+      {
+        "path": "src/buoy_search/cli.py",
+        "title": "cli.py"
+      },
+      {
+        "path": "tests/test_retriever.py",
+        "title": "test_retriever.py"
+      },
+      {
+        "path": "README.md",
+        "title": "README.md"
+      }
+    ],
+    "evals-composite-metrics": [
+      {
+        "path": "src/buoy_search/evals.py",
+        "title": "evals.py"
+      },
+      {
+        "path": "tests/test_evals.py",
+        "title": "test_evals.py"
+      }
+    ],
+    "evals-cli-safety": [
+      {
+        "path": "src/buoy_search/cli.py",
+        "title": "cli.py"
+      },
+      {
+        "path": "src/buoy_search/evals.py",
+        "title": "evals.py"
+      },
+      {
+        "path": "tests/test_cli.py",
+        "title": "test_cli.py"
+      },
+      {
+        "path": "src/buoy_search/retriever.py",
+        "title": "retriever.py"
+      }
+    ]
+  },
+  "notes": "Safe fixture-mode baseline for validating metric and runner plumbing only; not a live retrieval quality measurement."
+}
