@@ -18,6 +18,15 @@ from unittest.mock import Mock, patch
 from buoy_search.retrieval import embedding_worker as worker
 
 
+class _FakeReranker:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, list[str]]] = []
+
+    def score(self, query: str, passages: list[str]) -> list[float]:
+        self.calls.append((query, list(passages)))
+        return [float(index) / 10.0 for index in range(len(passages))]
+
+
 class _FakeModel:
     def __init__(self, marker: float = 1.0) -> None:
         self.marker = marker
@@ -62,7 +71,7 @@ class EmbeddingWorkerProtocolTests(unittest.TestCase):
         valid = worker._request_value(["query"])
         invalid_payloads = [
             worker._canonical_json(valid | {"extra": True}),
-            b'{"schema_version":1,"schema_version":1,"operation":"encode",'
+            b'{"schema_version":2,"schema_version":2,"operation":"encode",'
             b'"model":"BAAI/bge-small-en-v1.5",'
             b'"revision":"5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",'
             b'"precision":"float32","texts":["query"]}',
@@ -78,11 +87,122 @@ class EmbeddingWorkerProtocolTests(unittest.TestCase):
                 with self.assertRaises(worker._ProtocolError):
                     worker._parse_request(payload)
 
+    def test_score_request_is_strict_and_bounded_to_108_passages(self) -> None:
+        self.assertEqual(worker.MAX_SCORE_PASSAGES, 108)
+        self.assertEqual(worker.MAX_FRAME_BYTES, 8_388_608)
+        valid = worker._score_request_value("query", ["one"])
+        parsed = worker._parse_request(worker._canonical_json(valid))
+        self.assertIsInstance(parsed, worker._ScoreRequest)
+        self.assertEqual(parsed.query, "query")
+        self.assertEqual(parsed.passages, ["one"])
+        boundary = worker._parse_request(
+            worker._canonical_json(
+                worker._score_request_value(
+                    "query", ["passage"] * worker.MAX_SCORE_PASSAGES
+                )
+            )
+        )
+        self.assertEqual(len(boundary.passages), 108)
+
+        invalid_payloads = [
+            worker._canonical_json(valid | {"extra": True}),
+            worker._canonical_json(valid | {"schema_version": True}),
+            worker._canonical_json(valid | {"model": "other"}),
+            worker._canonical_json(valid | {"revision": "other"}),
+            worker._canonical_json(valid | {"query": ""}),
+            worker._canonical_json(valid | {"query": "x" * (worker.MAX_TEXT_BYTES + 1)}),
+            worker._canonical_json(valid | {"passages": []}),
+            worker._canonical_json(valid | {"passages": [""]}),
+            worker._canonical_json(
+                valid | {"passages": ["p"] * (worker.MAX_SCORE_PASSAGES + 1)}
+            ),
+            worker._canonical_json(
+                valid | {"passages": ["x" * (worker.MAX_TEXT_BYTES + 1)]}
+            ),
+        ]
+        for payload in invalid_payloads:
+            with self.subTest(payload_bytes=len(payload)):
+                with self.assertRaises(worker._ProtocolError):
+                    worker._parse_request(payload)
+
+        oversized = worker._score_request_value(
+            "query", ["passage"] * (worker.MAX_SCORE_PASSAGES + 1)
+        )
+        with self.assertRaises(worker._ProtocolError):
+            worker._parse_request(worker._canonical_json(oversized))
+
+        duplicate = (
+            b'{"model":"cross-encoder/ms-marco-MiniLM-L-6-v2",'
+            b'"operation":"score","passages":["one"],"query":"query",'
+            b'"query":"other","revision":'
+            b'"c5ee24cb16019beea0893ab7796b1df96625c6b8",'
+            b'"schema_version":2}'
+        )
+        with self.assertRaises(worker._ProtocolError):
+            worker._parse_request(duplicate)
+
+    def test_score_client_enforces_inclusive_canonical_frame_limit(self) -> None:
+        query = "bounded query"
+        passages = ["bounded passage"] * worker.MAX_SCORE_PASSAGES
+        request_size = len(
+            worker._canonical_json(worker._score_request_value(query, passages))
+        )
+        with patch.object(worker, "MAX_FRAME_BYTES", request_size):
+            self.assertEqual(
+                worker._validate_score_input(query, passages),
+                (query, passages),
+            )
+        with patch.object(worker, "MAX_FRAME_BYTES", request_size - 1):
+            with self.assertRaises(worker.EmbeddingWorkerError) as raised:
+                worker._validate_score_input(query, passages)
+        self.assertEqual(raised.exception.error_type, "protocol_error")
+
+    def test_score_response_requires_exact_identity_count_and_finite_values(self) -> None:
+        valid = {
+            "schema_version": worker.SCHEMA_VERSION,
+            "outcome": "success",
+            "model": worker.RERANKER_MODEL,
+            "revision": worker.RERANKER_REVISION,
+            "scores": [0.25, -1.5],
+        }
+        self.assertEqual(
+            worker._parse_score_response(worker._canonical_json(valid), 2),
+            [0.25, -1.5],
+        )
+        invalid_values = [
+            valid | {"extra": 1},
+            valid | {"schema_version": True},
+            valid | {"model": "other"},
+            valid | {"revision": "other"},
+            valid | {"scores": [0.25]},
+            valid | {"scores": [True, 0.5]},
+            valid | {"scores": [float("nan"), 0.5]},
+        ]
+        for value in invalid_values:
+            with self.subTest(keys=sorted(value)):
+                with self.assertRaises((worker._ProtocolError, ValueError)):
+                    worker._parse_score_response(worker._canonical_json(value), 2)
+
+    def test_score_client_validates_before_creating_worker_state(self) -> None:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temporary:
+            home = Path(temporary) / ".buoy"
+            for query, passages in (
+                ("", ["one"]),
+                ("query", []),
+                ("query", ["p"] * 109),
+                ("query", [""]),
+            ):
+                with self.subTest(query=query, count=len(passages)):
+                    with self.assertRaises(worker.EmbeddingWorkerError) as raised:
+                        worker.score(query, passages, buoy_home=home)
+                    self.assertEqual(raised.exception.error_type, "protocol_error")
+                    self.assertFalse(home.exists())
+
     def test_response_validates_exact_fields_dimensions_finiteness_and_normalization(self) -> None:
         vector = [0.0] * worker.DIMENSIONS
         vector[0] = 1.0
         valid = {
-            "schema_version": 1,
+            "schema_version": worker.SCHEMA_VERSION,
             "outcome": "success",
             "dimensions": worker.DIMENSIONS,
             "vectors": [vector],
@@ -112,10 +232,38 @@ class EmbeddingWorkerProtocolTests(unittest.TestCase):
         with self.assertRaises(worker._ProtocolError):
             worker._parse_response(
                 worker._canonical_json(
-                    {"schema_version": 1, "outcome": "error", "error_type": "raw detail"}
+                    {
+                        "schema_version": worker.SCHEMA_VERSION,
+                        "outcome": "error",
+                        "error_type": "raw detail",
+                    }
                 ),
                 1,
             )
+
+    def test_ready_identity_binds_protocol_v2_and_exact_reranker(self) -> None:
+        ready = worker._ready_response()
+        worker._validate_ready(dict(ready))
+        self.assertEqual(worker.SCHEMA_VERSION, 2)
+        self.assertEqual(ready["reranker_model"], worker.RERANKER_MODEL)
+        self.assertEqual(ready["reranker_revision"], worker.RERANKER_REVISION)
+        self.assertEqual(ready["reranker_device"], "cpu")
+        self.assertEqual(ready["reranker_max_length"], 512)
+        self.assertEqual(ready["reranker_batch_size"], 8)
+        self.assertTrue(ready["reranker_local_files_only"])
+        self.assertTrue(ready["reranker_use_safetensors"])
+        self.assertFalse(ready["reranker_trust_remote_code"])
+        self.assertTrue(
+            worker.worker_paths(Path.home()).identity_directory.name.startswith("v2-")
+        )
+
+        for invalid in (
+            ready | {"schema_version": 1},
+            ready | {"reranker_revision": "old"},
+            {key: value for key, value in ready.items() if key != "reranker_model"},
+        ):
+            with self.assertRaises(worker._Incompatible):
+                worker._validate_ready(invalid)
 
     def test_peer_credentials_reject_another_user_and_allow_unavailable_api(self) -> None:
         connection = Mock()
@@ -157,13 +305,25 @@ class EmbeddingWorkerLifecycleTests(unittest.TestCase):
         model: _FakeModel | None = None,
         idle: float = 0.15,
         loader: object | None = None,
+        reranker: _FakeReranker | None = None,
+        reranker_loader: object | None = None,
     ) -> threading.Thread:
         selected_model = model or _FakeModel()
+        selected_reranker = reranker or _FakeReranker()
         model_loader = loader if loader is not None else (lambda: selected_model)
+        selected_reranker_loader = (
+            reranker_loader
+            if reranker_loader is not None
+            else (lambda: selected_reranker)
+        )
         thread = threading.Thread(
             target=worker.run_worker,
             args=(self.paths,),
-            kwargs={"model_loader": model_loader, "idle_seconds": idle},
+            kwargs={
+                "model_loader": model_loader,
+                "reranker_loader": selected_reranker_loader,
+                "idle_seconds": idle,
+            },
             daemon=True,
         )
         thread.start()
@@ -198,6 +358,69 @@ class EmbeddingWorkerLifecycleTests(unittest.TestCase):
         state = worker.read_worker_state(buoy_home=self.home)
         self.assertEqual(state["phase"], "ready")
         self.assertEqual(state["model"], worker.MODEL)
+
+    def test_score_lazily_loads_once_and_reuses_resident_reranker(self) -> None:
+        reranker = _FakeReranker()
+        loads = 0
+
+        def load_reranker() -> _FakeReranker:
+            nonlocal loads
+            loads += 1
+            return reranker
+
+        def spawn(_paths: worker.WorkerPaths) -> None:
+            self.start_fake_worker(reranker_loader=load_reranker, idle=0.3)
+
+        with patch.object(worker, "_spawn_worker", side_effect=spawn):
+            worker.encode(["embedding only"], buoy_home=self.home)
+            self.assertEqual(loads, 0)
+            first = worker.score("query", ["one", "two"], buoy_home=self.home)
+            second = worker.score("query two", ["three"], buoy_home=self.home)
+
+        self.assertEqual(loads, 1)
+        self.assertEqual(first, [0.0, 0.1])
+        self.assertEqual(second, [0.0])
+        self.assertEqual(
+            reranker.calls,
+            [("query", ["one", "two"]), ("query two", ["three"])],
+        )
+        state = worker.read_worker_state(buoy_home=self.home)
+        self.assertEqual(state["reranker_model"], worker.RERANKER_MODEL)
+        self.assertNotIn("query", state)
+        self.assertNotIn("passages", state)
+        self.assertNotIn("scores", state)
+
+    def test_lazy_reranker_load_and_scoring_failures_are_bounded(self) -> None:
+        def failed_loader() -> object:
+            raise RuntimeError("private reranker path")
+
+        with patch.object(
+            worker,
+            "_spawn_worker",
+            side_effect=lambda _paths: self.start_fake_worker(
+                reranker_loader=failed_loader,
+                idle=0.3,
+            ),
+        ):
+            with self.assertRaises(worker.EmbeddingWorkerError) as raised:
+                worker.score("private query", ["private passage"], buoy_home=self.home)
+        self.assertEqual(raised.exception.error_type, "model_unavailable")
+        self.assertNotIn("private", str(raised.exception))
+        self.threads[-1].join(timeout=1)
+
+        class FailingReranker:
+            def score(self, _query: str, _passages: list[str]) -> list[float]:
+                raise RuntimeError("private score detail")
+
+        self.start_fake_worker(
+            reranker_loader=lambda: FailingReranker(),
+            idle=0.3,
+        )
+        self.wait_for_socket()
+        with self.assertRaises(worker.EmbeddingWorkerError) as score_failure:
+            worker.score("query", ["passage"], buoy_home=self.home)
+        self.assertEqual(score_failure.exception.error_type, "scoring_failure")
+        self.assertNotIn("private", str(score_failure.exception))
 
     def test_concurrent_first_clients_coalesce_on_one_worker(self) -> None:
         model = _FakeModel()
@@ -455,6 +678,64 @@ class EmbeddingWorkerLifecycleTests(unittest.TestCase):
                 if paths.socket_path.exists():
                     paths.socket_path.unlink()
 
+    def test_score_response_timeout_and_truncation_are_bounded(self) -> None:
+        for behavior, category in (
+            ("timeout", "busy_timeout"),
+            ("truncated", "protocol_error"),
+        ):
+            with self.subTest(behavior=behavior):
+                paths = worker.worker_paths(self.home)
+                directory_fd = worker._prepare_identity_directory(paths)
+                os.close(directory_fd)
+                server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                server.bind(os.fspath(paths.socket_path))
+                paths.socket_path.chmod(0o600)
+                server.listen(1)
+                received: list[worker._Request] = []
+
+                def serve() -> None:
+                    connection, _address = server.accept()
+                    try:
+                        with connection:
+                            worker._send_frame(connection, worker._ready_response())
+                            received.append(
+                                worker._parse_request(worker._recv_frame(connection))
+                            )
+                            if behavior == "timeout":
+                                time.sleep(0.05)
+                            else:
+                                connection.sendall(struct.pack("!I", 10) + b"{}")
+                    finally:
+                        server.close()
+
+                thread = threading.Thread(target=serve, daemon=True)
+                thread.start()
+                with self.assertRaises(worker.EmbeddingWorkerError) as raised:
+                    worker._connect_and_score(
+                        paths,
+                        "must-not-replay",
+                        ["passage"],
+                        timeout_seconds=0.01,
+                    )
+                self.assertEqual(raised.exception.error_type, category)
+                thread.join(timeout=1)
+                self.assertEqual(len(received), 1)
+                self.assertIsInstance(received[0], worker._ScoreRequest)
+                if paths.socket_path.exists():
+                    paths.socket_path.unlink()
+
+    def test_post_request_score_transport_failure_is_not_replayed(self) -> None:
+        with patch.object(
+            worker,
+            "_connect_and_score",
+            side_effect=worker.EmbeddingWorkerError("busy_timeout"),
+        ) as connect, patch.object(worker, "_spawn_worker") as spawn:
+            with self.assertRaises(worker.EmbeddingWorkerError) as raised:
+                worker.score("query", ["passage"], buoy_home=self.home)
+        self.assertEqual(raised.exception.error_type, "busy_timeout")
+        self.assertEqual(connect.call_count, 1)
+        spawn.assert_not_called()
+
     def test_post_request_transport_failure_is_visible_without_fallback(self) -> None:
         with patch.object(
             worker,
@@ -586,6 +867,50 @@ class EmbeddingWorkerLifecycleTests(unittest.TestCase):
                 self.assertFalse(self.paths.socket_path.exists())
                 self.assertFalse(self.paths.ready_path.exists())
 
+    def test_valid_score_request_resets_idle_clock(self) -> None:
+        reranker = _FakeReranker()
+        result_values: list[list[float]] = []
+        failures: list[Exception] = []
+
+        def connect() -> None:
+            try:
+                deadline = time.monotonic() + 2
+                while True:
+                    try:
+                        values = worker._connect_and_score(
+                            self.paths,
+                            "query",
+                            ["one", "two"],
+                            timeout_seconds=1,
+                        )
+                        result_values.append(values)
+                        return
+                    except worker._Unavailable:
+                        if time.monotonic() >= deadline:
+                            raise
+                        time.sleep(0.005)
+            except Exception as exc:  # pragma: no cover - assertion reports it.
+                failures.append(exc)
+
+        client = threading.Thread(target=connect, daemon=True)
+        client.start()
+        clock = iter((0.0, 1.0, 2.0, 303.0))
+        result = worker.run_worker(
+            self.paths,
+            model_loader=_FakeModel,
+            reranker_loader=lambda: reranker,
+            idle_seconds=worker.IDLE_EXIT_SECONDS,
+            monotonic=lambda: next(clock),
+        )
+        client.join(timeout=2)
+
+        self.assertEqual(result, 0)
+        self.assertEqual(failures, [])
+        self.assertEqual(result_values, [[0.0, 0.1]])
+        self.assertEqual(reranker.calls, [("query", ["one", "two"])])
+        self.assertFalse(self.paths.socket_path.exists())
+        self.assertFalse(self.paths.ready_path.exists())
+
     def test_idle_exit_uses_300_second_contract_with_fake_clock(self) -> None:
         values = iter((0.0, 301.0))
         result = worker.run_worker(
@@ -709,6 +1034,28 @@ class EmbeddingWorkerLifecycleTests(unittest.TestCase):
         )
         self.assertEqual(values[0][0], 1.0)
 
+    def test_private_runtime_contains_no_score_request_or_response_payload(self) -> None:
+        query = "private-score-query-sentinel"
+        passage = "private-score-passage-sentinel"
+        score_sentinel = "0.1"
+        with patch.object(
+            worker,
+            "_spawn_worker",
+            side_effect=lambda _paths: self.start_fake_worker(idle=0.3),
+        ):
+            worker.score(query, [passage, "other"], buoy_home=self.home)
+
+        for path in self.paths.identity_directory.iterdir():
+            if path.is_file():
+                payload = path.read_bytes()
+                self.assertNotIn(query.encode(), payload)
+                self.assertNotIn(passage.encode(), payload)
+                self.assertNotIn(score_sentinel.encode(), payload)
+        state = worker.read_worker_state(buoy_home=self.home)
+        self.assertNotIn("query", state)
+        self.assertNotIn("passages", state)
+        self.assertNotIn("scores", state)
+
     def test_private_runtime_contains_no_query_or_vector_payload(self) -> None:
         query = "private-query-sentinel"
         vector_sentinel = "0.123456789"
@@ -774,6 +1121,47 @@ class ExperimentalRetrieveWorkerHarnessTests(unittest.TestCase):
             self.assertIn("route_sha256", retained)
             self.assertFalse((root / "baseline.stdout").exists())
             self.assertFalse((root / "baseline.stderr").exists())
+
+
+class CrossEncoderWorkerLiveABHarnessTests(unittest.TestCase):
+    def test_successor_contract_has_exact_query_order_and_three_commands(self) -> None:
+        from tests.fixtures import cross_encoder_worker_live_ab as harness
+
+        self.assertEqual(
+            harness.QUERY,
+            "How is approximate vector recall evaluated?",
+        )
+        self.assertEqual(
+            harness.COMMANDS,
+            (
+                ("baseline", ("--no-embedding-worker",)),
+                ("cold_worker", ()),
+                ("warm_worker", ()),
+            ),
+        )
+
+    def test_provider_free_self_test_redacts_and_cleans_synthetic_content(self) -> None:
+        from tests.fixtures import cross_encoder_worker_live_ab as harness
+
+        result = harness._provider_free_self_test()
+
+        self.assertTrue(result["passed"])
+        self.assertTrue(result["redaction_passed"])
+        self.assertTrue(result["raw_cleanup_passed"])
+        self.assertEqual(result["exact_command_count"], 3)
+        self.assertNotIn("provider-derived-self-test-sentinel", json.dumps(result))
+
+    def test_consumed_live_authority_stops_before_credential_or_subprocess_work(self) -> None:
+        from tests.fixtures import cross_encoder_worker_live_ab as harness
+
+        with patch.dict(
+            os.environ, {"TURBOPUFFER_API_KEY": "must-not-be-read"}, clear=True
+        ), patch.object(
+            harness,
+            "_run_and_reduce",
+            side_effect=AssertionError("live or synthetic subprocess attempted"),
+        ), self.assertRaisesRegex(RuntimeError, "authority is consumed"):
+            harness.main(["--execute-live"])
 
 
 class EmbeddingWorkerDormancyTests(unittest.TestCase):

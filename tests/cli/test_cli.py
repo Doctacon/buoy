@@ -770,6 +770,48 @@ class CliTests(unittest.TestCase):
             self.assertEqual(construct.call_count, 1)
             self.assertNotIn("embedder", construct.call_args.kwargs)
 
+    def test_opt_out_and_ineligible_explicit_multi_do_not_inject_worker_reranker(self) -> None:
+        class Result:
+            def to_dict(self) -> dict[str, object]:
+                return {"dry_run": False, "namespaces": ["one", "two"], "hits": []}
+
+        class Retriever:
+            def retrieve(self, _query: str, _options: object) -> Result:
+                return Result()
+
+        scenarios = (
+            ["--no-embedding-worker"],
+            ["--embedding-model", "custom/model"],
+            ["--embedding-precision", "float16"],
+        )
+        for extra in scenarios:
+            with self.subTest(extra=extra):
+                captured: list[dict[str, object]] = []
+
+                def construct(_configs: object, **kwargs: object) -> Retriever:
+                    captured.append(kwargs)
+                    return Retriever()
+
+                with patch(
+                    "buoy_search.cli.main.MultiNamespaceRetriever.from_configs",
+                    side_effect=construct,
+                ), redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                    result = main(
+                        [
+                            "retrieve",
+                            "query",
+                            "--namespace",
+                            "site-one-v1",
+                            "--namespace",
+                            "site-two-v1",
+                            "--json",
+                            *extra,
+                        ]
+                    )
+
+                self.assertEqual(result, 0)
+                self.assertEqual(captured, [{}])
+
     def test_default_explicit_live_worker_injects_and_embeds_once(self) -> None:
         from buoy_search.retrieval import embedding_worker
 
@@ -823,6 +865,219 @@ class CliTests(unittest.TestCase):
         self.assertEqual(calls, [["one query"]])
         self.assertEqual(len(captured), 1)
         self.assertNotIn("embedding_worker", stdout.getvalue())
+
+    def test_default_explicit_multi_worker_embeds_and_scores_once(self) -> None:
+        from buoy_search.retrieval import embedding_worker
+
+        embed_calls: list[list[str]] = []
+        score_calls: list[tuple[str, list[str]]] = []
+
+        class Result:
+            def to_dict(self) -> dict[str, object]:
+                return {"dry_run": False, "namespaces": ["one", "two"], "hits": []}
+
+        class Retriever:
+            def __init__(self, embedder: object, reranker_loader: object) -> None:
+                self.embedder = embedder
+                self.reranker_loader = reranker_loader
+
+            def retrieve(self, query: str, _options: object) -> Result:
+                self.embedder.encode([query])
+                reranker = self.reranker_loader()
+                self.assert_scores(reranker.score(query, ["one", "two"]))
+                return Result()
+
+            @staticmethod
+            def assert_scores(scores: list[float]) -> None:
+                if scores != [0.75, 0.25]:
+                    raise AssertionError(scores)
+
+        def construct(
+            _configs: object,
+            *,
+            embedder: object,
+            reranker_loader: object,
+        ) -> Retriever:
+            return Retriever(embedder, reranker_loader)
+
+        def encode(texts: object) -> list[list[float]]:
+            embed_calls.append(list(texts))
+            return [[1.0] + [0.0] * 383]
+
+        def score(query: str, passages: object) -> list[float]:
+            score_calls.append((query, list(passages)))
+            return [0.75, 0.25]
+
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch(
+            "buoy_search.cli.main.EMBEDDING_WORKER_CAPABILITY_FACTORY",
+            return_value=True,
+        ), patch.object(
+            embedding_worker, "_require_capability", return_value=None
+        ), patch.object(
+            embedding_worker, "encode", side_effect=encode
+        ), patch.object(
+            embedding_worker, "score", side_effect=score
+        ), patch(
+            "buoy_search.cli.main.MultiNamespaceRetriever.from_configs",
+            side_effect=construct,
+        ), redirect_stdout(stdout), redirect_stderr(stderr):
+            result = main(
+                [
+                    "retrieve",
+                    "one query",
+                    "--namespace",
+                    "site-one-v1",
+                    "--namespace",
+                    "site-two-v1",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual((result, stderr.getvalue()), (0, ""))
+        self.assertEqual(embed_calls, [["one query"]])
+        self.assertEqual(score_calls, [("one query", ["one", "two"])])
+
+    def test_worker_score_failure_falls_back_without_repeating_content(self) -> None:
+        from buoy_search.retrieval import embedding_worker
+
+        content_calls: list[str] = []
+        fallback_calls: list[tuple[str, list[str]]] = []
+
+        class Result:
+            def to_dict(self) -> dict[str, object]:
+                return {"dry_run": False, "namespaces": ["one", "two"], "hits": []}
+
+        class FallbackReranker:
+            def score(self, query: str, passages: object) -> list[float]:
+                fallback_calls.append((query, list(passages)))
+                return [0.5, 0.25]
+
+        class Retriever:
+            def __init__(self, reranker_loader: object) -> None:
+                self.reranker_loader = reranker_loader
+
+            def retrieve(self, query: str, _options: object) -> Result:
+                content_calls.append(query)
+                scores = self.reranker_loader().score(query, ["one", "two"])
+                if scores != [0.5, 0.25]:
+                    raise AssertionError(scores)
+                return Result()
+
+        def construct(
+            _configs: object,
+            *,
+            embedder: object,
+            reranker_loader: object,
+        ) -> Retriever:
+            del embedder
+            return Retriever(reranker_loader)
+
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch(
+            "buoy_search.cli.main.EMBEDDING_WORKER_CAPABILITY_FACTORY",
+            return_value=True,
+        ), patch.object(
+            embedding_worker, "_require_capability", return_value=None
+        ), patch.object(
+            embedding_worker,
+            "score",
+            side_effect=RuntimeError("private worker score detail"),
+        ) as worker_score, patch(
+            "buoy_search.cli.main.ROUTING_RERANKER_FACTORY",
+            return_value=FallbackReranker(),
+        ) as fallback_factory, patch(
+            "buoy_search.cli.main.MultiNamespaceRetriever.from_configs",
+            side_effect=construct,
+        ), redirect_stdout(stdout), redirect_stderr(stderr):
+            result = main(
+                [
+                    "retrieve",
+                    "one query",
+                    "--namespace",
+                    "site-one-v1",
+                    "--namespace",
+                    "site-two-v1",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(content_calls, ["one query"])
+        self.assertEqual(fallback_calls, [("one query", ["one", "two"])])
+        self.assertEqual(worker_score.call_count, 1)
+        self.assertEqual(fallback_factory.call_count, 1)
+        self.assertEqual(
+            stderr.getvalue(),
+            "Warning: local embedding worker failed; using in-process embedding for this command.\n",
+        )
+        self.assertNotIn("private", stderr.getvalue())
+
+    def test_worker_and_reranker_fallback_failure_is_redacted_model_error(self) -> None:
+        from buoy_search.retrieval import embedding_worker
+
+        content_calls: list[str] = []
+
+        class Retriever:
+            def __init__(self, reranker_loader: object) -> None:
+                self.reranker_loader = reranker_loader
+
+            def retrieve(self, query: str, _options: object) -> object:
+                content_calls.append(query)
+                self.reranker_loader().score(query, ["passage"])
+                raise AssertionError("unreachable")
+
+        def construct(
+            _configs: object,
+            *,
+            embedder: object,
+            reranker_loader: object,
+        ) -> Retriever:
+            del embedder
+            return Retriever(reranker_loader)
+
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch(
+            "buoy_search.cli.main.EMBEDDING_WORKER_CAPABILITY_FACTORY",
+            return_value=True,
+        ), patch.object(
+            embedding_worker, "_require_capability", return_value=None
+        ), patch.object(
+            embedding_worker,
+            "score",
+            side_effect=RuntimeError("private worker score"),
+        ), patch(
+            "buoy_search.cli.main.ROUTING_RERANKER_FACTORY",
+            side_effect=RuntimeError("private fallback model"),
+        ), patch(
+            "buoy_search.cli.main.MultiNamespaceRetriever.from_configs",
+            side_effect=construct,
+        ), redirect_stdout(stdout), redirect_stderr(stderr):
+            result = main(
+                [
+                    "retrieve",
+                    "query",
+                    "--namespace",
+                    "site-one-v1",
+                    "--namespace",
+                    "site-two-v1",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(content_calls, ["query"])
+        self.assertEqual(
+            stderr.getvalue(),
+            "Warning: local embedding worker failed; using in-process embedding for this command.\n"
+            "Retrieval failed: in-process reranker fallback failed.\n",
+        )
+        self.assertNotIn("private", stderr.getvalue())
+        self.assertNotIn("provider", stderr.getvalue().lower())
 
     def test_worker_failure_warns_once_and_uses_in_process_for_command(self) -> None:
         from buoy_search.retrieval import embedding_worker

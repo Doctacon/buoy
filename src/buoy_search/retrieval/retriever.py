@@ -908,6 +908,7 @@ class MultiNamespaceRetriever:
         configs: Sequence[RuntimeConfig],
         *,
         embedder: Embedder | None = None,
+        reranker_loader: Callable[[], CrossEncoderReranker] | None = None,
     ) -> "MultiNamespaceRetriever":
         if not configs:
             raise ValueError("at least one namespace config is required")
@@ -951,7 +952,11 @@ class MultiNamespaceRetriever:
                     config=config,
                 )
             )
-        return cls(retrievers=retrievers, embedder=selected_embedder)
+        return cls(
+            retrievers=retrievers,
+            embedder=selected_embedder,
+            reranker_loader=reranker_loader,
+        )
 
     def retrieve(
         self,
