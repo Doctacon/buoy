@@ -67,6 +67,40 @@ The runtime also reads `TURBOPUFFER_REGION` (default
 `gcp-us-central1`), `BUOY_EMBEDDING_MODEL`, and
 `BUOY_EMBEDDING_PRECISION`. `TURBOPUFFER_NAMESPACE` is ignored.
 
+## Persistent embedding worker
+
+On supported POSIX systems, `retrieve` reuses the exact pinned
+`BAAI/bge-small-en-v1.5` float32 model in a private local worker by default. The
+same resident model serves automatic semantic routing and the final retrieval
+query embedding. This amortizes Sentence Transformers and Torch initialization
+across nearby commands.
+
+The worker owns only the local embedder. Turbopuffer credentials, provider
+clients, catalog and namespace requests, reranking, results, telemetry storage,
+and rendering remain in the invoking CLI process. The worker exits after five
+minutes without a valid embedding request and may retain roughly 185–516 MB
+while warm.
+
+Use the established per-command in-process model explicitly when needed:
+
+```bash
+buoy retrieve "How is approximate vector recall evaluated?" \
+  --no-embedding-worker
+```
+
+Custom embedding models, float16, unsupported platforms, and the opt-out use
+the in-process backend directly without creating worker state. An explicit
+namespace `--dry-run` performs no embedding and starts no worker. An automatic
+`--dry-run` may use the worker to select the route while retaining its existing
+no-content-query boundary.
+
+If an eligible worker fails, Buoy prints one bounded warning and uses the
+in-process model for the failed and all later embeddings in that command. The
+fallback does not repeat provider catalog or content operations and does not
+expose worker paths, frames, query text, credentials, raw exceptions, or PIDs.
+There is no environment-variable activation. The former
+`--experimental-embedding-worker` flag has been removed.
+
 ## Automatic routing
 
 Automatic routing is intentionally bounded. Reserved control namespaces such

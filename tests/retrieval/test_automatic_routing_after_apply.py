@@ -382,6 +382,7 @@ class AutomaticRoutingAfterApplyAcceptanceTests(unittest.TestCase):
                         [
                             "retrieve",
                             "How do I configure quantum barnacle failover?",
+                            "--no-embedding-worker",
                             "--json",
                         ]
                     )

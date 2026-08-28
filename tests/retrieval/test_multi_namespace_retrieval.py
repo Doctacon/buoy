@@ -137,6 +137,35 @@ class MultiNamespaceRetrieverTests(unittest.TestCase):
             reranker_loader=loader,  # type: ignore[arg-type]
         )
 
+    def test_from_configs_uses_one_injected_embedder_without_constructing_model(self) -> None:
+        embedder = RecordingEmbedder()
+        configs = [
+            RuntimeConfig(namespace="site-one-v1"),
+            RuntimeConfig(namespace="site-two-v1"),
+        ]
+        namespaces = [object(), object()]
+        with patch.dict(
+            os.environ, {"TURBOPUFFER_API_KEY": "test-key"}, clear=False
+        ), patch(
+            "buoy_search.retrieval.retriever.SentenceTransformerEmbedder",
+            side_effect=AssertionError("in-process model constructed"),
+        ), patch(
+            "buoy_search.retrieval.retriever.build_namespace",
+            side_effect=namespaces,
+        ):
+            retriever = MultiNamespaceRetriever.from_configs(
+                configs, embedder=embedder
+            )
+
+        self.assertIs(retriever._embedder, embedder)
+        self.assertEqual(
+            [child._embedder for child in retriever._retrievers],
+            [embedder, embedder],
+        )
+        self.assertEqual(
+            [child._namespace for child in retriever._retrievers], namespaces
+        )
+
     def test_embeds_once_queries_concurrently_and_fuses_equal_ce_scores(self) -> None:
         order: list[str] = []
         embedder = RecordingEmbedder()
@@ -1049,6 +1078,7 @@ class MultiNamespaceCliTests(unittest.TestCase):
                     "site-one-v1",
                     "--namespace",
                     "site-two-v1",
+                    "--no-embedding-worker",
                     "--json",
                 ]
             )

@@ -216,9 +216,11 @@ so terminal cache equality is not established. The external runtime artifacts
 were removed and the repository was clean after cleanup.
 
 There is no complete five-sample result. This ticket cannot resume under its
-consumed no-retry authority. Any later campaign requires separately shaped and
-owner-ratified new execution authority; this ticket remains the durable owner
-of the failed attempt and its unresolved attribution outcome.
+consumed no-retry authority. The owner later ratified a materially distinct
+current-source successor at
+`.10x/tickets/done/2026-08-27-measure-current-provider-free-retriever-construction.md`;
+this ticket remains the immutable durable owner of the failed attempt and is
+not reopened.
 
 ## Progress and notes
 
@@ -255,3 +257,9 @@ of the failed attempt and its unresolved attribution outcome.
   absent; repository status was clean. Sanitized failure evidence is recorded
   at
   `.10x/evidence/2026-08-24-provider-free-retriever-construction-probe-failure.md`.
+- 2026-08-27: Trace analysis again identified preparation as the dominant
+  retrieval inefficiency. The owner selected current reorganized source and
+  authorized a fresh, separately bounded provider-free campaign with a
+  pre-consumption harness self-test. New authority belongs exclusively to
+  `.10x/tickets/done/2026-08-27-measure-current-provider-free-retriever-construction.md`;
+  this consumed ticket remains blocked.
