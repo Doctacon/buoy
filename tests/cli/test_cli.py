@@ -682,6 +682,277 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("presentation", outputs["json"])
         self.assertNotIn("explain", outputs["json"])
 
+    def test_no_embedding_worker_flag_is_retrieve_only_and_experiment_is_removed(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["retrieve", "query", "--no-embedding-worker"])
+
+        self.assertTrue(args.no_embedding_worker)
+        retrieve_help = next(
+            action for action in parser._actions if action.dest == "command"
+        ).choices["retrieve"].format_help()
+        self.assertIn("--no-embedding-worker", retrieve_help)
+        self.assertIn("persistent local worker", " ".join(retrieve_help.split()))
+        self.assertNotIn("--experimental-embedding-worker", retrieve_help)
+        for argv in (
+            ["apply", "--no-embedding-worker"],
+            ["retrieve", "query", "--experimental-embedding-worker"],
+        ):
+            with redirect_stderr(StringIO()), self.assertRaises(SystemExit) as raised:
+                parser.parse_args(argv)
+            self.assertEqual(raised.exception.code, 2)
+
+    def test_opt_out_and_explicit_dry_run_never_prepare_worker(self) -> None:
+        for extra in ([], ["--no-embedding-worker"]):
+            stdout = StringIO()
+            stderr = StringIO()
+            with patch(
+                "buoy_search.cli.main.EMBEDDING_WORKER_CAPABILITY_FACTORY",
+                side_effect=AssertionError("worker capability inspected"),
+            ), patch(
+                "buoy_search.cli.main.HybridRetriever.from_config",
+                side_effect=AssertionError("retriever constructed"),
+            ), redirect_stdout(stdout), redirect_stderr(stderr):
+                result = main(
+                    [
+                        "retrieve",
+                        "query",
+                        "--namespace",
+                        "site-example-v1",
+                        "--dry-run",
+                        "--json",
+                        *extra,
+                    ]
+                )
+
+            self.assertEqual((result, stderr.getvalue()), (0, ""))
+            self.assertTrue(json.loads(stdout.getvalue())["dry_run"])
+
+    def test_custom_and_unsupported_configs_use_in_process_without_warning(self) -> None:
+        class Result:
+            def to_dict(self) -> dict[str, object]:
+                return {"dry_run": False, "namespace": "redacted", "hits": []}
+
+        class Retriever:
+            def retrieve(self, _query: str, _options: object) -> Result:
+                return Result()
+
+        scenarios = (
+            (["--no-embedding-worker"], AssertionError("capability inspected")),
+            (["--embedding-model", "custom/model"], AssertionError("capability inspected")),
+            (["--embedding-precision", "float16"], AssertionError("capability inspected")),
+            ([], False),
+        )
+        for extra, capability in scenarios:
+            stdout = StringIO()
+            stderr = StringIO()
+            with patch.dict(
+                os.environ, {"TURBOPUFFER_API_KEY": "test-key"}, clear=True
+            ), patch(
+                "buoy_search.cli.main.EMBEDDING_WORKER_CAPABILITY_FACTORY",
+                side_effect=capability if isinstance(capability, BaseException) else None,
+                return_value=capability if isinstance(capability, bool) else None,
+            ), patch(
+                "buoy_search.cli.main.HybridRetriever.from_config",
+                return_value=Retriever(),
+            ) as construct, redirect_stdout(stdout), redirect_stderr(stderr):
+                result = main(
+                    [
+                        "retrieve",
+                        "query",
+                        "--namespace",
+                        "site-example-v1",
+                        "--json",
+                        *extra,
+                    ]
+                )
+
+            self.assertEqual((result, stderr.getvalue()), (0, ""))
+            self.assertEqual(construct.call_count, 1)
+            self.assertNotIn("embedder", construct.call_args.kwargs)
+
+    def test_default_explicit_live_worker_injects_and_embeds_once(self) -> None:
+        from buoy_search.retrieval import embedding_worker
+
+        calls: list[list[str]] = []
+        captured: list[object] = []
+
+        class Result:
+            def to_dict(self) -> dict[str, object]:
+                return {"dry_run": False, "namespace": "redacted", "hits": []}
+
+        class Retriever:
+            def __init__(self, embedder: object) -> None:
+                self.embedder = embedder
+
+            def retrieve(self, query: str, _options: object) -> Result:
+                self.embedder.encode([query])
+                return Result()
+
+        def encode(texts: object) -> list[list[float]]:
+            calls.append(list(texts))
+            return [[1.0] + [0.0] * 383]
+
+        def construct(_config: object, *, embedder: object) -> Retriever:
+            captured.append(embedder)
+            return Retriever(embedder)
+
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch(
+            "buoy_search.cli.main.EMBEDDING_WORKER_CAPABILITY_FACTORY",
+            return_value=True,
+        ), patch.object(
+            embedding_worker, "_require_capability", return_value=None
+        ), patch.object(
+            embedding_worker, "encode", side_effect=encode
+        ), patch(
+            "buoy_search.cli.main.HybridRetriever.from_config",
+            side_effect=construct,
+        ), redirect_stdout(stdout), redirect_stderr(stderr):
+            result = main(
+                [
+                    "retrieve",
+                    "one query",
+                    "--namespace",
+                    "site-example-v1",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual((result, stderr.getvalue()), (0, ""))
+        self.assertEqual(calls, [["one query"]])
+        self.assertEqual(len(captured), 1)
+        self.assertNotIn("embedding_worker", stdout.getvalue())
+
+    def test_worker_failure_warns_once_and_uses_in_process_for_command(self) -> None:
+        from buoy_search.retrieval import embedding_worker
+
+        secret = "private-worker-detail"
+        worker_calls: list[list[str]] = []
+        fallback_calls: list[list[str]] = []
+
+        class Result:
+            def to_dict(self) -> dict[str, object]:
+                return {"dry_run": False, "namespace": "redacted", "hits": []}
+
+        class FallbackEmbedder:
+            def encode(self, texts: object) -> list[list[float]]:
+                fallback_calls.append(list(texts))
+                return [[1.0] + [0.0] * 383]
+
+        class Retriever:
+            def __init__(self, embedder: object) -> None:
+                self.embedder = embedder
+
+            def retrieve(self, query: str, _options: object) -> Result:
+                self.embedder.encode([query])
+                self.embedder.encode([f"{query} again"])
+                return Result()
+
+        def worker_encode(texts: object) -> list[list[float]]:
+            worker_calls.append(list(texts))
+            raise RuntimeError(secret)
+
+        def construct(_config: object, *, embedder: object) -> Retriever:
+            return Retriever(embedder)
+
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch(
+            "buoy_search.cli.main.EMBEDDING_WORKER_CAPABILITY_FACTORY",
+            return_value=True,
+        ), patch.object(
+            embedding_worker, "_require_capability", return_value=None
+        ), patch.object(
+            embedding_worker, "encode", side_effect=worker_encode
+        ), patch(
+            "buoy_search.cli.main.IN_PROCESS_RETRIEVAL_EMBEDDER_FACTORY",
+            return_value=FallbackEmbedder(),
+        ) as fallback_factory, patch(
+            "buoy_search.cli.main.HybridRetriever.from_config",
+            side_effect=construct,
+        ), redirect_stdout(stdout), redirect_stderr(stderr):
+            result = main(
+                [
+                    "retrieve",
+                    "one query",
+                    "--namespace",
+                    "site-example-v1",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(worker_calls, [["one query"]])
+        self.assertEqual(fallback_calls, [["one query"], ["one query again"]])
+        self.assertEqual(fallback_factory.call_count, 1)
+        self.assertEqual(
+            stderr.getvalue(),
+            "Warning: local embedding worker failed; using in-process embedding for this command.\n",
+        )
+        self.assertNotIn(secret, stderr.getvalue())
+        self.assertNotIn("embedding_worker", stdout.getvalue())
+
+    def test_worker_and_explicit_fallback_failure_is_redacted_model_error(self) -> None:
+        from buoy_search.retrieval import embedding_worker
+
+        worker_secret = "private-worker-detail"
+        fallback_secret = "private-fallback-detail"
+        content_calls: list[str] = []
+
+        class Retriever:
+            def __init__(self, embedder: object) -> None:
+                self.embedder = embedder
+
+            def retrieve(self, query: str, _options: object) -> object:
+                self.embedder.encode([query])
+                content_calls.append(query)
+                raise AssertionError("content operation should not run")
+
+        def construct(_config: object, *, embedder: object) -> Retriever:
+            return Retriever(embedder)
+
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch(
+            "buoy_search.cli.main.EMBEDDING_WORKER_CAPABILITY_FACTORY",
+            return_value=True,
+        ), patch.object(
+            embedding_worker, "_require_capability", return_value=None
+        ), patch.object(
+            embedding_worker, "encode", side_effect=RuntimeError(worker_secret)
+        ) as worker_encode, patch(
+            "buoy_search.cli.main.IN_PROCESS_RETRIEVAL_EMBEDDER_FACTORY",
+            side_effect=RuntimeError(fallback_secret),
+        ) as fallback_factory, patch(
+            "buoy_search.cli.main.HybridRetriever.from_config",
+            side_effect=construct,
+        ) as provider_construct, redirect_stdout(stdout), redirect_stderr(stderr):
+            result = main(
+                [
+                    "retrieve",
+                    "one query",
+                    "--namespace",
+                    "site-example-v1",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(worker_encode.call_count, 1)
+        self.assertEqual(fallback_factory.call_count, 1)
+        self.assertEqual(provider_construct.call_count, 1)
+        self.assertEqual(content_calls, [])
+        self.assertEqual(
+            stderr.getvalue(),
+            "Warning: local embedding worker failed; using in-process embedding for this command.\n"
+            "Retrieval failed: in-process embedding fallback failed.\n",
+        )
+        self.assertNotIn(worker_secret, stderr.getvalue())
+        self.assertNotIn(fallback_secret, stderr.getvalue())
+        self.assertNotIn("provider", stderr.getvalue().lower())
+
     def test_help_identifies_primary_buoy_cli(self) -> None:
         parser = build_parser()
 

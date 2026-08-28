@@ -39,6 +39,16 @@ from tests.retrieval.routing_confidence_fixtures import (
 class RoutingActivationCliTests(unittest.TestCase):
     API_KEY = AutomaticRoutingCliTests.API_KEY
 
+    def setUp(self) -> None:
+        self.worker_capability_patch = patch(
+            "buoy_search.cli.main.EMBEDDING_WORKER_CAPABILITY_FACTORY",
+            return_value=False,
+        )
+        self.worker_capability_patch.start()
+
+    def tearDown(self) -> None:
+        self.worker_capability_patch.stop()
+
     def test_explicit_namespace_bypasses_every_activation_dependency(self) -> None:
         forbidden = AssertionError("automatic activation dependency was accessed")
         with (

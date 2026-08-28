@@ -198,6 +198,24 @@ class RetrieverTests(unittest.TestCase):
         )
         self.assertEqual(retriever._embedder.texts, [["precision query"]])
 
+    def test_from_config_uses_injected_embedder_without_constructing_model(self) -> None:
+        namespace = CapturingNamespace()
+        embedder = FakeEmbedder()
+        config = RuntimeConfig(namespace="site-example-v1")
+        with patch.dict(
+            os.environ, {"TURBOPUFFER_API_KEY": "test-key"}, clear=False
+        ), patch(
+            "buoy_search.retrieval.retriever.SentenceTransformerEmbedder",
+            side_effect=AssertionError("in-process model constructed"),
+        ), patch(
+            "buoy_search.retrieval.retriever.build_namespace",
+            return_value=namespace,
+        ):
+            retriever = HybridRetriever.from_config(config, embedder=embedder)
+
+        self.assertIs(retriever._embedder, embedder)
+        self.assertIs(retriever._namespace, namespace)
+
     def test_from_config_redacts_namespace_constructor_failures(self) -> None:
         secret = "secret-token-value"
         config = RuntimeConfig(namespace="site-example-v1")

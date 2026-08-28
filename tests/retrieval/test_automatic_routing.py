@@ -1031,6 +1031,16 @@ class RoutingAlgorithmTests(unittest.TestCase):
 class AutomaticRoutingCliTests(unittest.TestCase):
     API_KEY = "tpuf_test-routing-secret"
 
+    def setUp(self) -> None:
+        self.worker_capability_patch = patch(
+            "buoy_search.cli.main.EMBEDDING_WORKER_CAPABILITY_FACTORY",
+            return_value=False,
+        )
+        self.worker_capability_patch.start()
+
+    def tearDown(self) -> None:
+        self.worker_capability_patch.stop()
+
     def _run_preview(self, query: str, cards: list[NamespaceCard], *, extra_live=()):
         catalog_snapshot = snapshot(cards, extra_live=extra_live)
         with patch(
@@ -1127,6 +1137,279 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         route_context = captured["evidence_route_context"]
         self.assertIsInstance(route_context, EvidenceRouteContext)
         self.assertEqual(route_context.selection_reason, "unique_title_or_alias")
+
+    def test_automatic_dry_run_uses_default_worker_only_for_routing(self) -> None:
+        from buoy_search.cli.main import _CommandEmbeddingWorkerSession
+
+        cards = [
+            make_card("dagster", title="Dagster", vector=cosine_vector(0.5)),
+            make_card("tpuf", title="Turbopuffer", vector=cosine_vector(0.9)),
+            make_card("thistle", title="Thistle", vector=cosine_vector(0.2)),
+        ]
+        worker_embedder = FixedEmbedder()
+        session = _CommandEmbeddingWorkerSession(
+            worker_embedder.encode,
+            warning_callback=lambda _message: None,
+        )
+        with patch(
+            "buoy_search.cli.main.REMOTE_CATALOG_CLIENT_FACTORY", return_value=object()
+        ), patch(
+            "buoy_search.cli.main.read_remote_catalog", return_value=snapshot(cards)
+        ), patch(
+            "buoy_search.cli.main.ROUTING_CONFIDENCE_FACTORY",
+            return_value=load_collect_routing_confidence_fixture(),
+        ), patch(
+            "buoy_search.cli.main._prepare_default_embedding_worker",
+            return_value=session,
+        ) as prepare, patch(
+            "buoy_search.cli.main.ROUTING_EMBEDDER_FACTORY",
+            side_effect=AssertionError("in-process routing model constructed"),
+        ), patch(
+            "buoy_search.cli.main.MultiNamespaceRetriever.from_configs",
+            side_effect=AssertionError("content retriever constructed"),
+        ):
+            result, stdout, stderr = run_cli(
+                [
+                    "retrieve",
+                    "approximate vector recall",
+                    "--dry-run",
+                    "--json",
+                ],
+                env={"TURBOPUFFER_API_KEY": self.API_KEY},
+            )
+
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertEqual(len(worker_embedder.calls), 1)
+        self.assertTrue(worker_embedder.calls[0][0].startswith(ROUTING_QUERY_PREFIX))
+        self.assertTrue(prepare.call_args.kwargs["activate"])
+        self.assertFalse(prepare.call_args.kwargs["disabled"])
+        self.assertFalse(json.loads(stdout)["content_retrieval_occurred"])
+
+    def test_default_worker_session_is_shared_by_automatic_route_and_retrieval(self) -> None:
+        from buoy_search.cli.main import _CommandEmbeddingWorkerSession
+
+        cards = [
+            make_card("dagster", title="Dagster", vector=cosine_vector(0.5)),
+            make_card("tpuf", title="Turbopuffer", vector=cosine_vector(0.9)),
+            make_card("thistle", title="Thistle", vector=cosine_vector(0.2)),
+        ]
+        catalog_snapshot = snapshot(cards)
+        worker_embedder = FixedEmbedder()
+        session = _CommandEmbeddingWorkerSession(
+            worker_embedder.encode,
+            warning_callback=lambda _message: None,
+        )
+        captured: list[object] = []
+
+        class FakeResult:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "command": "retrieve",
+                    "dry_run": False,
+                    "content_retrieval_occurred": True,
+                    "namespaces": ["tpuf"],
+                    "embedding_precision": "float32",
+                    "fusion": "cross_namespace_equal_weight_ordinal_rrf",
+                    "hits": [],
+                    "evidence": {"mode": "active", "status": "supported"},
+                }
+
+        class FakeRetriever:
+            def __init__(self, embedder: object) -> None:
+                self.embedder = embedder
+
+            def retrieve(self, query, _options, **_kwargs):  # noqa: ANN001
+                self.embedder.encode([query])
+                return FakeResult()
+
+        def construct(_configs, *, embedder):  # noqa: ANN001
+            captured.append(embedder)
+            return FakeRetriever(embedder)
+
+        with patch(
+            "buoy_search.cli.main.REMOTE_CATALOG_CLIENT_FACTORY", return_value=object()
+        ), patch(
+            "buoy_search.cli.main.read_remote_catalog", return_value=catalog_snapshot
+        ), patch(
+            "buoy_search.cli.main.ROUTING_CONFIDENCE_FACTORY",
+            return_value=load_collect_routing_confidence_fixture(),
+        ), patch(
+            "buoy_search.cli.main._prepare_default_embedding_worker",
+            return_value=session,
+        ) as prepare, patch(
+            "buoy_search.cli.main.ROUTING_EMBEDDER_FACTORY",
+            side_effect=AssertionError("in-process routing model constructed"),
+        ), patch(
+            "buoy_search.cli.main.MultiNamespaceRetriever.from_configs",
+            side_effect=construct,
+        ):
+            result, stdout, stderr = run_cli(
+                ["retrieve", "approximate vector recall", "--json"],
+                env={"TURBOPUFFER_API_KEY": self.API_KEY},
+            )
+
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(len(worker_embedder.calls), 2)
+        self.assertTrue(worker_embedder.calls[0][0].startswith(ROUTING_QUERY_PREFIX))
+        self.assertEqual(worker_embedder.calls[1], ["approximate vector recall"])
+        self.assertTrue(prepare.call_args.kwargs["activate"])
+        self.assertFalse(prepare.call_args.kwargs["disabled"])
+        self.assertNotIn("embedding_worker", stdout)
+
+    def test_worker_route_failure_switches_whole_command_without_provider_replay(self) -> None:
+        from buoy_search.cli.main import _CommandEmbeddingWorkerSession
+
+        cards = [
+            make_card("dagster", title="Dagster", vector=cosine_vector(0.5)),
+            make_card("tpuf", title="Turbopuffer", vector=cosine_vector(0.9)),
+            make_card("thistle", title="Thistle", vector=cosine_vector(0.2)),
+        ]
+        worker_calls: list[list[str]] = []
+        warnings: list[str] = []
+        route_fallback = FixedEmbedder()
+        retrieval_fallback = FixedEmbedder()
+        catalog_calls: list[object] = []
+        content_calls: list[str] = []
+
+        def failed_worker(texts):  # noqa: ANN001
+            worker_calls.append(list(texts))
+            raise RuntimeError("private-worker-detail")
+
+        session = _CommandEmbeddingWorkerSession(
+            failed_worker,
+            warning_callback=warnings.append,
+        )
+
+        class FakeResult:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "command": "retrieve",
+                    "dry_run": False,
+                    "content_retrieval_occurred": True,
+                    "namespaces": ["tpuf"],
+                    "embedding_precision": "float32",
+                    "fusion": "cross_namespace_equal_weight_ordinal_rrf",
+                    "hits": [],
+                    "evidence": {"mode": "active", "status": "supported"},
+                }
+
+        class FakeRetriever:
+            def __init__(self, embedder: object) -> None:
+                self.embedder = embedder
+
+            def retrieve(self, query, _options, **_kwargs):  # noqa: ANN001
+                content_calls.append(query)
+                self.embedder.encode([query])
+                return FakeResult()
+
+        def read_catalog(*args, **kwargs):  # noqa: ANN002,ANN003
+            catalog_calls.append((args, kwargs))
+            return snapshot(cards)
+
+        def construct(_configs, *, embedder):  # noqa: ANN001
+            return FakeRetriever(embedder)
+
+        with patch(
+            "buoy_search.cli.main.REMOTE_CATALOG_CLIENT_FACTORY", return_value=object()
+        ), patch(
+            "buoy_search.cli.main.read_remote_catalog", side_effect=read_catalog
+        ), patch(
+            "buoy_search.cli.main.ROUTING_CONFIDENCE_FACTORY",
+            return_value=load_collect_routing_confidence_fixture(),
+        ), patch(
+            "buoy_search.cli.main._prepare_default_embedding_worker",
+            return_value=session,
+        ), patch(
+            "buoy_search.cli.main.ROUTING_EMBEDDER_FACTORY",
+            return_value=route_fallback,
+        ), patch(
+            "buoy_search.cli.main.IN_PROCESS_RETRIEVAL_EMBEDDER_FACTORY",
+            return_value=retrieval_fallback,
+        ) as retrieval_factory, patch(
+            "buoy_search.cli.main.MultiNamespaceRetriever.from_configs",
+            side_effect=construct,
+        ) as construct_retriever:
+            result, _stdout, stderr = run_cli(
+                ["retrieve", "approximate vector recall", "--json"],
+                env={"TURBOPUFFER_API_KEY": self.API_KEY},
+            )
+
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertEqual(len(worker_calls), 1)
+        self.assertEqual(len(route_fallback.calls), 1)
+        self.assertEqual(retrieval_fallback.calls, [["approximate vector recall"]])
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("private-worker-detail", warnings[0])
+        self.assertEqual(len(catalog_calls), 1)
+        self.assertEqual(construct_retriever.call_count, 1)
+        self.assertEqual(content_calls, ["approximate vector recall"])
+        self.assertEqual(retrieval_factory.call_count, 1)
+
+    def test_worker_and_automatic_fallback_failure_is_redacted_model_error(self) -> None:
+        from buoy_search.cli.main import (
+            _CommandEmbeddingWorkerSession,
+            _print_embedding_worker_fallback_warning,
+        )
+
+        worker_secret = "private-worker-detail"
+        fallback_secret = "private-fallback-detail"
+        cards = [
+            make_card("dagster", title="Dagster", vector=cosine_vector(0.5)),
+            make_card("tpuf", title="Turbopuffer", vector=cosine_vector(0.9)),
+            make_card("thistle", title="Thistle", vector=cosine_vector(0.2)),
+        ]
+        catalog_calls: list[object] = []
+
+        class FailingFallbackEmbedder:
+            def encode(self, _texts):  # noqa: ANN001
+                raise RuntimeError(fallback_secret)
+
+        session = _CommandEmbeddingWorkerSession(
+            lambda _texts: (_ for _ in ()).throw(RuntimeError(worker_secret)),
+            warning_callback=_print_embedding_worker_fallback_warning,
+        )
+
+        def read_catalog(*args, **kwargs):  # noqa: ANN002,ANN003
+            catalog_calls.append((args, kwargs))
+            return snapshot(cards)
+
+        with patch(
+            "buoy_search.cli.main.REMOTE_CATALOG_CLIENT_FACTORY", return_value=object()
+        ) as provider_construct, patch(
+            "buoy_search.cli.main.read_remote_catalog", side_effect=read_catalog
+        ), patch(
+            "buoy_search.cli.main.ROUTING_CONFIDENCE_FACTORY",
+            return_value=load_collect_routing_confidence_fixture(),
+        ), patch(
+            "buoy_search.cli.main._prepare_default_embedding_worker",
+            return_value=session,
+        ), patch(
+            "buoy_search.cli.main.ROUTING_EMBEDDER_FACTORY",
+            return_value=FailingFallbackEmbedder(),
+        ) as fallback_factory, patch(
+            "buoy_search.cli.main.MultiNamespaceRetriever.from_configs",
+            side_effect=AssertionError("content retriever constructed"),
+        ) as content_construct:
+            result, stdout, stderr = run_cli(
+                ["retrieve", "approximate vector recall", "--json"],
+                env={"TURBOPUFFER_API_KEY": self.API_KEY},
+            )
+
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout, "")
+        self.assertEqual(provider_construct.call_count, 1)
+        self.assertEqual(len(catalog_calls), 1)
+        self.assertEqual(fallback_factory.call_count, 1)
+        self.assertEqual(content_construct.call_count, 0)
+        self.assertEqual(
+            stderr,
+            "Warning: local embedding worker failed; using in-process embedding for this command.\n"
+            "Automatic routing failed: in-process embedding fallback failed.\n",
+        )
+        self.assertNotIn(worker_secret, stderr)
+        self.assertNotIn(fallback_secret, stderr)
+        self.assertNotIn("routing query embedding failed", stderr)
 
     def test_plain_automatic_retrieval_wires_active_evidence_assessment(self) -> None:
         cards = [

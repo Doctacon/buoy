@@ -11,7 +11,7 @@ from pathlib import Path
 import shutil
 import sys
 import time
-from typing import TextIO, Sequence
+from typing import Callable, TextIO, Sequence
 
 from buoy_search import __version__
 from buoy_search.retrieval._provider_invocation_receipt import _active_catalog_observer
@@ -26,6 +26,7 @@ from buoy_search.planning.apply import (
     run_approved_apply,
 )
 from buoy_search.config import (
+    DEFAULT_EMBEDDING_MODEL,
     DEFAULT_EMBEDDING_PRECISION,
     DEFAULT_REGION,
     EMBEDDING_PRECISIONS,
@@ -74,12 +75,19 @@ from buoy_search.retrieval.evidence import (
 from buoy_search.indexing.chunker import (
     DEFAULT_OVERLAP_SENTENCES,
     DEFAULT_TARGET_TOKENS,
+    SentenceTransformerEmbedder,
 )
 from buoy_search.planning.plan_cleanup import cleanup_applied_plan_directory
 from buoy_search.planning.plan_diff import PlanDiffError
 from buoy_search.planning.planning_service import PlanProgress, PlanningRequest, PlanningService
 from buoy_search.model_progress import suppress_model_progress_bars
-from buoy_search.catalog.local import CatalogError, load_routing_embedder
+from buoy_search.catalog.local import (
+    CatalogError,
+    ROUTING_DIMENSIONS,
+    ROUTING_MODEL_REVISION,
+    ROUTING_PRECISION,
+    load_routing_embedder,
+)
 from buoy_search.retrieval.cross_encoder import load_cross_encoder_reranker
 from buoy_search.cli.catalog import configure_catalog_parser
 from buoy_search.catalog.remote import (
@@ -135,6 +143,7 @@ REMOTE_CATALOG_CLIENT_FACTORY = create_remote_catalog_client
 ROUTING_EMBEDDER_FACTORY = load_routing_embedder
 ROUTING_RERANKER_FACTORY = load_cross_encoder_reranker
 ROUTING_CONFIDENCE_FACTORY = load_routing_confidence_calibration
+IN_PROCESS_RETRIEVAL_EMBEDDER_FACTORY = SentenceTransformerEmbedder
 
 
 def automatic_evidence_plan(calibration: EvidenceCalibration) -> dict[str, object]:
@@ -733,6 +742,14 @@ def build_parser() -> argparse.ArgumentParser:
     retrieve_parser.add_argument(
         "query",
         help="Question to retrieve relevant chunks for.",
+    )
+    retrieve_parser.add_argument(
+        "--no-embedding-worker",
+        action="store_true",
+        help=(
+            "Use the established in-process embedding model instead of the default "
+            "persistent local worker."
+        ),
     )
     retrieve_parser.add_argument(
         "--dry-run",
@@ -1518,10 +1535,181 @@ def _run_apply(args: argparse.Namespace) -> int:
 
 
 class _RetrieveCommandFailure(Exception):
-    def __init__(self, message: str, error_type: str) -> None:
+    def __init__(
+        self,
+        message: str,
+        error_type: str,
+        *,
+        replace_error: bool = False,
+    ) -> None:
         self.message = message
         self.error_type = error_type
+        self.replace_error = replace_error
         super().__init__(error_type)
+
+
+_EMBEDDING_WORKER_FALLBACK_WARNING = (
+    "Warning: local embedding worker failed; using in-process embedding for this command."
+)
+
+
+def _embedding_worker_platform_capable() -> bool:
+    """Check the worker's POSIX prerequisites without importing its backend."""
+
+    if os.name != "posix":
+        return False
+    try:
+        import fcntl  # noqa: F401
+        import socket
+    except ImportError:
+        return False
+    required = ("O_DIRECTORY", "O_NOFOLLOW", "O_CLOEXEC", "geteuid", "fchmod")
+    return hasattr(socket, "AF_UNIX") and all(hasattr(os, name) for name in required)
+
+
+EMBEDDING_WORKER_CAPABILITY_FACTORY = _embedding_worker_platform_capable
+
+
+class _InProcessEmbeddingFallbackError(RuntimeError):
+    """A value-redacted failure in the command's established local fallback."""
+
+
+class _CommandEmbeddingWorkerSession:
+    """Share one worker and one visible fallback decision across a command."""
+
+    def __init__(
+        self,
+        encode_callback: Callable[[Sequence[str]], list[list[float]]],
+        *,
+        warning_callback: Callable[[str], None],
+    ) -> None:
+        self._encode_callback = encode_callback
+        self._warning_callback = warning_callback
+        self._worker_failed = False
+        self._warning_emitted = False
+        self._fallback_failed = False
+        self._fallback_embedders: dict[str, object] = {}
+
+    @property
+    def fallback_failed(self) -> bool:
+        return self._fallback_failed
+
+    def embedder(
+        self,
+        fallback_key: str,
+        fallback_factory: Callable[[], object],
+    ) -> "_CommandEmbeddingWorkerEmbedder":
+        return _CommandEmbeddingWorkerEmbedder(
+            self,
+            fallback_key=fallback_key,
+            fallback_factory=fallback_factory,
+        )
+
+    def encode(
+        self,
+        texts: Sequence[str],
+        *,
+        fallback_key: str,
+        fallback_factory: Callable[[], object],
+    ) -> list[list[float]]:
+        if not self._worker_failed:
+            try:
+                return self._encode_callback(texts)
+            except Exception:
+                self._worker_failed = True
+                if not self._warning_emitted:
+                    self._warning_emitted = True
+                    self._warning_callback(_EMBEDDING_WORKER_FALLBACK_WARNING)
+        fallback = self._fallback_embedders.get(fallback_key)
+        try:
+            if fallback is None:
+                fallback = fallback_factory()
+                self._fallback_embedders[fallback_key] = fallback
+            return fallback.encode(texts)  # type: ignore[attr-defined,no-any-return]
+        except _InProcessEmbeddingFallbackError:
+            self._fallback_failed = True
+            raise
+        except Exception:
+            self._fallback_failed = True
+            raise _InProcessEmbeddingFallbackError(
+                "in-process embedding fallback failed"
+            ) from None
+
+
+class _CommandEmbeddingWorkerEmbedder:
+    def __init__(
+        self,
+        session: _CommandEmbeddingWorkerSession,
+        *,
+        fallback_key: str,
+        fallback_factory: Callable[[], object],
+    ) -> None:
+        self._session = session
+        self._fallback_key = fallback_key
+        self._fallback_factory = fallback_factory
+
+    def encode(self, texts: Sequence[str]) -> list[list[float]]:
+        return self._session.encode(
+            texts,
+            fallback_key=self._fallback_key,
+            fallback_factory=self._fallback_factory,
+        )
+
+
+def _print_embedding_worker_fallback_warning(message: str) -> None:
+    print(message, file=sys.stderr)
+
+
+def _prepare_default_embedding_worker(
+    config: RuntimeConfig,
+    *,
+    activate: bool,
+    disabled: bool,
+) -> _CommandEmbeddingWorkerSession | None:
+    """Select an exact compatible worker without touching ineligible paths."""
+
+    if (
+        disabled
+        or not activate
+        or config.embedding_model != DEFAULT_EMBEDDING_MODEL
+        or config.embedding_precision != DEFAULT_EMBEDDING_PRECISION
+        or not EMBEDDING_WORKER_CAPABILITY_FACTORY()
+    ):
+        return None
+
+    from buoy_search.retrieval import embedding_worker
+
+    identity = (
+        embedding_worker.SCHEMA_VERSION,
+        embedding_worker.MODEL,
+        embedding_worker.REVISION,
+        embedding_worker.PRECISION,
+        embedding_worker.DIMENSIONS,
+    )
+    expected = (
+        1,
+        DEFAULT_EMBEDDING_MODEL,
+        ROUTING_MODEL_REVISION,
+        ROUTING_PRECISION,
+        ROUTING_DIMENSIONS,
+    )
+    if identity != expected:
+        return None
+    try:
+        embedding_worker._require_capability()
+    except Exception:
+        return None
+    return _CommandEmbeddingWorkerSession(
+        embedding_worker.encode,
+        warning_callback=_print_embedding_worker_fallback_warning,
+    )
+
+
+def _retrieval_fallback_factory(config: RuntimeConfig) -> Callable[[], object]:
+    return lambda: IN_PROCESS_RETRIEVAL_EMBEDDER_FACTORY(
+        config.embedding_model,
+        precision=config.embedding_precision,
+    )
 
 
 def _render_retrieve(command: CommandTelemetry, callback: object) -> None:
@@ -1558,6 +1746,11 @@ def _run_retrieve(
             namespaces = resolve_retrieval_namespaces(args)
             if namespaces:
                 base_config = config_from_args(args)
+                worker_session = _prepare_default_embedding_worker(
+                    base_config,
+                    activate=not args.dry_run,
+                    disabled=args.no_embedding_worker,
+                )
                 configs = [
                     replace(base_config, namespace=namespace)
                     for namespace in namespaces
@@ -1577,13 +1770,32 @@ def _run_retrieve(
                         )
                     )
                 else:
+                    retrieval_embedder = (
+                        worker_session.embedder(
+                            "retrieval",
+                            _retrieval_fallback_factory(base_config),
+                        )
+                        if worker_session is not None
+                        else None
+                    )
                     try:
                         with suppress_model_progress_bars():
-                            retriever = (
-                                HybridRetriever.from_config(configs[0])
-                                if len(configs) == 1
-                                else MultiNamespaceRetriever.from_configs(configs)
-                            )
+                            if retrieval_embedder is None:
+                                retriever = (
+                                    HybridRetriever.from_config(configs[0])
+                                    if len(configs) == 1
+                                    else MultiNamespaceRetriever.from_configs(configs)
+                                )
+                            else:
+                                retriever = (
+                                    HybridRetriever.from_config(
+                                        configs[0], embedder=retrieval_embedder
+                                    )
+                                    if len(configs) == 1
+                                    else MultiNamespaceRetriever.from_configs(
+                                        configs, embedder=retrieval_embedder
+                                    )
+                                )
                     except RuntimeError as exc:
                         category = (
                             "configuration_error"
@@ -1610,6 +1822,12 @@ def _run_retrieve(
                         "Automatic routing failed: routing confidence artifact is invalid.",
                         "model_error",
                     ) from exc
+                base_config = config_from_args(args)
+                worker_session = _prepare_default_embedding_worker(
+                    base_config,
+                    activate=True,
+                    disabled=args.no_embedding_worker,
+                )
                 api_key = os.environ.get("TURBOPUFFER_API_KEY")
                 if not api_key:
                     command.set_error_type("configuration_error")
@@ -1625,7 +1843,6 @@ def _run_retrieve(
                         f"Automatic evidence assessment failed: {exc}",
                         "model_error",
                     ) from exc
-                base_config = config_from_args(args)
                 compatibility = CompatibilityContract(
                     region=base_config.region,
                     embedding_model=base_config.embedding_model,
@@ -1657,7 +1874,14 @@ def _run_retrieve(
                         error_type="model_error",
                     ):
                         with suppress_model_progress_bars():
-                            route_embedder = ROUTING_EMBEDDER_FACTORY()
+                            route_embedder = (
+                                worker_session.embedder(
+                                    "routing",
+                                    ROUTING_EMBEDDER_FACTORY,
+                                )
+                                if worker_session is not None
+                                else ROUTING_EMBEDDER_FACTORY()
+                            )
                 except Exception as exc:
                     failure = AutomaticRoutingError(
                         "routing query embedder loading failed"
@@ -1730,6 +1954,12 @@ def _run_retrieve(
                                 **route_kwargs,
                             )
                 except (AutomaticRoutingError, RuntimeError, ValueError) as exc:
+                    if worker_session is not None and worker_session.fallback_failed:
+                        raise _RetrieveCommandFailure(
+                            "Automatic routing failed: in-process embedding fallback failed.",
+                            "model_error",
+                            replace_error=True,
+                        ) from exc
                     raise _RetrieveCommandFailure(
                         f"Automatic routing failed: {exc}", "routing_error"
                     ) from exc
@@ -1771,9 +2001,23 @@ def _run_retrieve(
                             semantic_margin=routing.semantic_margin,
                         ),
                     }
+                    retrieval_embedder = (
+                        worker_session.embedder(
+                            "retrieval",
+                            _retrieval_fallback_factory(base_config),
+                        )
+                        if worker_session is not None
+                        else None
+                    )
                     try:
                         with suppress_model_progress_bars():
-                            retriever = MultiNamespaceRetriever.from_configs(configs)
+                            retriever = (
+                                MultiNamespaceRetriever.from_configs(configs)
+                                if retrieval_embedder is None
+                                else MultiNamespaceRetriever.from_configs(
+                                    configs, embedder=retrieval_embedder
+                                )
+                            )
                     except RuntimeError as exc:
                         category = (
                             "configuration_error"
@@ -1794,7 +2038,10 @@ def _run_retrieve(
                         routing=routing,
                     )
     except _RetrieveCommandFailure as failure:
-        command.set_error_type(failure.error_type)
+        command.set_error_type(
+            failure.error_type,
+            replace=failure.replace_error,
+        )
         _render_retrieve(
             command,
             lambda: print(failure.message, file=sys.stderr),
@@ -1814,6 +2061,16 @@ def _run_retrieve(
     try:
         with suppress_model_progress_bars():
             result = live_call()
+    except _InProcessEmbeddingFallbackError:
+        command.set_error_type("model_error", replace=True)
+        _render_retrieve(
+            command,
+            lambda: print(
+                f"{live_failure_prefix}: in-process embedding fallback failed.",
+                file=sys.stderr,
+            ),
+        )
+        return 2
     except RuntimeError as exc:
         command.set_error_type("provider_call_error")
         message = f"{live_failure_prefix}: {exc}"

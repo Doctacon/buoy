@@ -663,7 +663,12 @@ class HybridRetriever:
         self._config = config
 
     @classmethod
-    def from_config(cls, config: RuntimeConfig) -> "HybridRetriever":
+    def from_config(
+        cls,
+        config: RuntimeConfig,
+        *,
+        embedder: Embedder | None = None,
+    ) -> "HybridRetriever":
         """Build a live retriever, reading the API key from the environment only."""
 
         api_key = os.environ.get("TURBOPUFFER_API_KEY")
@@ -672,16 +677,18 @@ class HybridRetriever:
                 "TURBOPUFFER_API_KEY must be set in the environment for live retrieval. "
                 "Use `retrieve --dry-run` or `retrieve --plan` to inspect the plan without credentials."
             )
-        embedder = SentenceTransformerEmbedder(
-            config.embedding_model, precision=config.embedding_precision
-        )
+        selected_embedder = embedder
+        if selected_embedder is None:
+            selected_embedder = SentenceTransformerEmbedder(
+                config.embedding_model, precision=config.embedding_precision
+            )
         try:
             namespace = build_namespace(config=config, api_key=api_key)
         except Exception:
             raise RuntimeError(
                 f"Could not prepare namespace {config.namespace!r}."
             ) from None
-        return cls(namespace=namespace, embedder=embedder, config=config)
+        return cls(namespace=namespace, embedder=selected_embedder, config=config)
 
     def retrieve(self, query: str, options: RetrievalOptions) -> RetrievalResult:
         cleaned_query = query.strip()
@@ -896,7 +903,12 @@ class MultiNamespaceRetriever:
         self._reranker_loader = reranker_loader
 
     @classmethod
-    def from_configs(cls, configs: Sequence[RuntimeConfig]) -> "MultiNamespaceRetriever":
+    def from_configs(
+        cls,
+        configs: Sequence[RuntimeConfig],
+        *,
+        embedder: Embedder | None = None,
+    ) -> "MultiNamespaceRetriever":
         if not configs:
             raise ValueError("at least one namespace config is required")
         if len(configs) > MAX_NAMESPACE_FANOUT:
@@ -919,9 +931,11 @@ class MultiNamespaceRetriever:
                 "TURBOPUFFER_API_KEY must be set in the environment for live retrieval. "
                 "Use `retrieve --dry-run` or `retrieve --plan` to inspect the plan without credentials."
             )
-        embedder = SentenceTransformerEmbedder(
-            first.embedding_model, precision=first.embedding_precision
-        )
+        selected_embedder = embedder
+        if selected_embedder is None:
+            selected_embedder = SentenceTransformerEmbedder(
+                first.embedding_model, precision=first.embedding_precision
+            )
         retrievers: list[HybridRetriever] = []
         for config in configs:
             try:
@@ -931,9 +945,13 @@ class MultiNamespaceRetriever:
                     f"Could not prepare namespace {config.namespace!r}."
                 ) from None
             retrievers.append(
-                HybridRetriever(namespace=namespace, embedder=embedder, config=config)
+                HybridRetriever(
+                    namespace=namespace,
+                    embedder=selected_embedder,
+                    config=config,
+                )
             )
-        return cls(retrievers=retrievers, embedder=embedder)
+        return cls(retrievers=retrievers, embedder=selected_embedder)
 
     def retrieve(
         self,

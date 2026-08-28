@@ -435,6 +435,10 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
             patch("buoy_search.cli.main.require_eligible", side_effect=lambda value: value),
             patch("buoy_search.cli.main.ROUTING_EMBEDDER_FACTORY", return_value=object()),
             patch("buoy_search.cli.main.hybrid_route", return_value=_FakeRouting()),
+            patch(
+                "buoy_search.cli.main.EMBEDDING_WORKER_CAPABILITY_FACTORY",
+                return_value=False,
+            ),
         ]
         if retriever is not None:
             patches.append(
@@ -695,6 +699,191 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
         self.assertEqual(rows.retrieval_operation[5], "error")
         self._assert_exact_graph(rows, pipeline=True, namespace_minimum=1)
         self.assertNotIn("raw-private-error", self.payloads[0].decode("ascii"))
+
+    def test_default_worker_failure_falls_back_without_telemetry_detail(self) -> None:
+        from buoy_search.retrieval import embedding_worker
+
+        secret = "private-worker-runtime-detail"
+
+        class FallbackEmbedder:
+            def encode(self, _texts: object) -> list[list[float]]:
+                return [[1.0] + [0.0] * 383]
+
+        def construct(config: RuntimeConfig, *, embedder: object) -> HybridRetriever:
+            return HybridRetriever(
+                namespace=_Namespace(),
+                embedder=embedder,
+                config=config,
+            )
+
+        stderr = StringIO()
+        with patch(
+            "buoy_search.cli.main.EMBEDDING_WORKER_CAPABILITY_FACTORY",
+            return_value=True,
+        ), patch.object(
+            embedding_worker, "_require_capability", return_value=None
+        ), patch.object(
+            embedding_worker, "encode", side_effect=RuntimeError(secret)
+        ), patch(
+            "buoy_search.cli.main.IN_PROCESS_RETRIEVAL_EMBEDDER_FACTORY",
+            return_value=FallbackEmbedder(),
+        ), patch(
+            "buoy_search.cli.main.HybridRetriever.from_config",
+            side_effect=construct,
+        ), redirect_stdout(StringIO()), redirect_stderr(stderr):
+            result = main(
+                [
+                    "retrieve",
+                    "query",
+                    "--namespace",
+                    "site-one-v1",
+                    "--json",
+                ]
+            )
+
+        rows = self._rows()
+        self.assertEqual(result, 0)
+        self.assertEqual(rows.command[7:10], ("success", 0, None))
+        self.assertEqual(
+            stderr.getvalue(),
+            "Warning: local embedding worker failed; using in-process embedding for this command.\n",
+        )
+        payload = self.payloads[0].decode("ascii")
+        self.assertNotIn(secret, payload)
+        self.assertNotIn("embedding_worker", payload)
+        self.assertNotIn("local embedding worker failed", payload)
+
+    def test_explicit_worker_and_fallback_failure_is_model_error(self) -> None:
+        from buoy_search.retrieval import embedding_worker
+
+        worker_secret = "private-worker-runtime-detail"
+        fallback_secret = "private-fallback-runtime-detail"
+        content_calls: list[object] = []
+
+        class NeverNamespace:
+            def query(self, *args: object, **kwargs: object) -> object:
+                content_calls.append((args, kwargs))
+                raise AssertionError("content operation should not run")
+
+        def construct(config: RuntimeConfig, *, embedder: object) -> HybridRetriever:
+            return HybridRetriever(
+                namespace=NeverNamespace(),
+                embedder=embedder,
+                config=config,
+            )
+
+        stderr = StringIO()
+        with patch(
+            "buoy_search.cli.main.EMBEDDING_WORKER_CAPABILITY_FACTORY",
+            return_value=True,
+        ), patch.object(
+            embedding_worker, "_require_capability", return_value=None
+        ), patch.object(
+            embedding_worker, "encode", side_effect=RuntimeError(worker_secret)
+        ), patch(
+            "buoy_search.cli.main.IN_PROCESS_RETRIEVAL_EMBEDDER_FACTORY",
+            side_effect=RuntimeError(fallback_secret),
+        ), patch(
+            "buoy_search.cli.main.HybridRetriever.from_config",
+            side_effect=construct,
+        ) as provider_construct, redirect_stdout(StringIO()), redirect_stderr(stderr):
+            result = main(
+                [
+                    "retrieve",
+                    "query",
+                    "--namespace",
+                    "site-one-v1",
+                    "--json",
+                ]
+            )
+
+        rows = self._rows()
+        self.assertEqual(result, 2)
+        self.assertEqual(rows.command[7:10], ("error", 2, "model_error"))
+        self.assertEqual(provider_construct.call_count, 1)
+        self.assertEqual(content_calls, [])
+        self.assertEqual(
+            stderr.getvalue(),
+            "Warning: local embedding worker failed; using in-process embedding for this command.\n"
+            "Retrieval failed: in-process embedding fallback failed.\n",
+        )
+        payload = self.payloads[0].decode("ascii")
+        self.assertNotIn(worker_secret, payload)
+        self.assertNotIn(fallback_secret, payload)
+
+    def test_automatic_worker_and_fallback_failure_is_model_error(self) -> None:
+        from buoy_search.cli.main import (
+            _CommandEmbeddingWorkerSession,
+            _print_embedding_worker_fallback_warning,
+        )
+
+        worker_secret = "private-worker-runtime-detail"
+        fallback_secret = "private-fallback-runtime-detail"
+
+        class FailingFallbackEmbedder:
+            def encode(self, _texts: object) -> list[list[float]]:
+                raise RuntimeError(fallback_secret)
+
+        session = _CommandEmbeddingWorkerSession(
+            lambda _texts: (_ for _ in ()).throw(RuntimeError(worker_secret)),
+            warning_callback=_print_embedding_worker_fallback_warning,
+        )
+
+        def route_with_failed_fallback(
+            _query: object,
+            _cards: object,
+            **kwargs: object,
+        ) -> object:
+            kwargs["embedder"].encode(["routing query"])  # type: ignore[attr-defined]
+            raise AssertionError("fallback failure should escape")
+
+        os.environ["TURBOPUFFER_API_KEY"] = "private-key"
+        patches = self._automatic_patches()
+        stderr = StringIO()
+        with ExitStack() as stack:
+            started = [stack.enter_context(item) for item in patches[:5]]
+            stack.enter_context(
+                patch(
+                    "buoy_search.cli.main._prepare_default_embedding_worker",
+                    return_value=session,
+                )
+            )
+            fallback_factory = stack.enter_context(
+                patch(
+                    "buoy_search.cli.main.ROUTING_EMBEDDER_FACTORY",
+                    return_value=FailingFallbackEmbedder(),
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "buoy_search.cli.main.hybrid_route",
+                    side_effect=route_with_failed_fallback,
+                )
+            )
+            content_construct = stack.enter_context(
+                patch(
+                    "buoy_search.cli.main.MultiNamespaceRetriever.from_configs",
+                    side_effect=AssertionError("content retriever constructed"),
+                )
+            )
+            with redirect_stdout(StringIO()), redirect_stderr(stderr):
+                result = main(["retrieve", "query", "--json"])
+
+        rows = self._rows()
+        self.assertEqual(result, 2)
+        self.assertEqual(rows.command[7:10], ("error", 2, "model_error"))
+        self.assertEqual(started[2].call_count, 1)
+        self.assertEqual(started[3].call_count, 1)
+        self.assertEqual(fallback_factory.call_count, 1)
+        self.assertEqual(content_construct.call_count, 0)
+        self.assertEqual(
+            stderr.getvalue(),
+            "Warning: local embedding worker failed; using in-process embedding for this command.\n"
+            "Automatic routing failed: in-process embedding fallback failed.\n",
+        )
+        payload = self.payloads[0].decode("ascii")
+        self.assertNotIn(worker_secret, payload)
+        self.assertNotIn(fallback_secret, payload)
 
     def test_render_and_unexpected_exceptions_reraise_identity_with_exit_one(self) -> None:
         escaped = OSError("private-render-error")
