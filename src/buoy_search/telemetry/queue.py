@@ -66,8 +66,12 @@ _V2_ENVELOPE_RE = re.compile(r"^v2-([0-9a-f]{32})\.json$")
 _V2_ENVELOPE_TEMP_RE = re.compile(r"^v2-([0-9a-f]{32})\.part$")
 _V2_RECEIPT_RE = re.compile(r"^r2-([0-9a-f]{32})\.json$")
 _V2_RECEIPT_TEMP_RE = re.compile(r"^r2-([0-9a-f]{32})\.part$")
-_ANY_ENVELOPE_RE = re.compile(r"^v[12]-([0-9a-f]{32})\.json$")
-_ANY_RECEIPT_RE = re.compile(r"^r[12]-([0-9a-f]{32})\.json$")
+_V3_ENVELOPE_RE = re.compile(r"^v3-([0-9a-f]{32})\.json$")
+_V3_ENVELOPE_TEMP_RE = re.compile(r"^v3-([0-9a-f]{32})\.part$")
+_V3_RECEIPT_RE = re.compile(r"^r3-([0-9a-f]{32})\.json$")
+_V3_RECEIPT_TEMP_RE = re.compile(r"^r3-([0-9a-f]{32})\.part$")
+_ANY_ENVELOPE_RE = re.compile(r"^v[123]-([0-9a-f]{32})\.json$")
+_ANY_RECEIPT_RE = re.compile(r"^r[123]-([0-9a-f]{32})\.json$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _RECOGNIZED_DIRECTORY_FSYNC_ERRORS = frozenset(
     {
@@ -348,8 +352,8 @@ def telemetry_paths(
 ) -> TelemetryPaths:
     """Return fixed versioned paths without touching the filesystem."""
 
-    if queue_version not in {1, 2}:
-        raise ValueError("telemetry queue version must be 1 or 2")
+    if queue_version not in {1, 2, 3}:
+        raise ValueError("telemetry queue version must be 1, 2, or 3")
     root = (
         default_buoy_home() / "telemetry"
         if directory is None
@@ -357,7 +361,8 @@ def telemetry_paths(
     )
     inbox = root / f"inbox-v{queue_version}"
     scratch = root / "database-init-v1"
-    migration = root / "database-migrate-v2"
+    migration_version = 3 if queue_version == 3 else 2
+    migration = root / f"database-migrate-v{migration_version}"
     return TelemetryPaths(
         directory=root,
         database_path=root / "telemetry.duckdb",
@@ -384,9 +389,11 @@ def telemetry_paths(
         migration_database_path=migration / "telemetry.duckdb",
         migration_wal_path=migration / "telemetry.duckdb.wal",
         migration_backup_candidate_path=(
-            migration / "telemetry-v1-backup.duckdb"
+            migration / f"telemetry-v{migration_version - 1}-backup.duckdb"
         ),
-        backup_database_path=root / "telemetry-v1-backup.duckdb",
+        backup_database_path=(
+            root / f"telemetry-v{migration_version - 1}-backup.duckdb"
+        ),
         queue_version=queue_version,
     )
 
@@ -395,6 +402,18 @@ def telemetry_paths_v2(directory: Path | None = None) -> TelemetryPaths:
     """Return the separate fixed version-2 inbox paths."""
 
     return telemetry_paths(directory, queue_version=2)
+
+
+def telemetry_paths_v3(directory: Path | None = None) -> TelemetryPaths:
+    """Return the separate fixed version-3 inbox and migration paths."""
+
+    return telemetry_paths(directory, queue_version=3)
+
+
+def _other_queue_versions(version: int) -> tuple[int, ...]:
+    if version not in {1, 2, 3}:
+        raise ValueError("telemetry queue version must be 1, 2, or 3")
+    return tuple(candidate for candidate in (1, 2, 3) if candidate != version)
 
 
 def _queue_patterns(
@@ -409,7 +428,14 @@ def _queue_patterns(
             _V2_RECEIPT_RE,
             _V2_RECEIPT_TEMP_RE,
         )
-    raise ValueError("telemetry queue version must be 1 or 2")
+    if version == 3:
+        return (
+            _V3_ENVELOPE_RE,
+            _V3_ENVELOPE_TEMP_RE,
+            _V3_RECEIPT_RE,
+            _V3_RECEIPT_TEMP_RE,
+        )
+    raise ValueError("telemetry queue version must be 1, 2, or 3")
 
 
 def posix_writer_capability() -> CapabilityResult:
@@ -918,6 +944,35 @@ def _open_queue_directories(
                 except OSError:
                     pass
         raise
+
+
+def _open_other_queue_directories(
+    paths: TelemetryPaths,
+) -> tuple[_QueueDirectoryFds, ...]:
+    opened: list[_QueueDirectoryFds] = []
+    try:
+        for version in _other_queue_versions(paths.queue_version):
+            try:
+                opened.append(
+                    _open_queue_directories(
+                        telemetry_paths(paths.directory, queue_version=version),
+                        create=False,
+                    )
+                )
+            except FileNotFoundError:
+                continue
+        return tuple(opened)
+    except BaseException:
+        for directories in opened:
+            directories.close()
+        raise
+
+
+def _close_queue_directories(
+    directories: Sequence[_QueueDirectoryFds],
+) -> None:
+    for current in directories:
+        current.close()
 
 
 def _open_or_create_lock(root_fd: int, name: str) -> int:
@@ -1529,7 +1584,7 @@ def _parse_writer_state(value: Mapping[str, object]) -> WriterState:
         raise InvalidStateError("writer reason is invalid")
     store_schema = value["store_schema_version"]
     if store_schema is not None and (
-        type(store_schema) is not int or store_schema not in {1, 2}
+        type(store_schema) is not int or store_schema not in {1, 2, 3}
     ):
         raise InvalidStateError("writer store schema is invalid")
     receipts = value["accounted_receipts"]
@@ -1709,7 +1764,7 @@ _RECEIPT_FIELDS = {
 def _parse_receipt(value: Mapping[str, object]) -> TerminalReceipt:
     _require_exact_keys(value, _RECEIPT_FIELDS)
     schema_version = value["schema_version"]
-    if type(schema_version) is not int or schema_version not in {1, 2}:
+    if type(schema_version) is not int or schema_version not in {1, 2, 3}:
         raise InvalidStateError("receipt version is incompatible")
     kind = value["kind"]
     source_name = value["source_name"]
@@ -2346,25 +2401,16 @@ def publish_envelope(
                 pending_bytes = ready.total_bytes + claimed.total_bytes
                 temporary_count = len(temporary.entries)
                 temporary_bytes = temporary.total_bytes
-                other_paths = telemetry_paths(
-                    selected.directory,
-                    queue_version=2 if selected.queue_version == 1 else 1,
-                )
+                other_directories = _open_other_queue_directories(selected)
                 try:
-                    other_directories = _open_queue_directories(
-                        other_paths, create=False
-                    )
-                except FileNotFoundError:
-                    other_directories = None
-                if other_directories is not None:
-                    try:
+                    for other in other_directories:
                         (
                             other_temporary,
                             other_ready,
                             other_claimed,
                             _other_receipts,
                             _other_receipt_temps,
-                        ) = _strict_queue_scans(other_directories)
+                        ) = _strict_queue_scans(other)
                         pending_count += len(other_ready.entries) + len(
                             other_claimed.entries
                         )
@@ -2373,8 +2419,8 @@ def publish_envelope(
                         )
                         temporary_count += len(other_temporary.entries)
                         temporary_bytes += other_temporary.total_bytes
-                    finally:
-                        other_directories.close()
+                finally:
+                    _close_queue_directories(other_directories)
                 if (
                     pending_count >= PUBLISHED_MAX_ENTRIES
                     or pending_bytes + len(payload) > PUBLISHED_MAX_BYTES
@@ -2827,21 +2873,12 @@ def publish_terminal_receipt(
     temporary_name = receipt_temp_name_for_source(validated.source_name)
     with queue_lock(paths):
         directories = _open_queue_directories(paths, create=False)
-        other_directories: _QueueDirectoryFds | None = None
+        other_directories: tuple[_QueueDirectoryFds, ...] = ()
         try:
             _strict_queue_scans(directories)
-            other_paths = telemetry_paths(
-                paths.directory,
-                queue_version=2 if paths.queue_version == 1 else 1,
-            )
-            try:
-                other_directories = _open_queue_directories(
-                    other_paths, create=False
-                )
-            except FileNotFoundError:
-                other_directories = None
-            if other_directories is not None:
-                _strict_queue_scans(other_directories)
+            other_directories = _open_other_queue_directories(paths)
+            for other in other_directories:
+                _strict_queue_scans(other)
             stat_private_entry_at(
                 directories.claimed,
                 validated.source_name,
@@ -2854,11 +2891,7 @@ def publish_terminal_receipt(
                     raise InvalidStateError("terminal receipt classification differs")
                 return ReceiptPublicationResult(False, True)
             rotated = _rotate_receipts_for_payload(
-                tuple(
-                    current
-                    for current in (directories, other_directories)
-                    if current is not None
-                ),
+                (directories, *other_directories),
                 payload_bytes=len(payload),
             )
             if _name_exists(directories.receipts, temporary_name):
@@ -2904,8 +2937,7 @@ def publish_terminal_receipt(
                 durability_degraded=durability_degraded,
             )
         finally:
-            if other_directories is not None:
-                other_directories.close()
+            _close_queue_directories(other_directories)
             directories.close()
 
 
@@ -3005,21 +3037,12 @@ def resolve_receipt_temporary(
         raise ValueError("recognized versioned receipt temporary name required")
     with queue_lock(paths):
         directories = _open_queue_directories(paths, create=False)
-        other_directories: _QueueDirectoryFds | None = None
+        other_directories: tuple[_QueueDirectoryFds, ...] = ()
         try:
             _strict_queue_scans(directories)
-            other_paths = telemetry_paths(
-                paths.directory,
-                queue_version=2 if paths.queue_version == 1 else 1,
-            )
-            try:
-                other_directories = _open_queue_directories(
-                    other_paths, create=False
-                )
-            except FileNotFoundError:
-                other_directories = None
-            if other_directories is not None:
-                _strict_queue_scans(other_directories)
+            other_directories = _open_other_queue_directories(paths)
+            for other in other_directories:
+                _strict_queue_scans(other)
             try:
                 payload = _read_all_verified(
                     directories.receipts,
@@ -3051,11 +3074,7 @@ def resolve_receipt_temporary(
                 and terminal_condition_proven
             ):
                 _rotate_receipts_for_payload(
-                    tuple(
-                        current
-                        for current in (directories, other_directories)
-                        if current is not None
-                    ),
+                    (directories, *other_directories),
                     payload_bytes=len(payload),
                     creating_temporary=False,
                 )
@@ -3071,8 +3090,7 @@ def resolve_receipt_temporary(
             fsync_directory(directories.receipts)
             return False
         finally:
-            if other_directories is not None:
-                other_directories.close()
+            _close_queue_directories(other_directories)
             directories.close()
 
 

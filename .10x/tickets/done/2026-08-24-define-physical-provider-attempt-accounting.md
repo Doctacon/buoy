@@ -7,7 +7,7 @@ Knowledge: .10x/knowledge/provider-budgets-distinguish-logical-operations-and-tr
 Research: .10x/research/2026-08-24-physical-provider-attempt-accounting-options.md
 Prior-Review: .10x/reviews/2026-08-24-physical-provider-attempt-accounting-shaping-rereview.md
 Authorization: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md
-Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
+Decision: .10x/decisions/superseded/buoy-uses-private-canary-provider-invocation-receipts.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Implementation-Plan: .10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipts.md
@@ -213,7 +213,7 @@ Implementation remains separate open/inactive work and is not a closure blocker.
 - `tests/test_multi_namespace_retrieval.py`
 - `tests/test_remote_catalog.py`
 - `.10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md`
-- `.10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md`
+- `.10x/decisions/superseded/buoy-uses-private-canary-provider-invocation-receipts.md`
 - `.10x/specs/provider-client-invocation-accounting.md`
 - `.10x/specs/provider-client-invocation-receipt.md`
 - `.10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipts.md`

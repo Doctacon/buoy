@@ -22,6 +22,13 @@ class TelemetryCliTests(unittest.TestCase):
         args = parser.parse_args(["flush"])
         self.assertEqual(args.timeout, 30.0)
         self.assertFalse(args.json)
+        help_text = parser.format_help()
+        normalized_help = " ".join(help_text.split())
+        self.assertIn(
+            "upgrade an exact local store by one supported schema version",
+            normalized_help,
+        )
+        self.assertNotIn("exact version-1 local store", normalized_help)
 
     def test_timeout_rejects_nonfinite_and_out_of_range_values(self) -> None:
         parser = build_parser()

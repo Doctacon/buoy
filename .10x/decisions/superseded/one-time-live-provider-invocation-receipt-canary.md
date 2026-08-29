@@ -3,7 +3,7 @@ Created: 2026-08-24
 Updated: 2026-08-24
 Superseded-By: .10x/decisions/provider-invocation-receipt-live-canary-attempts-are-permanently-stopped.md
 Authorization: .10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md
-Architecture: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
+Architecture: .10x/decisions/superseded/buoy-uses-private-canary-provider-invocation-receipts.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Ticket: .10x/tickets/2026-08-24-run-one-time-live-provider-invocation-receipt-canary.md

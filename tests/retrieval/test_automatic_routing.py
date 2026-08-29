@@ -9,7 +9,7 @@ import math
 import os
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from buoy_search.catalog.local import (
     ROUTING_DIMENSIONS,
@@ -1185,6 +1185,225 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         self.assertFalse(prepare.call_args.kwargs["disabled"])
         self.assertFalse(json.loads(stdout)["content_retrieval_occurred"])
 
+    def test_active_automatic_preview_scores_prototypes_through_worker(self) -> None:
+        from buoy_search.cli.main import _CommandEmbeddingWorkerSession
+
+        cards = [
+            make_card("one", vector=cosine_vector(0.9)),
+            make_card("two", vector=cosine_vector(0.5)),
+            make_card("three", vector=cosine_vector(0.2)),
+        ]
+        worker_embedder = FixedEmbedder()
+        score_calls: list[tuple[str, list[str]]] = []
+
+        def worker_score(query, passages):  # noqa: ANN001
+            score_calls.append((query, list(passages)))
+            return [float(len(passages) - index) for index in range(len(passages))]
+
+        session = _CommandEmbeddingWorkerSession(
+            worker_embedder.encode,
+            warning_callback=lambda _message: None,
+            score_callback=worker_score,
+        )
+        with patch(
+            "buoy_search.cli.main.REMOTE_CATALOG_CLIENT_FACTORY",
+            return_value=object(),
+        ), patch(
+            "buoy_search.cli.main.read_remote_catalog", return_value=snapshot(cards)
+        ), patch(
+            "buoy_search.cli.main.ROUTING_CONFIDENCE_FACTORY",
+            return_value=active_routing_calibration(),
+        ), patch(
+            "buoy_search.retrieval.routing.validate_routing_confidence_catalog",
+            return_value="approved-projection",
+        ), patch(
+            "buoy_search.cli.main._prepare_default_embedding_worker",
+            return_value=session,
+        ), patch(
+            "buoy_search.cli.main.ROUTING_EMBEDDER_FACTORY",
+            side_effect=AssertionError("in-process routing embedder constructed"),
+        ), patch(
+            "buoy_search.cli.main.ROUTING_RERANKER_FACTORY",
+            side_effect=AssertionError("in-process reranker constructed"),
+        ):
+            result, stdout, stderr = run_cli(
+                ["retrieve", "descriptor free question", "--dry-run", "--json"],
+                env={"TURBOPUFFER_API_KEY": self.API_KEY},
+            )
+
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertEqual(len(worker_embedder.calls), 1)
+        self.assertEqual(len(score_calls), 1)
+        self.assertEqual(score_calls[0][0], "descriptor free question")
+        self.assertGreaterEqual(len(score_calls[0][1]), 3)
+        self.assertFalse(json.loads(stdout)["content_retrieval_occurred"])
+
+    def test_exact_108_passage_automatic_route_stays_worker_resident(self) -> None:
+        from buoy_search.cli.main import _CommandEmbeddingWorkerSession
+
+        examples = [f"Capability example {index}" for index in range(8)]
+        cards = [
+            make_card(
+                f"card-{index:02d}",
+                vector=cosine_vector(0.9 - index * 0.01),
+                routing_examples=examples,
+            )
+            for index in range(12)
+        ]
+        worker_embedder = FixedEmbedder()
+        score_calls: list[tuple[str, list[str]]] = []
+        warnings: list[str] = []
+
+        def worker_score(query, passages):  # noqa: ANN001
+            score_calls.append((query, list(passages)))
+            return [float(len(passages) - index) for index in range(len(passages))]
+
+        session = _CommandEmbeddingWorkerSession(
+            worker_embedder.encode,
+            warning_callback=warnings.append,
+            score_callback=worker_score,
+        )
+        with patch(
+            "buoy_search.cli.main.REMOTE_CATALOG_CLIENT_FACTORY",
+            return_value=object(),
+        ), patch(
+            "buoy_search.cli.main.read_remote_catalog", return_value=snapshot(cards)
+        ), patch(
+            "buoy_search.cli.main.ROUTING_CONFIDENCE_FACTORY",
+            return_value=active_routing_calibration(),
+        ), patch(
+            "buoy_search.retrieval.routing.validate_routing_confidence_catalog",
+            return_value="approved-projection",
+        ), patch(
+            "buoy_search.cli.main._prepare_default_embedding_worker",
+            return_value=session,
+        ), patch(
+            "buoy_search.cli.main.ROUTING_EMBEDDER_FACTORY",
+            side_effect=AssertionError("in-process routing embedder constructed"),
+        ), patch(
+            "buoy_search.cli.main.ROUTING_RERANKER_FACTORY",
+            side_effect=AssertionError("in-process reranker fallback constructed"),
+        ):
+            result, stdout, stderr = run_cli(
+                ["retrieve", "bounded routing question", "--dry-run", "--json"],
+                env={"TURBOPUFFER_API_KEY": self.API_KEY},
+            )
+
+        self.assertEqual((result, stderr), (0, ""))
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(worker_embedder.calls), 1)
+        self.assertEqual(len(score_calls), 1)
+        self.assertEqual(score_calls[0][0], "bounded routing question")
+        self.assertEqual(len(score_calls[0][1]), 108)
+        self.assertFalse(session._worker_failed)
+        self.assertFalse(json.loads(stdout)["content_retrieval_occurred"])
+
+    def test_active_route_worker_and_reranker_fallback_failure_is_model_error(self) -> None:
+        from buoy_search.cli.main import (
+            _CommandEmbeddingWorkerSession,
+            _print_embedding_worker_fallback_warning,
+        )
+
+        cards = [make_card("one"), make_card("two"), make_card("three")]
+        session = _CommandEmbeddingWorkerSession(
+            FixedEmbedder().encode,
+            warning_callback=_print_embedding_worker_fallback_warning,
+            score_callback=lambda _query, _passages: (_ for _ in ()).throw(
+                RuntimeError("private worker score")
+            ),
+        )
+        with patch(
+            "buoy_search.cli.main.REMOTE_CATALOG_CLIENT_FACTORY",
+            return_value=object(),
+        ), patch(
+            "buoy_search.cli.main.read_remote_catalog", return_value=snapshot(cards)
+        ), patch(
+            "buoy_search.cli.main.ROUTING_CONFIDENCE_FACTORY",
+            return_value=active_routing_calibration(),
+        ), patch(
+            "buoy_search.retrieval.routing.validate_routing_confidence_catalog",
+            return_value="approved-projection",
+        ), patch(
+            "buoy_search.cli.main._prepare_default_embedding_worker",
+            return_value=session,
+        ), patch(
+            "buoy_search.cli.main.ROUTING_EMBEDDER_FACTORY",
+            side_effect=AssertionError("in-process embedder constructed"),
+        ), patch(
+            "buoy_search.cli.main.ROUTING_RERANKER_FACTORY",
+            side_effect=RuntimeError("private fallback model"),
+        ), patch(
+            "buoy_search.cli.main.MultiNamespaceRetriever.from_configs",
+            side_effect=AssertionError("content retriever constructed"),
+        ):
+            result, stdout, stderr = run_cli(
+                ["retrieve", "descriptor free question", "--dry-run", "--json"],
+                env={"TURBOPUFFER_API_KEY": self.API_KEY},
+            )
+
+        self.assertEqual((result, stdout), (2, ""))
+        self.assertEqual(
+            stderr,
+            "Warning: local embedding worker failed; using in-process embedding for this command.\n"
+            "Automatic routing failed: in-process reranker fallback failed.\n",
+        )
+        self.assertNotIn("private", stderr)
+
+    def test_worker_session_reuses_one_reranker_adapter(self) -> None:
+        from buoy_search.cli.main import _CommandEmbeddingWorkerSession
+
+        score_calls: list[tuple[str, list[str]]] = []
+
+        def worker_score(query, passages):  # noqa: ANN001
+            score_calls.append((query, list(passages)))
+            return [0.5] * len(passages)
+
+        session = _CommandEmbeddingWorkerSession(
+            lambda _texts: [[1.0]],
+            warning_callback=lambda _message: None,
+            score_callback=worker_score,
+        )
+        fallback_factory = Mock(
+            side_effect=AssertionError("in-process reranker constructed")
+        )
+
+        first = session.reranker(fallback_factory)
+        second = session.reranker(fallback_factory)
+
+        self.assertIs(first, second)
+        self.assertEqual(first.score("query", ["one", "two"]), [0.5, 0.5])
+        self.assertEqual(score_calls, [("query", ["one", "two"])])
+        fallback_factory.assert_not_called()
+
+    def test_score_failure_switches_later_embedding_in_process_with_one_warning(self) -> None:
+        from buoy_search.cli.main import _CommandEmbeddingWorkerSession
+
+        warnings: list[str] = []
+        worker_encode = Mock(side_effect=AssertionError("worker encode retried"))
+        worker_score = Mock(side_effect=RuntimeError("private worker score"))
+        fallback_embedder = FixedEmbedder()
+
+        class FallbackReranker:
+            def score(self, _query, passages):  # noqa: ANN001
+                return [0.25] * len(passages)
+
+        session = _CommandEmbeddingWorkerSession(
+            worker_encode,
+            warning_callback=warnings.append,
+            score_callback=worker_score,
+        )
+        reranker = session.reranker(lambda: FallbackReranker())
+
+        self.assertEqual(reranker.score("query", ["one"]), [0.25])
+        embedder = session.embedder("routing", lambda: fallback_embedder)
+        embedder.encode(["later"])
+
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("private", warnings[0])
+        self.assertEqual(fallback_embedder.calls, [["later"]])
+        self.assertEqual(worker_score.call_count, 1)
+        worker_encode.assert_not_called()
+
     def test_default_worker_session_is_shared_by_automatic_route_and_retrieval(self) -> None:
         from buoy_search.cli.main import _CommandEmbeddingWorkerSession
 
@@ -1199,7 +1418,8 @@ class AutomaticRoutingCliTests(unittest.TestCase):
             worker_embedder.encode,
             warning_callback=lambda _message: None,
         )
-        captured: list[object] = []
+        captured: list[tuple[object, object]] = []
+        retrieve_kwargs: dict[str, object] = {}
 
         class FakeResult:
             def to_dict(self) -> dict[str, object]:
@@ -1218,12 +1438,15 @@ class AutomaticRoutingCliTests(unittest.TestCase):
             def __init__(self, embedder: object) -> None:
                 self.embedder = embedder
 
-            def retrieve(self, query, _options, **_kwargs):  # noqa: ANN001
+            def retrieve(self, query, _options, **kwargs):  # noqa: ANN001
+                retrieve_kwargs.update(kwargs)
                 self.embedder.encode([query])
                 return FakeResult()
 
-        def construct(_configs, *, embedder):  # noqa: ANN001
-            captured.append(embedder)
+        def construct(  # noqa: ANN001
+            _configs, *, embedder, reranker_loader
+        ):
+            captured.append((embedder, reranker_loader))
             return FakeRetriever(embedder)
 
         with patch(
@@ -1250,6 +1473,11 @@ class AutomaticRoutingCliTests(unittest.TestCase):
 
         self.assertEqual((result, stderr), (0, ""))
         self.assertEqual(len(captured), 1)
+        reranker_loader = captured[0][1]
+        self.assertTrue(callable(reranker_loader))
+        assessor = retrieve_kwargs["evidence_assessor"]
+        self.assertIsInstance(assessor, CalibratedEvidenceAssessor)
+        self.assertIs(assessor._reranker_loader(), reranker_loader())
         self.assertEqual(len(worker_embedder.calls), 2)
         self.assertTrue(worker_embedder.calls[0][0].startswith(ROUTING_QUERY_PREFIX))
         self.assertEqual(worker_embedder.calls[1], ["approximate vector recall"])
@@ -1307,7 +1535,10 @@ class AutomaticRoutingCliTests(unittest.TestCase):
             catalog_calls.append((args, kwargs))
             return snapshot(cards)
 
-        def construct(_configs, *, embedder):  # noqa: ANN001
+        def construct(  # noqa: ANN001
+            _configs, *, embedder, reranker_loader
+        ):
+            self.assertIsNotNone(reranker_loader)
             return FakeRetriever(embedder)
 
         with patch(

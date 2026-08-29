@@ -88,7 +88,14 @@ from buoy_search.catalog.local import (
     ROUTING_PRECISION,
     load_routing_embedder,
 )
-from buoy_search.retrieval.cross_encoder import load_cross_encoder_reranker
+from buoy_search.retrieval.cross_encoder import (
+    CROSS_ENCODER_BATCH_SIZE,
+    CROSS_ENCODER_MAX_LENGTH,
+    CROSS_ENCODER_MODEL,
+    CROSS_ENCODER_REVISION,
+    CrossEncoderReranker,
+    load_cross_encoder_reranker,
+)
 from buoy_search.cli.catalog import configure_catalog_parser
 from buoy_search.catalog.remote import (
     REMOTE_CATALOG_NAMESPACE,
@@ -134,6 +141,10 @@ from buoy_search.telemetry.producer import (
     ROUTING_CATALOG_SPAN_NAME,
     ROUTING_MODEL_SPAN_NAME,
     ROUTING_SELECT_SPAN_NAME,
+    inference_request,
+    inference_telemetry_enabled,
+    instrument_in_process_embedder,
+    instrument_in_process_reranker,
     retrieve_command_trace,
     safe_time_ns,
 )
@@ -1571,7 +1582,11 @@ EMBEDDING_WORKER_CAPABILITY_FACTORY = _embedding_worker_platform_capable
 
 
 class _InProcessEmbeddingFallbackError(RuntimeError):
-    """A value-redacted failure in the command's established local fallback."""
+    """A value-redacted failure in the established embedding fallback."""
+
+
+class _InProcessRerankerFallbackError(RuntimeError):
+    """A value-redacted failure in the established reranker fallback."""
 
 
 class _CommandEmbeddingWorkerSession:
@@ -1582,17 +1597,40 @@ class _CommandEmbeddingWorkerSession:
         encode_callback: Callable[[Sequence[str]], list[list[float]]],
         *,
         warning_callback: Callable[[str], None],
+        score_callback: Callable[[str, Sequence[str]], list[float]] | None = None,
+        encode_with_lifecycle: Callable[
+            [Sequence[str], Callable[[str], None]], list[list[float]]
+        ] | None = None,
+        score_with_lifecycle: Callable[
+            [str, Sequence[str], Callable[[str], None]], list[float]
+        ] | None = None,
     ) -> None:
         self._encode_callback = encode_callback
+        self._score_callback = score_callback
+        self._encode_with_lifecycle = encode_with_lifecycle
+        self._score_with_lifecycle = score_with_lifecycle
         self._warning_callback = warning_callback
         self._worker_failed = False
         self._warning_emitted = False
         self._fallback_failed = False
+        self._fallback_failure_kind: str | None = None
         self._fallback_embedders: dict[str, object] = {}
+        self._fallback_reranker: object | None = None
+        self._reranker_adapter: _CommandEmbeddingWorkerReranker | None = None
 
     @property
     def fallback_failed(self) -> bool:
         return self._fallback_failed
+
+    @property
+    def fallback_failure_kind(self) -> str | None:
+        return self._fallback_failure_kind
+
+    def _mark_worker_failed(self) -> None:
+        self._worker_failed = True
+        if not self._warning_emitted:
+            self._warning_emitted = True
+            self._warning_callback(_EMBEDDING_WORKER_FALLBACK_WARNING)
 
     def embedder(
         self,
@@ -1605,6 +1643,17 @@ class _CommandEmbeddingWorkerSession:
             fallback_factory=fallback_factory,
         )
 
+    def reranker(
+        self,
+        fallback_factory: Callable[[], CrossEncoderReranker],
+    ) -> "_CommandEmbeddingWorkerReranker":
+        if self._reranker_adapter is None:
+            self._reranker_adapter = _CommandEmbeddingWorkerReranker(
+                self,
+                fallback_factory=fallback_factory,
+            )
+        return self._reranker_adapter
+
     def encode(
         self,
         texts: Sequence[str],
@@ -1614,26 +1663,114 @@ class _CommandEmbeddingWorkerSession:
     ) -> list[list[float]]:
         if not self._worker_failed:
             try:
-                return self._encode_callback(texts)
+                if not inference_telemetry_enabled():
+                    return self._encode_callback(texts)
+                with inference_request(
+                    operation="encode",
+                    backend="worker",
+                    role="primary",
+                    item_count=len(texts),
+                ) as observation:
+                    lifecycle = observation.lifecycle_observer
+                    if lifecycle is not None and self._encode_with_lifecycle is not None:
+                        return self._encode_with_lifecycle(texts, lifecycle)
+                    return self._encode_callback(texts)
             except Exception:
-                self._worker_failed = True
-                if not self._warning_emitted:
-                    self._warning_emitted = True
-                    self._warning_callback(_EMBEDDING_WORKER_FALLBACK_WARNING)
+                self._mark_worker_failed()
         fallback = self._fallback_embedders.get(fallback_key)
         try:
             if fallback is None:
                 fallback = fallback_factory()
                 self._fallback_embedders[fallback_key] = fallback
-            return fallback.encode(texts)  # type: ignore[attr-defined,no-any-return]
+            if not inference_telemetry_enabled():
+                return fallback.encode(texts)  # type: ignore[attr-defined,no-any-return]
+            with inference_request(
+                operation="encode",
+                backend="in_process",
+                role="fallback",
+                item_count=len(texts),
+            ):
+                return fallback.encode(texts)  # type: ignore[attr-defined,no-any-return]
         except _InProcessEmbeddingFallbackError:
             self._fallback_failed = True
+            self._fallback_failure_kind = "embedding"
             raise
         except Exception:
             self._fallback_failed = True
+            self._fallback_failure_kind = "embedding"
             raise _InProcessEmbeddingFallbackError(
                 "in-process embedding fallback failed"
             ) from None
+
+    def score(
+        self,
+        query: str,
+        passages: Sequence[str],
+        *,
+        fallback_factory: Callable[[], CrossEncoderReranker],
+    ) -> list[float]:
+        if not self._worker_failed and self._score_callback is not None:
+            try:
+                if not inference_telemetry_enabled():
+                    return self._score_callback(query, passages)
+                with inference_request(
+                    operation="score",
+                    backend="worker",
+                    role="primary",
+                    item_count=len(passages),
+                ) as observation:
+                    lifecycle = observation.lifecycle_observer
+                    if lifecycle is not None and self._score_with_lifecycle is not None:
+                        return self._score_with_lifecycle(query, passages, lifecycle)
+                    return self._score_callback(query, passages)
+            except Exception:
+                self._mark_worker_failed()
+        elif not self._worker_failed:
+            self._mark_worker_failed()
+        try:
+            if self._fallback_reranker is None:
+                self._fallback_reranker = fallback_factory()
+            if not inference_telemetry_enabled():
+                return self._fallback_reranker.score(  # type: ignore[attr-defined,no-any-return]
+                    query, passages
+                )
+            with inference_request(
+                operation="score",
+                backend="in_process",
+                role="fallback",
+                item_count=len(passages),
+            ):
+                return self._fallback_reranker.score(  # type: ignore[attr-defined,no-any-return]
+                    query, passages
+                )
+        except _InProcessRerankerFallbackError:
+            self._fallback_failed = True
+            self._fallback_failure_kind = "reranker"
+            raise
+        except Exception:
+            self._fallback_failed = True
+            self._fallback_failure_kind = "reranker"
+            raise _InProcessRerankerFallbackError(
+                "in-process reranker fallback failed"
+            ) from None
+
+
+class _CommandEmbeddingWorkerReranker:
+    def __init__(
+        self,
+        session: _CommandEmbeddingWorkerSession,
+        *,
+        fallback_factory: Callable[[], CrossEncoderReranker],
+    ) -> None:
+        self._session = session
+        self._fallback_factory = fallback_factory
+
+    def score(self, query: str, passages: Sequence[str]) -> list[float]:
+        return self._session.score(
+            query,
+            passages,
+            fallback_factory=self._fallback_factory,
+        )
 
 
 class _CommandEmbeddingWorkerEmbedder:
@@ -1665,17 +1802,43 @@ def _prepare_default_embedding_worker(
     *,
     activate: bool,
     disabled: bool,
+    policy_callback: Callable[[str], None] | None = None,
 ) -> _CommandEmbeddingWorkerSession | None:
     """Select an exact compatible worker without touching ineligible paths."""
 
-    if (
-        disabled
-        or not activate
-        or config.embedding_model != DEFAULT_EMBEDDING_MODEL
-        or config.embedding_precision != DEFAULT_EMBEDDING_PRECISION
-        or not EMBEDDING_WORKER_CAPABILITY_FACTORY()
-    ):
-        return None
+    def set_policy(value: str) -> None:
+        if policy_callback is None:
+            return
+        try:
+            policy_callback(value)
+        except BaseException:
+            pass
+
+    if policy_callback is None:
+        if (
+            disabled
+            or not activate
+            or config.embedding_model != DEFAULT_EMBEDDING_MODEL
+            or config.embedding_precision != DEFAULT_EMBEDDING_PRECISION
+            or not EMBEDDING_WORKER_CAPABILITY_FACTORY()
+        ):
+            return None
+    else:
+        eligible = (
+            not disabled
+            and config.embedding_model == DEFAULT_EMBEDDING_MODEL
+            and config.embedding_precision == DEFAULT_EMBEDDING_PRECISION
+            and EMBEDDING_WORKER_CAPABILITY_FACTORY()
+        )
+        set_policy(
+            "forced_in_process"
+            if disabled
+            else "worker_preferred"
+            if eligible
+            else "compatibility_in_process"
+        )
+        if not activate or not eligible:
+            return None
 
     from buoy_search.retrieval import embedding_worker
 
@@ -1685,23 +1848,51 @@ def _prepare_default_embedding_worker(
         embedding_worker.REVISION,
         embedding_worker.PRECISION,
         embedding_worker.DIMENSIONS,
+        embedding_worker.RERANKER_MODEL,
+        embedding_worker.RERANKER_REVISION,
+        embedding_worker.RERANKER_DEVICE,
+        embedding_worker.RERANKER_MAX_LENGTH,
+        embedding_worker.RERANKER_BATCH_SIZE,
+        embedding_worker.RERANKER_LOCAL_FILES_ONLY,
+        embedding_worker.RERANKER_USE_SAFETENSORS,
+        embedding_worker.RERANKER_TRUST_REMOTE_CODE,
     )
     expected = (
-        1,
+        2,
         DEFAULT_EMBEDDING_MODEL,
         ROUTING_MODEL_REVISION,
         ROUTING_PRECISION,
         ROUTING_DIMENSIONS,
+        CROSS_ENCODER_MODEL,
+        CROSS_ENCODER_REVISION,
+        "cpu",
+        CROSS_ENCODER_MAX_LENGTH,
+        CROSS_ENCODER_BATCH_SIZE,
+        True,
+        True,
+        False,
     )
     if identity != expected:
+        set_policy("compatibility_in_process")
         return None
     try:
         embedding_worker._require_capability()
     except Exception:
+        set_policy("compatibility_in_process")
         return None
     return _CommandEmbeddingWorkerSession(
         embedding_worker.encode,
         warning_callback=_print_embedding_worker_fallback_warning,
+        score_callback=embedding_worker.score,
+        encode_with_lifecycle=lambda texts, observer: embedding_worker.encode(
+            texts,
+            _lifecycle_observer=observer,
+        ),
+        score_with_lifecycle=lambda query, passages, observer: embedding_worker.score(
+            query,
+            passages,
+            _lifecycle_observer=observer,
+        ),
     )
 
 
@@ -1730,6 +1921,7 @@ def _run_retrieve(
     preview: RetrievalPlan | MultiNamespaceRetrievalPlan | RoutedRetrievalPlan | None = None
     live_call: object | None = None
     live_failure_prefix = "Retrieval failed"
+    worker_session: _CommandEmbeddingWorkerSession | None = None
 
     try:
         with command.stage(
@@ -1750,6 +1942,11 @@ def _run_retrieve(
                     base_config,
                     activate=not args.dry_run,
                     disabled=args.no_embedding_worker,
+                    policy_callback=(
+                        command.set_inference_policy
+                        if inference_telemetry_enabled()
+                        else None
+                    ),
                 )
                 configs = [
                     replace(base_config, namespace=namespace)
@@ -1780,21 +1977,30 @@ def _run_retrieve(
                     )
                     try:
                         with suppress_model_progress_bars():
-                            if retrieval_embedder is None:
+                            if len(configs) == 1:
                                 retriever = (
                                     HybridRetriever.from_config(configs[0])
-                                    if len(configs) == 1
-                                    else MultiNamespaceRetriever.from_configs(configs)
-                                )
-                            else:
-                                retriever = (
-                                    HybridRetriever.from_config(
+                                    if retrieval_embedder is None
+                                    else HybridRetriever.from_config(
                                         configs[0], embedder=retrieval_embedder
                                     )
-                                    if len(configs) == 1
+                                )
+                            elif worker_session is None:
+                                retriever = (
+                                    MultiNamespaceRetriever.from_configs(configs)
+                                    if retrieval_embedder is None
                                     else MultiNamespaceRetriever.from_configs(
                                         configs, embedder=retrieval_embedder
                                     )
+                                )
+                            else:
+                                reranker = worker_session.reranker(
+                                    ROUTING_RERANKER_FACTORY
+                                )
+                                retriever = MultiNamespaceRetriever.from_configs(
+                                    configs,
+                                    embedder=retrieval_embedder,
+                                    reranker_loader=lambda: reranker,
                                 )
                     except RuntimeError as exc:
                         category = (
@@ -1827,6 +2033,11 @@ def _run_retrieve(
                     base_config,
                     activate=True,
                     disabled=args.no_embedding_worker,
+                    policy_callback=(
+                        command.set_inference_policy
+                        if inference_telemetry_enabled()
+                        else None
+                    ),
                 )
                 api_key = os.environ.get("TURBOPUFFER_API_KEY")
                 if not api_key:
@@ -1880,7 +2091,9 @@ def _run_retrieve(
                                     ROUTING_EMBEDDER_FACTORY,
                                 )
                                 if worker_session is not None
-                                else ROUTING_EMBEDDER_FACTORY()
+                                else instrument_in_process_embedder(
+                                    ROUTING_EMBEDDER_FACTORY()
+                                )
                             )
                 except Exception as exc:
                     failure = AutomaticRoutingError(
@@ -1927,12 +2140,19 @@ def _run_retrieve(
                         "billing": list(snapshot.metrics.billing),
                     },
                 }
-                def load_routing_reranker_for_command():
+                def load_command_reranker() -> CrossEncoderReranker:
+                    if worker_session is None:
+                        return instrument_in_process_reranker(
+                            ROUTING_RERANKER_FACTORY()
+                        )
+                    return worker_session.reranker(ROUTING_RERANKER_FACTORY)
+
+                def load_routing_reranker_for_command() -> CrossEncoderReranker:
                     with command.stage(
                         ROUTING_MODEL_SPAN_NAME,
                         error_type="model_error",
                     ):
-                        return ROUTING_RERANKER_FACTORY()
+                        return load_command_reranker()
 
                 try:
                     with command.stage(
@@ -1955,8 +2175,14 @@ def _run_retrieve(
                             )
                 except (AutomaticRoutingError, RuntimeError, ValueError) as exc:
                     if worker_session is not None and worker_session.fallback_failed:
+                        fallback_kind = worker_session.fallback_failure_kind
+                        detail = (
+                            "embedding"
+                            if fallback_kind == "embedding"
+                            else "reranker"
+                        )
                         raise _RetrieveCommandFailure(
-                            "Automatic routing failed: in-process embedding fallback failed.",
+                            f"Automatic routing failed: in-process {detail} fallback failed.",
                             "model_error",
                             replace_error=True,
                         ) from exc
@@ -1990,11 +2216,18 @@ def _run_retrieve(
                     )
                 else:
                     top_route_entry = routing.entries[0]
+                    evidence_assessor = CalibratedEvidenceAssessor(
+                        evidence_calibration,
+                        reranker_loader=(
+                            load_command_reranker
+                            if worker_session is not None
+                            or inference_telemetry_enabled()
+                            else None
+                        ),
+                    )
                     retrieval_kwargs: dict[str, object] = {
                         "initial_fanout": routing.initial_fanout,
-                        "evidence_assessor": CalibratedEvidenceAssessor(
-                            evidence_calibration
-                        ),
+                        "evidence_assessor": evidence_assessor,
                         "evidence_route_context": EvidenceRouteContext(
                             selection_reason=routing.selection_reason,
                             semantic_score=top_route_entry.semantic_score,
@@ -2011,13 +2244,20 @@ def _run_retrieve(
                     )
                     try:
                         with suppress_model_progress_bars():
-                            retriever = (
-                                MultiNamespaceRetriever.from_configs(configs)
-                                if retrieval_embedder is None
-                                else MultiNamespaceRetriever.from_configs(
-                                    configs, embedder=retrieval_embedder
+                            if worker_session is None:
+                                retriever = (
+                                    MultiNamespaceRetriever.from_configs(configs)
+                                    if retrieval_embedder is None
+                                    else MultiNamespaceRetriever.from_configs(
+                                        configs, embedder=retrieval_embedder
+                                    )
                                 )
-                            )
+                            else:
+                                retriever = MultiNamespaceRetriever.from_configs(
+                                    configs,
+                                    embedder=retrieval_embedder,
+                                    reranker_loader=load_command_reranker,
+                                )
                     except RuntimeError as exc:
                         category = (
                             "configuration_error"
@@ -2061,17 +2301,37 @@ def _run_retrieve(
     try:
         with suppress_model_progress_bars():
             result = live_call()
-    except _InProcessEmbeddingFallbackError:
+    except (_InProcessEmbeddingFallbackError, _InProcessRerankerFallbackError) as exc:
         command.set_error_type("model_error", replace=True)
+        detail = (
+            "embedding"
+            if isinstance(exc, _InProcessEmbeddingFallbackError)
+            else "reranker"
+        )
         _render_retrieve(
             command,
             lambda: print(
-                f"{live_failure_prefix}: in-process embedding fallback failed.",
+                f"{live_failure_prefix}: in-process {detail} fallback failed.",
                 file=sys.stderr,
             ),
         )
         return 2
     except RuntimeError as exc:
+        if worker_session is not None and worker_session.fallback_failed:
+            command.set_error_type("model_error", replace=True)
+            detail = (
+                "embedding"
+                if worker_session.fallback_failure_kind == "embedding"
+                else "reranker"
+            )
+            _render_retrieve(
+                command,
+                lambda: print(
+                    f"{live_failure_prefix}: in-process {detail} fallback failed.",
+                    file=sys.stderr,
+                ),
+            )
+            return 2
         command.set_error_type("provider_call_error")
         message = f"{live_failure_prefix}: {exc}"
         _render_retrieve(
@@ -2774,6 +3034,11 @@ def main(
             bootstrap_ended_at_ns=bootstrap_ended_at_ns,
             execution_mode="preview" if args.dry_run else "live",
             retrieval_mode=retrieval_mode,
+            inference_policy=(
+                "forced_in_process"
+                if args.no_embedding_worker
+                else "compatibility_in_process"
+            ),
         ) as command:
             try:
                 result = _run_retrieve(args, command)

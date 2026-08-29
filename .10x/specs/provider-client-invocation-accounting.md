@@ -1,7 +1,7 @@
 Status: active
 Created: 2026-08-24
-Updated: 2026-08-24
-Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
+Updated: 2026-08-28
+Decision: .10x/decisions/buoy-records-worker-and-provider-attempt-retrieval-telemetry-v3.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md
 Research: .10x/research/2026-08-24-physical-provider-attempt-accounting-options.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
@@ -25,9 +25,11 @@ retries and MUST NOT be represented as an HTTP/wire send, provider-billed
 request, or rate-limit unit.
 
 The content and catalog families MUST remain separate. This contract does not
-extend production telemetry v2; receipt activation, authority, serialization,
-and retention are governed by
-`.10x/specs/provider-client-invocation-receipt.md`.
+extend production telemetry v1/v2. Private receipt activation, authority, and
+serialization are governed by
+`.10x/specs/provider-client-invocation-receipt.md`; separately approved v3
+normalization and persistence are governed by
+`.10x/specs/retrieve-provider-invocation-telemetry-v3.md`.
 
 ## Common call and outcome behavior
 
@@ -360,6 +362,8 @@ failure.
 ## Explicit exclusions
 
 Physical wire/cost/rate-limit accounting, SDK-internal retry accounting,
-production telemetry, public diagnostics, provider/network operations, catalog
-writes/management accounting, generic content retries, routing changes,
-telemetry-v2 changes, release, and canary execution are excluded.
+production telemetry v1/v2, public diagnostics, changed provider/network
+operations, catalog writes/management accounting, generic content retries,
+routing changes, release, and canary execution are excluded. Separately
+specified v3 normalization/persistence of these exact validated fields is not
+governed here.

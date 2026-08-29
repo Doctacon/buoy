@@ -1,7 +1,8 @@
 Status: active
 Created: 2026-08-27
-Updated: 2026-08-27
+Updated: 2026-08-28
 Decision: .10x/decisions/buoy-defaults-compatible-retrieve-embeddings-to-the-local-worker.md
+Extended-By: .10x/specs/default-retrieve-cross-encoder-worker-residency.md
 Supersedes: .10x/specs/superseded/experimental-retrieve-embedding-worker.md
 Depends-On: .10x/specs/dormant-local-embedding-worker-prototype.md
 
@@ -67,7 +68,7 @@ Only one warning may be emitted even if routing fallback causes later retrieval 
 
 All reviewed worker protocol, identity, permission, election, no-persistence, credential-free child environment, no-provider import, cleanup, and five-minute accepted-request idle semantics remain unchanged.
 
-The worker receives only bounded embedding text and returns vectors. Provider credentials/clients, namespace queries, results, reranking, telemetry storage, and output remain in the CLI process.
+Under this base specification, embedding operations send only bounded embedding text and receive vectors. The focused extension at `.10x/specs/default-retrieve-cross-encoder-worker-residency.md` additionally permits bounded formatted query/passage scoring while keeping provider credentials/clients, namespace operations, routing/ranking/evidence orchestration, telemetry storage, and output in the CLI process.
 
 ## Acceptance scenarios
 
@@ -112,4 +113,4 @@ Given help/version or any non-retrieve command, worker code/state/process/IPC re
 
 ## Explicit exclusions
 
-Worker support for custom models, float16, Windows, pools, batching, cross-encoder residency, provider clients/credentials in worker, apply/index/evals integration, telemetry schema redesign, additional live A/B, percentile/SLA/release gate, global installation, release, deployment, or publication.
+Worker support for custom models, float16, Windows, pools, batching, provider clients/credentials in worker, apply/index/evals integration, telemetry schema redesign, additional live A/B, percentile/SLA/release gate, global installation, release, deployment, or publication. Cross-encoder residency is governed separately by `.10x/specs/default-retrieve-cross-encoder-worker-residency.md`.

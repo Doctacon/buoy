@@ -18,7 +18,7 @@ The opt-in is the named `local` mode rather than a boolean switch.
 `BUOY_TELEMETRY=1`, `true`, and other values do not enable recording.
 `OTEL_SDK_DISABLED=true` overrides the Buoy setting and disables telemetry.
 
-When enabled, version 2 records successfully parsed `retrieve` commands in
+When enabled, version 3 records successfully parsed `retrieve` commands in
 explicit-single, explicit-multi, and automatic modes. Live commands record both
 Buoy command duration and the nested retrieval pipeline duration. `--dry-run`
 and `--plan` previews record command duration with a null pipeline duration;
@@ -29,7 +29,7 @@ observations.
 ## What is stored
 
 When enabled, Buoy publishes a sanitized private command envelope beneath
-`~/.buoy/telemetry/inbox-v2/`. Direct Python retriever calls outside a Buoy
+`~/.buoy/telemetry/inbox-v3/`. Direct Python retriever calls outside a Buoy
 command retain the version-1 pipeline envelope in `inbox-v1`. One short-lived
 Buoy writer drains those envelopes into:
 
@@ -37,7 +37,7 @@ Buoy writer drains those envelopes into:
 ~/.buoy/telemetry/telemetry.duckdb
 ```
 
-The version-2 database contains one row per observed command plus an optional
+The version-3 database contains one row per observed command plus an optional
 nested retrieval operation. `command_duration_ms` is the near-shell **Buoy
 command duration** from the lightweight entry point before provider-facing CLI
 import through the handler's final output attempt. It excludes Python work
@@ -52,7 +52,20 @@ Recorded fields are limited to operational metadata such as execution/retrieval
 mode, timing, fanout, hit and failure counts, widening and fallback outcomes,
 model family, precision, and generic error categories. Governed stage spans
 separate bootstrap, preparation, automatic catalog/model/selection, pipeline,
-and rendering work when those operations actually occur.
+and rendering work when those operations actually occur. Version 3 also records
+caller-observed inference requests with only operation, worker or in-process
+backend, bounded item count, worker spawn/reuse state, fallback role, and bounded
+outcome. Each inference duration is caller-observed backend wait: it includes
+worker IPC and any worker/model startup reached by that request, but it is not a
+claim about worker-internal CPU time. Inference spans are nested beneath the
+stage that requested them, so do not add their durations to parent-stage or
+command duration. Buoy never stores model inputs, vectors, passages, or scores.
+
+Provider accounting uses the content-free unit `provider_client_invocation`:
+one attempt by Buoy to evaluate a governed provider SDK call expression. Content
+attempts retain route rank only; automatic catalog attempts are aggregate page/
+metadata categories. This is not a physical HTTP send, provider-billed request,
+rate-limit unit, or evidence of SDK-internal retries.
 
 Buoy does not store the query, returned content, citations, URLs, file paths,
 namespace or source identifiers, document identifiers, vectors, credentials,
@@ -104,13 +117,13 @@ retrieval and `status` reports `platform_unsupported`.
 
 ## Upgrade an existing telemetry database
 
-A version-2-capable Buoy installation creates new telemetry databases directly
-at schema version 2. It never upgrades an existing schema-version-1 database
-automatically. When safe matching writer-state metadata proves an existing
-schema-version-1 store, `buoy telemetry status` reports `upgrade_required`;
+A version-3-capable Buoy installation creates new telemetry databases directly
+at schema version 3. It never upgrades an existing schema-version-1 or version-2
+database automatically. When safe matching writer-state metadata proves an
+older store, `buoy telemetry status` reports `upgrade_required`;
 without that state proof it intentionally reports `present_unverified` because
-status never opens DuckDB. Version-1 work can still drain, while version-2
-envelopes remain pending.
+status never opens DuckDB. Older compatible work can still drain, while an
+envelope newer than the store remains pending.
 
 Run the explicit local migration when you are ready:
 
@@ -119,29 +132,41 @@ buoy telemetry migrate
 buoy telemetry migrate --json
 ```
 
-Migration normally drains its bounded version-1 queue snapshot, validates the
-exact closed database, builds and validates a private scratch copy, and keeps a
-byte-for-byte version-1 backup at:
+Migration normally drains the bounded queue versions compatible with its
+source store, validates the exact closed database, and builds and validates a
+private scratch copy. The fixed public output key `pending_v2` is retained for
+compatibility; during version 2 to 3 migration it reports the next-version v3
+queue snapshot. The version-1-to-version-2 step keeps a byte-for-byte
+version-1 backup at:
 
 ```text
 ~/.buoy/telemetry/telemetry-v1-backup.duckdb
 ```
 
-Buoy then atomically publishes the validated schema-version-2 database. If a
-retry proves that an already-published immutable backup exactly matches the
-still-canonical version-1 database, it completes version 2 before draining any
-later version-1 publications; those envelopes stay queued for the version-2
-writer and are not added to or allowed to rewrite the retained backup. The
+Buoy then atomically publishes the validated next schema version. Migration is
+one version per invocation: version 1 to 2 retains the fixed v1 backup above;
+version 2 to 3 retains an additional byte-for-byte source backup at
+`~/.buoy/telemetry/telemetry-v2-backup.duckdb` and never changes the v1 backup.
+If a retry proves that an already-published immutable backup exactly matches
+the still-canonical source database, it completes that next version before draining
+later publications that were outside the migration snapshot; those envelopes
+are not added to or allowed to rewrite the retained backup. The
 migration accepts no alternate path, force, repair, or delete option; it does
 not contact a provider, model, catalog, Collector, or network service. A
 mismatching or unsafe preexisting backup blocks the migration rather than
-overwriting history. Repeating a completed migration is a successful
-read-only no-op. Buoy never deletes the retained backup automatically.
+overwriting history. Repeating migration at schema version 3 performs bounded
+validation and reconciliation: it may refresh writer state and remove only
+recognized, validated post-publication migration scratch before reporting
+`already_current`. It does not change retained telemetry history. Buoy never
+deletes either retained backup automatically.
 
-Schema version 2 preserves `retrieval_runs_v1` and
-`retrieval_stage_latency_v1` exactly. Version-2 command envelopes populate
-`retrieval_command_runs_v2` and `retrieval_stage_latency_v2`; the former exposes
-separate `command_duration_ms` and nullable `pipeline_duration_ms` columns.
+Schema version 3 preserves the version-1 and version-2 tables and views exactly.
+Version-3 command envelopes populate `retrieval_command_runs_v3`,
+`retrieval_stage_latency_v3`, `retrieval_inference_requests_v3`,
+`retrieval_provider_summary_v3`, and
+`retrieval_provider_content_invocations_v3`. Command rows expose separate
+`command_duration_ms` and nullable `pipeline_duration_ms` columns plus bounded
+inference aggregates.
 
 ## Query the database
 
@@ -152,21 +177,21 @@ database read-only with the DuckDB command-line client:
 duckdb -readonly ~/.buoy/telemetry/telemetry.duckdb
 ```
 
-Summarize retrieval volume, latency, and outcomes by day:
+Summarize current command volume, latency, and outcomes by day:
 
 ```sql
 SELECT
     CAST(started_at AS DATE) AS day,
-    count(*) AS retrievals,
-    round(avg(duration_ms), 1) AS average_ms,
-    count_if(outcome = 'success') AS successful,
-    count_if(incomplete) AS incomplete
-FROM retrieval_runs_v1
+    count(*) AS commands,
+    round(avg(command_duration_ms), 1) AS average_command_ms,
+    count_if(command_outcome = 'success') AS successful,
+    count_if(coalesce(incomplete, false)) AS incomplete
+FROM retrieval_command_runs_v3
 GROUP BY day
 ORDER BY day DESC;
 ```
 
-Compare latency by retrieval stage:
+Compare current command-stage latency:
 
 ```sql
 SELECT
@@ -174,12 +199,13 @@ SELECT
     count(*) AS calls,
     round(avg(duration_ms), 1) AS average_ms,
     round(quantile_cont(duration_ms, 0.95), 1) AS p95_ms
-FROM retrieval_stage_latency_v1
+FROM retrieval_stage_latency_v3
 GROUP BY stage
 ORDER BY p95_ms DESC;
 ```
 
-Inspect widening and partial-failure behavior without exposing source names:
+Inspect current widening and partial-failure behavior without exposing source
+names:
 
 ```sql
 SELECT
@@ -187,11 +213,15 @@ SELECT
     widened,
     fallback_reason,
     failure_count,
-    count(*) AS retrievals
-FROM retrieval_runs_v1
+    count(*) AS commands
+FROM retrieval_command_runs_v3
 GROUP BY ALL
-ORDER BY retrievals DESC;
+ORDER BY commands DESC;
 ```
+
+The retained `retrieval_runs_v1` and `retrieval_stage_latency_v1` views are
+historical/direct-library views. Use them only when analyzing direct Python
+retriever observations or history recorded before command telemetry.
 
 Compare command and pipeline scope without adding nested stage durations:
 
@@ -201,9 +231,37 @@ SELECT
     execution_mode,
     round(avg(command_duration_ms), 1) AS average_command_ms,
     round(avg(pipeline_duration_ms), 1) AS average_pipeline_ms
-FROM retrieval_command_runs_v2
+FROM retrieval_command_runs_v3
 GROUP BY ALL
 ORDER BY retrieval_mode, execution_mode;
+```
+
+Compare caller-observed inference waits by operation, backend, and lifecycle:
+
+```sql
+SELECT
+    operation,
+    backend,
+    worker_state,
+    count(*) AS requests,
+    round(avg(duration_ms), 1) AS average_ms
+FROM retrieval_inference_requests_v3
+GROUP BY ALL
+ORDER BY operation, backend, worker_state;
+```
+
+Inspect Buoy-issued provider SDK call attempts without treating them as wire
+requests or billing units:
+
+```sql
+SELECT
+    retrieval_mode,
+    accounting_status,
+    sum(content_invocation_count) AS content_sdk_attempts,
+    sum(catalog_invocation_count) AS catalog_sdk_attempts
+FROM retrieval_provider_summary_v3
+GROUP BY ALL
+ORDER BY retrieval_mode, accounting_status;
 ```
 
 The underlying `spans` and `span_events` tables are available for deeper local

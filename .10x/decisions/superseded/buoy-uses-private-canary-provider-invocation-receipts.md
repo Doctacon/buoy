@@ -1,6 +1,7 @@
-Status: active
+Status: superseded
 Created: 2026-08-24
-Updated: 2026-08-24
+Updated: 2026-08-28
+Superseded-By: .10x/decisions/buoy-records-worker-and-provider-attempt-retrieval-telemetry-v3.md
 Authorization: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md

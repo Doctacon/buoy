@@ -26,6 +26,8 @@ ENVELOPE_SCHEMA_VERSION = 1
 OBSERVATION_SCHEMA_VERSION = 1
 V2_ENVELOPE_SCHEMA_VERSION = 2
 V2_OBSERVATION_SCHEMA_VERSION = 2
+V3_ENVELOPE_SCHEMA_VERSION = 3
+V3_OBSERVATION_SCHEMA_VERSION = 3
 MAX_ENVELOPE_BYTES = 65_536
 MAX_SPANS = 256
 MAX_EVENTS = 1
@@ -348,6 +350,17 @@ class CommandTraceRows:
 
     command: tuple[object, ...]
     retrieval_operation: tuple[object, ...] | None
+    spans: tuple[tuple[object, ...], ...]
+    events: tuple[tuple[object, ...], ...]
+
+
+@dataclass(frozen=True)
+class CommandTraceRowsV3:
+    """Validated v3 command, operation, provider, span, and event rows."""
+
+    command: tuple[object, ...]
+    retrieval_operation: tuple[object, ...] | None
+    provider_accounting: tuple[object, ...]
     spans: tuple[tuple[object, ...], ...]
     events: tuple[tuple[object, ...], ...]
 
@@ -1317,6 +1330,167 @@ _V2_SPAN_ATTRIBUTE_KEYS = {
     EVIDENCE_SPAN_NAME: SPAN_ATTRIBUTE_KEYS[EVIDENCE_SPAN_NAME],
 }
 
+V3_INFERENCE_SPAN_NAME = "buoy.inference.request"
+V3_COMMAND_STAGE_NAMES = V2_COMMAND_STAGE_NAMES
+V3_RETRIEVAL_STAGE_NAMES = V2_RETRIEVAL_STAGE_NAMES
+V3_SPAN_NAMES = frozenset({*V2_SPAN_NAMES, V3_INFERENCE_SPAN_NAME})
+_V3_ENVELOPE_KEYS = frozenset(
+    {
+        "envelope_schema_version",
+        "observation_schema_version",
+        "command",
+        "retrieval_operation",
+        "provider_accounting",
+        "spans",
+        "events",
+    }
+)
+_V3_COMMAND_KEYS = (*_V2_COMMAND_KEYS, "inference_policy")
+_V3_OPERATION_KEYS = _V2_OPERATION_KEYS
+_V3_PROVIDER_KEYS = ("status", "unit", "content", "catalog")
+_V3_PROVIDER_UNAVAILABLE = (
+    "unavailable",
+    "provider_client_invocation",
+    None,
+    None,
+)
+_V3_RECEIPT_KEYS = frozenset(
+    {"receipt_schema_version", "unit", "content", "catalog"}
+)
+_V3_CONTENT_KEYS = frozenset(
+    {"logical_operation_count", "invocation_count", "operations"}
+)
+_V3_CONTENT_OPERATION_KEYS = frozenset({"route_rank", "outcome", "attempts"})
+_V3_CONTENT_ATTEMPT_KEYS = frozenset(
+    {
+        "attempt_index",
+        "request_form",
+        "trigger",
+        "outcome",
+        "error_category",
+    }
+)
+_V3_CATALOG_KEYS = frozenset(
+    {
+        "outcome",
+        "invocation_count",
+        "namespace_list_page",
+        "metadata",
+        "card_query_page",
+    }
+)
+_V3_OUTCOME_COUNT_KEYS = frozenset({"success", "error", "interrupted"})
+_V3_PROVIDER_OUTCOMES = {"success", "error", "interrupted"}
+_V3_CONTENT_ERROR_CATEGORIES = {
+    "provider_call_error",
+    "value_error",
+    "runtime_error",
+    "unexpected_error",
+}
+_V3_COMMAND_ATTRIBUTE_FIELDS = (
+    *_V2_COMMAND_ATTRIBUTE_FIELDS,
+    ("inference_policy", "buoy.inference.policy", False),
+)
+_V3_OPERATION_ATTRIBUTE_FIELDS = _V2_OPERATION_ATTRIBUTE_FIELDS
+_V3_COMMAND_ATTRIBUTE_KEYS = frozenset(
+    {*_V2_COMMAND_ATTRIBUTE_KEYS, "buoy.inference.policy"}
+)
+_V3_INFERENCE_ATTRIBUTE_KEYS = frozenset(
+    {
+        "buoy.inference.operation",
+        "buoy.inference.backend",
+        "buoy.inference.role",
+        "buoy.inference.item_count",
+        "buoy.inference.worker_state",
+        "buoy.inference.outcome",
+        "buoy.inference.error_type",
+    }
+)
+_V3_INFERENCE_REQUIRED_ATTRIBUTE_KEYS = frozenset(
+    {
+        "buoy.inference.operation",
+        "buoy.inference.backend",
+        "buoy.inference.role",
+        "buoy.inference.item_count",
+        "buoy.inference.outcome",
+    }
+)
+_V3_WORKER_ERROR_TYPES = frozenset(
+    {
+        "protocol_error",
+        "incompatible_worker",
+        "model_unavailable",
+        "encoding_failure",
+        "scoring_failure",
+        "busy_timeout",
+        "internal_worker_failure",
+    }
+)
+_V3_INFERENCE_POLICIES = frozenset(
+    {"worker_preferred", "forced_in_process", "compatibility_in_process"}
+)
+_V3_SPAN_ATTRIBUTE_KEYS = {
+    V2_COMMAND_ROOT_SPAN_NAME: _V3_COMMAND_ATTRIBUTE_KEYS,
+    V2_PIPELINE_SPAN_NAME: _V2_PIPELINE_ATTRIBUTE_KEYS,
+    **{name: frozenset({"buoy.error.type"}) for name in V3_COMMAND_STAGE_NAMES},
+    QUERY_EMBED_SPAN_NAME: SPAN_ATTRIBUTE_KEYS[QUERY_EMBED_SPAN_NAME],
+    NAMESPACE_QUERY_SPAN_NAME: SPAN_ATTRIBUTE_KEYS[NAMESPACE_QUERY_SPAN_NAME],
+    RERANK_SPAN_NAME: SPAN_ATTRIBUTE_KEYS[RERANK_SPAN_NAME],
+    EVIDENCE_SPAN_NAME: SPAN_ATTRIBUTE_KEYS[EVIDENCE_SPAN_NAME],
+    V3_INFERENCE_SPAN_NAME: _V3_INFERENCE_ATTRIBUTE_KEYS,
+}
+
+
+def sanitize_v3_span_attributes(
+    name: str,
+    attributes: Mapping[object, object],
+) -> dict[str, str | bool | int | float]:
+    """Return only exact version-3 attributes allowed for one governed span."""
+
+    allowed = _V3_SPAN_ATTRIBUTE_KEYS.get(name)
+    if allowed is None:
+        return {}
+    sanitized: dict[str, str | bool | int | float] = {}
+    for key, value in attributes.items():
+        if type(key) is not str or key not in allowed or value is None:
+            continue
+        normalized: object = value
+        if key == "buoy.observation.schema_version":
+            normalized = value if value == 3 and type(value) is int else None
+        elif key == "buoy.inference.item_count":
+            normalized = (
+                value
+                if type(value) is int and 1 <= value <= 108
+                else None
+            )
+        elif key not in {
+            "buoy.command.name",
+            "buoy.command.execution_mode",
+            "buoy.command.outcome",
+            "buoy.command.exit_code",
+            "buoy.retrieval.pipeline_present",
+            "buoy.inference.policy",
+            "buoy.inference.operation",
+            "buoy.inference.backend",
+            "buoy.inference.role",
+            "buoy.inference.worker_state",
+            "buoy.inference.outcome",
+            "buoy.inference.error_type",
+        } and not (
+            key == "buoy.error.type"
+            and name in {V2_COMMAND_ROOT_SPAN_NAME, *V3_COMMAND_STAGE_NAMES}
+        ):
+            normalized = sanitize_attribute(key, value)
+        if normalized is None:
+            continue
+        try:
+            _validate_v3_attribute(key, normalized, span_name=name)
+        except TraceEnvelopeError:
+            continue
+        if type(normalized) in {str, bool, int, float}:
+            sanitized[key] = normalized
+    return sanitized
+
 
 def sanitize_v2_span_attributes(
     name: str,
@@ -1504,6 +1678,261 @@ def command_trace_rows_from_spans(
     return rows
 
 
+def command_trace_rows_from_spans_v3(
+    spans: Sequence[ReadableSpan],
+    *,
+    root_span_id: int,
+    provider_accounting: tuple[object, ...],
+) -> CommandTraceRowsV3:
+    """Construct validated v3 rows from one private command trace."""
+
+    allowed = [span for span in spans if span.name in V3_SPAN_NAMES]
+    root = next(
+        (
+            span
+            for span in allowed
+            if span.name == V2_COMMAND_ROOT_SPAN_NAME
+            and span.context is not None
+            and span.context.span_id == root_span_id
+        ),
+        None,
+    )
+    if root is None or root.context is None or root.end_time is None:
+        raise TraceEnvelopeError("invalid_graph")
+
+    trace_id = f"{root.context.trace_id:032x}"
+    root_attributes = sanitize_v3_span_attributes(
+        V2_COMMAND_ROOT_SPAN_NAME,
+        root.attributes or {},
+    )
+    command = (
+        trace_id,
+        f"{root.context.span_id:016x}",
+        _timestamp_from_ns(root.start_time),
+        _timestamp_from_ns(root.end_time),
+        _duration_ms_from_ns(root.start_time, root.end_time),
+        root_attributes.get("buoy.command.execution_mode"),
+        root_attributes.get("buoy.retrieval.mode"),
+        root_attributes.get("buoy.command.outcome"),
+        root_attributes.get("buoy.command.exit_code"),
+        root_attributes.get("buoy.error.type"),
+        root_attributes.get("buoy.retrieval.pipeline_present", False),
+        root_attributes.get("buoy.version"),
+        root_attributes.get("buoy.observation.schema_version"),
+        root_attributes.get("buoy.inference.policy"),
+    )
+
+    pipeline = next(
+        (
+            span
+            for span in allowed
+            if span.name == V2_PIPELINE_SPAN_NAME
+            and span.context is not None
+            and span.context.trace_id == root.context.trace_id
+        ),
+        None,
+    )
+    operation: tuple[object, ...] | None = None
+    if pipeline is not None:
+        if pipeline.context is None or pipeline.end_time is None:
+            raise TraceEnvelopeError("invalid_graph")
+        attributes = sanitize_v3_span_attributes(
+            V2_PIPELINE_SPAN_NAME,
+            pipeline.attributes or {},
+        )
+        operation = (
+            trace_id,
+            f"{pipeline.context.span_id:016x}",
+            _timestamp_from_ns(pipeline.start_time),
+            _timestamp_from_ns(pipeline.end_time),
+            _duration_ms_from_ns(pipeline.start_time, pipeline.end_time),
+            attributes.get("buoy.retrieval.outcome"),
+            attributes.get("buoy.retrieval.hit_count", 0),
+            attributes.get("buoy.retrieval.namespace_count", 0),
+            attributes.get("buoy.retrieval.initial_fanout", 0),
+            attributes.get("buoy.retrieval.final_fanout", 0),
+            attributes.get("buoy.retrieval.failure_count", 0),
+            attributes.get("buoy.retrieval.incomplete", False),
+            attributes.get("buoy.retrieval.widened", False),
+            attributes.get("buoy.retrieval.fallback_reason"),
+            attributes.get("buoy.evidence.status"),
+            attributes.get("buoy.embedding.model"),
+            attributes.get("buoy.embedding.precision"),
+            attributes.get("buoy.retrieval.top_k", 0),
+            attributes.get("buoy.retrieval.candidates", 0),
+            attributes.get("buoy.version"),
+            attributes.get("buoy.observation.schema_version"),
+        )
+
+    span_rows: list[tuple[object, ...]] = []
+    event_rows: list[tuple[object, ...]] = []
+    for readable in allowed:
+        if (
+            readable.context is None
+            or readable.context.trace_id != root.context.trace_id
+            or readable.end_time is None
+        ):
+            continue
+        span_id = f"{readable.context.span_id:016x}"
+        parent_id = (
+            f"{readable.parent.span_id:016x}"
+            if readable.parent is not None and readable.parent.span_id
+            else None
+        )
+        attributes = sanitize_v3_span_attributes(
+            readable.name,
+            readable.attributes or {},
+        )
+        span_rows.append(
+            (
+                trace_id,
+                span_id,
+                parent_id,
+                readable.name,
+                _timestamp_from_ns(readable.start_time),
+                _timestamp_from_ns(readable.end_time),
+                _duration_ms_from_ns(readable.start_time, readable.end_time),
+                readable.status.status_code.name,
+                _canonical_json_text(attributes),
+            )
+        )
+        if readable.name != V2_PIPELINE_SPAN_NAME:
+            continue
+        for event_index, event in enumerate(
+            event
+            for event in readable.events or ()
+            if event.name == WIDENED_EVENT_NAME and event.timestamp is not None
+        ):
+            event_attributes = {
+                key: value
+                for key, value in sanitize_attributes(event.attributes or {}).items()
+                if key in EVENT_ATTRIBUTE_KEYS
+            }
+            event_rows.append(
+                (
+                    trace_id,
+                    span_id,
+                    event_index,
+                    event.name,
+                    _timestamp_from_ns(event.timestamp),
+                    _canonical_json_text(event_attributes),
+                )
+            )
+
+    span_rows.sort(key=lambda row: (row[4], row[1]))
+    event_rows.sort(key=lambda row: row[2])
+    rows = CommandTraceRowsV3(
+        command,
+        operation,
+        provider_accounting,
+        tuple(span_rows),
+        tuple(event_rows),
+    )
+    _validate_v3_envelope_object(_v3_envelope_object_from_rows(rows))
+    return rows
+
+
+def encode_trace_envelope_v3(rows: CommandTraceRowsV3) -> bytes:
+    """Validate and canonically encode one exact v3 command envelope."""
+
+    envelope = _v3_envelope_object_from_rows(rows)
+    _validate_v3_envelope_object(envelope)
+    payload = _canonical_json_bytes(envelope)
+    if len(payload) > MAX_ENVELOPE_BYTES:
+        raise TraceEnvelopeError("oversized")
+    return payload
+
+
+def decode_trace_envelope_v3(payload: bytes) -> CommandTraceRowsV3:
+    """Independently decode and validate one untrusted v3 envelope."""
+
+    envelope = _load_canonical_envelope(payload)
+    _validate_v3_envelope_object(envelope)
+    return _v3_rows_from_envelope_object(envelope)
+
+
+def _v3_envelope_object_from_rows(rows: CommandTraceRowsV3) -> dict[str, object]:
+    if not isinstance(rows, CommandTraceRowsV3):
+        raise TraceEnvelopeError("invalid_shape")
+    if type(rows.command) is not tuple or len(rows.command) != len(_V3_COMMAND_KEYS):
+        raise TraceEnvelopeError("invalid_shape")
+    if rows.retrieval_operation is not None and (
+        type(rows.retrieval_operation) is not tuple
+        or len(rows.retrieval_operation) != len(_V3_OPERATION_KEYS)
+    ):
+        raise TraceEnvelopeError("invalid_shape")
+    if (
+        type(rows.provider_accounting) is not tuple
+        or len(rows.provider_accounting) != len(_V3_PROVIDER_KEYS)
+        or type(rows.spans) is not tuple
+        or type(rows.events) is not tuple
+    ):
+        raise TraceEnvelopeError("invalid_shape")
+
+    command = dict(zip(_V3_COMMAND_KEYS, rows.command, strict=True))
+    for key in ("started_at_unix_us", "ended_at_unix_us"):
+        command[key] = _unix_us_from_datetime(command[key])
+    operation = None
+    if rows.retrieval_operation is not None:
+        operation = dict(
+            zip(_V3_OPERATION_KEYS, rows.retrieval_operation, strict=True)
+        )
+        for key in ("started_at_unix_us", "ended_at_unix_us"):
+            operation[key] = _unix_us_from_datetime(operation[key])
+    provider = dict(
+        zip(_V3_PROVIDER_KEYS, rows.provider_accounting, strict=True)
+    )
+    return {
+        "envelope_schema_version": 3,
+        "observation_schema_version": 3,
+        "command": command,
+        "retrieval_operation": operation,
+        "provider_accounting": provider,
+        "spans": [_v2_span_object(row) for row in rows.spans],
+        "events": [_v2_event_object(row) for row in rows.events],
+    }
+
+
+def _v3_rows_from_envelope_object(
+    envelope: dict[str, object],
+) -> CommandTraceRowsV3:
+    command_object = envelope["command"]
+    operation_object = envelope["retrieval_operation"]
+    provider_object = envelope["provider_accounting"]
+    span_objects = envelope["spans"]
+    event_objects = envelope["events"]
+    assert isinstance(command_object, dict)
+    assert operation_object is None or isinstance(operation_object, dict)
+    assert isinstance(provider_object, dict)
+    assert isinstance(span_objects, list)
+    assert isinstance(event_objects, list)
+
+    command_values = dict(command_object)
+    for key in ("started_at_unix_us", "ended_at_unix_us"):
+        command_values[key] = _datetime_from_unix_us(command_values[key])
+    command_values["command_duration_ms"] = float(
+        command_values["command_duration_ms"]
+    )
+    command = tuple(command_values[key] for key in _V3_COMMAND_KEYS)
+    operation = None
+    if operation_object is not None:
+        operation_values = dict(operation_object)
+        for key in ("started_at_unix_us", "ended_at_unix_us"):
+            operation_values[key] = _datetime_from_unix_us(operation_values[key])
+        operation_values["pipeline_duration_ms"] = float(
+            operation_values["pipeline_duration_ms"]
+        )
+        operation = tuple(operation_values[key] for key in _V3_OPERATION_KEYS)
+    provider = tuple(provider_object[key] for key in _V3_PROVIDER_KEYS)
+    return CommandTraceRowsV3(
+        command,
+        operation,
+        provider,
+        tuple(_v2_span_row(value) for value in span_objects),
+        tuple(_v2_event_row(value) for value in event_objects),
+    )
+
+
 def encode_trace_envelope_v2(rows: CommandTraceRows) -> bytes:
     """Validate and canonically encode one exact command trace envelope."""
 
@@ -1632,6 +2061,634 @@ def _v2_event_row(value: object) -> tuple[object, ...]:
     )
     row["attributes"] = _canonical_json_text(row["attributes"])
     return tuple(row[key] for key in _EVENT_KEYS)
+
+
+def _validate_v3_envelope_object(envelope: object) -> None:
+    if type(envelope) is not dict:
+        raise TraceEnvelopeError("invalid_shape")
+    _require_exact_keys(envelope, _V3_ENVELOPE_KEYS)
+    if type(envelope["envelope_schema_version"]) is not int:
+        raise TraceEnvelopeError("invalid_value")
+    if envelope["envelope_schema_version"] != 3:
+        raise TraceEnvelopeError("unsupported_envelope_version")
+    _require_exact_integer(envelope["observation_schema_version"], 3)
+    command = envelope["command"]
+    operation = envelope["retrieval_operation"]
+    provider = envelope["provider_accounting"]
+    spans = envelope["spans"]
+    events = envelope["events"]
+    if type(command) is not dict or type(provider) is not dict:
+        raise TraceEnvelopeError("invalid_shape")
+    if operation is not None and type(operation) is not dict:
+        raise TraceEnvelopeError("invalid_shape")
+    if type(spans) is not list or not 1 <= len(spans) <= MAX_SPANS:
+        raise TraceEnvelopeError("invalid_shape")
+    if type(events) is not list or len(events) > MAX_EVENTS:
+        raise TraceEnvelopeError("invalid_shape")
+    _validate_v3_command(command)
+    if operation is not None:
+        _validate_v3_operation(operation)
+    _validate_v3_provider(provider)
+    for span in spans:
+        _validate_v3_span(span)
+    for event in events:
+        _validate_v2_event(event)
+    _validate_v3_graph(command, operation, spans, events)
+    _validate_v3_provider_graph_agreement(command, operation, provider, spans)
+
+
+def _validate_v3_command(command: dict[str, object]) -> None:
+    _require_exact_keys(command, frozenset(_V3_COMMAND_KEYS))
+    inference_policy = command["inference_policy"]
+    _require_enum(inference_policy, set(_V3_INFERENCE_POLICIES))
+    v2_command = {
+        key: value for key, value in command.items() if key != "inference_policy"
+    }
+    v2_command["observation_schema_version"] = 2
+    _validate_v2_command(v2_command)
+
+
+def _validate_v3_operation(operation: dict[str, object]) -> None:
+    _require_exact_keys(operation, frozenset(_V3_OPERATION_KEYS))
+    v2_operation = dict(operation)
+    v2_operation["observation_schema_version"] = 2
+    _validate_v2_operation(v2_operation)
+
+
+def provider_accounting_from_receipt(
+    receipt: bytes | None,
+) -> tuple[object, ...]:
+    """Map one canonical private receipt to v3 fields, or bounded unavailable."""
+
+    if receipt is None:
+        return _V3_PROVIDER_UNAVAILABLE
+    try:
+        value = _load_canonical_envelope(receipt)
+        _require_exact_keys(value, _V3_RECEIPT_KEYS)
+        _require_exact_integer(value["receipt_schema_version"], 1)
+        if value["unit"] != "provider_client_invocation":
+            raise TraceEnvelopeError("invalid_value")
+        provider = {
+            "status": "complete",
+            "unit": "provider_client_invocation",
+            "content": value["content"],
+            "catalog": value["catalog"],
+        }
+        _validate_v3_provider(provider)
+        return tuple(provider[key] for key in _V3_PROVIDER_KEYS)
+    except BaseException:
+        return _V3_PROVIDER_UNAVAILABLE
+
+
+def _require_bounded_integer(value: object, minimum: int, maximum: int) -> int:
+    if type(value) is not int or not minimum <= value <= maximum:
+        raise TraceEnvelopeError("invalid_value")
+    return value
+
+
+def _validate_v3_content_attempts(attempts: list[object]) -> None:
+    parsed: list[dict[str, object]] = []
+    for attempt_index, value in enumerate(attempts, start=1):
+        if type(value) is not dict:
+            raise TraceEnvelopeError("invalid_shape")
+        _require_exact_keys(value, _V3_CONTENT_ATTEMPT_KEYS)
+        _require_bounded_integer(value["attempt_index"], attempt_index, attempt_index)
+        _require_enum(value["request_form"], {"server_rrf", "client_rrf"})
+        _require_enum(
+            value["trigger"],
+            {"initial", "server_rrf_unsupported", "optional_schema_compatibility"},
+        )
+        _require_enum(value["outcome"], _V3_PROVIDER_OUTCOMES)
+        if value["outcome"] == "error":
+            _require_enum(value["error_category"], _V3_CONTENT_ERROR_CATEGORIES)
+        elif value["error_category"] is not None:
+            raise TraceEnvelopeError("invalid_value")
+        parsed.append(value)
+
+    index = 0
+    round_index = 0
+    while index < len(parsed):
+        if round_index >= 3:
+            raise TraceEnvelopeError("invalid_graph")
+        server = parsed[index]
+        expected_trigger = (
+            "initial" if round_index == 0 else "optional_schema_compatibility"
+        )
+        if (
+            server["request_form"] != "server_rrf"
+            or server["trigger"] != expected_trigger
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+        index += 1
+        if server["outcome"] in {"success", "interrupted"}:
+            if index != len(parsed):
+                raise TraceEnvelopeError("invalid_graph")
+            break
+        if index < len(parsed) and parsed[index]["request_form"] == "client_rrf":
+            client = parsed[index]
+            if (
+                server["error_category"] != "unexpected_error"
+                or client["trigger"] != "server_rrf_unsupported"
+            ):
+                raise TraceEnvelopeError("invalid_graph")
+            index += 1
+            if client["outcome"] in {"success", "interrupted"}:
+                if index != len(parsed):
+                    raise TraceEnvelopeError("invalid_graph")
+                break
+        if index < len(parsed) and parsed[index]["request_form"] != "server_rrf":
+            raise TraceEnvelopeError("invalid_graph")
+        round_index += 1
+
+
+def _validate_v3_content(content: object) -> None:
+    if type(content) is not dict:
+        raise TraceEnvelopeError("invalid_shape")
+    _require_exact_keys(content, _V3_CONTENT_KEYS)
+    logical_count = _require_bounded_integer(
+        content["logical_operation_count"], 0, 3
+    )
+    invocation_count = _require_bounded_integer(content["invocation_count"], 0, 18)
+    operations = content["operations"]
+    if type(operations) is not list or len(operations) != logical_count:
+        raise TraceEnvelopeError("invalid_shape")
+    observed_invocations = 0
+    for route_rank, operation in enumerate(operations, start=1):
+        if type(operation) is not dict:
+            raise TraceEnvelopeError("invalid_shape")
+        _require_exact_keys(operation, _V3_CONTENT_OPERATION_KEYS)
+        _require_bounded_integer(operation["route_rank"], route_rank, route_rank)
+        _require_enum(operation["outcome"], _V3_PROVIDER_OUTCOMES)
+        attempts = operation["attempts"]
+        if type(attempts) is not list or len(attempts) > 6:
+            raise TraceEnvelopeError("invalid_shape")
+        _validate_v3_content_attempts(attempts)
+        observed_invocations += len(attempts)
+        if not attempts:
+            if operation["outcome"] == "success":
+                raise TraceEnvelopeError("invalid_graph")
+            continue
+        final = attempts[-1]
+        assert isinstance(final, dict)
+        if final["outcome"] == "error" and operation["outcome"] != "error":
+            raise TraceEnvelopeError("invalid_graph")
+        if (
+            final["outcome"] == "interrupted"
+            and operation["outcome"] != "interrupted"
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+    if observed_invocations != invocation_count:
+        raise TraceEnvelopeError("invalid_graph")
+
+
+def _v3_outcome_counts(value: object, maximum: int) -> tuple[int, int, int, int]:
+    if type(value) is not dict:
+        raise TraceEnvelopeError("invalid_shape")
+    _require_exact_keys(value, _V3_OUTCOME_COUNT_KEYS)
+    success = _require_bounded_integer(value["success"], 0, maximum)
+    error = _require_bounded_integer(value["error"], 0, 1)
+    interrupted = _require_bounded_integer(value["interrupted"], 0, 1)
+    total = success + error + interrupted
+    if total > maximum:
+        raise TraceEnvelopeError("invalid_value")
+    return success, error, interrupted, total
+
+
+def _validate_v3_catalog(catalog: object) -> None:
+    if type(catalog) is not dict:
+        raise TraceEnvelopeError("invalid_shape")
+    _require_exact_keys(catalog, _V3_CATALOG_KEYS)
+    outcome = catalog["outcome"]
+    if outcome is not None:
+        _require_enum(outcome, _V3_PROVIDER_OUTCOMES)
+    invocation_count = _require_bounded_integer(catalog["invocation_count"], 0, 40_002)
+    namespace = _v3_outcome_counts(catalog["namespace_list_page"], 20_001)
+    metadata = _v3_outcome_counts(catalog["metadata"], 1)
+    card = _v3_outcome_counts(catalog["card_query_page"], 20_000)
+    if invocation_count != namespace[3] + metadata[3] + card[3]:
+        raise TraceEnvelopeError("invalid_graph")
+    terminal_count = namespace[1] + namespace[2] + metadata[1] + metadata[2] + card[1] + card[2]
+    if terminal_count > 1:
+        raise TraceEnvelopeError("invalid_graph")
+    if outcome is None:
+        if invocation_count != 0:
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    expected_terminal = (
+        "error"
+        if namespace[1] or metadata[1] or card[1]
+        else "interrupted"
+        if namespace[2] or metadata[2] or card[2]
+        else None
+    )
+    if expected_terminal is not None and outcome != expected_terminal:
+        raise TraceEnvelopeError("invalid_graph")
+    if outcome == "success":
+        if (
+            terminal_count
+            or metadata[0] != 1
+            or not 2 <= namespace[0] <= 20_000
+            or not 2 <= card[0] <= 20_000
+            or invocation_count > 40_001
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    if metadata[1] or metadata[2]:
+        if not (
+            1 <= namespace[0] <= 10_000
+            and namespace[3] == namespace[0]
+            and metadata[3] == 1
+            and card[3] == 0
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    if card[1] or card[2]:
+        if not (
+            1 <= namespace[0] <= 10_000
+            and namespace[3] == namespace[0]
+            and metadata[0] == 1
+            and metadata[3] == 1
+            and 1 <= card[3] <= 20_000
+            and card[0] == card[3] - 1
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    if namespace[1] or namespace[2]:
+        if metadata[3] == 0 and card[3] == 0:
+            if not (1 <= namespace[3] <= 10_000 and namespace[0] == namespace[3] - 1):
+                raise TraceEnvelopeError("invalid_graph")
+            return
+        if not (
+            metadata[0] == 1
+            and metadata[3] == 1
+            and card[3] == card[0]
+            and 2 <= card[0] <= 20_000
+            and 2 <= namespace[3] <= 20_001
+            and namespace[0] == namespace[3] - 1
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    if namespace[3] != namespace[0] or metadata[3] != metadata[0] or card[3] != card[0]:
+        raise TraceEnvelopeError("invalid_graph")
+    if invocation_count == 0:
+        return
+    if metadata[3] == 0:
+        if card[3] != 0 or not 1 <= namespace[0] <= 10_000:
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    if metadata[0] != 1 or namespace[0] < 1:
+        raise TraceEnvelopeError("invalid_graph")
+    if card[0] == 0:
+        if namespace[0] > 10_000:
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    if namespace[0] > 10_000 and not 2 <= card[0] <= 20_000:
+        raise TraceEnvelopeError("invalid_graph")
+    if invocation_count == 40_002 and not (
+        namespace[0] == 20_001 and metadata[0] == 1 and card[0] == 20_000
+    ):
+        raise TraceEnvelopeError("invalid_graph")
+
+
+def _validate_v3_provider(provider: dict[str, object]) -> None:
+    _require_exact_keys(provider, frozenset(_V3_PROVIDER_KEYS))
+    _require_enum(provider["status"], {"complete", "unavailable"})
+    if provider["unit"] != "provider_client_invocation":
+        raise TraceEnvelopeError("invalid_value")
+    if provider["status"] == "unavailable":
+        if provider["content"] is not None or provider["catalog"] is not None:
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    _validate_v3_content(provider["content"])
+    _validate_v3_catalog(provider["catalog"])
+
+
+def _validate_v3_provider_graph_agreement(
+    command: dict[str, object],
+    operation: dict[str, object] | None,
+    provider: dict[str, object],
+    spans: list[object],
+) -> None:
+    if provider["status"] == "unavailable":
+        return
+    content = provider["content"]
+    catalog = provider["catalog"]
+    assert isinstance(content, dict)
+    assert isinstance(catalog, dict)
+    span_values = [span for span in spans if isinstance(span, dict)]
+    namespaces = [
+        span for span in span_values if span["name"] == NAMESPACE_QUERY_SPAN_NAME
+    ]
+    operations = content["operations"]
+    assert isinstance(operations, list)
+
+    if operation is None:
+        if content["logical_operation_count"] != 0:
+            raise TraceEnvelopeError("invalid_graph")
+    else:
+        final_fanout = operation["final_fanout"]
+        assert type(final_fanout) is int
+        if (
+            content["logical_operation_count"] != final_fanout
+            or len(operations) != len(namespaces)
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+        namespaces_by_rank = {
+            span["attributes"]["buoy.route.rank"]: span  # type: ignore[index]
+            for span in namespaces
+        }
+        for provider_operation in operations:
+            assert isinstance(provider_operation, dict)
+            namespace = namespaces_by_rank.get(provider_operation["route_rank"])
+            if namespace is None:
+                raise TraceEnvelopeError("invalid_graph")
+            if (
+                namespace["status_code"] == "OK"
+                and provider_operation["outcome"] != "success"
+            ):
+                raise TraceEnvelopeError("invalid_graph")
+
+    catalog_spans = [
+        span for span in span_values if span["name"] == V2_ROUTING_CATALOG_SPAN_NAME
+    ]
+    catalog_reached = (
+        catalog["outcome"] is not None or catalog["invocation_count"] != 0
+    )
+    if command["retrieval_mode"] != "automatic":
+        if catalog_reached:
+            raise TraceEnvelopeError("invalid_graph")
+        return
+    if catalog_reached and len(catalog_spans) != 1:
+        raise TraceEnvelopeError("invalid_graph")
+    if not catalog_spans:
+        return
+    catalog_span = catalog_spans[0]
+    if catalog_span["status_code"] == "OK" and catalog["outcome"] != "success":
+        raise TraceEnvelopeError("invalid_graph")
+    if (
+        catalog["outcome"] in {"error", "interrupted"}
+        and catalog_span["status_code"] != "ERROR"
+    ):
+        raise TraceEnvelopeError("invalid_graph")
+
+
+def _validate_v3_span(span: object) -> None:
+    if type(span) is not dict:
+        raise TraceEnvelopeError("invalid_shape")
+    _require_exact_keys(span, _SPAN_KEY_SET)
+    _require_trace_id(span["trace_id"])
+    _require_span_id(span["span_id"])
+    if span["parent_span_id"] is not None:
+        _require_span_id(span["parent_span_id"])
+    _require_enum(span["name"], set(V3_SPAN_NAMES))
+    start = _require_timestamp(span["started_at_unix_us"])
+    end = _require_timestamp(span["ended_at_unix_us"])
+    if end < start:
+        raise TraceEnvelopeError("invalid_value")
+    _require_number(span["duration_ms"], nonnegative=True)
+    _require_duration_agreement(span["duration_ms"], start, end)
+    _require_enum(span["status_code"], {"UNSET", "OK", "ERROR"})
+    attributes = span["attributes"]
+    if type(attributes) is not dict or len(attributes) > MAX_SPAN_ATTRIBUTES:
+        raise TraceEnvelopeError("invalid_shape")
+    allowed = _V3_SPAN_ATTRIBUTE_KEYS[str(span["name"])]
+    if not set(attributes) <= allowed:
+        raise TraceEnvelopeError("invalid_shape")
+    for key, value in attributes.items():
+        _validate_v3_attribute(key, value, span_name=str(span["name"]))
+    if span["name"] == V3_INFERENCE_SPAN_NAME:
+        _validate_v3_inference_span(span)
+        return
+    v2_span = dict(span)
+    v2_attributes = dict(attributes)
+    if span["name"] in {V2_COMMAND_ROOT_SPAN_NAME, V2_PIPELINE_SPAN_NAME}:
+        v2_attributes["buoy.observation.schema_version"] = 2
+    v2_attributes.pop("buoy.inference.policy", None)
+    v2_span["attributes"] = v2_attributes
+    _validate_v2_span(v2_span)
+
+
+def _validate_v3_attribute(key: str, value: object, *, span_name: str) -> None:
+    if key == "buoy.observation.schema_version":
+        _require_exact_integer(value, 3)
+    elif key == "buoy.inference.policy":
+        _require_enum(value, set(_V3_INFERENCE_POLICIES))
+    elif key == "buoy.inference.operation":
+        _require_enum(value, {"encode", "score"})
+    elif key == "buoy.inference.backend":
+        _require_enum(value, {"worker", "in_process"})
+    elif key == "buoy.inference.role":
+        _require_enum(value, {"primary", "fallback"})
+    elif key == "buoy.inference.item_count":
+        if type(value) is not int or not 1 <= value <= 108:
+            raise TraceEnvelopeError("invalid_value")
+    elif key == "buoy.inference.worker_state":
+        _require_enum(value, {"spawned", "reused", "unknown"})
+    elif key == "buoy.inference.outcome":
+        _require_enum(value, {"success", "error"})
+    elif key == "buoy.inference.error_type":
+        _require_enum(value, set(_V3_WORKER_ERROR_TYPES))
+    else:
+        v2_value = 2 if key == "buoy.observation.schema_version" else value
+        _validate_v2_attribute(key, v2_value, span_name=span_name)
+
+
+def _validate_v3_inference_span(span: dict[str, object]) -> None:
+    attributes = span["attributes"]
+    assert isinstance(attributes, dict)
+    if not _V3_INFERENCE_REQUIRED_ATTRIBUTE_KEYS <= set(attributes):
+        raise TraceEnvelopeError("invalid_shape")
+    operation = attributes["buoy.inference.operation"]
+    backend = attributes["buoy.inference.backend"]
+    role = attributes["buoy.inference.role"]
+    item_count = attributes["buoy.inference.item_count"]
+    state = attributes.get("buoy.inference.worker_state")
+    outcome = attributes["buoy.inference.outcome"]
+    error_type = attributes.get("buoy.inference.error_type")
+    if operation == "encode" and isinstance(item_count, int) and item_count > 16:
+        raise TraceEnvelopeError("invalid_value")
+    if backend == "worker":
+        if role != "primary" or state not in {"spawned", "reused", "unknown"}:
+            raise TraceEnvelopeError("invalid_graph")
+        if outcome == "success" and state == "unknown":
+            raise TraceEnvelopeError("invalid_graph")
+    elif state is not None:
+        raise TraceEnvelopeError("invalid_graph")
+    if role == "fallback" and backend != "in_process":
+        raise TraceEnvelopeError("invalid_graph")
+    expected_error = "encoding_failure" if operation == "encode" else "scoring_failure"
+    if outcome == "success":
+        if error_type is not None or span["status_code"] != "OK":
+            raise TraceEnvelopeError("invalid_graph")
+    else:
+        if error_type is None or span["status_code"] != "ERROR":
+            raise TraceEnvelopeError("invalid_graph")
+        if backend == "in_process" and error_type != expected_error:
+            raise TraceEnvelopeError("invalid_graph")
+
+
+def _validate_v3_graph(
+    command: dict[str, object],
+    operation: dict[str, object] | None,
+    spans: list[object],
+    events: list[object],
+) -> None:
+    span_values = [value for value in spans if isinstance(value, dict)]
+    if len(span_values) != len(spans):
+        raise TraceEnvelopeError("invalid_graph")
+    if span_values != sorted(
+        span_values,
+        key=lambda span: (span["started_at_unix_us"], span["span_id"]),
+    ):
+        raise TraceEnvelopeError("invalid_graph")
+    all_ids = {span["span_id"] for span in span_values}
+    if len(all_ids) != len(span_values) or any(
+        span["trace_id"] != command["trace_id"] for span in span_values
+    ):
+        raise TraceEnvelopeError("invalid_graph")
+
+    retained: list[dict[str, object]] = []
+    inference: list[dict[str, object]] = []
+    for value in span_values:
+        if value["name"] == V3_INFERENCE_SPAN_NAME:
+            inference.append(value)
+            continue
+        converted = dict(value)
+        attributes = dict(converted["attributes"])  # type: ignore[arg-type]
+        if converted["name"] in {V2_COMMAND_ROOT_SPAN_NAME, V2_PIPELINE_SPAN_NAME}:
+            attributes["buoy.observation.schema_version"] = 2
+        attributes.pop("buoy.inference.policy", None)
+        converted["attributes"] = attributes
+        retained.append(converted)
+    v2_command = {
+        key: value for key, value in command.items() if key != "inference_policy"
+    }
+    v2_command["observation_schema_version"] = 2
+    v2_operation = None
+    if operation is not None:
+        v2_operation = dict(operation)
+        v2_operation["observation_schema_version"] = 2
+    v2_envelope = {
+        "envelope_schema_version": 2,
+        "observation_schema_version": 2,
+        "command": v2_command,
+        "retrieval_operation": v2_operation,
+        "spans": retained,
+        "events": events,
+    }
+    _validate_v2_envelope_object(v2_envelope)
+
+    by_id = {span["span_id"]: span for span in retained + inference}
+    root = next(
+        span for span in retained if span["name"] == V2_COMMAND_ROOT_SPAN_NAME
+    )
+    v3_root = next(
+        span for span in span_values if span["name"] == V2_COMMAND_ROOT_SPAN_NAME
+    )
+    root_attributes = v3_root["attributes"]
+    if (
+        not isinstance(root_attributes, dict)
+        or root_attributes.get("buoy.inference.policy")
+        != command["inference_policy"]
+    ):
+        raise TraceEnvelopeError("invalid_graph")
+    for span in inference:
+        parent = by_id.get(span["parent_span_id"])
+        if parent is None or parent["name"] == V3_INFERENCE_SPAN_NAME:
+            raise TraceEnvelopeError("invalid_graph")
+        attributes = span["attributes"]
+        assert isinstance(attributes, dict)
+        operation_name = attributes["buoy.inference.operation"]
+        allowed_parents = (
+            {V2_ROUTING_SELECT_SPAN_NAME, QUERY_EMBED_SPAN_NAME}
+            if operation_name == "encode"
+            else {V2_ROUTING_SELECT_SPAN_NAME, RERANK_SPAN_NAME, EVIDENCE_SPAN_NAME}
+        )
+        if parent["name"] not in allowed_parents:
+            raise TraceEnvelopeError("invalid_graph")
+        if not (
+            parent["started_at_unix_us"] <= span["started_at_unix_us"]
+            <= span["ended_at_unix_us"] <= parent["ended_at_unix_us"]
+            and root["started_at_unix_us"] <= span["started_at_unix_us"]
+            <= span["ended_at_unix_us"] <= root["ended_at_unix_us"]
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+
+    policy = command["inference_policy"]
+    if policy != "worker_preferred":
+        for span in inference:
+            attributes = span["attributes"]
+            assert isinstance(attributes, dict)
+            if (
+                attributes["buoy.inference.backend"] != "in_process"
+                or attributes["buoy.inference.role"] != "primary"
+            ):
+                raise TraceEnvelopeError("invalid_graph")
+        return
+
+    worker_error_indexes = [
+        index
+        for index, span in enumerate(inference)
+        if isinstance(span["attributes"], dict)
+        and span["attributes"]["buoy.inference.backend"] == "worker"
+        and span["attributes"]["buoy.inference.outcome"] == "error"
+    ]
+    if len(worker_error_indexes) > 1:
+        raise TraceEnvelopeError("invalid_graph")
+    if not worker_error_indexes:
+        for span in inference:
+            attributes = span["attributes"]
+            assert isinstance(attributes, dict)
+            if (
+                attributes["buoy.inference.backend"] != "worker"
+                or attributes["buoy.inference.role"] != "primary"
+            ):
+                raise TraceEnvelopeError("invalid_graph")
+        return
+
+    failed_index = worker_error_indexes[0]
+    failed = inference[failed_index]
+    failed_attributes = failed["attributes"]
+    assert isinstance(failed_attributes, dict)
+    before = inference[:failed_index]
+    after = inference[failed_index + 1 :]
+    for span in before:
+        attributes = span["attributes"]
+        assert isinstance(attributes, dict)
+        if (
+            attributes["buoy.inference.backend"] != "worker"
+            or attributes["buoy.inference.role"] != "primary"
+            or attributes["buoy.inference.outcome"] != "success"
+        ):
+            raise TraceEnvelopeError("invalid_graph")
+    if not after:
+        if command["outcome"] != "error":
+            raise TraceEnvelopeError("invalid_graph")
+        return
+
+    first_fallback = after[0]
+    fallback_attributes = first_fallback["attributes"]
+    assert isinstance(fallback_attributes, dict)
+    if (
+        fallback_attributes["buoy.inference.backend"] != "in_process"
+        or fallback_attributes["buoy.inference.role"] != "fallback"
+        or failed["ended_at_unix_us"] > first_fallback["started_at_unix_us"]
+        or first_fallback["parent_span_id"] != failed["parent_span_id"]
+        or fallback_attributes["buoy.inference.operation"]
+        != failed_attributes["buoy.inference.operation"]
+        or fallback_attributes["buoy.inference.item_count"]
+        != failed_attributes["buoy.inference.item_count"]
+    ):
+        raise TraceEnvelopeError("invalid_graph")
+    for span in after:
+        attributes = span["attributes"]
+        assert isinstance(attributes, dict)
+        if (
+            attributes["buoy.inference.backend"] != "in_process"
+            or attributes["buoy.inference.role"] != "fallback"
+            or failed["ended_at_unix_us"] > span["started_at_unix_us"]
+        ):
+            raise TraceEnvelopeError("invalid_graph")
 
 
 def _validate_v2_envelope_object(envelope: object) -> None:

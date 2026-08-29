@@ -144,6 +144,8 @@ class MultiNamespaceRetrieverTests(unittest.TestCase):
             RuntimeConfig(namespace="site-two-v1"),
         ]
         namespaces = [object(), object()]
+        reranker = FixedReranker()
+        reranker_loader = lambda: reranker
         with patch.dict(
             os.environ, {"TURBOPUFFER_API_KEY": "test-key"}, clear=False
         ), patch(
@@ -154,10 +156,13 @@ class MultiNamespaceRetrieverTests(unittest.TestCase):
             side_effect=namespaces,
         ):
             retriever = MultiNamespaceRetriever.from_configs(
-                configs, embedder=embedder
+                configs,
+                embedder=embedder,
+                reranker_loader=reranker_loader,
             )
 
         self.assertIs(retriever._embedder, embedder)
+        self.assertIs(retriever._reranker_loader, reranker_loader)
         self.assertEqual(
             [child._embedder for child in retriever._retrievers],
             [embedder, embedder],

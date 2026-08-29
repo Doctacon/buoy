@@ -21,9 +21,11 @@ from typing import Any
 from buoy_search.telemetry.envelope import (
     TraceEnvelopeError,
     CommandTraceRows,
+    CommandTraceRowsV3,
     TraceRows,
     decode_trace_envelope_v1,
     decode_trace_envelope_v2,
+    decode_trace_envelope_v3,
 )
 from buoy_search.telemetry.queue import (
     COUNTER_MAX,
@@ -70,6 +72,7 @@ from buoy_search.telemetry.queue import (
     stat_private_entry_at,
     telemetry_paths,
     telemetry_paths_v2,
+    telemetry_paths_v3,
     terminal_kind_for_snapshot_item,
     write_writer_state,
     writer_state_temporary_present,
@@ -89,11 +92,10 @@ START_LEASE_SECONDS = 30.0
 CLAIM_BATCH_SIZE = 128
 DATABASE_WAL_MAX_BYTES = 16_777_216
 _MIGRATION_SCRATCH_NAMES = frozenset(
-    {
-        "telemetry.duckdb",
-        "telemetry.duckdb.wal",
-        "telemetry-v1-backup.duckdb",
-    }
+    {"telemetry.duckdb", "telemetry.duckdb.wal", "telemetry-v1-backup.duckdb"}
+)
+_MIGRATION_V3_SCRATCH_NAMES = frozenset(
+    {"telemetry.duckdb", "telemetry.duckdb.wal", "telemetry-v2-backup.duckdb"}
 )
 DATABASE_PATH_DISPLAY = "~/.buoy/telemetry/telemetry.duckdb"
 
@@ -126,6 +128,35 @@ class _ReceiptProofDeferred(RuntimeError):
     """A terminal receipt remains authoritative but cannot yet be proven."""
 
 
+def _combine_queue_snapshots(snapshots: tuple[QueueSnapshot, ...]) -> QueueSnapshot:
+    return QueueSnapshot(
+        present=any(item.present for item in snapshots),
+        ready=sum(item.ready for item in snapshots),
+        claimed=sum(item.claimed for item in snapshots),
+        temporary=sum(item.temporary for item in snapshots),
+        receipts=sum(item.receipts for item in snapshots),
+        pending_bytes=sum(item.pending_bytes for item in snapshots),
+        temporary_bytes=sum(item.temporary_bytes for item in snapshots),
+        receipt_bytes=sum(item.receipt_bytes for item in snapshots),
+        oldest_pending_mtime_ns=min(
+            (item.oldest_pending_mtime_ns for item in snapshots if item.oldest_pending_mtime_ns is not None),
+            default=None,
+        ),
+        capacity_full=(
+            sum(item.ready + item.claimed for item in snapshots) >= PUBLISHED_MAX_ENTRIES
+            or sum(item.pending_bytes for item in snapshots) >= PUBLISHED_MAX_BYTES
+            or sum(item.temporary for item in snapshots) >= TEMP_MAX_ENTRIES
+            or sum(item.temporary_bytes for item in snapshots) >= TEMP_MAX_BYTES
+        ),
+        scan_incomplete=any(item.scan_incomplete for item in snapshots),
+        unsafe=any(item.unsafe for item in snapshots),
+        unreadable=any(item.unreadable for item in snapshots),
+        ready_names=tuple(name for item in snapshots for name in item.ready_names),
+        claimed_names=tuple(name for item in snapshots for name in item.claimed_names),
+        receipt_names=tuple(name for item in snapshots for name in item.receipt_names),
+    )
+
+
 def telemetry_status(
     *,
     paths: TelemetryPaths | None = None,
@@ -136,6 +167,7 @@ def telemetry_status(
 
     selected = telemetry_paths((paths or telemetry_paths()).directory)
     selected_v2 = telemetry_paths_v2(selected.directory)
+    selected_v3 = telemetry_paths_v3(selected.directory)
     source = os.environ if environment is None else environment
     now_ms = _time_unix_ms() if now_unix_ms is None else now_unix_ms
     requested = source.get("BUOY_TELEMETRY", "").strip().lower() == "local"
@@ -155,45 +187,8 @@ def telemetry_status(
 
     queue_v1 = scan_queue_read_only(selected)
     queue_v2 = scan_queue_read_only(selected_v2)
-    queue = QueueSnapshot(
-        present=queue_v1.present or queue_v2.present,
-        ready=queue_v1.ready + queue_v2.ready,
-        claimed=queue_v1.claimed + queue_v2.claimed,
-        temporary=queue_v1.temporary + queue_v2.temporary,
-        receipts=queue_v1.receipts + queue_v2.receipts,
-        pending_bytes=queue_v1.pending_bytes + queue_v2.pending_bytes,
-        temporary_bytes=queue_v1.temporary_bytes + queue_v2.temporary_bytes,
-        receipt_bytes=queue_v1.receipt_bytes + queue_v2.receipt_bytes,
-        oldest_pending_mtime_ns=min(
-            (
-                value
-                for value in (
-                    queue_v1.oldest_pending_mtime_ns,
-                    queue_v2.oldest_pending_mtime_ns,
-                )
-                if value is not None
-            ),
-            default=None,
-        ),
-        capacity_full=(
-            queue_v1.ready
-            + queue_v1.claimed
-            + queue_v2.ready
-            + queue_v2.claimed
-            >= PUBLISHED_MAX_ENTRIES
-            or queue_v1.pending_bytes + queue_v2.pending_bytes
-            >= PUBLISHED_MAX_BYTES
-            or queue_v1.temporary + queue_v2.temporary >= TEMP_MAX_ENTRIES
-            or queue_v1.temporary_bytes + queue_v2.temporary_bytes
-            >= TEMP_MAX_BYTES
-        ),
-        scan_incomplete=queue_v1.scan_incomplete or queue_v2.scan_incomplete,
-        unsafe=queue_v1.unsafe or queue_v2.unsafe,
-        unreadable=queue_v1.unreadable or queue_v2.unreadable,
-        ready_names=queue_v1.ready_names + queue_v2.ready_names,
-        claimed_names=queue_v1.claimed_names + queue_v2.claimed_names,
-        receipt_names=queue_v1.receipt_names + queue_v2.receipt_names,
-    )
+    queue_v3 = scan_queue_read_only(selected_v3)
+    queue = _combine_queue_snapshots((queue_v1, queue_v2, queue_v3))
     state: WriterState | None = None
     state_invalid = False
     state_path_blocked = False
@@ -225,10 +220,16 @@ def telemetry_status(
         producer_invalid = True
 
     store = _inspect_store(selected, state)
-    if store.state == "compatible" and store.schema_version == 1:
-        store = replace(store, state="upgrade_required")
     pending = queue.ready + queue.claimed
     v2_pending = queue_v2.ready + queue_v2.claimed
+    v3_pending = queue_v3.ready + queue_v3.claimed
+    if store.state == "compatible" and store.schema_version in {1, 2}:
+        store = replace(store, state="upgrade_required")
+    unsupported_pending = (
+        v3_pending if store.schema_version == 2
+        else v2_pending + v3_pending if store.schema_version == 1
+        else 0
+    )
     heartbeat_age = (
         max(0, now_ms - state.heartbeat_unix_ms) if state is not None else None
     )
@@ -299,6 +300,7 @@ def telemetry_status(
         for versioned_queue, versioned_paths in (
             (queue_v1, selected),
             (queue_v2, selected_v2),
+            (queue_v3, selected_v3),
         ):
             for receipt_name in versioned_queue.receipt_names:
                 if receipt_name in accounted:
@@ -363,8 +365,8 @@ def telemetry_status(
             producer_path_blocked,
             store.state in {"incompatible", "unreadable", "unsafe"},
             writer_state == "blocked"
-            and not (store.state == "upgrade_required" and not v2_pending),
-            store.state == "upgrade_required" and v2_pending > 0,
+            and not (store.state == "upgrade_required" and not unsupported_pending),
+            store.state == "upgrade_required" and unsupported_pending > 0,
             receipt_read_failed,
         )
     )
@@ -397,7 +399,7 @@ def telemetry_status(
         overall = "disabled"
 
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "requested": requested,
         "effective": effective,
         "enablement_reason": enablement_reason,
@@ -424,6 +426,8 @@ def telemetry_status(
             "v1_claimed": queue_v1.claimed,
             "v2_ready": queue_v2.ready,
             "v2_claimed": queue_v2.claimed,
+            "v3_ready": queue_v3.ready,
+            "v3_claimed": queue_v3.claimed,
         },
         "migration_backup_present": _migration_backup_present(selected),
         "writer": {
@@ -467,6 +471,7 @@ def telemetry_flush(
     started_ns = time.monotonic_ns()
     selected = telemetry_paths((paths or telemetry_paths()).directory)
     selected_v2 = telemetry_paths_v2(selected.directory)
+    selected_v3 = telemetry_paths_v3(selected.directory)
     if not posix_writer_capability().supported:
         return _flush_result(
             "blocked", 0, {}, 0, _elapsed_ms(started_ns)
@@ -474,11 +479,12 @@ def telemetry_flush(
     try:
         snapshot_v1 = snapshot_pending(selected)
         snapshot_v2 = snapshot_pending(selected_v2)
+        snapshot_v3 = snapshot_pending(selected_v3)
     except (TelemetryQueueError, OSError, ValueError):
         return _flush_result(
             "blocked", 0, {}, 0, _elapsed_ms(started_ns)
         )
-    snapshot_items = snapshot_v1.items + snapshot_v2.items
+    snapshot_items = snapshot_v1.items + snapshot_v2.items + snapshot_v3.items
     total = len(snapshot_items)
     if _flush_snapshot_blocked(selected, snapshot_items):
         return _flush_result(
@@ -496,7 +502,9 @@ def telemetry_flush(
             if item.source_name in terminal:
                 continue
             item_paths = (
-                selected_v2 if item.source_name.startswith("v2-") else selected
+                selected_v3 if item.source_name.startswith("v3-")
+                else selected_v2 if item.source_name.startswith("v2-")
+                else selected
             )
             try:
                 kind = terminal_kind_for_snapshot_item(item_paths, item)
@@ -551,7 +559,8 @@ def _flush_snapshot_blocked(
     items: tuple[PendingItem, ...],
 ) -> bool:
     v2_in_snapshot = any(item.source_name.startswith("v2-") for item in items)
-    for queue_paths in (paths, telemetry_paths_v2(paths.directory)):
+    v3_in_snapshot = any(item.source_name.startswith("v3-") for item in items)
+    for queue_paths in (paths, telemetry_paths_v2(paths.directory), telemetry_paths_v3(paths.directory)):
         queue = scan_queue_read_only(queue_paths)
         if queue.unsafe or queue.unreadable or queue.scan_incomplete:
             return True
@@ -562,12 +571,12 @@ def _flush_snapshot_blocked(
     store = _inspect_store(paths, state)
     if store.state in {"incompatible", "unreadable", "unsafe"}:
         return True
-    if v2_in_snapshot and (
-        store.state == "upgrade_required" or store.schema_version == 1
+    if (v2_in_snapshot and store.schema_version == 1) or (
+        v3_in_snapshot and store.schema_version in {1, 2}
     ):
         return True
     if state is not None and state.phase == "blocked":
-        return state.reason != "upgrade_required" or v2_in_snapshot
+        return state.reason != "upgrade_required" or v2_in_snapshot or v3_in_snapshot
     return False
 
 
@@ -595,13 +604,14 @@ def telemetry_migrate(
     *,
     paths: TelemetryPaths | None = None,
 ) -> dict[str, object]:
-    """Explicitly back up and migrate the canonical exact version-1 store."""
+    """Explicitly migrate the canonical store by one supported version."""
 
     started_ns = time.monotonic_ns()
     selected = telemetry_paths((paths or telemetry_paths()).directory)
     selected_v2 = telemetry_paths_v2(selected.directory)
+    selected_v3 = telemetry_paths_v3(selected.directory)
     base = {
-        "schema_version": 1,
+        "schema_version": 3,
         "database_path": DATABASE_PATH_DISPLAY,
         "source_schema_version": None,
         "target_schema_version": None,
@@ -618,11 +628,12 @@ def telemetry_migrate(
     try:
         queue_v1 = scan_queue_read_only(selected)
         queue_v2 = scan_queue_read_only(selected_v2)
+        queue_v3 = scan_queue_read_only(selected_v3)
     except (TelemetryQueueError, OSError, ValueError):
         return _finish_migration_result(base, started_ns)
     if any(
         queue.unsafe or queue.unreadable or queue.scan_incomplete
-        for queue in (queue_v1, queue_v2)
+        for queue in (queue_v1, queue_v2, queue_v3)
     ):
         return _finish_migration_result(base, started_ns)
     base["pending_v2"] = queue_v2.ready + queue_v2.claimed
@@ -651,11 +662,12 @@ def telemetry_migrate(
         try:
             queue_v1 = scan_queue_read_only(selected)
             queue_v2 = scan_queue_read_only(selected_v2)
+            queue_v3 = scan_queue_read_only(selected_v3)
         except (TelemetryQueueError, OSError, ValueError):
             return _finish_migration_result(base, started_ns)
         if any(
             queue.unsafe or queue.unreadable or queue.scan_incomplete
-            for queue in (queue_v1, queue_v2)
+            for queue in (queue_v1, queue_v2, queue_v3)
         ):
             return _finish_migration_result(base, started_ns)
         base["pending_v2"] = queue_v2.ready + queue_v2.claimed
@@ -678,67 +690,68 @@ def telemetry_migrate(
         base["source_schema_version"] = version
         base["target_schema_version"] = version
         base["backup_present"] = _migration_backup_present(selected)
-        if version == 2:
-            runtime = _WriterRuntime(
-                selected,
-                lambda: None,
-                enforce_drain_deadline=False,
-            )
+        if version == 3:
+            runtime = _WriterRuntime(selected, lambda: None, enforce_drain_deadline=False)
             try:
-                reconciled = store.reconcile_already_current_store(selected)
+                reconciled = store.reconcile_already_current_store_v3(selected_v3)
             except store.StoreBusyError:
                 base["outcome"] = "busy"
                 return _finish_migration_result(base, started_ns)
-            except (
-                store.StoreIncompatibleError,
-                store.StoreUnsafeError,
-                store.StoreUnreadableError,
-                store.StoreWriteError,
-            ):
+            except (store.StoreIncompatibleError, store.StoreUnsafeError, store.StoreUnreadableError, store.StoreWriteError):
                 return _finish_migration_result(base, started_ns)
             base["backup_present"] = reconciled.backup_present
-            try:
-                current_state = read_writer_state(selected)
-            except (UnsafePathError, UnreadablePathError):
+            if not _publish_exact_store_state(runtime, reconciled.snapshot, durability_degraded=reconciled.durability_degraded):
                 return _finish_migration_result(base, started_ns)
-            except (TelemetryQueueError, OSError, ValueError):
-                current_state = None
-            state_matches = _writer_state_matches_snapshot(
-                current_state, reconciled.snapshot
-            )
+            return _finish_successful_migration(base, selected_v3, outcome="already_current", started_ns=started_ns)
+        if version == 2:
+            runtime = _WriterRuntime(selected, lambda: None, enforce_drain_deadline=False)
             try:
-                state_temporary_present = writer_state_temporary_present(
-                    selected
+                # A retry after final v2-backup publication must first finish
+                # publishing the already-frozen v3 snapshot. Later v1/v2 work
+                # stays queued until that publication is complete.
+                backup_published = store.migration_backup_matches_v2_source(
+                    selected_v3
                 )
-            except (TelemetryQueueError, OSError, ValueError):
+                store.reconcile_already_current_store(selected)
+                runtime._persist_state(force=True)
+                for queue_paths in (() if backup_published else (selected, selected_v2)):
+                    queue_before = scan_queue_read_only(queue_paths)
+                    if queue_before.unsafe or queue_before.unreadable or queue_before.scan_incomplete:
+                        return _finish_migration_result(base, started_ns)
+                    if queue_before.present:
+                        runtime._recover_receipts_and_claims(queue_paths)
+                    pending = snapshot_pending(queue_paths)
+                    names_all = tuple(item.source_name for item in pending.items)
+                    for offset in range(0, len(names_all), CLAIM_BATCH_SIZE):
+                        names = claim_ready_names(queue_paths, names_all[offset:offset + CLAIM_BATCH_SIZE])
+                        for source_name in names:
+                            if not runtime._process_claim(source_name, queue_paths):
+                                return _finish_migration_result(base, started_ns)
+                    after = scan_queue_read_only(queue_paths)
+                    if (
+                        runtime.receipt_failure
+                        or after.unsafe
+                        or after.unreadable
+                        or after.scan_incomplete
+                        or after.claimed
+                    ):
+                        return _finish_migration_result(base, started_ns)
+                migrated = store.migrate_store_v2_to_v3(selected_v3)
+                reconciled = store.reconcile_already_current_store_v3(selected_v3)
+            except store.StoreBusyError:
+                base["outcome"] = "busy"
                 return _finish_migration_result(base, started_ns)
-            needs_state_publication = (
-                reconciled.scratch_recovered
-                or not state_matches
-                or state_temporary_present
-            )
-            if needs_state_publication:
-                if not _publish_exact_store_state(
-                    runtime,
-                    reconciled.snapshot,
-                    durability_degraded=reconciled.durability_degraded,
-                ):
-                    return _finish_migration_result(base, started_ns)
-            else:
-                try:
-                    state_directory_durable = fsync_writer_state_directory(
-                        selected
-                    )
-                except (TelemetryQueueError, OSError, ValueError):
-                    return _finish_migration_result(base, started_ns)
-                if not state_directory_durable:
-                    return _finish_migration_result(base, started_ns)
-            return _finish_successful_migration(
-                base,
-                selected_v2,
-                outcome="already_current",
-                started_ns=started_ns,
-            )
+            except (store.StoreIncompatibleError, store.StoreUnsafeError, store.StoreUnreadableError, store.StoreWriteError, TelemetryQueueError, OSError, ValueError):
+                return _finish_migration_result(base, started_ns)
+            base.update({
+                "source_schema_version": 2, "target_schema_version": 3, "outcome": "migrated",
+                "migrated_v1_runs": migrated.runs, "migrated_v1_spans": migrated.spans,
+                "migrated_v1_events": migrated.events, "backup_present": migrated.backup_present,
+            })
+            if not _publish_exact_store_state(runtime, reconciled.snapshot, durability_degraded=(migrated.durability_degraded or reconciled.durability_degraded)):
+                base["outcome"] = "blocked"
+                return _finish_migration_result(base, started_ns)
+            return _finish_successful_migration(base, selected_v3, outcome="migrated", started_ns=started_ns)
         if version != 1:
             return _finish_migration_result(base, started_ns)
         try:
@@ -852,22 +865,30 @@ def telemetry_migrate(
 
 def _finish_successful_migration(
     base: dict[str, object],
-    paths_v2: TelemetryPaths,
+    next_version_paths: TelemetryPaths,
     *,
     outcome: str,
     started_ns: int,
 ) -> dict[str, object]:
+    """Finish with the next-version queue snapshot under the fixed public key.
+
+    The compatibility key ``pending_v2`` reports v2 work after v1→v2 and v3
+    work after v2→v3. The public migration output schema remains unchanged.
+    """
+
     try:
-        with queue_lock(paths_v2):
-            final_v2 = scan_queue_read_only(paths_v2)
+        with queue_lock(next_version_paths):
+            next_version_queue = scan_queue_read_only(next_version_paths)
             if (
-                final_v2.unsafe
-                or final_v2.unreadable
-                or final_v2.scan_incomplete
+                next_version_queue.unsafe
+                or next_version_queue.unreadable
+                or next_version_queue.scan_incomplete
             ):
                 base["outcome"] = "blocked"
                 return _finish_migration_result(base, started_ns)
-            base["pending_v2"] = final_v2.ready + final_v2.claimed
+            base["pending_v2"] = (
+                next_version_queue.ready + next_version_queue.claimed
+            )
     except (TelemetryQueueError, OSError, ValueError):
         base["outcome"] = "blocked"
         return _finish_migration_result(base, started_ns)
@@ -880,7 +901,7 @@ def _writer_state_matches_snapshot(state: WriterState | None, snapshot: Any) -> 
         state.phase == "stopped"
         and state.reason is None
         and state.store_state == "compatible"
-        and state.store_schema_version == 2
+        and state.store_schema_version == snapshot.schema_version
         and state.persisted_runs_snapshot == snapshot.persisted_runs_snapshot
         and state.database_device == snapshot.database_device
         and state.database_inode == snapshot.database_inode
@@ -900,7 +921,7 @@ def _publish_exact_store_state(
         reason=None,
         heartbeat_unix_ms=_time_unix_ms(),
         store_state="compatible",
-        store_schema_version=2,
+        store_schema_version=snapshot.schema_version,
         persisted_runs_snapshot=snapshot.persisted_runs_snapshot,
         database_device=snapshot.database_device,
         database_inode=snapshot.database_inode,
@@ -997,7 +1018,8 @@ class _WriterRuntime:
     ) -> None:
         self.paths = telemetry_paths(paths.directory)
         self.paths_v2 = telemetry_paths_v2(paths.directory)
-        self.queue_paths = (self.paths, self.paths_v2)
+        self.paths_v3 = telemetry_paths_v3(paths.directory)
+        self.queue_paths = (self.paths, self.paths_v2, self.paths_v3)
         self.release_lifetime = release_lifetime
         self.elected_ns = time.monotonic_ns()
         self.enforce_drain_deadline = enforce_drain_deadline
@@ -1234,7 +1256,7 @@ class _WriterRuntime:
         started_ns = time.monotonic_ns()
         while True:
             try:
-                result = store.inspect_trace_terminal(paths, rows)
+                result = store.inspect_trace_terminal(self.paths_v3, rows)
                 break
             except store.StoreTerminalAbsentError:
                 return False
@@ -1356,21 +1378,26 @@ class _WriterRuntime:
 
     def _append_with_retry(
         self,
-        rows: TraceRows | CommandTraceRows,
+        rows: TraceRows | CommandTraceRows | CommandTraceRowsV3,
         *,
         paths: TelemetryPaths | None = None,
     ) -> Any | None:
-        selected_paths = paths or self.paths
+        del paths
+        selected_paths = self.paths_v3
         store = _load_store_module()
         started_ns = time.monotonic_ns()
         while True:
             try:
                 return store.append_trace(selected_paths, rows)
             except getattr(store, "StoreUpgradeRequiredError", ()):
+                try:
+                    current_version = store.inspect_store_schema_version(selected_paths)
+                except Exception:
+                    current_version = None
                 self.state = replace(
                     self.state,
                     store_state="upgrade_required",
-                    store_schema_version=1,
+                    store_schema_version=current_version,
                 )
                 self._block("upgrade_required", "upgrade_required")
                 return None
@@ -1600,15 +1627,14 @@ def _inspect_store(
     try:
         scratch = _inspect_initialization_scratch(root_fd)
         migration_scratch_present = _inspect_migration_scratch(root_fd)
-        try:
-            backup = stat_private_entry_at(
-                root_fd,
-                "telemetry-v1-backup.duckdb",
-                kind="file",
-                allowed_nlinks=(1, 2),
-            )
-        except FileNotFoundError:
-            backup = None
+        backups: list[os.stat_result] = []
+        for backup_name in ("telemetry-v1-backup.duckdb", "telemetry-v2-backup.duckdb"):
+            try:
+                backups.append(stat_private_entry_at(
+                    root_fd, backup_name, kind="file", allowed_nlinks=(1, 2)
+                ))
+            except FileNotFoundError:
+                continue
         try:
             database = stat_private_entry_at(
                 root_fd,
@@ -1633,14 +1659,14 @@ def _inspect_store(
         return _StoreInspection("unreadable", None, None, None, None)
     finally:
         os.close(root_fd)
-    if backup is not None and backup.st_nlink == 2 and not migration_scratch_present:
+    if any(backup.st_nlink == 2 for backup in backups) and not migration_scratch_present:
         return _StoreInspection("unsafe", None, None, None, None)
     if database is None:
         if scratch.database is not None and scratch.database.st_nlink != 1:
             return _StoreInspection("unsafe", None, None, None, None)
         if (
             scratch.present
-            or backup is not None
+            or backups
             or migration_scratch_present
         ) and wal is None:
             return _StoreInspection(
@@ -1762,15 +1788,13 @@ def _migration_backup_present(paths: TelemetryPaths) -> bool:
     except (FileNotFoundError, UnsafePathError, UnreadablePathError, OSError):
         return False
     try:
-        try:
-            stat_private_entry_at(
-                root_fd,
-                "telemetry-v1-backup.duckdb",
-                kind="file",
-            )
-        except FileNotFoundError:
-            return False
-        return True
+        for name in ("telemetry-v2-backup.duckdb", "telemetry-v1-backup.duckdb"):
+            try:
+                stat_private_entry_at(root_fd, name, kind="file")
+            except FileNotFoundError:
+                continue
+            return True
+        return False
     except (UnsafePathError, UnreadablePathError, OSError):
         return False
     finally:
@@ -1778,46 +1802,39 @@ def _migration_backup_present(paths: TelemetryPaths) -> bool:
 
 
 def _inspect_migration_scratch(root_fd: int) -> bool:
-    try:
-        scratch_fd = open_private_directory_at(
-            root_fd,
-            "database-migrate-v2",
-            create=False,
-            repair_mode=False,
-        )
-    except FileNotFoundError:
-        return False
-    try:
-        names = scan_fixed_private_inventory(
-            scratch_fd,
-            allowed_names=_MIGRATION_SCRATCH_NAMES,
-        )
-        for name in names:
-            observed = stat_private_entry_at(
-                scratch_fd,
-                name,
-                kind="file",
-                allowed_nlinks=(1, 2)
-                if name == "telemetry-v1-backup.duckdb"
-                else (1,),
+    present = False
+    for directory_name, allowed, backup_name in (
+        ("database-migrate-v2", _MIGRATION_SCRATCH_NAMES, "telemetry-v1-backup.duckdb"),
+        ("database-migrate-v3", _MIGRATION_V3_SCRATCH_NAMES, "telemetry-v2-backup.duckdb"),
+    ):
+        try:
+            scratch_fd = open_private_directory_at(
+                root_fd, directory_name, create=False, repair_mode=False
             )
-            if name == "telemetry-v1-backup.duckdb" and observed.st_nlink == 2:
-                final = stat_private_entry_at(
-                    root_fd,
+        except FileNotFoundError:
+            continue
+        present = True
+        try:
+            names = scan_fixed_private_inventory(scratch_fd, allowed_names=allowed)
+            for name in names:
+                observed = stat_private_entry_at(
+                    scratch_fd,
                     name,
                     kind="file",
-                    allowed_nlinks=(2,),
+                    max_bytes=(
+                        DATABASE_WAL_MAX_BYTES
+                        if name == "telemetry.duckdb.wal"
+                        else None
+                    ),
+                    allowed_nlinks=(1, 2) if name == backup_name else (1,),
                 )
-                if (observed.st_dev, observed.st_ino) != (
-                    final.st_dev,
-                    final.st_ino,
-                ):
-                    raise UnsafePathError(
-                        "telemetry migration backup publication is unsafe"
-                    )
-        return True
-    finally:
-        os.close(scratch_fd)
+                if name == backup_name and observed.st_nlink == 2:
+                    final = stat_private_entry_at(root_fd, name, kind="file", allowed_nlinks=(2,))
+                    if (observed.st_dev, observed.st_ino) != (final.st_dev, final.st_ino):
+                        raise UnsafePathError("telemetry migration backup publication is unsafe")
+        finally:
+            os.close(scratch_fd)
+    return present
 
 
 def _safe_database_metadata(paths: TelemetryPaths) -> os.stat_result | None:
@@ -1857,7 +1874,7 @@ def _flush_result(
         for kind in ("committed", "replayed", "rejected", "conflict")
     }
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "outcome": outcome,
         "snapshot": snapshot,
         "committed": counts["committed"],
@@ -1900,6 +1917,8 @@ def _status_text(value: Mapping[str, object]) -> str:
             f"v1_claimed={queue['v1_claimed']} "
             f"v2_ready={queue['v2_ready']} "
             f"v2_claimed={queue['v2_claimed']} "
+            f"v3_ready={queue['v3_ready']} "
+            f"v3_claimed={queue['v3_claimed']} "
             f"migration_backup_present="
             f"{_text(value['migration_backup_present'])}",
             "Writer: "
@@ -1975,7 +1994,7 @@ def _text(value: object) -> str:
 
 def _source_name_for_receipt_name(receipt_name: str) -> str:
     if not (
-        receipt_name[:3] in {"r1-", "r2-"}
+        receipt_name[:3] in {"r1-", "r2-", "r3-"}
         and receipt_name.endswith(".json")
         and len(receipt_name) == 40
     ):
@@ -1986,11 +2005,13 @@ def _source_name_for_receipt_name(receipt_name: str) -> str:
 def _decode_envelope(
     version: int,
     payload: bytes,
-) -> TraceRows | CommandTraceRows:
+) -> TraceRows | CommandTraceRows | CommandTraceRowsV3:
     if version == 1:
         return decode_trace_envelope_v1(payload)
     if version == 2:
         return decode_trace_envelope_v2(payload)
+    if version == 3:
+        return decode_trace_envelope_v3(payload)
     raise TraceEnvelopeError("unsupported_envelope_version")
 
 

@@ -1,9 +1,4 @@
-"""Dormant provider-free prototype for reusing one local embedding model.
-
-Nothing imports or activates this module from Buoy's CLI or retrieval paths.  It
-is intentionally an internal experiment: callers must invoke ``encode``
-directly, and every failure is visible instead of falling back in-process.
-"""
+"""Private local worker for exact retrieve embedding and reranker inference."""
 
 from __future__ import annotations
 
@@ -20,7 +15,7 @@ import struct
 import subprocess
 import sys
 import time
-from typing import Callable, Iterator, Mapping, Sequence
+from typing import Callable, Iterator, Mapping, Sequence, TypeVar
 import warnings
 
 try:  # POSIX-only prototype.
@@ -37,29 +32,51 @@ from buoy_search.catalog.local import (
 )
 from buoy_search.local_paths import default_buoy_home, normalized_absolute
 from buoy_search.model_progress import suppress_model_progress_bars
+from buoy_search.retrieval.cross_encoder import (
+    CROSS_ENCODER_BATCH_SIZE,
+    CROSS_ENCODER_MAX_LENGTH,
+    CROSS_ENCODER_MODEL,
+    CROSS_ENCODER_REVISION,
+    load_cross_encoder_reranker,
+)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MODEL = ROUTING_MODEL
 REVISION = ROUTING_MODEL_REVISION
 PRECISION = ROUTING_PRECISION
 DIMENSIONS = ROUTING_DIMENSIONS
+RERANKER_MODEL = CROSS_ENCODER_MODEL
+RERANKER_REVISION = CROSS_ENCODER_REVISION
+RERANKER_DEVICE = "cpu"
+RERANKER_MAX_LENGTH = CROSS_ENCODER_MAX_LENGTH
+RERANKER_BATCH_SIZE = CROSS_ENCODER_BATCH_SIZE
+RERANKER_LOCAL_FILES_ONLY = True
+RERANKER_USE_SAFETENSORS = True
+RERANKER_TRUST_REMOTE_CODE = False
 IDLE_EXIT_SECONDS = 300.0
 STARTUP_TIMEOUT_SECONDS = 120.0
 REQUEST_TIMEOUT_SECONDS = 120.0
 LOCK_POLL_SECONDS = 0.01
-MAX_FRAME_BYTES = 1_048_576
+MAX_FRAME_BYTES = 8_388_608
 MAX_TEXTS = 16
+MAX_SCORE_PASSAGES = 108
 MAX_TEXT_BYTES = 65_536
 MAX_SOCKET_PATH_BYTES = 100
 _DIRECTORY_MODE = 0o700
 _FILE_MODE = 0o600
 _SOCKET_MODE = 0o600
 
-_REQUEST_FIELDS = frozenset(
+_ENCODE_REQUEST_FIELDS = frozenset(
     {"schema_version", "operation", "model", "revision", "precision", "texts"}
 )
-_SUCCESS_FIELDS = frozenset(
+_SCORE_REQUEST_FIELDS = frozenset(
+    {"schema_version", "operation", "model", "revision", "query", "passages"}
+)
+_ENCODE_SUCCESS_FIELDS = frozenset(
     {"schema_version", "outcome", "dimensions", "vectors"}
+)
+_SCORE_SUCCESS_FIELDS = frozenset(
+    {"schema_version", "outcome", "model", "revision", "scores"}
 )
 _ERROR_FIELDS = frozenset({"schema_version", "outcome", "error_type"})
 _READY_FIELDS = frozenset(
@@ -73,6 +90,14 @@ _READY_FIELDS = frozenset(
         "package_version",
         "python_version",
         "implementation_id",
+        "reranker_model",
+        "reranker_revision",
+        "reranker_device",
+        "reranker_max_length",
+        "reranker_batch_size",
+        "reranker_local_files_only",
+        "reranker_use_safetensors",
+        "reranker_trust_remote_code",
     }
 )
 _STATE_FIELDS = frozenset(
@@ -86,6 +111,14 @@ _STATE_FIELDS = frozenset(
         "package_version",
         "python_version",
         "implementation_id",
+        "reranker_model",
+        "reranker_revision",
+        "reranker_device",
+        "reranker_max_length",
+        "reranker_batch_size",
+        "reranker_local_files_only",
+        "reranker_use_safetensors",
+        "reranker_trust_remote_code",
         "pid",
         "socket_device",
         "socket_inode",
@@ -98,6 +131,7 @@ _ERROR_TYPES = frozenset(
         "incompatible_worker",
         "model_unavailable",
         "encoding_failure",
+        "scoring_failure",
         "busy_timeout",
         "internal_worker_failure",
     }
@@ -110,7 +144,7 @@ def _implementation_id() -> str:
     try:
         payload = Path(__file__).read_bytes()
     except OSError:
-        payload = b"buoy-dormant-embedding-worker-v1"
+        payload = b"buoy-retrieve-inference-worker-v2"
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -143,9 +177,13 @@ class _TruncatedFrame(_ProtocolError):
     """A peer closed a length-prefixed frame before it was complete."""
 
 
+class _RerankerUnavailable(Exception):
+    """The exact lazy reranker could not be constructed."""
+
+
 @dataclass(frozen=True)
 class WorkerPaths:
-    """Fixed private paths for one exact prototype identity."""
+    """Fixed private paths for one exact worker identity."""
 
     buoy_home: Path
     inference_directory: Path
@@ -154,6 +192,20 @@ class WorkerPaths:
     ready_path: Path
     start_lock_path: Path
     lifetime_lock_path: Path
+
+
+@dataclass(frozen=True)
+class _EncodeRequest:
+    texts: list[str]
+
+
+@dataclass(frozen=True)
+class _ScoreRequest:
+    query: str
+    passages: list[str]
+
+
+_Request = _EncodeRequest | _ScoreRequest
 
 
 def worker_paths(buoy_home: Path | None = None) -> WorkerPaths:
@@ -170,11 +222,16 @@ def worker_paths(buoy_home: Path | None = None) -> WorkerPaths:
             "model": MODEL,
             "revision": REVISION,
             "precision": PRECISION,
+            "reranker_model": RERANKER_MODEL,
+            "reranker_revision": RERANKER_REVISION,
+            "reranker_device": RERANKER_DEVICE,
+            "reranker_max_length": RERANKER_MAX_LENGTH,
+            "reranker_batch_size": RERANKER_BATCH_SIZE,
         }
     )
     identity = hashlib.sha256(identity_payload).hexdigest()[:16]
     inference = root / "inference"
-    leaf = inference / f"v1-{identity}"
+    leaf = inference / f"v{SCHEMA_VERSION}-{identity}"
     return WorkerPaths(
         buoy_home=root,
         inference_directory=inference,
@@ -429,6 +486,14 @@ def _identity_fields() -> dict[str, object]:
         "package_version": __version__,
         "python_version": PYTHON_VERSION,
         "implementation_id": IMPLEMENTATION_ID,
+        "reranker_model": RERANKER_MODEL,
+        "reranker_revision": RERANKER_REVISION,
+        "reranker_device": RERANKER_DEVICE,
+        "reranker_max_length": RERANKER_MAX_LENGTH,
+        "reranker_batch_size": RERANKER_BATCH_SIZE,
+        "reranker_local_files_only": RERANKER_LOCAL_FILES_ONLY,
+        "reranker_use_safetensors": RERANKER_USE_SAFETENSORS,
+        "reranker_trust_remote_code": RERANKER_TRUST_REMOTE_CODE,
     }
 
 
@@ -441,6 +506,15 @@ def _validate_ready(value: dict[str, object]) -> None:
         raise _Incompatible
 
 
+def _is_bounded_text(value: object) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        return len(value.encode("utf-8")) <= MAX_TEXT_BYTES
+    except UnicodeEncodeError:
+        return False
+
+
 def _validate_texts(texts: Sequence[str]) -> list[str]:
     try:
         count = len(texts)
@@ -448,12 +522,32 @@ def _validate_texts(texts: Sequence[str]) -> list[str]:
         raise EmbeddingWorkerError("protocol_error") from exc
     if isinstance(texts, (str, bytes)) or not 1 <= count <= MAX_TEXTS:
         raise EmbeddingWorkerError("protocol_error")
-    validated: list[str] = []
-    for text in texts:
-        if not isinstance(text, str) or not text or len(text.encode("utf-8")) > MAX_TEXT_BYTES:
-            raise EmbeddingWorkerError("protocol_error")
-        validated.append(text)
+    validated = list(texts)
+    if any(not _is_bounded_text(text) for text in validated):
+        raise EmbeddingWorkerError("protocol_error")
     return validated
+
+
+def _validate_score_input(
+    query: str, passages: Sequence[str]
+) -> tuple[str, list[str]]:
+    try:
+        count = len(passages)
+    except TypeError as exc:
+        raise EmbeddingWorkerError("protocol_error") from exc
+    if (
+        not _is_bounded_text(query)
+        or isinstance(passages, (str, bytes))
+        or not 1 <= count <= MAX_SCORE_PASSAGES
+    ):
+        raise EmbeddingWorkerError("protocol_error")
+    validated = list(passages)
+    if any(not _is_bounded_text(passage) for passage in validated):
+        raise EmbeddingWorkerError("protocol_error")
+    request = _score_request_value(query, validated)
+    if len(_canonical_json(request)) > MAX_FRAME_BYTES:
+        raise EmbeddingWorkerError("protocol_error")
+    return query, validated
 
 
 def _request_value(texts: Sequence[str]) -> dict[str, object]:
@@ -467,31 +561,75 @@ def _request_value(texts: Sequence[str]) -> dict[str, object]:
     }
 
 
-def _parse_request(payload: bytes) -> list[str]:
-    value = _decode_json(payload)
-    if set(value) != _REQUEST_FIELDS:
-        raise _ProtocolError("request fields")
-    expected = {
+def _score_request_value(
+    query: str, passages: Sequence[str]
+) -> dict[str, object]:
+    return {
         "schema_version": SCHEMA_VERSION,
-        "operation": "encode",
-        "model": MODEL,
-        "revision": REVISION,
-        "precision": PRECISION,
+        "operation": "score",
+        "model": RERANKER_MODEL,
+        "revision": RERANKER_REVISION,
+        "query": query,
+        "passages": list(passages),
     }
-    if (
-        type(value.get("schema_version")) is not int
-        or any(value.get(key) != expected_value for key, expected_value in expected.items())
-    ):
-        raise _ProtocolError("request identity")
-    texts = value["texts"]
-    if not isinstance(texts, list) or not 1 <= len(texts) <= MAX_TEXTS:
-        raise _ProtocolError("request texts")
-    result: list[str] = []
-    for text in texts:
-        if not isinstance(text, str) or not text or len(text.encode("utf-8")) > MAX_TEXT_BYTES:
+
+
+def _parse_request(payload: bytes) -> _Request:
+    value = _decode_json(payload)
+    operation = value.get("operation")
+    if operation == "encode":
+        if set(value) != _ENCODE_REQUEST_FIELDS:
+            raise _ProtocolError("request fields")
+        expected = {
+            "schema_version": SCHEMA_VERSION,
+            "operation": "encode",
+            "model": MODEL,
+            "revision": REVISION,
+            "precision": PRECISION,
+        }
+        if (
+            type(value.get("schema_version")) is not int
+            or any(
+                value.get(key) != expected_value
+                for key, expected_value in expected.items()
+            )
+        ):
+            raise _ProtocolError("request identity")
+        texts = value["texts"]
+        if not isinstance(texts, list) or not 1 <= len(texts) <= MAX_TEXTS:
+            raise _ProtocolError("request texts")
+        if any(not _is_bounded_text(text) for text in texts):
             raise _ProtocolError("request text")
-        result.append(text)
-    return result
+        return _EncodeRequest(list(texts))
+    if operation == "score":
+        if set(value) != _SCORE_REQUEST_FIELDS:
+            raise _ProtocolError("request fields")
+        expected = {
+            "schema_version": SCHEMA_VERSION,
+            "operation": "score",
+            "model": RERANKER_MODEL,
+            "revision": RERANKER_REVISION,
+        }
+        if (
+            type(value.get("schema_version")) is not int
+            or any(
+                value.get(key) != expected_value
+                for key, expected_value in expected.items()
+            )
+        ):
+            raise _ProtocolError("request identity")
+        query = value["query"]
+        passages = value["passages"]
+        if not _is_bounded_text(query):
+            raise _ProtocolError("request query")
+        if (
+            not isinstance(passages, list)
+            or not 1 <= len(passages) <= MAX_SCORE_PASSAGES
+            or any(not _is_bounded_text(passage) for passage in passages)
+        ):
+            raise _ProtocolError("request passages")
+        return _ScoreRequest(query, list(passages))
+    raise _ProtocolError("request operation")
 
 
 def _validated_vectors(vectors: object, count: int) -> list[list[float]]:
@@ -516,17 +654,38 @@ def _validated_vectors(vectors: object, count: int) -> list[list[float]]:
     return result
 
 
+def _validated_scores(scores: object, count: int) -> list[float]:
+    if (
+        not isinstance(scores, Sequence)
+        or isinstance(scores, (str, bytes, bytearray))
+        or len(scores) != count
+    ):
+        raise _ProtocolError("score count")
+    result: list[float] = []
+    for value in scores:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise _ProtocolError("score value")
+        score = float(value)
+        if not math.isfinite(score):
+            raise _ProtocolError("score value")
+        result.append(score)
+    return result
+
+
+def _raise_error_response(value: dict[str, object]) -> None:
+    if set(value) != _ERROR_FIELDS or value.get("schema_version") != SCHEMA_VERSION:
+        raise _ProtocolError("error fields")
+    error_type = value.get("error_type")
+    if not isinstance(error_type, str) or error_type not in _ERROR_TYPES:
+        raise _ProtocolError("error category")
+    raise EmbeddingWorkerError(error_type)
+
+
 def _parse_response(payload: bytes, count: int) -> list[list[float]]:
     value = _decode_json(payload)
-    outcome = value.get("outcome")
-    if outcome == "error":
-        if set(value) != _ERROR_FIELDS or value.get("schema_version") != SCHEMA_VERSION:
-            raise _ProtocolError("error fields")
-        error_type = value.get("error_type")
-        if not isinstance(error_type, str) or error_type not in _ERROR_TYPES:
-            raise _ProtocolError("error category")
-        raise EmbeddingWorkerError(error_type)
-    if outcome != "success" or set(value) != _SUCCESS_FIELDS:
+    if value.get("outcome") == "error":
+        _raise_error_response(value)
+    if value.get("outcome") != "success" or set(value) != _ENCODE_SUCCESS_FIELDS:
         raise _ProtocolError("response fields")
     if (
         type(value.get("schema_version")) is not int
@@ -536,6 +695,22 @@ def _parse_response(payload: bytes, count: int) -> list[list[float]]:
     ):
         raise _ProtocolError("response identity")
     return _validated_vectors(value.get("vectors"), count)
+
+
+def _parse_score_response(payload: bytes, count: int) -> list[float]:
+    value = _decode_json(payload)
+    if value.get("outcome") == "error":
+        _raise_error_response(value)
+    if value.get("outcome") != "success" or set(value) != _SCORE_SUCCESS_FIELDS:
+        raise _ProtocolError("response fields")
+    if (
+        type(value.get("schema_version")) is not int
+        or value.get("schema_version") != SCHEMA_VERSION
+        or value.get("model") != RERANKER_MODEL
+        or value.get("revision") != RERANKER_REVISION
+    ):
+        raise _ProtocolError("response identity")
+    return _validated_scores(value.get("scores"), count)
 
 
 def _peer_uid(connection: socket.socket) -> int | None:
@@ -580,6 +755,7 @@ def _connect_and_encode(
     texts: Sequence[str],
     *,
     timeout_seconds: float,
+    contact_observer: Callable[[], None] | None = None,
 ) -> list[list[float]]:
     _verify_socket(paths.socket_path)
     try:
@@ -605,13 +781,69 @@ def _connect_and_encode(
             raise _Unavailable from exc
         except _ProtocolError as exc:
             raise _Incompatible from exc
+        if contact_observer is not None:
+            contact_observer()
 
         # From the first request byte onward, never retry: the worker may have
-        # completed the encode even if its response is lost. Convert every
+        # completed the operation even if its response is lost. Convert every
         # transport/protocol failure to the public bounded error vocabulary.
         try:
             _send_frame(connection, _request_value(texts))
             return _parse_response(_recv_frame(connection), len(texts))
+        except EmbeddingWorkerError:
+            raise
+        except socket.timeout as exc:
+            raise EmbeddingWorkerError("busy_timeout") from exc
+        except OSError as exc:
+            raise EmbeddingWorkerError("internal_worker_failure") from exc
+        except _ProtocolError as exc:
+            raise EmbeddingWorkerError("protocol_error") from exc
+    finally:
+        try:
+            connection.close()
+        except OSError:
+            pass
+
+
+def _connect_and_score(
+    paths: WorkerPaths,
+    query: str,
+    passages: Sequence[str],
+    *,
+    timeout_seconds: float,
+    contact_observer: Callable[[], None] | None = None,
+) -> list[float]:
+    _verify_socket(paths.socket_path)
+    try:
+        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    except OSError as exc:
+        raise EmbeddingWorkerError("internal_worker_failure") from exc
+    try:
+        try:
+            connection.settimeout(timeout_seconds)
+            connection.connect(os.fspath(paths.socket_path))
+            _verify_peer(connection)
+        except _ProtocolError as exc:
+            raise EmbeddingWorkerError("protocol_error") from exc
+        except (socket.timeout, OSError) as exc:
+            raise _Unavailable from exc
+
+        try:
+            _validate_ready(_decode_json(_recv_frame(connection)))
+        except (socket.timeout, OSError, _TruncatedFrame) as exc:
+            raise _Unavailable from exc
+        except _ProtocolError as exc:
+            raise _Incompatible from exc
+        if contact_observer is not None:
+            contact_observer()
+
+        # Local scoring has no durable side effect, but IPC is still never
+        # replayed after request transmission because completion is uncertain.
+        try:
+            _send_frame(connection, _score_request_value(query, passages))
+            return _parse_score_response(
+                _recv_frame(connection), len(passages)
+            )
         except EmbeddingWorkerError:
             raise
         except socket.timeout as exc:
@@ -905,25 +1137,40 @@ def _spawn_worker(paths: WorkerPaths) -> None:
         raise EmbeddingWorkerError("internal_worker_failure") from exc
 
 
-def encode(
-    texts: Sequence[str],
-    *,
-    buoy_home: Path | None = None,
-    startup_timeout_seconds: float = STARTUP_TIMEOUT_SECONDS,
-    request_timeout_seconds: float = REQUEST_TIMEOUT_SECONDS,
-) -> list[list[float]]:
-    """Encode through the explicitly invoked dormant prototype."""
+_T = TypeVar("_T")
 
-    validated = _validate_texts(texts)
-    if startup_timeout_seconds <= 0 or request_timeout_seconds <= 0:
-        raise EmbeddingWorkerError("protocol_error")
-    paths = worker_paths(buoy_home)
-    directory_fd = _prepare_identity_directory(paths)
+
+def _observe_worker_state(
+    observer: Callable[[str], None] | None,
+    state: str,
+) -> None:
+    if observer is None:
+        return
     try:
+        observer(state)
+    except BaseException:
+        return
+
+
+def _request_from_worker(
+    paths: WorkerPaths,
+    request: Callable[[Callable[[], None]], _T],
+    *,
+    startup_timeout_seconds: float,
+    lifecycle_observer: Callable[[str], None] | None = None,
+) -> _T:
+    worker_state = "unknown"
+    launched = False
+    directory_fd: int | None = None
+
+    def contacted() -> None:
+        nonlocal worker_state
+        worker_state = "spawned" if launched else "reused"
+
+    try:
+        directory_fd = _prepare_identity_directory(paths)
         try:
-            return _connect_and_encode(
-                paths, validated, timeout_seconds=request_timeout_seconds
-            )
+            return request(contacted)
         except _Incompatible as exc:
             raise EmbeddingWorkerError("incompatible_worker") from exc
         except _Unavailable:
@@ -935,9 +1182,7 @@ def encode(
             timeout_seconds=startup_timeout_seconds,
         ):
             try:
-                return _connect_and_encode(
-                    paths, validated, timeout_seconds=request_timeout_seconds
-                )
+                return request(contacted)
             except _Incompatible as exc:
                 raise EmbeddingWorkerError("incompatible_worker") from exc
             except _Unavailable:
@@ -946,6 +1191,7 @@ def encode(
             with _lock(directory_fd, "lifetime.lock", timeout_seconds=0.0):
                 _clear_stale_runtime(directory_fd)
             _spawn_worker(paths)
+            launched = True
             deadline = time.monotonic() + startup_timeout_seconds
             while True:
                 state = _read_state(directory_fd)
@@ -955,12 +1201,12 @@ def encode(
                     if state.get("phase") == "error":
                         category = state.get("error_type")
                         raise EmbeddingWorkerError(
-                            category if isinstance(category, str) else "internal_worker_failure"
+                            category
+                            if isinstance(category, str)
+                            else "internal_worker_failure"
                         )
                 try:
-                    return _connect_and_encode(
-                        paths, validated, timeout_seconds=request_timeout_seconds
-                    )
+                    return request(contacted)
                 except _Incompatible as exc:
                     raise EmbeddingWorkerError("incompatible_worker") from exc
                 except _Unavailable:
@@ -970,7 +1216,65 @@ def encode(
     except _ProtocolError as exc:
         raise EmbeddingWorkerError("protocol_error") from exc
     finally:
-        os.close(directory_fd)
+        if directory_fd is not None:
+            os.close(directory_fd)
+        _observe_worker_state(lifecycle_observer, worker_state)
+
+
+def encode(
+    texts: Sequence[str],
+    *,
+    buoy_home: Path | None = None,
+    startup_timeout_seconds: float = STARTUP_TIMEOUT_SECONDS,
+    request_timeout_seconds: float = REQUEST_TIMEOUT_SECONDS,
+    _lifecycle_observer: Callable[[str], None] | None = None,
+) -> list[list[float]]:
+    """Encode texts through the exact private local worker."""
+
+    validated = _validate_texts(texts)
+    if startup_timeout_seconds <= 0 or request_timeout_seconds <= 0:
+        raise EmbeddingWorkerError("protocol_error")
+    paths = worker_paths(buoy_home)
+    return _request_from_worker(
+        paths,
+        lambda contacted: _connect_and_encode(
+            paths,
+            validated,
+            timeout_seconds=request_timeout_seconds,
+            contact_observer=contacted,
+        ),
+        startup_timeout_seconds=startup_timeout_seconds,
+        lifecycle_observer=_lifecycle_observer,
+    )
+
+
+def score(
+    query: str,
+    passages: Sequence[str],
+    *,
+    buoy_home: Path | None = None,
+    startup_timeout_seconds: float = STARTUP_TIMEOUT_SECONDS,
+    request_timeout_seconds: float = REQUEST_TIMEOUT_SECONDS,
+    _lifecycle_observer: Callable[[str], None] | None = None,
+) -> list[float]:
+    """Score bounded query/passage pairs through the private local worker."""
+
+    validated_query, validated_passages = _validate_score_input(query, passages)
+    if startup_timeout_seconds <= 0 or request_timeout_seconds <= 0:
+        raise EmbeddingWorkerError("protocol_error")
+    paths = worker_paths(buoy_home)
+    return _request_from_worker(
+        paths,
+        lambda contacted: _connect_and_score(
+            paths,
+            validated_query,
+            validated_passages,
+            timeout_seconds=request_timeout_seconds,
+            contact_observer=contacted,
+        ),
+        startup_timeout_seconds=startup_timeout_seconds,
+        lifecycle_observer=_lifecycle_observer,
+    )
 
 
 class _LocalModel:
@@ -1033,7 +1337,33 @@ def _error_response(error_type: str) -> dict[str, object]:
     }
 
 
-def _serve_connection(connection: socket.socket, model: object) -> bool:
+class _WorkerRuntime:
+    """Hold only resident model/runtime objects between serial requests."""
+
+    def __init__(
+        self,
+        embedder: object,
+        reranker_loader: Callable[[], object],
+    ) -> None:
+        self._embedder = embedder
+        self._reranker_loader = reranker_loader
+        self._reranker: object | None = None
+
+    def encode(self, texts: Sequence[str]) -> object:
+        return self._embedder.encode(texts)  # type: ignore[attr-defined,no-any-return]
+
+    def score(self, query: str, passages: Sequence[str]) -> object:
+        if self._reranker is None:
+            try:
+                self._reranker = self._reranker_loader()
+            except Exception as exc:
+                raise _RerankerUnavailable from exc
+        return self._reranker.score(  # type: ignore[attr-defined,no-any-return]
+            query, passages
+        )
+
+
+def _serve_connection(connection: socket.socket, runtime: _WorkerRuntime) -> bool:
     """Serve one connection and report whether a valid request was accepted."""
 
     accepted = False
@@ -1041,24 +1371,43 @@ def _serve_connection(connection: socket.socket, model: object) -> bool:
         connection.settimeout(REQUEST_TIMEOUT_SECONDS)
         _verify_peer(connection)
         _send_frame(connection, _ready_response())
-        texts = _parse_request(_recv_frame(connection))
+        request = _parse_request(_recv_frame(connection))
         accepted = True
+        if isinstance(request, _EncodeRequest):
+            try:
+                values = runtime.encode(request.texts)
+                vectors = _validated_vectors(values, len(request.texts))
+            except Exception:
+                _send_frame(connection, _error_response("encoding_failure"))
+                return accepted
+            _send_frame(
+                connection,
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "outcome": "success",
+                    "dimensions": DIMENSIONS,
+                    "vectors": vectors,
+                },
+            )
+            return accepted
+
         try:
-            values = model.encode(texts)  # type: ignore[attr-defined]
-            vectors = _validated_vectors(values, len(texts))
-        except _ProtocolError:
-            _send_frame(connection, _error_response("encoding_failure"))
+            values = runtime.score(request.query, request.passages)
+            scores = _validated_scores(values, len(request.passages))
+        except _RerankerUnavailable:
+            _send_frame(connection, _error_response("model_unavailable"))
             return accepted
         except Exception:
-            _send_frame(connection, _error_response("encoding_failure"))
+            _send_frame(connection, _error_response("scoring_failure"))
             return accepted
         _send_frame(
             connection,
             {
                 "schema_version": SCHEMA_VERSION,
                 "outcome": "success",
-                "dimensions": DIMENSIONS,
-                "vectors": vectors,
+                "model": RERANKER_MODEL,
+                "revision": RERANKER_REVISION,
+                "scores": scores,
             },
         )
     except (_ProtocolError, socket.timeout, OSError):
@@ -1073,6 +1422,7 @@ def run_worker(
     paths: WorkerPaths | None = None,
     *,
     model_loader: Callable[[], object] = _LocalModel,
+    reranker_loader: Callable[[], object] = load_cross_encoder_reranker,
     idle_seconds: float = IDLE_EXIT_SECONDS,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> int:
@@ -1104,6 +1454,7 @@ def run_worker(
                     directory_fd, "model_unavailable"
                 )
                 return 1
+            runtime = _WorkerRuntime(model, reranker_loader)
             server, socket_stat = _bind_server(selected, directory_fd)
             socket_identity = (socket_stat.st_dev, socket_stat.st_ino)
             state_identity = _write_state(
@@ -1127,7 +1478,7 @@ def run_worker(
                 except OSError:
                     return 1
                 with connection:
-                    accepted = _serve_connection(connection, model)
+                    accepted = _serve_connection(connection, runtime)
                 if accepted:
                     last_accepted = monotonic()
         except EmbeddingWorkerError:

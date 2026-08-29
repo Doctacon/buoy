@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 import hashlib
+import json
 import os
 from pathlib import Path
 import stat
@@ -41,12 +42,14 @@ if TYPE_CHECKING:
     from buoy_search.telemetry.queue import TelemetryPaths
 
 
-TELEMETRY_SCHEMA_VERSION = 2
+TELEMETRY_SCHEMA_VERSION = 3
 DATABASE_BASENAME = "telemetry.duckdb"
 DATABASE_WAL_BASENAME = "telemetry.duckdb.wal"
 DATABASE_INIT_DIRECTORY = "database-init-v1"
 DATABASE_MIGRATION_DIRECTORY = "database-migrate-v2"
 DATABASE_BACKUP_BASENAME = "telemetry-v1-backup.duckdb"
+DATABASE_MIGRATION_V3_DIRECTORY = "database-migrate-v3"
+DATABASE_V2_BACKUP_BASENAME = "telemetry-v2-backup.duckdb"
 _INITIALIZATION_SCRATCH_NAMES = frozenset(
     {DATABASE_BASENAME, DATABASE_WAL_BASENAME}
 )
@@ -99,7 +102,7 @@ class StoreWriteError(TelemetryStoreError):
 
 
 class StoreUpgradeRequiredError(TelemetryStoreError):
-    """A valid version-2 trace is pending behind an exact version-1 store."""
+    """A valid newer trace is pending behind an exact older store."""
 
 
 @dataclass(frozen=True)
@@ -124,7 +127,7 @@ class StoreAppendResult:
 
 @dataclass(frozen=True)
 class StoreMigrationResult:
-    """Content-free counts from one exact version-1 to version-2 migration."""
+    """Content-free counts from one exact one-version store migration."""
 
     runs: int
     spans: int
@@ -135,7 +138,7 @@ class StoreMigrationResult:
 
 @dataclass(frozen=True)
 class StoreReconcileResult:
-    """Verified exact-v2 facts after already-current scratch recovery."""
+    """Verified exact-v2/v3 facts after already-current reconciliation."""
 
     snapshot: StoreSnapshot
     backup_present: bool
@@ -152,6 +155,12 @@ class _V1ContentIdentity:
 @dataclass(frozen=True)
 class _V2ContentIdentity:
     counts: tuple[int, int, int, int]
+    sha256: str
+
+
+@dataclass(frozen=True)
+class _V3ContentIdentity:
+    counts: tuple[int, ...]
     sha256: str
 
 
@@ -522,6 +531,220 @@ _V2_STAGE_VIEW_DDL = """
         WHERE spans.span_id <> command.root_span_id;
 """
 
+_V3_COMMAND_LAYOUT = (*_V2_COMMAND_LAYOUT, ("inference_policy", "VARCHAR", True, False))
+_V3_METADATA_HASH_COLUMNS = (
+    "command_runs_v3_view_sha256",
+    "command_stage_v3_view_sha256",
+    "inference_requests_v3_view_sha256",
+    "provider_summary_v3_view_sha256",
+    "provider_invocations_v3_view_sha256",
+)
+_V3_TABLE_LAYOUTS = {
+    **_V2_TABLE_LAYOUTS,
+    "telemetry_metadata": (
+        *_V2_TABLE_LAYOUTS["telemetry_metadata"],
+        *((name, "VARCHAR", True, False) for name in _V3_METADATA_HASH_COLUMNS),
+    ),
+    "retrieve_command_runs_v3": _V3_COMMAND_LAYOUT,
+    "retrieval_operations_v3": _V2_OPERATION_LAYOUT,
+    "retrieve_inference_requests_v3": (
+        ("trace_id", "VARCHAR", True, False),
+        ("span_id", "VARCHAR", True, True),
+        ("parent_span_id", "VARCHAR", True, False),
+        ("started_at", "TIMESTAMP", True, False),
+        ("ended_at", "TIMESTAMP", True, False),
+        ("duration_ms", "DOUBLE", True, False),
+        ("operation", "VARCHAR", True, False),
+        ("backend", "VARCHAR", True, False),
+        ("role", "VARCHAR", True, False),
+        ("item_count", "INTEGER", True, False),
+        ("worker_state", "VARCHAR", False, False),
+        ("outcome", "VARCHAR", True, False),
+        ("error_type", "VARCHAR", False, False),
+    ),
+    "retrieve_provider_accounting_v3": (
+        ("trace_id", "VARCHAR", True, True),
+        ("status", "VARCHAR", True, False),
+        ("unit", "VARCHAR", True, False),
+    ),
+    "retrieve_provider_content_operations_v3": (
+        ("trace_id", "VARCHAR", True, True),
+        ("route_rank", "INTEGER", True, True),
+        ("outcome", "VARCHAR", True, False),
+        ("invocation_count", "INTEGER", True, False),
+    ),
+    "retrieve_provider_content_invocations_v3": (
+        ("trace_id", "VARCHAR", True, True),
+        ("route_rank", "INTEGER", True, True),
+        ("attempt_index", "INTEGER", True, True),
+        ("request_form", "VARCHAR", True, False),
+        ("trigger", "VARCHAR", True, False),
+        ("outcome", "VARCHAR", True, False),
+        ("error_category", "VARCHAR", False, False),
+    ),
+    "retrieve_provider_catalog_v3": (
+        ("trace_id", "VARCHAR", True, True),
+        ("outcome", "VARCHAR", False, False),
+        ("invocation_count", "INTEGER", True, False),
+        ("namespace_list_page_success", "INTEGER", True, False),
+        ("namespace_list_page_error", "INTEGER", True, False),
+        ("namespace_list_page_interrupted", "INTEGER", True, False),
+        ("metadata_success", "INTEGER", True, False),
+        ("metadata_error", "INTEGER", True, False),
+        ("metadata_interrupted", "INTEGER", True, False),
+        ("card_query_page_success", "INTEGER", True, False),
+        ("card_query_page_error", "INTEGER", True, False),
+        ("card_query_page_interrupted", "INTEGER", True, False),
+    ),
+}
+_V3_VIEW_LAYOUTS = {
+    **_V2_VIEW_LAYOUTS,
+    "retrieval_command_runs_v3": (
+        *_V2_VIEW_LAYOUTS["retrieval_command_runs_v2"],
+        ("inference_policy", "VARCHAR"),
+        ("worker_encode_requests", "HUGEINT"),
+        ("worker_score_requests", "HUGEINT"),
+        ("in_process_encode_requests", "HUGEINT"),
+        ("in_process_score_requests", "HUGEINT"),
+        ("worker_spawned_requests", "HUGEINT"),
+        ("worker_reused_requests", "HUGEINT"),
+        ("worker_error_requests", "HUGEINT"),
+        ("fallback_requests", "HUGEINT"),
+    ),
+    "retrieval_stage_latency_v3": _V2_VIEW_LAYOUTS["retrieval_stage_latency_v2"],
+    "retrieval_inference_requests_v3": (
+        ("trace_id", "VARCHAR"), ("command_started_at", "TIMESTAMP"),
+        ("execution_mode", "VARCHAR"), ("retrieval_mode", "VARCHAR"),
+        ("command_outcome", "VARCHAR"), ("span_id", "VARCHAR"),
+        ("parent_span_id", "VARCHAR"), ("started_at", "TIMESTAMP"),
+        ("ended_at", "TIMESTAMP"), ("duration_ms", "DOUBLE"),
+        ("operation", "VARCHAR"), ("backend", "VARCHAR"),
+        ("role", "VARCHAR"), ("item_count", "INTEGER"),
+        ("worker_state", "VARCHAR"), ("outcome", "VARCHAR"),
+        ("error_type", "VARCHAR"),
+    ),
+    "retrieval_provider_summary_v3": (
+        ("trace_id", "VARCHAR"), ("command_started_at", "TIMESTAMP"),
+        ("execution_mode", "VARCHAR"), ("retrieval_mode", "VARCHAR"),
+        ("command_outcome", "VARCHAR"), ("accounting_status", "VARCHAR"),
+        ("unit", "VARCHAR"), ("content_logical_operation_count", "BIGINT"),
+        ("content_invocation_count", "BIGINT"), ("content_success_count", "HUGEINT"),
+        ("content_error_count", "HUGEINT"), ("content_interrupted_count", "HUGEINT"),
+        ("server_rrf_count", "HUGEINT"), ("client_rrf_count", "HUGEINT"),
+        ("optional_schema_compatibility_count", "HUGEINT"),
+        ("catalog_outcome", "VARCHAR"), ("catalog_invocation_count", "INTEGER"),
+        ("catalog_namespace_list_page_count", "INTEGER"),
+        ("catalog_metadata_count", "INTEGER"), ("catalog_card_query_page_count", "INTEGER"),
+        ("catalog_success_count", "INTEGER"), ("catalog_error_count", "INTEGER"),
+        ("catalog_interrupted_count", "INTEGER"),
+    ),
+    "retrieval_provider_content_invocations_v3": (
+        ("trace_id", "VARCHAR"), ("command_started_at", "TIMESTAMP"),
+        ("execution_mode", "VARCHAR"), ("retrieval_mode", "VARCHAR"),
+        ("command_outcome", "VARCHAR"), ("route_rank", "INTEGER"),
+        ("attempt_index", "INTEGER"), ("request_form", "VARCHAR"),
+        ("trigger", "VARCHAR"), ("outcome", "VARCHAR"),
+        ("error_category", "VARCHAR"),
+    ),
+}
+
+_V3_TABLES_DDL = """
+CREATE TABLE retrieve_command_runs_v3 (
+ trace_id VARCHAR PRIMARY KEY, root_span_id VARCHAR NOT NULL, started_at TIMESTAMP NOT NULL, ended_at TIMESTAMP NOT NULL,
+ command_duration_ms DOUBLE NOT NULL CHECK(command_duration_ms >= 0), execution_mode VARCHAR NOT NULL,
+ retrieval_mode VARCHAR NOT NULL, outcome VARCHAR NOT NULL, exit_code INTEGER NOT NULL CHECK(exit_code >= 0 AND exit_code <= 255),
+ error_type VARCHAR, pipeline_present BOOLEAN NOT NULL, buoy_version VARCHAR NOT NULL,
+ observation_schema_version INTEGER NOT NULL, inference_policy VARCHAR NOT NULL);
+CREATE TABLE retrieval_operations_v3 (
+ trace_id VARCHAR PRIMARY KEY, span_id VARCHAR NOT NULL, started_at TIMESTAMP NOT NULL, ended_at TIMESTAMP NOT NULL,
+ pipeline_duration_ms DOUBLE NOT NULL CHECK(pipeline_duration_ms >= 0), outcome VARCHAR NOT NULL,
+ hit_count INTEGER NOT NULL CHECK(hit_count >= 0), namespace_count INTEGER NOT NULL CHECK(namespace_count >= 0),
+ initial_fanout INTEGER NOT NULL CHECK(initial_fanout >= 0), final_fanout INTEGER NOT NULL CHECK(final_fanout >= 0),
+ failure_count INTEGER NOT NULL CHECK(failure_count >= 0), incomplete BOOLEAN NOT NULL, widened BOOLEAN NOT NULL,
+ fallback_reason VARCHAR, evidence_status VARCHAR, embedding_model VARCHAR NOT NULL, embedding_precision VARCHAR NOT NULL,
+ top_k INTEGER NOT NULL CHECK(top_k >= 0), candidates INTEGER NOT NULL CHECK(candidates >= 0), buoy_version VARCHAR NOT NULL,
+ observation_schema_version INTEGER NOT NULL);
+CREATE TABLE retrieve_inference_requests_v3 (
+ trace_id VARCHAR NOT NULL, span_id VARCHAR PRIMARY KEY, parent_span_id VARCHAR NOT NULL,
+ started_at TIMESTAMP NOT NULL, ended_at TIMESTAMP NOT NULL,
+ duration_ms DOUBLE NOT NULL CHECK(duration_ms >= 0), operation VARCHAR NOT NULL,
+ backend VARCHAR NOT NULL, role VARCHAR NOT NULL, item_count INTEGER NOT NULL CHECK(item_count >= 1 AND item_count <= 108),
+ worker_state VARCHAR, outcome VARCHAR NOT NULL, error_type VARCHAR);
+CREATE TABLE retrieve_provider_accounting_v3 (trace_id VARCHAR PRIMARY KEY, status VARCHAR NOT NULL, unit VARCHAR NOT NULL);
+CREATE TABLE retrieve_provider_content_operations_v3 (
+ trace_id VARCHAR NOT NULL, route_rank INTEGER NOT NULL CHECK(route_rank >= 1 AND route_rank <= 3),
+ outcome VARCHAR NOT NULL, invocation_count INTEGER NOT NULL CHECK(invocation_count >= 0 AND invocation_count <= 6),
+ PRIMARY KEY(trace_id, route_rank));
+CREATE TABLE retrieve_provider_content_invocations_v3 (
+ trace_id VARCHAR NOT NULL, route_rank INTEGER NOT NULL CHECK(route_rank >= 1 AND route_rank <= 3),
+ attempt_index INTEGER NOT NULL CHECK(attempt_index >= 1 AND attempt_index <= 6), request_form VARCHAR NOT NULL,
+ trigger VARCHAR NOT NULL, outcome VARCHAR NOT NULL, error_category VARCHAR,
+ PRIMARY KEY(trace_id, route_rank, attempt_index));
+CREATE TABLE retrieve_provider_catalog_v3 (
+ trace_id VARCHAR PRIMARY KEY, outcome VARCHAR,
+ invocation_count INTEGER NOT NULL CHECK(invocation_count >= 0 AND invocation_count <= 40002),
+ namespace_list_page_success INTEGER NOT NULL CHECK(namespace_list_page_success >= 0),
+ namespace_list_page_error INTEGER NOT NULL CHECK(namespace_list_page_error >= 0),
+ namespace_list_page_interrupted INTEGER NOT NULL CHECK(namespace_list_page_interrupted >= 0),
+ metadata_success INTEGER NOT NULL CHECK(metadata_success >= 0), metadata_error INTEGER NOT NULL CHECK(metadata_error >= 0),
+ metadata_interrupted INTEGER NOT NULL CHECK(metadata_interrupted >= 0),
+ card_query_page_success INTEGER NOT NULL CHECK(card_query_page_success >= 0),
+ card_query_page_error INTEGER NOT NULL CHECK(card_query_page_error >= 0),
+ card_query_page_interrupted INTEGER NOT NULL CHECK(card_query_page_interrupted >= 0));
+"""
+
+_V3_VIEWS_DDL = """
+CREATE VIEW retrieval_command_runs_v3 AS
+SELECT c.trace_id,c.root_span_id,c.started_at,c.ended_at,c.command_duration_ms,c.execution_mode,c.retrieval_mode,
+ c.outcome command_outcome,c.exit_code,c.error_type command_error_type,o.span_id pipeline_span_id,
+ o.started_at pipeline_started_at,o.ended_at pipeline_ended_at,o.pipeline_duration_ms,o.outcome retrieval_outcome,
+ o.hit_count,o.namespace_count,o.initial_fanout,o.final_fanout,o.failure_count,o.incomplete,o.widened,o.fallback_reason,
+ o.evidence_status,o.embedding_model,o.embedding_precision,o.top_k,o.candidates,c.buoy_version,c.observation_schema_version,
+ c.inference_policy,
+ coalesce(sum((i.backend='worker' AND i.operation='encode')::INTEGER),0) worker_encode_requests,
+ coalesce(sum((i.backend='worker' AND i.operation='score')::INTEGER),0) worker_score_requests,
+ coalesce(sum((i.backend='in_process' AND i.operation='encode')::INTEGER),0) in_process_encode_requests,
+ coalesce(sum((i.backend='in_process' AND i.operation='score')::INTEGER),0) in_process_score_requests,
+ coalesce(sum((i.worker_state='spawned')::INTEGER),0) worker_spawned_requests,
+ coalesce(sum((i.worker_state='reused')::INTEGER),0) worker_reused_requests,
+ coalesce(sum((i.backend='worker' AND i.outcome='error')::INTEGER),0) worker_error_requests,
+ coalesce(sum((i.role='fallback')::INTEGER),0) fallback_requests
+FROM retrieve_command_runs_v3 c LEFT JOIN retrieval_operations_v3 o USING(trace_id)
+LEFT JOIN retrieve_inference_requests_v3 i ON c.trace_id=i.trace_id GROUP BY ALL;
+CREATE VIEW retrieval_stage_latency_v3 AS
+SELECT c.trace_id,c.started_at command_started_at,c.execution_mode,c.retrieval_mode,c.outcome command_outcome,
+ s.span_id,s.parent_span_id,s.name stage,s.started_at,s.ended_at,s.duration_ms,s.status_code,s.attributes
+FROM retrieve_command_runs_v3 c JOIN spans s USING(trace_id) WHERE s.span_id<>c.root_span_id;
+CREATE VIEW retrieval_inference_requests_v3 AS
+SELECT c.trace_id,c.started_at command_started_at,c.execution_mode,c.retrieval_mode,c.outcome command_outcome,
+ i.span_id,i.parent_span_id,i.started_at,i.ended_at,i.duration_ms,i.operation,i.backend,i.role,i.item_count,
+ i.worker_state,i.outcome,i.error_type FROM retrieve_command_runs_v3 c JOIN retrieve_inference_requests_v3 i USING(trace_id);
+CREATE VIEW retrieval_provider_summary_v3 AS
+SELECT c.trace_id,c.started_at command_started_at,c.execution_mode,c.retrieval_mode,c.outcome command_outcome,
+ a.status accounting_status,a.unit,
+ CASE WHEN a.status='complete' THEN (SELECT count(*) FROM retrieve_provider_content_operations_v3 op WHERE op.trace_id=c.trace_id) END content_logical_operation_count,
+ CASE WHEN a.status='complete' THEN (SELECT count(*) FROM retrieve_provider_content_invocations_v3 i WHERE i.trace_id=c.trace_id) END content_invocation_count,
+ CASE WHEN a.status='complete' THEN (SELECT coalesce(sum((i.outcome='success')::INTEGER),0) FROM retrieve_provider_content_invocations_v3 i WHERE i.trace_id=c.trace_id) END content_success_count,
+ CASE WHEN a.status='complete' THEN (SELECT coalesce(sum((i.outcome='error')::INTEGER),0) FROM retrieve_provider_content_invocations_v3 i WHERE i.trace_id=c.trace_id) END content_error_count,
+ CASE WHEN a.status='complete' THEN (SELECT coalesce(sum((i.outcome='interrupted')::INTEGER),0) FROM retrieve_provider_content_invocations_v3 i WHERE i.trace_id=c.trace_id) END content_interrupted_count,
+ CASE WHEN a.status='complete' THEN (SELECT coalesce(sum((i.request_form='server_rrf')::INTEGER),0) FROM retrieve_provider_content_invocations_v3 i WHERE i.trace_id=c.trace_id) END server_rrf_count,
+ CASE WHEN a.status='complete' THEN (SELECT coalesce(sum((i.request_form='client_rrf')::INTEGER),0) FROM retrieve_provider_content_invocations_v3 i WHERE i.trace_id=c.trace_id) END client_rrf_count,
+ CASE WHEN a.status='complete' THEN (SELECT coalesce(sum((i.trigger='optional_schema_compatibility')::INTEGER),0) FROM retrieve_provider_content_invocations_v3 i WHERE i.trace_id=c.trace_id) END optional_schema_compatibility_count,
+ cat.outcome catalog_outcome,cat.invocation_count catalog_invocation_count,
+ cat.namespace_list_page_success+cat.namespace_list_page_error+cat.namespace_list_page_interrupted catalog_namespace_list_page_count,
+ cat.metadata_success+cat.metadata_error+cat.metadata_interrupted catalog_metadata_count,
+ cat.card_query_page_success+cat.card_query_page_error+cat.card_query_page_interrupted catalog_card_query_page_count,
+ cat.namespace_list_page_success+cat.metadata_success+cat.card_query_page_success catalog_success_count,
+ cat.namespace_list_page_error+cat.metadata_error+cat.card_query_page_error catalog_error_count,
+ cat.namespace_list_page_interrupted+cat.metadata_interrupted+cat.card_query_page_interrupted catalog_interrupted_count
+FROM retrieve_command_runs_v3 c JOIN retrieve_provider_accounting_v3 a USING(trace_id)
+LEFT JOIN retrieve_provider_catalog_v3 cat ON c.trace_id=cat.trace_id;
+CREATE VIEW retrieval_provider_content_invocations_v3 AS
+SELECT c.trace_id,c.started_at command_started_at,c.execution_mode,c.retrieval_mode,c.outcome command_outcome,
+ i.route_rank,i.attempt_index,i.request_form,i.trigger,i.outcome,i.error_category
+FROM retrieve_command_runs_v3 c JOIN retrieve_provider_content_invocations_v3 i USING(trace_id);
+"""
+
 
 def append_trace(paths: TelemetryPaths, rows: TraceRows) -> StoreAppendResult:
     """Commit one exact trace graph, replay it idempotently, or flag conflict.
@@ -579,7 +802,9 @@ def _append_trace_locked(
         raise StoreUnsafeError("telemetry store path is unsafe") from exc
     try:
         durability_degraded = _recover_initialization_scratch(root_fd)
-        backup_present = _validate_append_auxiliary_paths(root_fd)
+        backup_present = _validate_append_auxiliary_paths(
+            root_fd, schema_target=3 if paths.queue_version == 3 else 2
+        )
         database_stat = _optional_private_stat(
             root_fd,
             DATABASE_BASENAME,
@@ -637,7 +862,9 @@ def _inspect_trace_terminal_locked(
 ) -> StoreAppendResult:
     root_fd = open_verified_directory(paths.directory)
     try:
-        backup_present = _validate_append_auxiliary_paths(root_fd)
+        backup_present = _validate_append_auxiliary_paths(
+            root_fd, schema_target=3 if paths.queue_version == 3 else 2
+        )
         if (
             _optional_private_stat(
                 root_fd,
@@ -673,18 +900,21 @@ def _inspect_trace_terminal_locked(
                 read_only=True,
             ) as connection:
                 schema_version = _validate_schema(connection)
-                if backup_present:
+                if backup_present and schema_version == 3:
+                    _validate_existing_content(connection, schema_version)
+                    _validate_v3_retained_backups(
+                        connection,
+                        paths,
+                        root_fd,
+                        _optional_private_stat(root_fd, DATABASE_V2_BACKUP_BASENAME, kind="file") is not None,
+                    )
+                elif backup_present:
                     if schema_version != 2:
                         raise StoreIncompatibleError(
                             "telemetry retained backup is incompatible"
                         )
-                    v1_identity = _validate_existing_content(
-                        connection, schema_version
-                    )
-                    if _validate_retained_backup(paths, root_fd) != v1_identity:
-                        raise StoreIncompatibleError(
-                            "telemetry retained backup history differs"
-                        )
+                    v1_identity = _validate_existing_content(connection, schema_version)
+                    _validate_retained_v1_backup_subset(connection, paths, root_fd)
                 else:
                     _validate_existing_content(connection, schema_version)
                 existing = _read_trace_graph(connection, _trace_id(rows))
@@ -720,6 +950,16 @@ def _inspect_trace_terminal_locked(
 
 def _validate_fixed_paths(paths: TelemetryPaths) -> None:
     directory = Path(paths.directory)
+    migration_directory = (
+        DATABASE_MIGRATION_V3_DIRECTORY
+        if paths.queue_version == 3
+        else DATABASE_MIGRATION_DIRECTORY
+    )
+    backup_basename = (
+        DATABASE_V2_BACKUP_BASENAME
+        if paths.queue_version == 3
+        else DATABASE_BACKUP_BASENAME
+    )
     expected = {
         "database_path": directory / DATABASE_BASENAME,
         "database_wal_path": directory / DATABASE_WAL_BASENAME,
@@ -731,37 +971,25 @@ def _validate_fixed_paths(paths: TelemetryPaths) -> None:
         "init_wal_path": (
             directory / DATABASE_INIT_DIRECTORY / DATABASE_WAL_BASENAME
         ),
-        "migration_directory": directory / DATABASE_MIGRATION_DIRECTORY,
-        "migration_database_path": (
-            directory / DATABASE_MIGRATION_DIRECTORY / DATABASE_BASENAME
-        ),
-        "migration_wal_path": (
-            directory / DATABASE_MIGRATION_DIRECTORY / DATABASE_WAL_BASENAME
-        ),
-        "migration_backup_candidate_path": (
-            directory / DATABASE_MIGRATION_DIRECTORY / DATABASE_BACKUP_BASENAME
-        ),
-        "backup_database_path": directory / DATABASE_BACKUP_BASENAME,
+        "migration_directory": directory / migration_directory,
+        "migration_database_path": directory / migration_directory / DATABASE_BASENAME,
+        "migration_wal_path": directory / migration_directory / DATABASE_WAL_BASENAME,
+        "migration_backup_candidate_path": directory / migration_directory / backup_basename,
+        "backup_database_path": directory / backup_basename,
     }
     for field, expected_path in expected.items():
         if Path(getattr(paths, field)) != expected_path:
             raise StoreUnsafeError("telemetry store path is unsafe")
 
 
-def _validate_append_auxiliary_paths(root_fd: int) -> bool:
-    if _optional_private_stat(
-        root_fd,
-        DATABASE_MIGRATION_DIRECTORY,
-        kind="directory",
-    ) is not None:
-        raise StoreUnsafeError("telemetry migration path is unresolved")
-    return (
-        _optional_private_stat(
-            root_fd,
-            DATABASE_BACKUP_BASENAME,
-            kind="file",
-        )
-        is not None
+def _validate_append_auxiliary_paths(root_fd: int, *, schema_target: int = 2) -> bool:
+    del schema_target
+    for name in (DATABASE_MIGRATION_DIRECTORY, DATABASE_MIGRATION_V3_DIRECTORY):
+        if _optional_private_stat(root_fd, name, kind="directory") is not None:
+            raise StoreUnsafeError("telemetry migration path is unresolved")
+    return any(
+        _optional_private_stat(root_fd, name, kind="file") is not None
+        for name in (DATABASE_BACKUP_BASENAME, DATABASE_V2_BACKUP_BASENAME)
     )
 
 
@@ -1061,15 +1289,19 @@ def _append_existing(
             v1_identity = _validate_existing_content(
                 connection, schema_version
             )
-            if backup_present:
+            if schema_version == 3:
+                _validate_v3_retained_backups(
+                    connection,
+                    paths,
+                    root_fd,
+                    _optional_private_stat(root_fd, DATABASE_V2_BACKUP_BASENAME, kind="file") is not None,
+                )
+            elif backup_present:
                 if schema_version != 2:
                     raise StoreIncompatibleError(
                         "telemetry retained backup is incompatible"
                     )
-                if _validate_retained_backup(paths, root_fd) != v1_identity:
-                    raise StoreIncompatibleError(
-                        "telemetry retained backup history differs"
-                    )
+                _validate_retained_v1_backup_subset(connection, paths, root_fd)
             result = _validate_and_insert_or_classify_transaction(
                 connection,
                 rows,
@@ -1136,6 +1368,85 @@ def _validate_retained_backup(
         ) from exc
 
 
+def _validate_retained_v1_backup_subset(
+    canonical: duckdb.DuckDBPyConnection,
+    paths: TelemetryPaths,
+    root_fd: int,
+) -> None:
+    try:
+        with _verified_connection(
+            paths.directory / DATABASE_BACKUP_BASENAME,
+            root_fd,
+            DATABASE_BACKUP_BASENAME,
+            read_only=True,
+        ) as backup:
+            _validate_schema(backup, expected_version=1)
+            _validate_v1_content(backup)
+            _require_backup_history_subset(backup, canonical, "trace_runs")
+    except StoreIncompatibleError:
+        raise
+    except (duckdb.Error, ValueError) as exc:
+        raise StoreIncompatibleError("telemetry retained backup is incompatible") from exc
+
+
+def _require_backup_history_subset(
+    backup: duckdb.DuckDBPyConnection,
+    canonical: duckdb.DuckDBPyConnection,
+    table_name: str,
+) -> None:
+    after = ""
+    while True:
+        trace_ids = [str(row[0]) for row in backup.execute(
+            f"SELECT trace_id FROM {table_name} WHERE trace_id > ? ORDER BY trace_id LIMIT ?",
+            (after, MIGRATION_BATCH_SIZE),
+        ).fetchall()]
+        if not trace_ids:
+            return
+        for trace_id in trace_ids:
+            if _read_trace_graph(backup, trace_id) != _read_trace_graph(canonical, trace_id):
+                raise StoreIncompatibleError("telemetry retained backup history differs")
+        after = trace_ids[-1]
+
+
+def _validate_v3_retained_backups(
+    canonical: duckdb.DuckDBPyConnection,
+    paths: TelemetryPaths,
+    root_fd: int,
+    v2_backup_present: bool,
+) -> None:
+    _validate_schema(canonical, expected_version=3)
+    canonical_v1 = _validate_v1_content(canonical)
+    canonical_v2 = _validate_v2_content(canonical)
+    v1_present = _optional_private_stat(root_fd, DATABASE_BACKUP_BASENAME, kind="file") is not None
+    try:
+        if v1_present:
+            with _verified_connection(
+                paths.directory / DATABASE_BACKUP_BASENAME,
+                root_fd,
+                DATABASE_BACKUP_BASENAME,
+                read_only=True,
+            ) as backup_v1:
+                _validate_schema(backup_v1, expected_version=1)
+                _validate_v1_content(backup_v1)
+                _require_backup_history_subset(backup_v1, canonical, "trace_runs")
+        if v2_backup_present:
+            with _verified_connection(
+                paths.directory / DATABASE_V2_BACKUP_BASENAME,
+                root_fd,
+                DATABASE_V2_BACKUP_BASENAME,
+                read_only=True,
+            ) as backup_v2:
+                _validate_schema(backup_v2, expected_version=2)
+                _validate_v1_content(backup_v2)
+                _validate_v2_content(backup_v2)
+                _require_backup_history_subset(backup_v2, canonical, "trace_runs")
+                _require_backup_history_subset(backup_v2, canonical, "retrieve_command_runs")
+    except StoreIncompatibleError:
+        raise
+    except (duckdb.Error, ValueError) as exc:
+        raise StoreIncompatibleError("telemetry retained backup is incompatible") from exc
+
+
 def _persisted_run_count(connection: duckdb.DuckDBPyConnection) -> int:
     table_names = {
         str(row[0])
@@ -1150,6 +1461,8 @@ def _persisted_run_count(connection: duckdb.DuckDBPyConnection) -> int:
     statement = "SELECT count(*) FROM trace_runs"
     if "retrieve_command_runs" in table_names:
         statement += " UNION ALL SELECT count(*) FROM retrieve_command_runs"
+    if "retrieve_command_runs_v3" in table_names:
+        statement += " UNION ALL SELECT count(*) FROM retrieve_command_runs_v3"
     values = connection.execute(statement).fetchall()
     counts = [row[0] for row in values]
     if any(type(value) is not int or value < 0 for value in counts):
@@ -1264,7 +1577,7 @@ def _insert_trace_transaction(
     connection.execute("BEGIN TRANSACTION")
     try:
         if initialize:
-            _initialize_schema_v2(connection)
+            _initialize_schema_v3(connection)
         _insert_trace_rows(connection, rows)
     except Exception:
         try:
@@ -1292,7 +1605,8 @@ def _validate_and_insert_or_classify_transaction(
             raise StoreUnreadableError(
                 "telemetry store is unreadable"
             ) from exc
-        if _is_v2_rows(rows) and schema_version == 1:
+        required_version = 3 if _is_v3_rows(rows) else 2 if _is_v2_rows(rows) else 1
+        if schema_version < required_version:
             raise StoreUpgradeRequiredError("telemetry store upgrade required")
         trace_id = _trace_id(rows)
         try:
@@ -1318,8 +1632,12 @@ def _validate_and_insert_or_classify_transaction(
     return result
 
 
+def _is_v3_rows(rows: _RowsLike) -> bool:
+    return hasattr(rows, "provider_accounting")
+
+
 def _is_v2_rows(rows: _RowsLike) -> bool:
-    return hasattr(rows, "command")
+    return hasattr(rows, "command") and not _is_v3_rows(rows)
 
 
 def _trace_id(rows: _RowsLike) -> str:
@@ -1329,11 +1647,97 @@ def _trace_id(rows: _RowsLike) -> str:
     return str(source[0])
 
 
+def _v3_normalized_rows(
+    rows: _RowsLike,
+) -> tuple[
+    tuple[tuple[object, ...], ...], tuple[object, ...],
+    tuple[tuple[object, ...], ...], tuple[tuple[object, ...], ...],
+    tuple[object, ...] | None,
+]:
+    trace_id = _trace_id(rows)
+    inference: list[tuple[object, ...]] = []
+    for span in rows.spans:
+        if span[3] != "buoy.inference.request":
+            continue
+        attributes = json.loads(str(span[8]))
+        inference.append((
+            trace_id, span[1], span[2], span[4], span[5], span[6],
+            attributes["buoy.inference.operation"],
+            attributes["buoy.inference.backend"],
+            attributes["buoy.inference.role"],
+            attributes["buoy.inference.item_count"],
+            attributes.get("buoy.inference.worker_state"),
+            attributes["buoy.inference.outcome"],
+            attributes.get("buoy.inference.error_type"),
+        ))
+    provider = getattr(rows, "provider_accounting")
+    status, unit, content, catalog_value = provider
+    accounting = (trace_id, status, unit)
+    content_ops: list[tuple[object, ...]] = []
+    content_calls: list[tuple[object, ...]] = []
+    catalog: tuple[object, ...] | None = None
+    if status == "complete":
+        assert isinstance(content, dict) and isinstance(catalog_value, dict)
+        for operation in content["operations"]:
+            attempts = operation["attempts"]
+            content_ops.append((trace_id, operation["route_rank"], operation["outcome"], len(attempts)))
+            for attempt in attempts:
+                content_calls.append((
+                    trace_id, operation["route_rank"], attempt["attempt_index"],
+                    attempt["request_form"], attempt["trigger"], attempt["outcome"],
+                    attempt["error_category"],
+                ))
+        counts = [catalog_value[name] for name in ("namespace_list_page", "metadata", "card_query_page")]
+        catalog = (
+            trace_id, catalog_value["outcome"], catalog_value["invocation_count"],
+            counts[0]["success"], counts[0]["error"], counts[0]["interrupted"],
+            counts[1]["success"], counts[1]["error"], counts[1]["interrupted"],
+            counts[2]["success"], counts[2]["error"], counts[2]["interrupted"],
+        )
+    return tuple(inference), accounting, tuple(content_ops), tuple(content_calls), catalog
+
+
 def _insert_trace_rows(
     connection: duckdb.DuckDBPyConnection,
     rows: _RowsLike,
 ) -> None:
-    if _is_v2_rows(rows):
+    if _is_v3_rows(rows):
+        connection.execute(
+            "INSERT INTO retrieve_command_runs_v3 VALUES (" + ", ".join("?" for _ in range(14)) + ")",
+            getattr(rows, "command"),
+        )
+        operation = getattr(rows, "retrieval_operation")
+        if operation is not None:
+            connection.execute(
+                "INSERT INTO retrieval_operations_v3 VALUES (" + ", ".join("?" for _ in range(21)) + ")",
+                operation,
+            )
+        inference, accounting, content_ops, content_calls, catalog = _v3_normalized_rows(rows)
+        if inference:
+            connection.executemany(
+                "INSERT INTO retrieve_inference_requests_v3 VALUES (" + ", ".join("?" for _ in range(13)) + ")",
+                inference,
+            )
+        connection.execute(
+            "INSERT INTO retrieve_provider_accounting_v3 VALUES (?, ?, ?)",
+            accounting,
+        )
+        if content_ops:
+            connection.executemany(
+                "INSERT INTO retrieve_provider_content_operations_v3 VALUES (?, ?, ?, ?)",
+                content_ops,
+            )
+        if content_calls:
+            connection.executemany(
+                "INSERT INTO retrieve_provider_content_invocations_v3 VALUES (?, ?, ?, ?, ?, ?, ?)",
+                content_calls,
+            )
+        if catalog is not None:
+            connection.execute(
+                "INSERT INTO retrieve_provider_catalog_v3 VALUES (" + ", ".join("?" for _ in range(12)) + ")",
+                catalog,
+            )
+    elif _is_v2_rows(rows):
         connection.execute(
             "INSERT INTO retrieve_command_runs VALUES "
             "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1367,6 +1771,20 @@ def _insert_trace_rows(
 
 
 def _row_graph(rows: _RowsLike) -> tuple[tuple[tuple[object, ...], ...], ...]:
+    if _is_v3_rows(rows):
+        operation = getattr(rows, "retrieval_operation")
+        inference, accounting, content_ops, content_calls, catalog = _v3_normalized_rows(rows)
+        return (
+            (tuple(getattr(rows, "command")),),
+            (() if operation is None else (tuple(operation),)),
+            inference,
+            (accounting,),
+            content_ops,
+            content_calls,
+            (() if catalog is None else (catalog,)),
+            tuple(rows.spans),
+            tuple(rows.events),
+        )
     if _is_v2_rows(rows):
         operation = getattr(rows, "retrieval_operation")
         return (
@@ -1376,6 +1794,24 @@ def _row_graph(rows: _RowsLike) -> tuple[tuple[tuple[object, ...], ...], ...]:
             tuple(rows.events),
         )
     return ((tuple(rows.run),), (), tuple(rows.spans), tuple(rows.events))
+
+
+def _fetch_limited(
+    connection: duckdb.DuckDBPyConnection,
+    statement: str,
+    parameters: tuple[object, ...],
+    *,
+    maximum: int,
+) -> tuple[tuple[object, ...], ...]:
+    rows = tuple(
+        tuple(row)
+        for row in connection.execute(
+            f"{statement} LIMIT ?", (*parameters, maximum + 1)
+        ).fetchall()
+    )
+    if len(rows) > maximum:
+        raise ValueError("telemetry normalized row cardinality is incompatible")
+    return rows
 
 
 def _read_trace_graph(
@@ -1394,6 +1830,73 @@ def _read_trace_graph(
     }
     commands: tuple[tuple[object, ...], ...] = ()
     operations: tuple[tuple[object, ...], ...] = ()
+    if "retrieve_command_runs_v3" in table_names:
+        commands_v3 = _fetch_limited(
+            connection,
+            "SELECT * FROM retrieve_command_runs_v3 WHERE trace_id = ?",
+            (trace_id,),
+            maximum=1,
+        )
+        if commands_v3:
+            operations_v3 = _fetch_limited(
+                connection,
+                "SELECT * FROM retrieval_operations_v3 WHERE trace_id = ?",
+                (trace_id,),
+                maximum=1,
+            )
+            inference = _fetch_limited(
+                connection,
+                "SELECT * FROM retrieve_inference_requests_v3 WHERE trace_id = ? ORDER BY started_at, span_id",
+                (trace_id,),
+                maximum=256,
+            )
+            accounting = _fetch_limited(
+                connection,
+                "SELECT * FROM retrieve_provider_accounting_v3 WHERE trace_id = ?",
+                (trace_id,),
+                maximum=1,
+            )
+            content_ops = _fetch_limited(
+                connection,
+                "SELECT * FROM retrieve_provider_content_operations_v3 WHERE trace_id = ? ORDER BY route_rank",
+                (trace_id,),
+                maximum=3,
+            )
+            content_calls = _fetch_limited(
+                connection,
+                "SELECT * FROM retrieve_provider_content_invocations_v3 WHERE trace_id = ? ORDER BY route_rank, attempt_index",
+                (trace_id,),
+                maximum=18,
+            )
+            catalog = _fetch_limited(
+                connection,
+                "SELECT * FROM retrieve_provider_catalog_v3 WHERE trace_id = ?",
+                (trace_id,),
+                maximum=1,
+            )
+            spans_v3 = _fetch_limited(
+                connection,
+                "SELECT * FROM spans WHERE trace_id = ? ORDER BY started_at, span_id",
+                (trace_id,),
+                maximum=256,
+            )
+            events_v3 = _fetch_limited(
+                connection,
+                "SELECT * FROM span_events WHERE trace_id = ? ORDER BY event_index",
+                (trace_id,),
+                maximum=1,
+            )
+            return (
+                commands_v3,
+                operations_v3,
+                inference,
+                accounting,
+                content_ops,
+                content_calls,
+                catalog,
+                spans_v3,
+                events_v3,
+            )
     if "retrieve_command_runs" in table_names:
         commands = tuple(
             tuple(row)
@@ -1467,6 +1970,26 @@ def _add_v2_schema_objects(connection: duckdb.DuckDBPyConnection) -> None:
     _add_v2_data_objects(connection)
 
 
+def _add_v3_data_objects(connection: duckdb.DuckDBPyConnection) -> None:
+    connection.execute(_V3_TABLES_DDL)
+    connection.execute(_V3_VIEWS_DDL)
+
+
+def _add_v3_schema_objects(connection: duckdb.DuckDBPyConnection) -> None:
+    for column in _V3_METADATA_HASH_COLUMNS:
+        connection.execute(
+            f"ALTER TABLE telemetry_metadata ADD COLUMN {column} VARCHAR"
+        )
+    _add_v3_data_objects(connection)
+
+
+def _set_v3_metadata_not_null(connection: duckdb.DuckDBPyConnection) -> None:
+    for column in _V3_METADATA_HASH_COLUMNS:
+        connection.execute(
+            f"ALTER TABLE telemetry_metadata ALTER COLUMN {column} SET NOT NULL"
+        )
+
+
 def _initialize_schema_v1(connection: duckdb.DuckDBPyConnection) -> None:
     _create_v1_schema_objects(connection)
     digests = _view_sql_digests(connection, version=1)
@@ -1518,8 +2041,25 @@ def _initialize_schema_v2(connection: duckdb.DuckDBPyConnection) -> None:
     )
 
 
+def _initialize_schema_v3(connection: duckdb.DuckDBPyConnection) -> None:
+    _create_v1_schema_objects(connection)
+    _add_v2_schema_objects(connection)
+    _set_v2_metadata_not_null(connection)
+    _add_v3_schema_objects(connection)
+    _set_v3_metadata_not_null(connection)
+    digests = _view_sql_digests(connection, version=3)
+    if digests != _expected_view_sql_digests(3):
+        raise ValueError("telemetry DuckDB views are incompatible")
+    connection.execute(
+        """INSERT INTO telemetry_metadata VALUES (
+            true, 3, current_timestamp AT TIME ZONE 'UTC', ?, ?, ?, ?, ?, ?, ?, ?, ?
+        )""",
+        tuple(digests[name] for name in _V3_VIEW_LAYOUTS),
+    )
+
+
 # Retained internal seam used by the established store transaction tests.
-_initialize_schema = _initialize_schema_v2
+_initialize_schema = _initialize_schema_v3
 
 
 def _validate_schema(
@@ -1621,7 +2161,7 @@ def _validate_schema(
             FROM system.duckdb_tables()
             WHERE database_name = system.current_database()
               AND schema_name = 'main'
-            LIMIT 8
+            LIMIT 16
             """
         ).fetchall()
     }
@@ -1634,7 +2174,7 @@ def _validate_schema(
             WHERE database_name = system.current_database()
               AND schema_name = 'main'
               AND NOT internal
-            LIMIT 5
+            LIMIT 10
             """
         ).fetchall()
     }
@@ -1646,6 +2186,10 @@ def _validate_schema(
         version = 2
         table_layouts = _V2_TABLE_LAYOUTS
         view_layouts = _V2_VIEW_LAYOUTS
+    elif table_names == set(_V3_TABLE_LAYOUTS) and view_names == set(_V3_VIEW_LAYOUTS):
+        version = 3
+        table_layouts = _V3_TABLE_LAYOUTS
+        view_layouts = _V3_VIEW_LAYOUTS
     else:
         raise ValueError("telemetry DuckDB schema objects are incompatible")
     if expected_version is not None and version != expected_version:
@@ -1718,7 +2262,7 @@ def _validate_schema(
                 expected_digests["retrieval_stage_latency_v1"],
             )
         ]
-    else:
+    elif version == 2:
         metadata = connection.execute(
             """
             SELECT singleton, schema_version,
@@ -1737,6 +2281,18 @@ def _validate_schema(
                 expected_digests["retrieval_stage_latency_v2"],
             )
         ]
+    else:
+        columns = (
+            "singleton", "schema_version", "runs_view_sha256", "stage_view_sha256",
+            "command_runs_view_sha256", "command_stage_view_sha256",
+            *_V3_METADATA_HASH_COLUMNS,
+        )
+        metadata = connection.execute(
+            "SELECT " + ", ".join(columns) + " FROM telemetry_metadata"
+        ).fetchall()
+        expected_metadata = [(
+            True, 3, *(expected_digests[name] for name in _V3_VIEW_LAYOUTS)
+        )]
     if metadata != expected_metadata:
         raise ValueError("telemetry DuckDB schema version is incompatible")
     return version
@@ -1761,15 +2317,18 @@ def _constraint_inventory(
     return tuple(sorted(rows, key=repr))
 
 
-@lru_cache(maxsize=2)
+@lru_cache(maxsize=3)
 def _expected_constraint_inventory(version: int) -> tuple[tuple[object, ...], ...]:
     with _connect_database(":memory:") as connection:
         if version == 1:
             _create_v1_schema_objects(connection)
-        elif version == 2:
+        elif version in {2, 3}:
             _create_v1_schema_objects(connection)
             _add_v2_schema_objects(connection)
             _set_v2_metadata_not_null(connection)
+            if version == 3:
+                _add_v3_schema_objects(connection)
+                _set_v3_metadata_not_null(connection)
         else:
             raise ValueError("unsupported telemetry schema version")
         return _constraint_inventory(connection)
@@ -1798,6 +2357,8 @@ def _view_sql_digests(
         ("retrieval_runs_v1", "retrieval_stage_latency_v1")
         if selected_version == 1
         else tuple(_V2_VIEW_LAYOUTS)
+        if selected_version == 2
+        else tuple(_V3_VIEW_LAYOUTS)
     )
     placeholders = ", ".join("?" for _ in names)
     rows = connection.execute(
@@ -1818,13 +2379,16 @@ def _view_sql_digests(
     }
 
 
-@lru_cache(maxsize=2)
+@lru_cache(maxsize=3)
 def _expected_view_sql_digests(version: int = 2) -> dict[str, str]:
     with _connect_database(":memory:") as connection:
         _create_v1_schema_objects(connection)
-        if version == 2:
+        if version in {2, 3}:
             _add_v2_schema_objects(connection)
             _set_v2_metadata_not_null(connection)
+            if version == 3:
+                _add_v3_schema_objects(connection)
+                _set_v3_metadata_not_null(connection)
         elif version != 1:
             raise ValueError("unsupported telemetry schema version")
         return _view_sql_digests(connection, version=version)
@@ -1872,6 +2436,39 @@ def _upgrade_schema_v1_to_v2(connection: duckdb.DuckDBPyConnection) -> None:
             connection.execute("ROLLBACK")
         except Exception:
             pass
+        raise
+    connection.execute("COMMIT")
+
+
+def _upgrade_schema_v2_to_v3(connection: duckdb.DuckDBPyConnection) -> None:
+    _validate_schema(connection, expected_version=2)
+    connection.execute("BEGIN TRANSACTION")
+    try:
+        _add_v3_data_objects(connection)
+        digests = _expected_view_sql_digests(3)
+        connection.execute(
+            """CREATE TABLE telemetry_metadata_v3 (
+                singleton BOOLEAN PRIMARY KEY CHECK(singleton), schema_version INTEGER NOT NULL,
+                created_at TIMESTAMP NOT NULL, runs_view_sha256 VARCHAR NOT NULL,
+                stage_view_sha256 VARCHAR NOT NULL, command_runs_view_sha256 VARCHAR NOT NULL,
+                command_stage_view_sha256 VARCHAR NOT NULL,
+                command_runs_v3_view_sha256 VARCHAR NOT NULL,
+                command_stage_v3_view_sha256 VARCHAR NOT NULL,
+                inference_requests_v3_view_sha256 VARCHAR NOT NULL,
+                provider_summary_v3_view_sha256 VARCHAR NOT NULL,
+                provider_invocations_v3_view_sha256 VARCHAR NOT NULL
+            )"""
+        )
+        connection.execute(
+            "INSERT INTO telemetry_metadata_v3 VALUES (true,3,current_timestamp AT TIME ZONE 'UTC',?,?,?,?,?,?,?,?,?)",
+            tuple(digests[name] for name in _V3_VIEW_LAYOUTS),
+        )
+        connection.execute("DROP TABLE telemetry_metadata")
+        connection.execute("ALTER TABLE telemetry_metadata_v3 RENAME TO telemetry_metadata")
+        _validate_schema(connection, expected_version=3)
+    except Exception:
+        try: connection.execute("ROLLBACK")
+        except Exception: pass
         raise
     connection.execute("COMMIT")
 
@@ -2129,6 +2726,202 @@ def _migrate_store_locked(
         os.close(root_fd)
 
 
+def migrate_store_v2_to_v3(
+    paths: TelemetryPaths,
+    *,
+    fault_hook: Callable[[str], None] | None = None,
+) -> StoreMigrationResult:
+    """Back up and atomically migrate one exact closed version-2 store."""
+
+    _validate_fixed_paths(paths)
+    hook = fault_hook or (lambda _phase: None)
+    try:
+        with database_write_lock(paths, timeout_ms=250):
+            return _migrate_store_v2_to_v3_locked(paths, hook)
+    except QueueLockTimeout as exc:
+        raise StoreBusyError("telemetry store is busy") from exc
+    except TelemetryStoreError:
+        raise
+    except (UnsafePathError, ValueError, PermissionError) as exc:
+        raise StoreUnsafeError("telemetry migration path is unsafe") from exc
+    except duckdb.Error as exc:
+        raise StoreUnreadableError("telemetry store is unreadable") from exc
+    except OSError as exc:
+        raise StoreWriteError("telemetry store migration failed") from exc
+
+
+_MIGRATION_V3_SCRATCH_NAMES = frozenset(
+    {DATABASE_BASENAME, DATABASE_WAL_BASENAME, DATABASE_V2_BACKUP_BASENAME}
+)
+
+
+def _validate_migration_v3_scratch_inventory(
+    root_fd: int,
+    scratch_fd: int,
+) -> dict[str, os.stat_result]:
+    names = scan_fixed_private_inventory(
+        scratch_fd, allowed_names=_MIGRATION_V3_SCRATCH_NAMES
+    )
+    observed: dict[str, os.stat_result] = {}
+    for name in sorted(names):
+        value = stat_private_entry_at(
+            scratch_fd,
+            name,
+            kind="file",
+            max_bytes=(
+                DATABASE_INIT_MAX_BYTES
+                if name == DATABASE_WAL_BASENAME
+                else None
+            ),
+            allowed_nlinks=(1, 2)
+            if name == DATABASE_V2_BACKUP_BASENAME
+            else (1,),
+        )
+        if name == DATABASE_V2_BACKUP_BASENAME and value.st_nlink == 2:
+            final = stat_private_entry_at(
+                root_fd,
+                name,
+                kind="file",
+                allowed_nlinks=(2,),
+            )
+            if (value.st_dev, value.st_ino) != (final.st_dev, final.st_ino):
+                raise StoreUnsafeError("telemetry v2 backup publication is unsafe")
+        observed[name] = value
+    return observed
+
+
+def _prepare_migration_v3_scratch(root_fd: int) -> int:
+    try:
+        scratch_fd = open_private_directory_at(
+            root_fd, DATABASE_MIGRATION_V3_DIRECTORY, create=False
+        )
+    except FileNotFoundError:
+        return open_private_directory_at(
+            root_fd, DATABASE_MIGRATION_V3_DIRECTORY, create=True
+        )
+    try:
+        observed = _validate_migration_v3_scratch_inventory(root_fd, scratch_fd)
+        for name, value in observed.items():
+            if name == DATABASE_V2_BACKUP_BASENAME and value.st_nlink == 2:
+                safe_unlink_at(scratch_fd, name, allowed_nlinks=(2,))
+            else:
+                safe_unlink_at(scratch_fd, name)
+        fsync_directory(scratch_fd)
+        return scratch_fd
+    except Exception:
+        os.close(scratch_fd)
+        raise
+
+
+def _remove_safe_migration_v3_scratch(root_fd: int, scratch_fd: int) -> None:
+    try:
+        observed = _validate_migration_v3_scratch_inventory(root_fd, scratch_fd)
+        for name, value in observed.items():
+            safe_unlink_at(
+                scratch_fd,
+                name,
+                allowed_nlinks=(value.st_nlink,),
+            )
+        fsync_directory(scratch_fd)
+        os.close(scratch_fd)
+        safe_rmdir_at(root_fd, DATABASE_MIGRATION_V3_DIRECTORY)
+        fsync_directory(root_fd)
+    except Exception:
+        try:
+            os.close(scratch_fd)
+        except OSError:
+            pass
+
+
+def _migrate_store_v2_to_v3_locked(
+    paths: TelemetryPaths,
+    hook: Callable[[str], None],
+) -> StoreMigrationResult:
+    root_fd = open_verified_directory(paths.directory)
+    scratch_fd = -1
+    published = False
+    degraded = False
+    try:
+        if _optional_private_stat(root_fd, DATABASE_WAL_BASENAME, kind="file", max_bytes=DATABASE_INIT_MAX_BYTES) is not None:
+            raise StoreUnsafeError("telemetry store path is unsafe")
+        if _optional_private_stat(root_fd, DATABASE_MIGRATION_DIRECTORY, kind="directory") is not None:
+            raise StoreUnsafeError("older telemetry migration path is unresolved")
+        source_stat = _verify_final_database_fd(root_fd)
+        with _verified_connection(
+            paths.database_path,
+            root_fd,
+            DATABASE_BASENAME,
+            read_only=True,
+        ) as source:
+            _validate_schema(source, expected_version=2)
+            source_v1 = _validate_v1_content(source)
+            source_v2 = _validate_v2_content(source)
+            if (
+                _optional_private_stat(
+                    root_fd, DATABASE_BACKUP_BASENAME, kind="file"
+                )
+                is not None
+            ):
+                _validate_retained_v1_backup_subset(source, paths, root_fd)
+        hook("validated_source")
+        scratch_fd = _prepare_migration_v3_scratch(root_fd)
+        hook("scratch_created")
+        source_hash = _copy_private_file(root_fd, DATABASE_BASENAME, scratch_fd, DATABASE_BASENAME)
+        backup_hash = _copy_private_file(root_fd, DATABASE_BASENAME, scratch_fd, DATABASE_V2_BACKUP_BASENAME)
+        if source_hash != backup_hash:
+            raise StoreWriteError("telemetry v3 migration backup copy failed")
+        hook("backup_candidate_copied")
+        with _verified_connection(paths.migration_backup_candidate_path, scratch_fd, DATABASE_V2_BACKUP_BASENAME, read_only=True) as backup:
+            _validate_schema(backup, expected_version=2)
+            if _validate_v1_content(backup) != source_v1 or _validate_v2_content(backup) != source_v2:
+                raise StoreIncompatibleError("telemetry v2 backup candidate is incompatible")
+        with _verified_connection(paths.migration_database_path, scratch_fd, DATABASE_BASENAME, read_only=False) as scratch:
+            _upgrade_schema_v2_to_v3(scratch)
+        hook("transaction_committed")
+        degraded |= _require_wal_absent_after_close(scratch_fd, DATABASE_WAL_BASENAME)
+        with _verified_connection(paths.migration_database_path, scratch_fd, DATABASE_BASENAME, read_only=True) as scratch:
+            _validate_schema(scratch, expected_version=3)
+            if _validate_v1_content(scratch) != source_v1 or _validate_v2_content(scratch) != source_v2:
+                raise StoreIncompatibleError("telemetry v3 migration values are incompatible")
+            _validate_v3_content(scratch)
+        hook("scratch_validated")
+        existing = _optional_private_stat(root_fd, DATABASE_V2_BACKUP_BASENAME, kind="file")
+        if existing is None:
+            safe_link_at(scratch_fd, DATABASE_V2_BACKUP_BASENAME, root_fd, DATABASE_V2_BACKUP_BASENAME)
+            degraded |= not fsync_directory(root_fd)
+            safe_unlink_at(scratch_fd, DATABASE_V2_BACKUP_BASENAME, allowed_nlinks=(2,))
+        else:
+            if existing.st_size != source_stat.st_size or _hash_private_file(root_fd, DATABASE_V2_BACKUP_BASENAME) != source_hash:
+                raise StoreIncompatibleError("telemetry v2 backup is incompatible")
+            safe_unlink_at(scratch_fd, DATABASE_V2_BACKUP_BASENAME)
+        hook("backup_published")
+        current = _verify_final_database_fd(root_fd)
+        if (current.st_dev, current.st_ino, current.st_size) != (source_stat.st_dev, source_stat.st_ino, source_stat.st_size):
+            raise StoreUnsafeError("telemetry store changed during migration")
+        os.rename(DATABASE_BASENAME, DATABASE_BASENAME, src_dir_fd=scratch_fd, dst_dir_fd=root_fd)
+        published = True
+        degraded |= not fsync_directory(root_fd)
+        hook("canonical_published")
+        with _verified_connection(paths.database_path, root_fd, DATABASE_BASENAME, read_only=True) as final:
+            _validate_schema(final, expected_version=3)
+            if _validate_v1_content(final) != source_v1 or _validate_v2_content(final) != source_v2:
+                raise StoreIncompatibleError("telemetry migrated store is incompatible")
+        os.close(scratch_fd); scratch_fd = -1
+        safe_rmdir_at(root_fd, DATABASE_MIGRATION_V3_DIRECTORY)
+        degraded |= not fsync_directory(root_fd)
+        return StoreMigrationResult(
+            runs=source_v1.counts[0], spans=source_v1.counts[1], events=source_v1.counts[2],
+            backup_present=True, durability_degraded=degraded,
+        )
+    except Exception:
+        if not published and scratch_fd >= 0:
+            _remove_safe_migration_v3_scratch(root_fd, scratch_fd); scratch_fd = -1
+        raise
+    finally:
+        if scratch_fd >= 0: os.close(scratch_fd)
+        os.close(root_fd)
+
+
 def migration_backup_matches_v1_source(paths: TelemetryPaths) -> bool:
     """Prove an immutable final backup is the exact current canonical v1 source."""
 
@@ -2175,6 +2968,93 @@ def migration_backup_matches_v1_source(paths: TelemetryPaths) -> bool:
                 if backup_stat.st_nlink == 2:
                     scratch_fd = _prepare_migration_scratch(root_fd)
                     os.close(scratch_fd)
+                return True
+            finally:
+                os.close(root_fd)
+    except QueueLockTimeout as exc:
+        raise StoreBusyError("telemetry store is busy") from exc
+    except TelemetryStoreError:
+        raise
+    except (UnsafePathError, ValueError, PermissionError) as exc:
+        raise StoreUnsafeError("telemetry migration backup is unsafe") from exc
+    except duckdb.Error as exc:
+        raise StoreUnreadableError("telemetry store is unreadable") from exc
+    except OSError as exc:
+        raise StoreWriteError("telemetry backup validation failed") from exc
+
+
+def migration_backup_matches_v2_source(paths: TelemetryPaths) -> bool:
+    """Prove the final v2 backup is the exact frozen canonical v2 source."""
+
+    _validate_fixed_paths(paths)
+    try:
+        with database_write_lock(paths, timeout_ms=250):
+            root_fd = open_verified_directory(paths.directory)
+            try:
+                backup_stat = _optional_private_stat(
+                    root_fd,
+                    DATABASE_V2_BACKUP_BASENAME,
+                    kind="file",
+                    allowed_nlinks=(1, 2),
+                )
+                if backup_stat is None:
+                    return False
+                source_stat = _verify_final_database_fd(root_fd)
+                with _verified_connection(
+                    paths.database_path,
+                    root_fd,
+                    DATABASE_BASENAME,
+                    read_only=True,
+                ) as source:
+                    _validate_schema(source, expected_version=2)
+                    source_v1 = _validate_v1_content(source)
+                    source_v2 = _validate_v2_content(source)
+                    if (
+                        _optional_private_stat(
+                            root_fd, DATABASE_BACKUP_BASENAME, kind="file"
+                        )
+                        is not None
+                    ):
+                        _validate_retained_v1_backup_subset(source, paths, root_fd)
+                with _verified_connection(
+                    paths.backup_database_path,
+                    root_fd,
+                    DATABASE_V2_BACKUP_BASENAME,
+                    read_only=True,
+                    allowed_nlinks=(backup_stat.st_nlink,),
+                ) as backup:
+                    _validate_schema(backup, expected_version=2)
+                    backup_v1 = _validate_v1_content(backup)
+                    backup_v2 = _validate_v2_content(backup)
+                if (
+                    backup_stat.st_size != source_stat.st_size
+                    or backup_v1 != source_v1
+                    or backup_v2 != source_v2
+                    or _hash_private_file(
+                        root_fd,
+                        DATABASE_V2_BACKUP_BASENAME,
+                        allowed_nlinks=(backup_stat.st_nlink,),
+                    )
+                    != _hash_private_file(root_fd, DATABASE_BASENAME)
+                ):
+                    raise StoreIncompatibleError(
+                        "telemetry v2 backup is incompatible"
+                    )
+                try:
+                    scratch_fd = open_private_directory_at(
+                        root_fd,
+                        DATABASE_MIGRATION_V3_DIRECTORY,
+                        create=False,
+                    )
+                except FileNotFoundError:
+                    scratch_fd = -1
+                if scratch_fd >= 0:
+                    try:
+                        _validate_migration_v3_scratch_inventory(
+                            root_fd, scratch_fd
+                        )
+                    finally:
+                        os.close(scratch_fd)
                 return True
             finally:
                 os.close(root_fd)
@@ -2280,14 +3160,12 @@ def reconcile_already_current_store(paths: TelemetryPaths) -> StoreReconcileResu
                     read_only=True,
                 ) as connection:
                     _validate_schema(connection, expected_version=2)
-                    v1_identity = _validate_existing_content(connection, 2)
+                    _validate_existing_content(connection, 2)
+                    if backup_present:
+                        _validate_retained_v1_backup_subset(
+                            connection, paths, root_fd
+                        )
                     persisted_runs = _persisted_run_count(connection)
-                if backup_present and (
-                    _validate_retained_backup(paths, root_fd) != v1_identity
-                ):
-                    raise StoreIncompatibleError(
-                        "telemetry retained backup history differs"
-                    )
                 durability_degraded = False
                 if scratch_present:
                     safe_rmdir_at(root_fd, DATABASE_MIGRATION_DIRECTORY)
@@ -2302,6 +3180,65 @@ def reconcile_already_current_store(paths: TelemetryPaths) -> StoreReconcileResu
                     backup_present=backup_present,
                     scratch_recovered=scratch_present,
                     durability_degraded=durability_degraded,
+                )
+            finally:
+                os.close(root_fd)
+    except QueueLockTimeout as exc:
+        raise StoreBusyError("telemetry store is busy") from exc
+    except TelemetryStoreError:
+        raise
+    except (UnsafePathError, ValueError, PermissionError) as exc:
+        raise StoreUnsafeError("telemetry migration path is unsafe") from exc
+    except duckdb.Error as exc:
+        raise StoreUnreadableError("telemetry store is unreadable") from exc
+    except OSError as exc:
+        raise StoreWriteError("telemetry store reconciliation failed") from exc
+
+
+def reconcile_already_current_store_v3(paths: TelemetryPaths) -> StoreReconcileResult:
+    """Validate exact v3 plus retained history and clean empty v3 scratch."""
+
+    _validate_fixed_paths(paths)
+    try:
+        with database_write_lock(paths, timeout_ms=250):
+            root_fd = open_verified_directory(paths.directory)
+            try:
+                scratch_present = False
+                try:
+                    scratch_fd = open_private_directory_at(root_fd, DATABASE_MIGRATION_V3_DIRECTORY, create=False)
+                except FileNotFoundError:
+                    scratch_fd = -1
+                if scratch_fd >= 0:
+                    scratch_present = True
+                    try:
+                        names = scan_fixed_private_inventory(
+                            scratch_fd,
+                            allowed_names=frozenset({DATABASE_BASENAME, DATABASE_WAL_BASENAME, DATABASE_V2_BACKUP_BASENAME}),
+                        )
+                        if names:
+                            raise StoreUnsafeError("telemetry migration path is unresolved")
+                    finally:
+                        os.close(scratch_fd)
+                if _optional_private_stat(root_fd, DATABASE_WAL_BASENAME, kind="file", max_bytes=DATABASE_INIT_MAX_BYTES) is not None:
+                    raise StoreUnsafeError("telemetry store path is unsafe")
+                with _verified_connection(paths.database_path, root_fd, DATABASE_BASENAME, read_only=True) as connection:
+                    _validate_schema(connection, expected_version=3)
+                    _validate_existing_content(connection, 3)
+                    _validate_v3_retained_backups(
+                        connection, paths, root_fd,
+                        _optional_private_stat(root_fd, DATABASE_V2_BACKUP_BASENAME, kind="file") is not None,
+                    )
+                    persisted = _persisted_run_count(connection)
+                degraded = False
+                if scratch_present:
+                    safe_rmdir_at(root_fd, DATABASE_MIGRATION_V3_DIRECTORY)
+                    degraded = not fsync_directory(root_fd)
+                final_stat = _verify_final_database_fd(root_fd)
+                return StoreReconcileResult(
+                    snapshot=_store_snapshot(persisted, final_stat, schema_version=3),
+                    backup_present=_optional_private_stat(root_fd, DATABASE_V2_BACKUP_BASENAME, kind="file") is not None,
+                    scratch_recovered=scratch_present,
+                    durability_degraded=degraded,
                 )
             finally:
                 os.close(root_fd)
@@ -2503,12 +3440,18 @@ def _validate_existing_content(
         ):
             raise ValueError("telemetry v1 graph inventory is incompatible")
         return v1_identity
-    if schema_version != 2:
+    if schema_version not in {2, 3}:
         raise ValueError("telemetry content schema version is incompatible")
     v2_identity = _validate_v2_content(connection)
+    v3_spans = 0
+    v3_events = 0
+    if schema_version == 3:
+        v3_identity = _validate_v3_content(connection)
+        v3_spans = v3_identity.counts[-2]
+        v3_events = v3_identity.counts[-1]
     if (
-        v1_identity.counts[1] + v2_identity.counts[2] != total_spans
-        or v1_identity.counts[2] + v2_identity.counts[3] != total_events
+        v1_identity.counts[1] + v2_identity.counts[2] + v3_spans != total_spans
+        or v1_identity.counts[2] + v2_identity.counts[3] + v3_events != total_events
     ):
         raise ValueError("telemetry shared graph inventory is incompatible")
     return v1_identity
@@ -2689,6 +3632,180 @@ def _validate_v2_content(
     if observed_counts != physical_counts:
         raise ValueError("telemetry v2 graph inventory is incompatible")
     return _V2ContentIdentity(observed_counts, digest.hexdigest())
+
+
+def _provider_tuple_from_v3_tables(
+    connection: duckdb.DuckDBPyConnection,
+    trace_id: str,
+) -> tuple[object, ...]:
+    accounting = _fetch_limited(
+        connection,
+        "SELECT status, unit FROM retrieve_provider_accounting_v3 WHERE trace_id = ?",
+        (trace_id,),
+        maximum=1,
+    )
+    if len(accounting) != 1:
+        raise ValueError("telemetry v3 provider authority is incompatible")
+    status, unit = accounting[0]
+    if status == "unavailable":
+        return status, unit, None, None
+    operations = []
+    content_operations = _fetch_limited(
+        connection,
+        "SELECT route_rank,outcome,invocation_count FROM retrieve_provider_content_operations_v3 WHERE trace_id=? ORDER BY route_rank",
+        (trace_id,),
+        maximum=3,
+    )
+    for route_rank, outcome, invocation_count in content_operations:
+        attempts = [
+            {
+                "attempt_index": row[0],
+                "request_form": row[1],
+                "trigger": row[2],
+                "outcome": row[3],
+                "error_category": row[4],
+            }
+            for row in _fetch_limited(
+                connection,
+                "SELECT attempt_index,request_form,trigger,outcome,error_category FROM retrieve_provider_content_invocations_v3 WHERE trace_id=? AND route_rank=? ORDER BY attempt_index",
+                (trace_id, route_rank),
+                maximum=6,
+            )
+        ]
+        if len(attempts) != invocation_count:
+            raise ValueError("telemetry v3 provider counts are incompatible")
+        operations.append({"route_rank": route_rank, "outcome": outcome, "attempts": attempts})
+    content = {
+        "logical_operation_count": len(operations),
+        "invocation_count": sum(len(item["attempts"]) for item in operations),
+        "operations": operations,
+    }
+    catalogs = _fetch_limited(
+        connection,
+        "SELECT * EXCLUDE(trace_id) FROM retrieve_provider_catalog_v3 WHERE trace_id=?",
+        (trace_id,),
+        maximum=1,
+    )
+    if len(catalogs) != 1:
+        raise ValueError("telemetry v3 catalog authority is incompatible")
+    values = catalogs[0]
+    catalog = {
+        "outcome": values[0], "invocation_count": values[1],
+        "namespace_list_page": {"success": values[2], "error": values[3], "interrupted": values[4]},
+        "metadata": {"success": values[5], "error": values[6], "interrupted": values[7]},
+        "card_query_page": {"success": values[8], "error": values[9], "interrupted": values[10]},
+    }
+    return status, unit, content, catalog
+
+
+def _validate_v3_content(connection: duckdb.DuckDBPyConnection) -> _V3ContentIdentity:
+    from buoy_search.telemetry.envelope import CommandTraceRowsV3, encode_trace_envelope_v3
+
+    _preflight_v3_scalar_lengths(connection)
+    _preflight_v3_normalized_cardinalities(connection)
+    table_names = (
+        "retrieve_command_runs_v3", "retrieval_operations_v3", "retrieve_inference_requests_v3",
+        "retrieve_provider_accounting_v3", "retrieve_provider_content_operations_v3",
+        "retrieve_provider_content_invocations_v3", "retrieve_provider_catalog_v3",
+    )
+    physical = [int(connection.execute(f"SELECT count(*) FROM {name}").fetchone()[0]) for name in table_names]
+    physical.extend([
+        int(connection.execute("SELECT count(*) FROM spans WHERE trace_id IN (SELECT trace_id FROM retrieve_command_runs_v3)").fetchone()[0]),
+        int(connection.execute("SELECT count(*) FROM span_events WHERE trace_id IN (SELECT trace_id FROM retrieve_command_runs_v3)").fetchone()[0]),
+    ])
+    digest = hashlib.sha256()
+    observed = [0] * 9
+    after = ""
+    while True:
+        trace_ids = [str(row[0]) for row in connection.execute(
+            "SELECT trace_id FROM retrieve_command_runs_v3 WHERE trace_id>? ORDER BY trace_id LIMIT ?", (after, MIGRATION_BATCH_SIZE)
+        ).fetchall()]
+        if not trace_ids:
+            break
+        for trace_id in trace_ids:
+            command = _fetch_limited(
+                connection,
+                "SELECT * FROM retrieve_command_runs_v3 WHERE trace_id=?",
+                (trace_id,),
+                maximum=1,
+            )
+            operation = _fetch_limited(
+                connection,
+                "SELECT * FROM retrieval_operations_v3 WHERE trace_id=?",
+                (trace_id,),
+                maximum=1,
+            )
+            spans = _fetch_limited(
+                connection,
+                "SELECT * FROM spans WHERE trace_id=? ORDER BY started_at,span_id",
+                (trace_id,),
+                maximum=256,
+            )
+            events = _fetch_limited(
+                connection,
+                "SELECT * FROM span_events WHERE trace_id=? ORDER BY event_index",
+                (trace_id,),
+                maximum=1,
+            )
+            if len(command) != 1 or len(operation) > 1 or not 1 <= len(spans) <= 256 or len(events) > 1:
+                raise ValueError("telemetry v3 graph cardinality is incompatible")
+            rows = CommandTraceRowsV3(
+                tuple(command[0]), tuple(operation[0]) if operation else None,
+                _provider_tuple_from_v3_tables(connection, trace_id),
+                tuple(tuple(row) for row in spans), tuple(tuple(row) for row in events),
+            )
+            payload = encode_trace_envelope_v3(rows)
+            expected = _v3_normalized_rows(rows)
+            actual = _read_trace_graph(connection, trace_id)
+            if actual != _row_graph(rows):
+                raise ValueError("telemetry v3 normalized rows are incompatible")
+            digest.update(len(payload).to_bytes(8, "big")); digest.update(payload)
+            observed[0] += 1
+            observed[1] += len(operation)
+            observed[2] += len(expected[0])
+            observed[3] += 1
+            observed[4] += len(expected[2])
+            observed[5] += len(expected[3])
+            observed[6] += 0 if expected[4] is None else 1
+            observed[7] += len(spans); observed[8] += len(events)
+        after = trace_ids[-1]
+    if observed != physical:
+        raise ValueError("telemetry v3 physical inventory is incompatible")
+    return _V3ContentIdentity(tuple(observed), digest.hexdigest())
+
+
+def _preflight_v3_normalized_cardinalities(
+    connection: duckdb.DuckDBPyConnection,
+) -> None:
+    limits = (
+        ("retrieve_inference_requests_v3", "trace_id", 256),
+        ("retrieve_provider_accounting_v3", "trace_id", 1),
+        ("retrieve_provider_content_operations_v3", "trace_id", 3),
+        ("retrieve_provider_content_invocations_v3", "trace_id", 18),
+        ("retrieve_provider_content_invocations_v3", "trace_id, route_rank", 6),
+        ("retrieve_provider_catalog_v3", "trace_id", 1),
+    )
+    for table_name, grouping, maximum in limits:
+        oversized = connection.execute(
+            f"SELECT 1 FROM {table_name} GROUP BY {grouping} "
+            "HAVING count(*) > ? LIMIT 1",
+            (maximum,),
+        ).fetchone()
+        if oversized is not None:
+            raise ValueError("telemetry normalized row cardinality is incompatible")
+
+
+def _preflight_v3_scalar_lengths(connection: duckdb.DuckDBPyConnection) -> None:
+    _preflight_scalar_lengths(
+        connection,
+        (
+            "retrieve_command_runs_v3", "retrieval_operations_v3", "retrieve_inference_requests_v3",
+            "retrieve_provider_accounting_v3", "retrieve_provider_content_operations_v3",
+            "retrieve_provider_content_invocations_v3", "retrieve_provider_catalog_v3",
+            "spans", "span_events",
+        ),
+        _V3_TABLE_LAYOUTS,
+    )
 
 
 def _preflight_v2_scalar_lengths(

@@ -1,7 +1,7 @@
 Status: active
 Created: 2026-08-24
-Updated: 2026-08-24
-Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
+Updated: 2026-08-28
+Decision: .10x/decisions/buoy-records-worker-and-provider-attempt-retrieval-telemetry-v3.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Authorization: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md
 Prior-Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-review.md
@@ -13,13 +13,16 @@ Review: .10x/reviews/2026-08-24-provider-client-invocation-contract-rereview.md
 
 This specification defines the private activation, concurrency, finalization,
 exact receipt envelope, validation, serialization handoff, authority, privacy,
-and retention lifecycle for canary-only `provider_client_invocation` evidence.
+and retention lifecycle for private `provider_client_invocation` receipts.
 The governed unit, call sites, outcomes, categories, and family objects are
 owned by `.10x/specs/provider-client-invocation-accounting.md`.
 
-This receipt is independent of active telemetry v2. It MUST NOT alter or extend
-v2 spans, envelopes, queues, DuckDB schema/views, enablement, status, flush,
-migration, or retention.
+This receipt remains independent of telemetry v1/v2. It MUST NOT alter or
+extend v1/v2 spans, envelopes, queues, DuckDB schema/views, enablement, status,
+flush, migration, or retention. Its separately governed internal use by an
+effective v3 command is defined only by
+`.10x/specs/retrieve-provider-invocation-telemetry-v3.md`; that use does not
+create a standalone receipt file or public activation surface.
 
 ## Terminal authority
 
@@ -53,11 +56,13 @@ or when authority cannot be proved, it returns null. There is no partial-ledger
 or mutable receipt API.
 
 Activation is default-off and possible only by an explicit in-process call to
-the private scope. There MUST be no CLI flag, environment trigger, public API,
-automatic canary, import-time activation, process-global installation,
-automatic filesystem write, telemetry publication, database write, or network
-export. When no private scope is active, governed wrappers call their original
-expressions without allocating a ledger or serializing a receipt.
+the private scope. There MUST be no receipt-specific CLI flag, environment
+trigger, public API, automatic canary, import-time activation, process-global
+installation, standalone automatic filesystem write, or network export.
+Effective v3 command telemetry MAY call the scope and consume its validated
+bytes in memory under its separate active specification; all other callers
+remain unchanged. When no private scope is active, governed wrappers call their
+original expressions without allocating a ledger or serializing a receipt.
 
 The scope MAY expose one internal private catalog-observer capability bound to
 its ledger. Merely activating the scope MUST NOT make shared remote-catalog
@@ -154,9 +159,10 @@ model, validate it, canonical-encode it, strict-decode the bytes, revalidate the
 same value, and expose bytes only if re-encoding is byte-identical. Decoder and
 encoder accept no extension object or payload-selected path.
 
-Serialization/handoff failure returns null. Production code MUST NOT choose a
-path, create a directory, or write the bytes. Only the explicitly authorized
-harness receives them in process.
+Serialization/handoff failure returns null. Receipt code MUST NOT choose a
+path, create a directory, or write the bytes. Only an explicitly authorized
+canary harness or the separately governed v3
+producer receives them in process.
 
 ## Privacy contract
 
@@ -201,9 +207,10 @@ That sanitized receipt may be retained indefinitely with the evidence record.
 The authorized harness MUST delete raw runtime logs, temporary captures, and
 other raw canary artifacts after the evidence is recorded.
 
-Buoy production code performs no retention or deletion operation under this
-contract. Recurring production telemetry retention/purge behavior is unchanged.
-No receipt is automatically written to telemetry storage or any other path.
+Buoy receipt code performs no retention or deletion operation under this
+contract. V3 may normalize validated fields into its ordinary local telemetry
+transaction under its own retention contract; it never writes standalone
+receipt bytes. No receipt is automatically written to any other path.
 
 ## Acceptance scenarios
 
@@ -237,8 +244,8 @@ No receipt is automatically written to telemetry storage or any other path.
 
 ## Explicit exclusions
 
-Public API/callback, CLI or environment enablement, recurring production
-telemetry, telemetry-v2 extension, automatic disk write, database/store,
-migration, production retention/purge change, wire/cost/rate-limit claim,
-provider/model/catalog/content operation, live canary, release, and global-tool
-behavior are excluded.
+Public API/callback, receipt-specific CLI or environment enablement,
+telemetry-v1/v2 extension, standalone automatic receipt write, wire/cost/rate-
+limit claim, changed provider/model/catalog/content operation, unauthorized live
+canary, release, and global-tool behavior are excluded. Separately specified v3
+in-memory consumption and normalized local persistence are not governed here.
