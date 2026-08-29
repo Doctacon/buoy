@@ -8,12 +8,14 @@ as GitHub Release assets rather than to PyPI.
 
 ### Added
 
-- Local retrieval telemetry now records separate near-shell Buoy command and
-  inner pipeline durations. Opted-in previews record command duration without
-  adding provider work, while existing schema-v1 stores upgrade only through
-  explicit `buoy telemetry migrate` with a retained backup. Records remain
-  local and exclude queries, content, source identifiers, paths, credentials,
-  and raw errors.
+- Local retrieval telemetry schema v3 now records separate near-shell command
+  and inner pipeline durations, caller-observed embedding/reranker requests with
+  worker spawn/reuse/fallback state, and content-free Buoy SDK invocation
+  accounting. Opted-in previews retain established provider/model behavior.
+  Existing schema-v1/v2 stores advance one version per explicit `buoy telemetry
+  migrate` invocation with immutable retained backups. Records remain local and
+  exclude queries, content, source/provider identifiers, paths, credentials,
+  model inputs/outputs, and raw errors.
 
 ## [0.6.1] - 2026-08-20
 

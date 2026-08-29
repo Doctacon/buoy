@@ -50,6 +50,9 @@ from buoy_search.telemetry.producer import (
     RERANK_SPAN_NAME,
     TelemetrySpan,
     copied_context_callable,
+    inference_telemetry_enabled,
+    instrument_in_process_embedder,
+    instrument_in_process_reranker,
     retrieval_trace,
     telemetry_span,
 )
@@ -679,8 +682,11 @@ class HybridRetriever:
             )
         selected_embedder = embedder
         if selected_embedder is None:
-            selected_embedder = SentenceTransformerEmbedder(
-                config.embedding_model, precision=config.embedding_precision
+            selected_embedder = instrument_in_process_embedder(
+                SentenceTransformerEmbedder(
+                    config.embedding_model,
+                    precision=config.embedding_precision,
+                )
             )
         try:
             namespace = build_namespace(config=config, api_key=api_key)
@@ -934,8 +940,16 @@ class MultiNamespaceRetriever:
             )
         selected_embedder = embedder
         if selected_embedder is None:
-            selected_embedder = SentenceTransformerEmbedder(
-                first.embedding_model, precision=first.embedding_precision
+            selected_embedder = instrument_in_process_embedder(
+                SentenceTransformerEmbedder(
+                    first.embedding_model,
+                    precision=first.embedding_precision,
+                )
+            )
+        selected_reranker_loader = reranker_loader
+        if selected_reranker_loader is None and inference_telemetry_enabled():
+            selected_reranker_loader = lambda: instrument_in_process_reranker(
+                load_cross_encoder_reranker()
             )
         retrievers: list[HybridRetriever] = []
         for config in configs:
@@ -955,7 +969,7 @@ class MultiNamespaceRetriever:
         return cls(
             retrievers=retrievers,
             embedder=selected_embedder,
-            reranker_loader=reranker_loader,
+            reranker_loader=selected_reranker_loader,
         )
 
     def retrieve(

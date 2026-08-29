@@ -3,7 +3,7 @@ Created: 2026-08-24
 Updated: 2026-08-24
 Parent: .10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipts.md
 Depends-On: .10x/tickets/done/2026-08-24-implement-private-provider-invocation-receipt-core.md
-Decision: .10x/decisions/buoy-uses-private-canary-provider-invocation-receipts.md
+Decision: .10x/decisions/superseded/buoy-uses-private-canary-provider-invocation-receipts.md
 Authorization-Evidence: .10x/evidence/2026-08-24-provider-client-invocation-receipt-authorization.md, .10x/evidence/2026-08-24-provider-invocation-probe-and-live-canary-authorization.md
 Accounting: .10x/specs/provider-client-invocation-accounting.md
 Lifecycle: .10x/specs/provider-client-invocation-receipt.md

@@ -680,14 +680,23 @@ class ReceiptIntegrationAuditTests(unittest.TestCase):
         self.assertNotIn("_provider_invocation_receipt_scope", cli_source)
         self.assertEqual(cli_source.count("_invocation_observer"), 1)
 
-        telemetry_paths = (
-            "src/buoy_search/telemetry/producer.py",
-            "src/buoy_search/telemetry/envelope.py",
+        producer_source = (
+            root / "src/buoy_search/telemetry/producer.py"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(producer_source.count("_provider_invocation_receipt_scope"), 2)
+        self.assertNotIn("provider_client_invocation", producer_source)
+
+        envelope_source = (
+            root / "src/buoy_search/telemetry/envelope.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("def provider_accounting_from_receipt(", envelope_source)
+        self.assertNotIn("_provider_invocation_receipt", envelope_source)
+
+        for relative in (
             "src/buoy_search/telemetry/queue.py",
             "src/buoy_search/telemetry/store.py",
             "src/buoy_search/telemetry/writer.py",
-        )
-        for relative in telemetry_paths:
+        ):
             source = (root / relative).read_text(encoding="utf-8")
             with self.subTest(relative=relative):
                 self.assertNotIn("provider_client_invocation", source)

@@ -45,12 +45,13 @@ from buoy_search.telemetry.envelope import (
     V2_PIPELINE_SPAN_NAME,
     decode_trace_envelope_v1,
     decode_trace_envelope_v2,
+    decode_trace_envelope_v3,
 )
 from buoy_search.telemetry.queue import (
     PublicationResult,
     scan_queue_read_only,
     telemetry_paths,
-    telemetry_paths_v2,
+    telemetry_paths_v3,
 )
 
 
@@ -276,13 +277,21 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
         )
         self.env_patch.start()
         self.payloads: list[bytes] = []
+        real_command_trace = telemetry.retrieve_command_trace
+        self.v2_trace_patch = patch(
+            "buoy_search.cli.main.retrieve_command_trace",
+            side_effect=lambda **kwargs: real_command_trace(
+                **kwargs, _schema_version=2
+            ),
+        )
+        self.v2_trace_patch.start()
 
         def publish(payload: bytes, *, paths: object) -> PublicationResult:
-            del paths
+            version = int(getattr(paths, "queue_version", 1))
             self.payloads.append(payload)
             return PublicationResult(
                 True,
-                f"v2-{'0' * 32}.json",
+                f"v{version}-{'0' * 32}.json",
                 "published",
             )
 
@@ -296,6 +305,7 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.publish_patch.stop()
         self.start_patch.stop()
+        self.v2_trace_patch.stop()
         self.env_patch.stop()
         self.home_patch.stop()
         self.temp.cleanup()
@@ -448,6 +458,31 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
                 )
             )
         return patches
+
+    def test_production_default_v3_explicit_cli_flow(self) -> None:
+        self.v2_trace_patch.stop()
+        with patch(
+            "buoy_search.cli.main.HybridRetriever.from_config",
+            return_value=self._single_retriever(),
+        ), redirect_stdout(StringIO()):
+            self.assertEqual(
+                main(
+                    [
+                        "retrieve",
+                        "private query",
+                        "--namespace",
+                        "site-one-v1",
+                        "--json",
+                    ]
+                ),
+                0,
+            )
+        self.assertEqual(len(self.payloads), 1)
+        rows = decode_trace_envelope_v3(self.payloads[0])
+        self.assertEqual(rows.command[-2:], (3, "worker_preferred"))
+        self.assertEqual(rows.provider_accounting[0], "complete")
+        self.assertEqual(rows.provider_accounting[2]["invocation_count"], 1)  # type: ignore[index]
+        self._assert_exact_graph(rows, pipeline=True, namespace_minimum=1)
 
     def test_explicit_single_and_multi_live_emit_one_nested_v2_pipeline(self) -> None:
         for namespaces in (("site-one-v1",), ("site-one-v1", "site-two-v1")):
@@ -1078,6 +1113,7 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
         )
 
         self.publish_patch.stop()
+        self.v2_trace_patch.stop()
         os.environ.update(
             {
                 "BUOY_TELEMETRY": "local",
@@ -1123,7 +1159,7 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
         self.assertEqual(len(observations), 2)
         self.assertEqual(observations, [("worker-default", False)] * 2)
         paths_v1 = telemetry_paths()
-        paths_v2 = telemetry_paths_v2(paths_v1.directory)
+        paths_v3 = telemetry_paths_v3(paths_v1.directory)
         prohibited_text = tuple(sentinels.values())
         for sentinel in prohibited_text:
             self.assertNotIn(sentinel, str(paths_v1.directory))
@@ -1135,10 +1171,10 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
                 observed_relative_names.add(relative.as_posix())
                 observed_relative_names.update(relative.parts)
 
-        self.assertEqual(scan_queue_read_only(paths_v2).ready, 1)
+        self.assertEqual(scan_queue_read_only(paths_v3).ready, 1)
         capture_relative_names()
-        ready_payloads = [path.read_bytes() for path in paths_v2.ready_directory.iterdir()]
-        rows = decode_trace_envelope_v2(ready_payloads[0])
+        ready_payloads = [path.read_bytes() for path in paths_v3.ready_directory.iterdir()]
+        rows = decode_trace_envelope_v3(ready_payloads[0])
         self.assertEqual(
             len([span for span in rows.spans if span[3] == "buoy.namespace.query"]),
             2,
@@ -1175,11 +1211,11 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
             return_value=failing_multi,
         ), redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             self.assertEqual(entrypoint_main(), 2)
-        self.assertEqual(scan_queue_read_only(paths_v2).ready, 2)
+        self.assertEqual(scan_queue_read_only(paths_v3).ready, 2)
         capture_relative_names()
 
         prohibited = tuple(value.encode("ascii") for value in sentinels.values())
-        for path in paths_v2.ready_directory.iterdir():
+        for path in paths_v3.ready_directory.iterdir():
             payload = path.read_bytes()
             for sentinel in prohibited:
                 self.assertNotIn(sentinel, payload, path)
@@ -1206,8 +1242,13 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
             database_values = []
             for table in (
                 "telemetry_metadata",
-                "retrieve_command_runs",
-                "retrieval_operations",
+                "retrieve_command_runs_v3",
+                "retrieval_operations_v3",
+                "retrieve_inference_requests_v3",
+                "retrieve_provider_accounting_v3",
+                "retrieve_provider_content_operations_v3",
+                "retrieve_provider_content_invocations_v3",
+                "retrieve_provider_catalog_v3",
                 "spans",
                 "span_events",
             ):

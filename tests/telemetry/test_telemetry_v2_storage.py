@@ -1982,7 +1982,7 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
         with duckdb.connect(
             str(self.v2.database_path), read_only=True, config=_SAFE_CONFIG
         ) as connection:
-            self.assertEqual(telemetry_store._validate_schema(connection), 2)
+            self.assertEqual(telemetry_store._validate_schema(connection), 3)
             self.assertEqual(
                 tuple(row[0] for row in connection.execute(
                     "SELECT pipeline_duration_ms FROM retrieval_command_runs_v2 "
@@ -2169,9 +2169,11 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
         backup = self.v1.backup_database_path.read_bytes()
         state = self.v1.writer_state_path.read_bytes()
         again = telemetry_migrate_command(json_output=True, paths=self.v1)
-        self.assertEqual(json.loads(again.output)["outcome"], "already_current")
+        self.assertEqual(json.loads(again.output)["outcome"], "migrated")
         self.assertEqual(self.v1.backup_database_path.read_bytes(), backup)
-        self.assertEqual(self.v1.writer_state_path.read_bytes(), state)
+        self.assertNotEqual(self.v1.writer_state_path.read_bytes(), state)
+        final = telemetry_migrate_command(json_output=True, paths=self.v1)
+        self.assertEqual(json.loads(final.output)["outcome"], "already_current")
 
     def test_every_migration_fault_keeps_one_provable_canonical_version(self) -> None:
         phases = (
@@ -2225,7 +2227,8 @@ class Version2QueueStoreMigrationTests(unittest.TestCase):
                     {"migrated", "already_current"},
                 )
                 self.assertEqual(
-                    telemetry_store.inspect_store_schema_version(paths), 2
+                    telemetry_store.inspect_store_schema_version(paths),
+                    3 if expected == 2 else 2,
                 )
 
 
@@ -2338,7 +2341,7 @@ class ReviewRepairTests(unittest.TestCase):
 
         retried = telemetry_migrate_command(json_output=True, paths=self.v1)
         self.assertEqual(retried.exit_code, 0)
-        self.assertEqual(json.loads(retried.output)["outcome"], "already_current")
+        self.assertEqual(json.loads(retried.output)["outcome"], "migrated")
         self.assertFalse(self.v1.migration_directory.exists())
         self.assertEqual(
             telemetry_store.append_trace(self.v2, _rows()).outcome,
@@ -2574,8 +2577,8 @@ class ReviewRepairTests(unittest.TestCase):
         )
         retried = telemetry_migrate_command(json_output=True, paths=self.v1)
         self.assertEqual(retried.exit_code, 0)
-        self.assertEqual(json.loads(retried.output)["outcome"], "already_current")
-        self.assertEqual(read_writer_state(self.v1).store_schema_version, 2)
+        self.assertEqual(json.loads(retried.output)["outcome"], "migrated")
+        self.assertEqual(read_writer_state(self.v1).store_schema_version, 3)
 
     def test_append_allows_exact_backup_and_rejects_hostile_backup_or_scratch(self) -> None:
         telemetry_store.append_trace(self.v2, _rows())
@@ -2620,7 +2623,7 @@ class ReviewRepairTests(unittest.TestCase):
             with self.subTest(limits=limits), patch.object(
                 telemetry_writer,
                 "scan_queue_read_only",
-                side_effect=(queue_v1, queue_v2),
+                side_effect=(queue_v1, queue_v2, QueueSnapshot(present=False)),
             ), patch.multiple(telemetry_writer, **limits):
                 status = telemetry_status(paths=self.v1, environment={})
             self.assertTrue(status["queue"]["capacity_full"])
@@ -2733,7 +2736,7 @@ class ReviewRepairTests(unittest.TestCase):
 
     def test_incomplete_migration_scans_block_before_store_import(self) -> None:
         _create_v1_store(self.v1.database_path)
-        for incomplete_version in (1, 2):
+        for incomplete_version in (1, 2, 3):
             with self.subTest(queue_version=incomplete_version):
                 calls = 0
 
@@ -2756,7 +2759,7 @@ class ReviewRepairTests(unittest.TestCase):
                         json_output=True, paths=self.v1
                     )
                 self.assertEqual(result.exit_code, 2)
-                self.assertEqual(calls, 2)
+                self.assertEqual(calls, 3)
                 load.assert_not_called()
 
         calls = 0
@@ -2766,7 +2769,7 @@ class ReviewRepairTests(unittest.TestCase):
             calls += 1
             return QueueSnapshot(
                 present=True,
-                scan_incomplete=calls == 3 and paths.queue_version == 1,
+                scan_incomplete=calls == 4 and paths.queue_version == 1,
             )
 
         with patch.object(
@@ -2782,7 +2785,7 @@ class ReviewRepairTests(unittest.TestCase):
                 json_output=True, paths=self.v1
             )
         self.assertEqual(result.exit_code, 2)
-        self.assertEqual(calls, 4)
+        self.assertEqual(calls, 6)
         load.assert_not_called()
 
     def test_exact_object_inventory_rejects_all_user_metadata_v1_and_v2(self) -> None:
@@ -3296,6 +3299,7 @@ class ReviewRepairTests(unittest.TestCase):
             release_producer = threading.Event()
             snapshot_lock_contended = threading.Event()
             snapshot_lock_acquired = threading.Event()
+            inside_final_queue_lock = threading.Event()
             final_scan_started = threading.Event()
             order: list[str] = []
             producer_results: list[telemetry_queue.PublicationResult] = []
@@ -3360,7 +3364,11 @@ class ReviewRepairTests(unittest.TestCase):
                 with real_queue_lock(selected, *args, **kwargs) as descriptor:
                     order.append("snapshot_queue_lock_acquired")
                     snapshot_lock_acquired.set()
-                    yield descriptor
+                    inside_final_queue_lock.set()
+                    try:
+                        yield descriptor
+                    finally:
+                        inside_final_queue_lock.clear()
 
             def observe_scan(
                 selected: telemetry_queue.TelemetryPaths,
@@ -3369,6 +3377,7 @@ class ReviewRepairTests(unittest.TestCase):
                     threading.current_thread().name
                     == "migration-final-snapshot"
                     and snapshot_lock_contended.is_set()
+                    and inside_final_queue_lock.is_set()
                 ):
                     order.append("final_v2_scan")
                     final_scan_started.set()
@@ -3462,9 +3471,9 @@ class ReviewRepairTests(unittest.TestCase):
             migration_facts = json.loads(migration_results[0].output)
             self.assertEqual(
                 (migration_results[0].exit_code, migration_facts["outcome"]),
-                (0, "already_current"),
+                (0, "migrated"),
             )
-            self.assertEqual(migration_facts["pending_v2"], 1)
+            self.assertEqual(migration_facts["pending_v2"], 0)
             self.assertLess(
                 order.index("snapshot_queue_lock_contended"),
                 order.index("producer_ready_rename"),
@@ -3603,7 +3612,7 @@ class ReviewRepairTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     (retried.exit_code, json.loads(retried.output)["outcome"]),
-                    (0, "already_current"),
+                    (0, "migrated"),
                 )
                 self.assertFalse(paths.writer_state_temp_path.exists())
 
@@ -3640,7 +3649,7 @@ class ReviewRepairTests(unittest.TestCase):
             )
             self.assertEqual(
                 (retried.exit_code, json.loads(retried.output)["outcome"]),
-                (0, "already_current"),
+                (0, "migrated"),
             )
 
 

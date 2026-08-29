@@ -18,6 +18,7 @@ if "--stage" in sys.argv and sys.argv[sys.argv.index("--stage") + 1] == "bootstr
 
 from buoy_search.telemetry import producer as telemetry
 from buoy_search.cli.main import main
+from buoy_search.retrieval import _provider_invocation_receipt as provider_receipt
 from buoy_search.telemetry.producer import (
     EVIDENCE_SPAN_NAME,
     NAMESPACE_QUERY_SPAN_NAME,
@@ -26,7 +27,7 @@ from buoy_search.telemetry.producer import (
     retrieval_trace,
     telemetry_span,
 )
-from buoy_search.telemetry.envelope import decode_trace_envelope_v2
+from buoy_search.telemetry.envelope import decode_trace_envelope_v3
 from buoy_search.telemetry.queue import PublicationResult
 
 
@@ -59,6 +60,8 @@ class ControlledRetriever:
                 NAMESPACE_QUERY_SPAN_NAME,
                 {"buoy.route.rank": 1},
             ) as span:
+                with provider_receipt._content_operation(1) as operation:
+                    operation._invoke("server_rrf", "initial", lambda: object())
                 span.set_attributes(
                     {
                         "buoy.namespace.status": "ok",
@@ -151,6 +154,17 @@ def _routing_patches(stage: str, delay_ms: int) -> tuple[object, ...]:
             time.sleep(delay_ms / 1000)
         return ControlledRouting()
 
+    def read_catalog(*_args: object, **_kwargs: object) -> object:
+        observer = provider_receipt._active_catalog_observer()
+        assert observer is not None
+        with observer._operation() as operation:
+            operation._invoke("namespace_list_page", lambda: object())
+            operation._invoke("metadata", lambda: object())
+            operation._invoke("card_query_page", lambda: object())
+            operation._invoke("card_query_page", lambda: object())
+            operation._invoke("namespace_list_page", lambda: object())
+        return snapshot
+
     return (
         patch(
             "buoy_search.cli.main.ROUTING_CONFIDENCE_FACTORY",
@@ -158,7 +172,7 @@ def _routing_patches(stage: str, delay_ms: int) -> tuple[object, ...]:
         ),
         patch("buoy_search.cli.main.load_evidence_calibration", return_value=calibration),
         patch("buoy_search.cli.main.REMOTE_CATALOG_CLIENT_FACTORY", return_value=object()),
-        patch("buoy_search.cli.main.read_remote_catalog", return_value=snapshot),
+        patch("buoy_search.cli.main.read_remote_catalog", side_effect=read_catalog),
         patch("buoy_search.cli.main.require_eligible", side_effect=lambda value: value),
         patch("buoy_search.cli.main.ROUTING_EMBEDDER_FACTORY", return_value=object()),
         patch("buoy_search.cli.main.hybrid_route", side_effect=route),
@@ -184,7 +198,7 @@ def run(stage: str, delay_ms: int) -> dict[str, object]:
     def publish(payload: bytes, *, paths: object) -> PublicationResult:
         del paths
         payloads.append(payload)
-        return PublicationResult(True, f"v2-{'0' * 32}.json", "published")
+        return PublicationResult(True, f"v3-{'0' * 32}.json", "published")
 
     os.environ["BUOY_TELEMETRY"] = "local"
     if stage == "routing":
@@ -204,7 +218,7 @@ def run(stage: str, delay_ms: int) -> dict[str, object]:
             stack.enter_context(routing_patch)
         exit_code = main(args, entry_started_at_ns=started_at_ns)
 
-    rows = decode_trace_envelope_v2(payloads[0])
+    rows = decode_trace_envelope_v3(payloads[0])
     assert rows.retrieval_operation is not None
     bootstrap = next(span for span in rows.spans if span[3] == "buoy.cli.bootstrap")
     pipeline = next(span for span in rows.spans if span[3] == "buoy.retrieve.pipeline")

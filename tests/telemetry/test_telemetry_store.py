@@ -149,7 +149,7 @@ class TelemetryStoreTests(unittest.TestCase):
                 for table in ("trace_runs", "spans", "span_events")
             )
 
-    def test_first_v1_commit_publishes_complete_private_v2_store(self) -> None:
+    def test_first_v1_commit_publishes_complete_private_v3_store(self) -> None:
         rows = _trace_rows()
 
         result = telemetry_store.append_trace(self.paths, rows)
@@ -160,7 +160,7 @@ class TelemetryStoreTests(unittest.TestCase):
         self.assertEqual(
             result.snapshot,
             telemetry_store.StoreSnapshot(
-                schema_version=2,
+                schema_version=3,
                 persisted_runs_snapshot=1,
                 database_device=database_stat.st_dev,
                 database_inode=database_stat.st_ino,
@@ -181,7 +181,7 @@ class TelemetryStoreTests(unittest.TestCase):
             ).fetchone()
             self.assertIsNotNone(metadata)
             assert metadata is not None
-            self.assertEqual(metadata[0], 2)
+            self.assertEqual(metadata[0], 3)
             self.assertIsNone(metadata[1].tzinfo)
             self.assertEqual(
                 connection.execute(

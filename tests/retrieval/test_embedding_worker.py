@@ -347,10 +347,22 @@ class EmbeddingWorkerLifecycleTests(unittest.TestCase):
             spawn_count += 1
             self.start_fake_worker(model=model)
 
+        first_states: list[str] = []
+        second_states: list[str] = []
         with patch.object(worker, "_spawn_worker", side_effect=spawn):
-            first = worker.encode(["first"], buoy_home=self.home)
-            second = worker.encode(["second"], buoy_home=self.home)
+            first = worker.encode(
+                ["first"],
+                buoy_home=self.home,
+                _lifecycle_observer=first_states.append,
+            )
+            second = worker.encode(
+                ["second"],
+                buoy_home=self.home,
+                _lifecycle_observer=second_states.append,
+            )
 
+        self.assertEqual(first_states, ["spawned"])
+        self.assertEqual(second_states, ["reused"])
         self.assertEqual(spawn_count, 1)
         self.assertEqual(first[0][0], 1.0)
         self.assertEqual(second[0][0], 1.0)
@@ -358,6 +370,30 @@ class EmbeddingWorkerLifecycleTests(unittest.TestCase):
         state = worker.read_worker_state(buoy_home=self.home)
         self.assertEqual(state["phase"], "ready")
         self.assertEqual(state["model"], worker.MODEL)
+
+    def test_lifecycle_observer_failure_does_not_change_worker_result(self) -> None:
+        class ObserverFailure(BaseException):
+            pass
+
+        observed: list[str] = []
+
+        def observer(state: str) -> None:
+            observed.append(state)
+            raise ObserverFailure("private observer detail")
+
+        with patch.object(
+            worker,
+            "_spawn_worker",
+            side_effect=lambda _paths: self.start_fake_worker(),
+        ):
+            result = worker.encode(
+                ["query"],
+                buoy_home=self.home,
+                _lifecycle_observer=observer,
+            )
+
+        self.assertEqual(result[0][0], 1.0)
+        self.assertEqual(observed, ["spawned"])
 
     def test_score_lazily_loads_once_and_reuses_resident_reranker(self) -> None:
         reranker = _FakeReranker()
@@ -605,11 +641,17 @@ class EmbeddingWorkerLifecycleTests(unittest.TestCase):
         thread = threading.Thread(target=serve_incompatible, daemon=True)
         thread.start()
         self.threads.append(thread)
+        lifecycle: list[str] = []
         with patch.object(worker, "_spawn_worker") as spawn:
             with self.assertRaises(worker.EmbeddingWorkerError) as raised:
-                worker.encode(["must-not-send"], buoy_home=self.home)
+                worker.encode(
+                    ["must-not-send"],
+                    buoy_home=self.home,
+                    _lifecycle_observer=lifecycle.append,
+                )
 
         self.assertEqual(raised.exception.error_type, "incompatible_worker")
+        self.assertEqual(lifecycle, ["unknown"])
         spawn.assert_not_called()
         thread.join(timeout=1)
         self.assertEqual(received, [b""])
@@ -618,15 +660,21 @@ class EmbeddingWorkerLifecycleTests(unittest.TestCase):
         def failed_loader() -> object:
             raise RuntimeError("sensitive raw model error")
 
+        lifecycle: list[str] = []
         with patch.object(
             worker,
             "_spawn_worker",
             side_effect=lambda _paths: self.start_fake_worker(loader=failed_loader),
         ):
             with self.assertRaises(worker.EmbeddingWorkerError) as raised:
-                worker.encode(["private query"], buoy_home=self.home)
+                worker.encode(
+                    ["private query"],
+                    buoy_home=self.home,
+                    _lifecycle_observer=lifecycle.append,
+                )
 
         self.assertEqual(raised.exception.error_type, "model_unavailable")
+        self.assertEqual(lifecycle, ["unknown"])
         self.assertNotIn("sensitive", str(raised.exception))
 
     def test_transport_races_are_bounded_before_and_after_request(self) -> None:
@@ -677,6 +725,46 @@ class EmbeddingWorkerLifecycleTests(unittest.TestCase):
                 self.assertEqual(failures, [])
                 if paths.socket_path.exists():
                     paths.socket_path.unlink()
+
+    def test_post_greeting_failure_reports_reused_only_after_contact(self) -> None:
+        directory_fd = worker._prepare_identity_directory(self.paths)
+        os.close(directory_fd)
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server.bind(os.fspath(self.paths.socket_path))
+        self.paths.socket_path.chmod(0o600)
+        server.listen(1)
+        failures: list[Exception] = []
+
+        def serve() -> None:
+            try:
+                connection, _address = server.accept()
+                with connection:
+                    worker._send_frame(connection, worker._ready_response())
+                    worker._recv_frame(connection)
+                    time.sleep(0.05)
+            except Exception as exc:  # pragma: no cover - assertion reports it.
+                failures.append(exc)
+            finally:
+                server.close()
+
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+        self.threads.append(thread)
+        lifecycle: list[str] = []
+        with patch.object(worker, "_spawn_worker") as spawn:
+            with self.assertRaises(worker.EmbeddingWorkerError) as raised:
+                worker.encode(
+                    ["private query"],
+                    buoy_home=self.home,
+                    request_timeout_seconds=0.01,
+                    _lifecycle_observer=lifecycle.append,
+                )
+
+        self.assertEqual(raised.exception.error_type, "busy_timeout")
+        self.assertEqual(lifecycle, ["reused"])
+        spawn.assert_not_called()
+        thread.join(timeout=1)
+        self.assertEqual(failures, [])
 
     def test_score_response_timeout_and_truncation_are_bounded(self) -> None:
         for behavior, category in (

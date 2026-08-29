@@ -755,6 +755,7 @@ def _connect_and_encode(
     texts: Sequence[str],
     *,
     timeout_seconds: float,
+    contact_observer: Callable[[], None] | None = None,
 ) -> list[list[float]]:
     _verify_socket(paths.socket_path)
     try:
@@ -780,6 +781,8 @@ def _connect_and_encode(
             raise _Unavailable from exc
         except _ProtocolError as exc:
             raise _Incompatible from exc
+        if contact_observer is not None:
+            contact_observer()
 
         # From the first request byte onward, never retry: the worker may have
         # completed the operation even if its response is lost. Convert every
@@ -808,6 +811,7 @@ def _connect_and_score(
     passages: Sequence[str],
     *,
     timeout_seconds: float,
+    contact_observer: Callable[[], None] | None = None,
 ) -> list[float]:
     _verify_socket(paths.socket_path)
     try:
@@ -830,6 +834,8 @@ def _connect_and_score(
             raise _Unavailable from exc
         except _ProtocolError as exc:
             raise _Incompatible from exc
+        if contact_observer is not None:
+            contact_observer()
 
         # Local scoring has no durable side effect, but IPC is still never
         # replayed after request transmission because completion is uncertain.
@@ -1134,16 +1140,37 @@ def _spawn_worker(paths: WorkerPaths) -> None:
 _T = TypeVar("_T")
 
 
+def _observe_worker_state(
+    observer: Callable[[str], None] | None,
+    state: str,
+) -> None:
+    if observer is None:
+        return
+    try:
+        observer(state)
+    except BaseException:
+        return
+
+
 def _request_from_worker(
     paths: WorkerPaths,
-    request: Callable[[], _T],
+    request: Callable[[Callable[[], None]], _T],
     *,
     startup_timeout_seconds: float,
+    lifecycle_observer: Callable[[str], None] | None = None,
 ) -> _T:
-    directory_fd = _prepare_identity_directory(paths)
+    worker_state = "unknown"
+    launched = False
+    directory_fd: int | None = None
+
+    def contacted() -> None:
+        nonlocal worker_state
+        worker_state = "spawned" if launched else "reused"
+
     try:
+        directory_fd = _prepare_identity_directory(paths)
         try:
-            return request()
+            return request(contacted)
         except _Incompatible as exc:
             raise EmbeddingWorkerError("incompatible_worker") from exc
         except _Unavailable:
@@ -1155,7 +1182,7 @@ def _request_from_worker(
             timeout_seconds=startup_timeout_seconds,
         ):
             try:
-                return request()
+                return request(contacted)
             except _Incompatible as exc:
                 raise EmbeddingWorkerError("incompatible_worker") from exc
             except _Unavailable:
@@ -1164,6 +1191,7 @@ def _request_from_worker(
             with _lock(directory_fd, "lifetime.lock", timeout_seconds=0.0):
                 _clear_stale_runtime(directory_fd)
             _spawn_worker(paths)
+            launched = True
             deadline = time.monotonic() + startup_timeout_seconds
             while True:
                 state = _read_state(directory_fd)
@@ -1178,7 +1206,7 @@ def _request_from_worker(
                             else "internal_worker_failure"
                         )
                 try:
-                    return request()
+                    return request(contacted)
                 except _Incompatible as exc:
                     raise EmbeddingWorkerError("incompatible_worker") from exc
                 except _Unavailable:
@@ -1188,7 +1216,9 @@ def _request_from_worker(
     except _ProtocolError as exc:
         raise EmbeddingWorkerError("protocol_error") from exc
     finally:
-        os.close(directory_fd)
+        if directory_fd is not None:
+            os.close(directory_fd)
+        _observe_worker_state(lifecycle_observer, worker_state)
 
 
 def encode(
@@ -1197,6 +1227,7 @@ def encode(
     buoy_home: Path | None = None,
     startup_timeout_seconds: float = STARTUP_TIMEOUT_SECONDS,
     request_timeout_seconds: float = REQUEST_TIMEOUT_SECONDS,
+    _lifecycle_observer: Callable[[str], None] | None = None,
 ) -> list[list[float]]:
     """Encode texts through the exact private local worker."""
 
@@ -1206,10 +1237,14 @@ def encode(
     paths = worker_paths(buoy_home)
     return _request_from_worker(
         paths,
-        lambda: _connect_and_encode(
-            paths, validated, timeout_seconds=request_timeout_seconds
+        lambda contacted: _connect_and_encode(
+            paths,
+            validated,
+            timeout_seconds=request_timeout_seconds,
+            contact_observer=contacted,
         ),
         startup_timeout_seconds=startup_timeout_seconds,
+        lifecycle_observer=_lifecycle_observer,
     )
 
 
@@ -1220,6 +1255,7 @@ def score(
     buoy_home: Path | None = None,
     startup_timeout_seconds: float = STARTUP_TIMEOUT_SECONDS,
     request_timeout_seconds: float = REQUEST_TIMEOUT_SECONDS,
+    _lifecycle_observer: Callable[[str], None] | None = None,
 ) -> list[float]:
     """Score bounded query/passage pairs through the private local worker."""
 
@@ -1229,13 +1265,15 @@ def score(
     paths = worker_paths(buoy_home)
     return _request_from_worker(
         paths,
-        lambda: _connect_and_score(
+        lambda contacted: _connect_and_score(
             paths,
             validated_query,
             validated_passages,
             timeout_seconds=request_timeout_seconds,
+            contact_observer=contacted,
         ),
         startup_timeout_seconds=startup_timeout_seconds,
+        lifecycle_observer=_lifecycle_observer,
     )
 
 

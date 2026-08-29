@@ -141,6 +141,10 @@ from buoy_search.telemetry.producer import (
     ROUTING_CATALOG_SPAN_NAME,
     ROUTING_MODEL_SPAN_NAME,
     ROUTING_SELECT_SPAN_NAME,
+    inference_request,
+    inference_telemetry_enabled,
+    instrument_in_process_embedder,
+    instrument_in_process_reranker,
     retrieve_command_trace,
     safe_time_ns,
 )
@@ -1594,9 +1598,17 @@ class _CommandEmbeddingWorkerSession:
         *,
         warning_callback: Callable[[str], None],
         score_callback: Callable[[str, Sequence[str]], list[float]] | None = None,
+        encode_with_lifecycle: Callable[
+            [Sequence[str], Callable[[str], None]], list[list[float]]
+        ] | None = None,
+        score_with_lifecycle: Callable[
+            [str, Sequence[str], Callable[[str], None]], list[float]
+        ] | None = None,
     ) -> None:
         self._encode_callback = encode_callback
         self._score_callback = score_callback
+        self._encode_with_lifecycle = encode_with_lifecycle
+        self._score_with_lifecycle = score_with_lifecycle
         self._warning_callback = warning_callback
         self._worker_failed = False
         self._warning_emitted = False
@@ -1651,7 +1663,18 @@ class _CommandEmbeddingWorkerSession:
     ) -> list[list[float]]:
         if not self._worker_failed:
             try:
-                return self._encode_callback(texts)
+                if not inference_telemetry_enabled():
+                    return self._encode_callback(texts)
+                with inference_request(
+                    operation="encode",
+                    backend="worker",
+                    role="primary",
+                    item_count=len(texts),
+                ) as observation:
+                    lifecycle = observation.lifecycle_observer
+                    if lifecycle is not None and self._encode_with_lifecycle is not None:
+                        return self._encode_with_lifecycle(texts, lifecycle)
+                    return self._encode_callback(texts)
             except Exception:
                 self._mark_worker_failed()
         fallback = self._fallback_embedders.get(fallback_key)
@@ -1659,7 +1682,15 @@ class _CommandEmbeddingWorkerSession:
             if fallback is None:
                 fallback = fallback_factory()
                 self._fallback_embedders[fallback_key] = fallback
-            return fallback.encode(texts)  # type: ignore[attr-defined,no-any-return]
+            if not inference_telemetry_enabled():
+                return fallback.encode(texts)  # type: ignore[attr-defined,no-any-return]
+            with inference_request(
+                operation="encode",
+                backend="in_process",
+                role="fallback",
+                item_count=len(texts),
+            ):
+                return fallback.encode(texts)  # type: ignore[attr-defined,no-any-return]
         except _InProcessEmbeddingFallbackError:
             self._fallback_failed = True
             self._fallback_failure_kind = "embedding"
@@ -1680,7 +1711,18 @@ class _CommandEmbeddingWorkerSession:
     ) -> list[float]:
         if not self._worker_failed and self._score_callback is not None:
             try:
-                return self._score_callback(query, passages)
+                if not inference_telemetry_enabled():
+                    return self._score_callback(query, passages)
+                with inference_request(
+                    operation="score",
+                    backend="worker",
+                    role="primary",
+                    item_count=len(passages),
+                ) as observation:
+                    lifecycle = observation.lifecycle_observer
+                    if lifecycle is not None and self._score_with_lifecycle is not None:
+                        return self._score_with_lifecycle(query, passages, lifecycle)
+                    return self._score_callback(query, passages)
             except Exception:
                 self._mark_worker_failed()
         elif not self._worker_failed:
@@ -1688,9 +1730,19 @@ class _CommandEmbeddingWorkerSession:
         try:
             if self._fallback_reranker is None:
                 self._fallback_reranker = fallback_factory()
-            return self._fallback_reranker.score(  # type: ignore[attr-defined,no-any-return]
-                query, passages
-            )
+            if not inference_telemetry_enabled():
+                return self._fallback_reranker.score(  # type: ignore[attr-defined,no-any-return]
+                    query, passages
+                )
+            with inference_request(
+                operation="score",
+                backend="in_process",
+                role="fallback",
+                item_count=len(passages),
+            ):
+                return self._fallback_reranker.score(  # type: ignore[attr-defined,no-any-return]
+                    query, passages
+                )
         except _InProcessRerankerFallbackError:
             self._fallback_failed = True
             self._fallback_failure_kind = "reranker"
@@ -1750,17 +1802,43 @@ def _prepare_default_embedding_worker(
     *,
     activate: bool,
     disabled: bool,
+    policy_callback: Callable[[str], None] | None = None,
 ) -> _CommandEmbeddingWorkerSession | None:
     """Select an exact compatible worker without touching ineligible paths."""
 
-    if (
-        disabled
-        or not activate
-        or config.embedding_model != DEFAULT_EMBEDDING_MODEL
-        or config.embedding_precision != DEFAULT_EMBEDDING_PRECISION
-        or not EMBEDDING_WORKER_CAPABILITY_FACTORY()
-    ):
-        return None
+    def set_policy(value: str) -> None:
+        if policy_callback is None:
+            return
+        try:
+            policy_callback(value)
+        except BaseException:
+            pass
+
+    if policy_callback is None:
+        if (
+            disabled
+            or not activate
+            or config.embedding_model != DEFAULT_EMBEDDING_MODEL
+            or config.embedding_precision != DEFAULT_EMBEDDING_PRECISION
+            or not EMBEDDING_WORKER_CAPABILITY_FACTORY()
+        ):
+            return None
+    else:
+        eligible = (
+            not disabled
+            and config.embedding_model == DEFAULT_EMBEDDING_MODEL
+            and config.embedding_precision == DEFAULT_EMBEDDING_PRECISION
+            and EMBEDDING_WORKER_CAPABILITY_FACTORY()
+        )
+        set_policy(
+            "forced_in_process"
+            if disabled
+            else "worker_preferred"
+            if eligible
+            else "compatibility_in_process"
+        )
+        if not activate or not eligible:
+            return None
 
     from buoy_search.retrieval import embedding_worker
 
@@ -1795,15 +1873,26 @@ def _prepare_default_embedding_worker(
         False,
     )
     if identity != expected:
+        set_policy("compatibility_in_process")
         return None
     try:
         embedding_worker._require_capability()
     except Exception:
+        set_policy("compatibility_in_process")
         return None
     return _CommandEmbeddingWorkerSession(
         embedding_worker.encode,
         warning_callback=_print_embedding_worker_fallback_warning,
         score_callback=embedding_worker.score,
+        encode_with_lifecycle=lambda texts, observer: embedding_worker.encode(
+            texts,
+            _lifecycle_observer=observer,
+        ),
+        score_with_lifecycle=lambda query, passages, observer: embedding_worker.score(
+            query,
+            passages,
+            _lifecycle_observer=observer,
+        ),
     )
 
 
@@ -1853,6 +1942,11 @@ def _run_retrieve(
                     base_config,
                     activate=not args.dry_run,
                     disabled=args.no_embedding_worker,
+                    policy_callback=(
+                        command.set_inference_policy
+                        if inference_telemetry_enabled()
+                        else None
+                    ),
                 )
                 configs = [
                     replace(base_config, namespace=namespace)
@@ -1939,6 +2033,11 @@ def _run_retrieve(
                     base_config,
                     activate=True,
                     disabled=args.no_embedding_worker,
+                    policy_callback=(
+                        command.set_inference_policy
+                        if inference_telemetry_enabled()
+                        else None
+                    ),
                 )
                 api_key = os.environ.get("TURBOPUFFER_API_KEY")
                 if not api_key:
@@ -1992,7 +2091,9 @@ def _run_retrieve(
                                     ROUTING_EMBEDDER_FACTORY,
                                 )
                                 if worker_session is not None
-                                else ROUTING_EMBEDDER_FACTORY()
+                                else instrument_in_process_embedder(
+                                    ROUTING_EMBEDDER_FACTORY()
+                                )
                             )
                 except Exception as exc:
                     failure = AutomaticRoutingError(
@@ -2041,7 +2142,9 @@ def _run_retrieve(
                 }
                 def load_command_reranker() -> CrossEncoderReranker:
                     if worker_session is None:
-                        return ROUTING_RERANKER_FACTORY()
+                        return instrument_in_process_reranker(
+                            ROUTING_RERANKER_FACTORY()
+                        )
                     return worker_session.reranker(ROUTING_RERANKER_FACTORY)
 
                 def load_routing_reranker_for_command() -> CrossEncoderReranker:
@@ -2113,13 +2216,14 @@ def _run_retrieve(
                     )
                 else:
                     top_route_entry = routing.entries[0]
-                    evidence_assessor = (
-                        CalibratedEvidenceAssessor(evidence_calibration)
-                        if worker_session is None
-                        else CalibratedEvidenceAssessor(
-                            evidence_calibration,
-                            reranker_loader=load_command_reranker,
-                        )
+                    evidence_assessor = CalibratedEvidenceAssessor(
+                        evidence_calibration,
+                        reranker_loader=(
+                            load_command_reranker
+                            if worker_session is not None
+                            or inference_telemetry_enabled()
+                            else None
+                        ),
                     )
                     retrieval_kwargs: dict[str, object] = {
                         "initial_fanout": routing.initial_fanout,
@@ -2930,6 +3034,11 @@ def main(
             bootstrap_ended_at_ns=bootstrap_ended_at_ns,
             execution_mode="preview" if args.dry_run else "live",
             retrieval_mode=retrieval_mode,
+            inference_policy=(
+                "forced_in_process"
+                if args.no_embedding_worker
+                else "compatibility_in_process"
+            ),
         ) as command:
             try:
                 result = _run_retrieve(args, command)

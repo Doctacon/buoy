@@ -50,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     migrate = commands.add_parser(
         "migrate",
-        help="back up and explicitly upgrade an exact version-1 local store",
+        help="back up and explicitly upgrade an exact local store by one supported schema version",
     )
     migrate.add_argument(
         "--json",
