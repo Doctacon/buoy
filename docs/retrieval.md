@@ -67,30 +67,19 @@ The runtime also reads `TURBOPUFFER_REGION` (default
 `gcp-us-central1`), `BUOY_EMBEDDING_MODEL`, and
 `BUOY_EMBEDDING_PRECISION`. `TURBOPUFFER_NAMESPACE` is ignored.
 
-## Persistent local inference worker
+## Persistent embedding worker
 
 On supported POSIX systems, `retrieve` reuses the exact pinned
 `BAAI/bge-small-en-v1.5` float32 model in a private local worker by default. The
 same resident model serves automatic semantic routing and the final retrieval
-query embedding. When routing, evidence assessment, or multi-namespace ranking
-needs the pinned MiniLM cross-encoder, that model is loaded lazily in the same
-worker and reused by nearby commands. Commands that need only embeddings do not
-load the cross-encoder.
+query embedding. This amortizes Sentence Transformers and Torch initialization
+across nearby commands.
 
-Turbopuffer credentials and provider clients, catalog and namespace requests,
-routing/ranking/evidence decisions, results, telemetry storage, and rendering
-remain in the invoking CLI process. A score request sends only the already
-formatted query and at most 108 passages—the existing bound of 12 routing
-candidates with one base plus eight evidence passages each—which may contain
-provider-returned content, over the same-user private Unix socket
-and receives one finite score per passage. Queries, passages, vectors, and
-scores are transient: Buoy does not write them to worker state, files, logs, or
-a durable queue.
-
-The worker exits after five minutes without a valid embedding or score request.
-The embedding-only worker has been observed at roughly 185–516 MB while warm;
-lazy cross-encoder loading can increase memory until that idle exit. This is a
-bounded observation, not an SLA or memory limit.
+The worker owns only the local embedder. Turbopuffer credentials, provider
+clients, catalog and namespace requests, reranking, results, telemetry storage,
+and rendering remain in the invoking CLI process. The worker exits after five
+minutes without a valid embedding request and may retain roughly 185–516 MB
+while warm.
 
 Use the established per-command in-process model explicitly when needed:
 
@@ -106,11 +95,9 @@ namespace `--dry-run` performs no embedding and starts no worker. An automatic
 no-content-query boundary.
 
 If an eligible worker fails, Buoy prints one bounded warning and uses the
-in-process implementations for the failed and all later embedding or scoring
-operations in that command. A scoring fallback reuses already retrieved
-passages and does not repeat provider catalog or content operations. Fallback
-does not expose worker paths, frames, query or passage text, credentials, raw
-exceptions, or PIDs.
+in-process model for the failed and all later embeddings in that command. The
+fallback does not repeat provider catalog or content operations and does not
+expose worker paths, frames, query text, credentials, raw exceptions, or PIDs.
 There is no environment-variable activation. The former
 `--experimental-embedding-worker` flag has been removed.
 
@@ -253,21 +240,14 @@ The exact model is `cross-encoder/ms-marco-MiniLM-L-6-v2` at immutable revision
 `c5ee24cb16019beea0893ab7796b1df96625c6b8`. Loading is CPU-only,
 `local_files_only`, safetensors-only, and remote code is disabled. Retrieval
 does not download a model or accept an unpinned substitute. The snapshot is
-about 88 MB. Eligible commands score through the persistent local worker by
-default; `--no-embedding-worker` and expected ineligible configurations retain
-the established in-process scorer. The fixed batch size remains eight and the
-model's maximum input length remains 512 tokens.
-
-Model availability is checked when the current execution path first needs a
-score. Eligible worker commands load the cross-encoder lazily: prototype
-routing may need it before content queries, while multi-corpus result
-reranking needs it only after the namespace results are returned. If worker
-scoring fails, Buoy falls back in-process without repeating catalog or content
-operations; if that fallback also cannot load the exact snapshot, the request
-fails at that scoring boundary. Opt-out and expected ineligible commands keep
-the established in-process loading path. A high-confidence single-corpus
-route may query that corpus first and require the model later for evidence
-assessment before widening or presenting results.
+about 88 MB. With the routing model already resident, a measured 24-candidate
+run on the development Mac took about 0.58 seconds and added about 151 MiB of
+peak working memory using the fixed batch size of eight. It is already present
+in the development environment. If that exact snapshot is not
+in the Hugging Face cache, an ambiguous multi-corpus request fails before its
+content queries. A high-confidence single-corpus route queries that corpus
+first; if evidence assessment then needs the missing model, the request fails
+with a generic assessment error before widening or presenting results.
 
 Overrides remain explicit:
 
