@@ -36,7 +36,5 @@ buoy retrieve "<question>"
 - [Inspect local retrieval telemetry](docs/telemetry.md)
 - [Evaluate search quality](docs/evaluation.md)
 - [Migrate from an earlier version](docs/migrating-to-buoy.md)
-- [Contribute to Buoy](CONTRIBUTING.md)
-- [Release Buoy](docs/releasing.md)
 
 Buoy is licensed under the [Apache License 2.0](LICENSE).
