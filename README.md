@@ -16,7 +16,7 @@ You need Python 3.11 or newer, `uv`, Git, and a
 [Turbopuffer](https://turbopuffer.com/) account. Install Buoy from GitHub:
 
 ```bash
-uv tool install "git+https://github.com/Doctacon/buoy.git@v0.6.4"
+uv tool install "git+https://github.com/Doctacon/buoy.git@v0.6.5"
 ```
 
 Set your Turbopuffer API key, then plan a source, apply it, and search it:
