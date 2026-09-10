@@ -91,3 +91,15 @@ its existing owner rather than narrowing acceptance after the fact.
   Existing base tokenizer/data smoke remains intact; installed-extra CI coverage
   is additive. No runtime/spec/package/skill behavior changed. Final committed
   build, isolated base/extra installs and required offline gates follow.
+- 2026-09-10: Committed implementation as `89cecb2ed0bf5279b0bbedb5cc42cd342d2885a0`.
+  Clean wheel/sdist version `0.5.2.dev131+g89cecb2ed` built and inspected; the same
+  wheel passed four isolated base/extra installs across Python 3.11.10/3.13.0.
+  Real SDK client and guarded raw stdio initialize/discovery/invalid errors,
+  EOF/SIGINT/SIGTERM passed without provider/model/runtime assets. Both final
+  full suites passed 1342 tests, with lock/ranking/promotion/C6 and unchanged
+  base tokenizer/data smoke passing. All nine original preservation entries
+  still match, including the old ticket's absence. Evidence and byte-for-byte
+  artifacts are recorded in `.10x/evidence/2026-09-10-buoy-mcp-installation.md`
+  and its `.storage/buoy-mcp-installation/` directory. No runtime owner repair
+  was needed. Ticket remains active for parent independent review/closure;
+  no live provider/model validation, hosted CI, Windows or release is claimed.

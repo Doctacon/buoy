@@ -1,0 +1,16 @@
+{
+  "adapter": "/private/tmp/bmi.FsHuj7/base311/lib/python3.11/site-packages/buoy_search/mcp.py",
+  "buoy": "0.5.2.dev131+g89cecb2ed",
+  "dependencies": {},
+  "direct_url": {
+    "archive_info": {},
+    "url": "file:///tmp/bmi.FsHuj7/dist/buoy_search-0.5.2.dev131+g89cecb2ed-py3-none-any.whl"
+  },
+  "executable": "/private/tmp/bmi.FsHuj7/base311/bin/python",
+  "missing_extra_stderr": "MCP support is not installed. Install Buoy with the optional extra: buoy-search[mcp].\n",
+  "python": "3.11.10 (main, Sep  7 2024, 01:03:31) [Clang 15.0.0 (clang-1500.3.9.4)]",
+  "runtime_assets_created": false,
+  "runtime_home": "/tmp/bmcp-_kl9o9tn",
+  "temporary_home_removed": true,
+  "wheel_sha256": "189dc4da39dc5a602f9e59483e6bf9188437bbf1255d1bcd599102d97f2bca60"
+}

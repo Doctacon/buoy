@@ -1,0 +1,87 @@
+Metadata-Version: 2.4
+Name: buoy-search
+Version: 0.5.2.dev131+g89cecb2ed
+Summary: Plan, index, and search public knowledge sources with anchored citations.
+Project-URL: Repository, https://github.com/Doctacon/buoy
+Project-URL: Issues, https://github.com/Doctacon/buoy/issues
+Project-URL: Changelog, https://github.com/Doctacon/buoy/blob/main/CHANGELOG.md
+Project-URL: Documentation, https://github.com/Doctacon/buoy/tree/main/docs
+Author: Buoy maintainers
+License-Expression: Apache-2.0
+License-File: LICENSE
+Keywords: hybrid-search,rag,retrieval,turbopuffer,vector-search
+Classifier: Development Status :: 4 - Beta
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Database :: Database Engines/Servers
+Classifier: Topic :: Internet :: WWW/HTTP :: Indexing/Search
+Requires-Python: >=3.11
+Requires-Dist: duckdb>=1.5.4
+Requires-Dist: markdownify>=1.2.0
+Requires-Dist: markitdown[docx,pdf,pptx,xls,xlsx]
+Requires-Dist: opentelemetry-sdk<2,>=1.44
+Requires-Dist: portalocker>=3.2.0
+Requires-Dist: pyyaml
+Requires-Dist: scrapling[fetchers]==0.4.9
+Requires-Dist: sentence-transformers
+Requires-Dist: transformers==5.12.1
+Requires-Dist: turbopuffer
+Provides-Extra: bigquery
+Requires-Dist: google-cloud-bigquery<4,>=3.25; extra == 'bigquery'
+Provides-Extra: mcp
+Requires-Dist: anyio<5,>=4.5; extra == 'mcp'
+Requires-Dist: mcp==2.2.0; extra == 'mcp'
+Requires-Dist: pydantic<3,>=2.11; extra == 'mcp'
+Provides-Extra: snowflake
+Requires-Dist: snowflake-connector-python<5,>=3.12; extra == 'snowflake'
+Description-Content-Type: text/markdown
+
+<p align="center">
+  <img src="images/buoy.svg" alt="Buoy" width="160">
+</p>
+
+# Buoy
+
+*Search that stays anchored to the source.* [![CI](https://github.com/Doctacon/buoy/actions/workflows/ci.yml/badge.svg)](https://github.com/Doctacon/buoy/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
+Buoy turns websites, public GitHub repositories, local documents, and prepared
+database tables into a Turbopuffer search index that returns relevant passages
+with citations.
+
+## Quick start
+
+You need Python 3.11 or newer, `uv`, Git, and a
+[Turbopuffer](https://turbopuffer.com/) account. Install Buoy from GitHub:
+
+```bash
+uv tool install "git+https://github.com/Doctacon/buoy.git@v0.6.4"
+```
+
+Set your Turbopuffer API key, then plan a source, apply it, and search it:
+
+```bash
+export TURBOPUFFER_API_KEY=...
+
+buoy plan <source>
+buoy apply
+buoy retrieve "<question>"
+```
+
+## Learn more
+
+- [Index a source](docs/indexing.md)
+- [Retrieve with automatic routing](docs/retrieval.md)
+- [Connect an MCP client](docs/mcp.md)
+- [Inspect local retrieval telemetry](docs/telemetry.md)
+- [Evaluate search quality](docs/evaluation.md)
+- [Migrate from an earlier version](docs/migrating-to-buoy.md)
+- [Contribute to Buoy](CONTRIBUTING.md)
+- [Release Buoy](docs/releasing.md)
+
+Buoy is licensed under the [Apache License 2.0](LICENSE).

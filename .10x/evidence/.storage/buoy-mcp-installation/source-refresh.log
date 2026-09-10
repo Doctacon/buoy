@@ -1,0 +1,13 @@
+
+$ env UV_PROJECT_ENVIRONMENT=/tmp/buoy-mcp-runtime.LJClud/venv uv sync --locked --extra mcp --python /tmp/buoy-mcp-runtime.LJClud/venv/bin/python --reinstall-package buoy-search
+Resolved 171 packages in 22ms
+   Building buoy-search @ file:///Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server
+      Built buoy-search @ file:///Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server
+Prepared 1 package in 553ms
+Uninstalled 1 package in 1ms
+Installed 1 package in 1ms
+ - buoy-search==0.5.2.dev128+g6c9b6d8fe.d20260910 (from file:///Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server)
+ + buoy-search==0.5.2.dev131+g89cecb2ed (from file:///Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server)
+
+$ /tmp/buoy-mcp-runtime.LJClud/venv/bin/python -c import buoy_search, importlib.metadata; print(buoy_search.__version__, importlib.metadata.version("buoy-search")); assert buoy_search.__version__ == importlib.metadata.version("buoy-search")
+0.5.2.dev131+g89cecb2ed 0.5.2.dev131+g89cecb2ed
