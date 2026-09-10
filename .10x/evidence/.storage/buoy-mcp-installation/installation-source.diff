@@ -1,0 +1,435 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 0f108c2..605b03c 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -75,0 +76,5 @@ jobs:
++          export HOME="$RUNNER_TEMP/buoy-wheel-home"
++          export XDG_CACHE_HOME="$RUNNER_TEMP/buoy-wheel-cache"
++          export UV_CACHE_DIR="$XDG_CACHE_HOME/uv" HF_HOME="$XDG_CACHE_HOME/hf" TORCH_HOME="$XDG_CACHE_HOME/torch"
++          export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1
++          mkdir -p "$HOME"
+@@ -119,0 +125,13 @@ jobs:
++      - name: Verify base and extra MCP wheel installations
++        run: |
++          set -- dist/*.whl
++          test "$#" -eq 1
++          wheel="$(realpath "$1")"
++          export HOME="$RUNNER_TEMP/buoy-mcp-install-home" UV_CACHE_DIR="$RUNNER_TEMP/buoy-mcp-install-cache"
++          mkdir -p "$HOME"
++          uv venv --python 3.13 "$RUNNER_TEMP/buoy-mcp-wheel-smoke"
++          uv pip install --python "$RUNNER_TEMP/buoy-mcp-wheel-smoke/bin/python" "$wheel[mcp]"
++          env -i PATH="$PATH" HOME="$HOME" HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1 \
++            "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" tests/core/mcp_installation_smoke.py --mode base --wheel "$wheel"
++          env -i PATH="$PATH" HOME="$HOME" HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1 \
++            "$RUNNER_TEMP/buoy-mcp-wheel-smoke/bin/python" tests/core/mcp_installation_smoke.py --mode extra --wheel "$wheel"
+diff --git a/README.md b/README.md
+index a24396e..7bc9b51 100644
+--- a/README.md
++++ b/README.md
+@@ -35,0 +36 @@ buoy retrieve "<question>"
++- [Connect an MCP client](docs/mcp.md)
+diff --git a/docs/mcp.md b/docs/mcp.md
+new file mode 100644
+index 0000000..da68dc2
+--- /dev/null
++++ b/docs/mcp.md
+@@ -0,0 +1,132 @@
++# Buoy over MCP
++
++Buoy exposes retrieval and catalog inspection to local MCP clients over stdio.
++This is an optional interface, not an HTTP/SSE service or background MCP daemon.
++
++## Install from a source checkout
++
++MCP is unreleased: the published release in the README quick start does not
++include it. Use a source checkout that contains `src/buoy_search/mcp.py`, with
++Python 3.11 or newer and `uv`. From that checkout's root:
++
++```bash
++uv sync --locked --extra mcp --python 3.13
++uv run --locked --extra mcp buoy mcp --help
++uv run --locked --extra mcp buoy mcp
++```
++
++The last command serves protocol messages on stdout until the client disconnects
++or the process is stopped; it is not an interactive search prompt. The optional
++extra uses the official Python MCP SDK, currently pinned to `mcp==2.2.0` for its
++tested stdio compatibility. A base install still supports ordinary CLI commands
++and `buoy mcp --help`; launching without the extra fails with an installation
++instruction rather than installing anything automatically.
++
++## Connect a client
++
++An agent-neutral example (configuration locations differ by client):
++
++```json
++{"mcpServers":{"buoy":{"command":"buoy","args":["mcp"]}}}
++```
++
++The client must resolve the **extra-installed** executable. For the source setup
++above, use the absolute path to the checkout's `.venv/bin/buoy` if that directory
++is not on the client's PATH. On Windows virtual environments use `Scripts`
++instead of `bin`; Windows execution has not been verified here.
++
++Clients, especially desktop applications, may not inherit your shell's PATH or
++environment. Arrange for the launched server process to receive
++`TURBOPUFFER_API_KEY` and any existing Buoy region configuration through your
++client's supported environment mechanism. Do not put credentials in tool
++arguments, command-line arguments, or checked-in configuration. The example
++stores no credentials and does not assume shell-variable interpolation in JSON.
++Buoy does **not** auto-load `.env`. Connecting a client does not add an account or
++namespace ACL: tools have the existing credential's provider access, and returned
++evidence goes to the invoking client.
++
++## Tools
++
++Exactly three tools are available; there are no resources, prompts, write tools,
++or arbitrary command runner. Unknown arguments and wrong types are rejected;
++strings containing option or shell syntax remain data.
++
++### `retrieve(query: string, namespaces?: string[] | null, top_k: integer = 5)`
++
++- `query` must contain non-whitespace text; the CLI trims surrounding whitespace.
++- Omitted/null `namespaces`, or `[]`, uses existing automatic catalog routing and
++  bounded fanout (at most three namespaces), **not** a query of every index.
++- One to three explicit namespaces bypass catalog discovery and routing work.
++  Names are trimmed, must be nonempty and unique after trimming, and retain input
++  order. `buoy-routing-catalog-v1` and `buoy-evidence-*` are reserved targets.
++  `TURBOPUFFER_NAMESPACE` is not used for implicit selection.
++- `top_k` is the final global result limit: a positive integer, default `5`, with
++  no new upper cap. Booleans, numeric strings and fractions are not integers.
++
++The result is the equivalent `buoy retrieve --json` object, not a generated
++answer. Preserve source citations, passage content, tags, namespace attribution,
++and routing/reranking/evidence diagnostics when using it. Partial failure keeps
++successful hits and attributed failures with `incomplete=true`; do not present
++these results as complete. Empty successful retrieval remains successful.
++Automatic `no_relevant_evidence` and `inconclusive` outcomes retain their evidence
++object and empty hits; the latter also retains incomplete/failure information.
++They mean no sufficiently relevant evidence was found, **not** that no answer
++exists. Explicit selection retains raw-search behavior rather than automatic
++abstention. Total failure is an error, never an invented empty success.
++
++### `catalog_list(search?: string | null, include_all: boolean = false)`
++
++Returns the equivalent `buoy catalog list --json` object. By default it lists
++enabled cards with live targets, including incompatible live cards the CLI
++reports; it is not an eligible-only filter. `include_all=true` maps to `--all`,
++including disabled/stale cards without enabling or repairing them.
++
++Omitted/null search means no filter. Empty/whitespace search also retains the
++CLI's no-filter behavior. Other strings use canonical substring matching of
++namespace, title, summary, aliases, tags, and reviewed routing examples, not
++fuzzy or semantic search. Zero matching cards is a successful empty list.
++The count, cards, search/all fields, catalog status, missing-card diagnostics,
++compatibility and snapshot/read metadata are preserved.
++
++### `catalog_show(namespace: string)`
++
++Returns the equivalent `buoy catalog show --json` object: the card and existing
++target/catalog status and snapshot metadata. The namespace must contain
++non-whitespace text; otherwise it is an **exact card-ID lookup**, with no trimming
++or fuzzy resolution. A missing card is an error.
++
++Both catalog tools inspect the fixed `buoy-routing-catalog-v1`. They omit vectors
++and system-owned source-derived routing-passage banks, but retain reviewed
++`routing_examples` visible through normal CLI inspection. There is no
++`include_vector` argument or content-namespace enumeration tool.
++
++## Results, costs and local effects
++
++Successful CLI JSON objects are returned in MCP structured content and an
++equivalent JSON text block, without filtering fields or synthesizing answers.
++Invalid input, command failure and malformed/non-object output become sanitized
++MCP tool errors (`isError`), not empty results. Diagnostics suggest checking the
++schema, installation, server environment, catalog/namespace or local model setup;
++raw command stderr, traceback, malformed output and credential values are not
++forwarded. The existing content-free worker fallback warning can appear once on
++stderr. The adapter invokes one fixed CLI subprocess per accepted call with no
++adapter retry; existing CLI/provider retry and fallback policies are unchanged.
++
++Import, help, startup, initialization and tool discovery are provider-free: they
++do not load models, start workers or create Buoy runtime assets. **Valid live
++calls can incur ordinary billed Turbopuffer reads.** Catalog tools may read
++inventory/catalog data; retrieval may read catalog and content data and use
++existing locally configured models. The adapter adds no model-download workflow.
++
++Read-only means no index/catalog mutations: no planning/apply, upsert, enable,
++disable, repair, schema migration or deletion is exposed. It does **not** mean
++cost-free or filesystem-free retrieval. Existing inference workers and opted-in
++local retrieval telemetry remain in effect, including their local assets and
++idle lifetimes. The adapter adds no durable request/result log, cache, exporter
++or telemetry schema. Cancellation/shutdown cleans up the adapter-owned command
++child, not shared inference or telemetry workers.
++
++See [retrieval](retrieval.md) for existing retrieval/model setup and
++[telemetry](telemetry.md) for the existing local opt-in behavior. Installation and
++protocol verification here used isolated, credential-free/offline environments;
++no live provider or real-model retrieval was performed.
+diff --git a/tests/core/mcp_installation_smoke.py b/tests/core/mcp_installation_smoke.py
+new file mode 100644
+index 0000000..175b7f2
+--- /dev/null
++++ b/tests/core/mcp_installation_smoke.py
+@@ -0,0 +1,192 @@
++"""Clean-wheel acceptance, run explicitly with the installed interpreter (no source path).
++
++Usage: python /checkout/tests/core/mcp_installation_smoke.py --mode base|extra --wheel /path.whl
++"""
++from __future__ import annotations
++
++import argparse
++import asyncio
++import hashlib
++import importlib.metadata
++import importlib.util
++import json
++import os
++from pathlib import Path
++import signal
++import subprocess
++import sys
++import tempfile
++from urllib.parse import unquote, urlparse
++import zipfile
++
++
++# Fail closed even if a future invalid-input regression tries to invoke a read.
++# This directory contains only this hook, never a source copy of Buoy or MCP.
++GUARD = '''
++import importlib.abc, pathlib, sys
++root = pathlib.Path(__file__).parent
++
++def fail():
++    (root / "boundary-violation").write_text("forbidden runtime operation")
++    raise AssertionError("forbidden runtime operation")
++
++class Guard(importlib.abc.MetaPathFinder):
++    def find_spec(self, fullname, *args):
++        if fullname.split(".")[0] in {"turbopuffer", "torch", "transformers", "sentence_transformers", "dotenv"} or fullname in {"buoy_search.cli.main", "buoy_search.retrieval.embedding_worker"}:
++            fail()
++
++sys.meta_path.insert(0, Guard())
++def audit(event, args):
++    if event in {"socket.connect", "socket.bind", "subprocess.Popen", "os.system"}:
++        fail()
++    if event == "open" and isinstance(args[0], (str, bytes)) and pathlib.Path(str(args[0])).name == ".env":
++        fail()
++sys.addaudithook(audit)
++'''
++
++
++def environment(root: Path) -> dict[str, str]:
++    return {
++        "PATH": str(Path(sys.executable).parent) + os.pathsep + os.defpath,
++        "HOME": str(root), "XDG_CACHE_HOME": str(root / "cache"),
++        "HF_HOME": str(root / "hf"), "TORCH_HOME": str(root / "torch"),
++        "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1",
++        "HF_HUB_DISABLE_IMPLICIT_TOKEN": "1", "HF_HUB_DISABLE_TELEMETRY": "1",
++        "PYTHONDONTWRITEBYTECODE": "1",
++    }
++
++
++def installed_identity(wheel: Path, mode: str) -> dict:
++    import buoy_search
++    import buoy_search.mcp
++
++    distribution = importlib.metadata.distribution("buoy-search")
++    origin = json.loads(distribution.read_text("direct_url.json"))
++    assert "dir_info" not in origin, "wheel smoke cannot use an editable/source install"
++    assert Path(unquote(urlparse(origin["url"]).path)).resolve() == wheel.resolve()
++    adapter = Path(buoy_search.mcp.__file__).resolve()
++    assert adapter.is_relative_to(Path(sys.prefix).resolve()), adapter
++    assert buoy_search.__version__ == distribution.version
++    with zipfile.ZipFile(wheel) as archive:
++        assert adapter.read_bytes() == archive.read("buoy_search/mcp.py")
++        metadata = archive.read(next(n for n in archive.namelist() if n.endswith(".dist-info/METADATA"))).decode()
++        assert f"Version: {distribution.version}\n" in metadata
++        assert "Provides-Extra: mcp\n" in metadata
++        assert "Requires-Dist: mcp==2.2.0; extra == 'mcp'" in metadata
++    has_mcp = importlib.util.find_spec("mcp") is not None
++    assert has_mcp == (mode == "extra"), "optional-extra installation differs from requested mode"
++    versions = {name: importlib.metadata.version(name) for name in ("mcp", "mcp-types", "anyio", "pydantic")} if has_mcp else {}
++    if has_mcp:
++        assert versions["mcp"] == versions["mcp-types"] == "2.2.0"
++    return {
++        "python": sys.version, "executable": sys.executable, "buoy": distribution.version,
++        "adapter": str(adapter), "direct_url": origin, "dependencies": versions,
++        "wheel_sha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
++    }
++
++
++async def wire_smoke(executable: Path, root: Path, env: dict[str, str], version: str, stop: str) -> list[dict]:
++    process = await asyncio.create_subprocess_exec(
++        str(executable), "mcp", cwd=root, env=env,
++        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
++    )
++    transcript = []
++
++    async def send(message):
++        process.stdin.write(json.dumps(message).encode() + b"\n")
++        await process.stdin.drain()
++
++    async def request(identifier, method, params):
++        await send({"jsonrpc": "2.0", "id": identifier, "method": method, "params": params})
++        response = json.loads(await asyncio.wait_for(process.stdout.readline(), 20))
++        assert response["jsonrpc"] == "2.0" and response["id"] == identifier, response
++        transcript.append(response)
++        return response["result"]
++
++    try:
++        initialized = await request(1, "initialize", {
++            "protocolVersion": "2025-11-25", "capabilities": {},
++            "clientInfo": {"name": "buoy-installed-wheel-smoke", "version": "1"},
++        })
++        assert initialized["serverInfo"] == {"name": "Buoy", "version": version}
++        await send({"jsonrpc": "2.0", "method": "notifications/initialized"})
++        tools = (await request(2, "tools/list", {}))["tools"]
++        assert {tool["name"] for tool in tools} == {"retrieve", "catalog_list", "catalog_show"}
++        for tool in tools:
++            assert tool["inputSchema"]["additionalProperties"] is False
++            assert tool["annotations"]["readOnlyHint"] is True
++        for identifier, name, arguments in (
++            (3, "retrieve", {"query": "validation-only", "top_k": True}),
++            (4, "catalog_list", {"include_all": "PRIVATE-INPUT-SENTINEL"}),
++            (5, "catalog_show", {"namespace": " "}),
++        ):
++            result = await request(identifier, "tools/call", {"name": name, "arguments": arguments})
++            assert result["isError"] is True
++            assert "PRIVATE-INPUT-SENTINEL" not in json.dumps(result)
++        if stop == "eof":
++            process.stdin.close()
++        else:
++            process.send_signal(signal.SIGTERM if stop == "sigterm" else signal.SIGINT)
++        await asyncio.wait_for(process.wait(), 20)
++        assert process.returncode == 0, process.returncode
++        assert await process.stdout.read() == b"", "non-protocol stdout on shutdown"
++        assert await process.stderr.read() == b"", "unexpected stderr on shutdown"
++    finally:
++        if process.returncode is None:
++            process.kill()
++            await process.wait()
++    return transcript
++
++
++async def sdk_smoke(executable: Path, root: Path, env: dict[str, str]) -> None:
++    from mcp import Client, StdioServerParameters
++
++    async with Client(StdioServerParameters(command=str(executable), args=["mcp"], cwd=root, env=env)) as client:
++        assert {tool.name for tool in (await client.list_tools()).tools} == {"retrieve", "catalog_list", "catalog_show"}
++        assert (await client.call_tool("retrieve", {"query": " "})).is_error
++        assert (await client.list_resources()).resources == []
++        assert (await client.list_prompts()).prompts == []
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--mode", required=True, choices=("base", "extra"))
++    parser.add_argument("--wheel", required=True, type=Path)
++    args = parser.parse_args()
++    report = installed_identity(args.wheel, args.mode)
++    executable = Path(sys.executable).parent / ("buoy.exe" if os.name == "nt" else "buoy")
++    with tempfile.TemporaryDirectory(prefix="bmcp-") as directory:
++        root = Path(directory)
++        env = environment(root)
++        for command in ([str(executable), "--help"], [str(executable), "mcp", "--help"], [sys.executable, "-m", "buoy_search", "--help"]):
++            completed = subprocess.run(command, cwd=root, env=env, capture_output=True, timeout=30)
++            assert completed.returncode == 0 and b"mcp" in completed.stdout, completed
++            assert completed.stderr == b""
++        assert list(root.iterdir()) == [], "help created runtime assets"
++        if args.mode == "base":
++            completed = subprocess.run([str(executable), "mcp"], cwd=root, env=env, capture_output=True, timeout=20)
++            assert completed.returncode == 1 and completed.stdout == b"", completed
++            assert b"buoy-search[mcp]" in completed.stderr and b"Traceback" not in completed.stderr
++            report["missing_extra_stderr"] = completed.stderr.decode()
++            assert list(root.iterdir()) == []
++        else:
++            (root / "sitecustomize.py").write_text(GUARD)
++            # A synthetic fixture only, never a user's credential file.
++            (root / ".env").write_text("TURBOPUFFER_API_KEY=PRIVATE-DOTENV-SENTINEL\n")
++            env["PYTHONPATH"] = str(root)
++            before = sorted(path.name for path in root.iterdir())
++            report["wire"] = {}
++            for stop in ("eof", "sigterm", "sigint"):
++                report["wire"][stop] = asyncio.run(wire_smoke(executable, root, env, report["buoy"], stop))
++            asyncio.run(sdk_smoke(executable, root, env))
++            assert sorted(str(path.relative_to(root)) for path in root.rglob("*")) == before, "runtime assets or guard violations"
++            report["official_sdk_client"] = "initialize/list/invalid/resources/prompts/disconnect passed"
++        report["runtime_assets_created"] = False
++        report["runtime_home"] = directory
++    report["temporary_home_removed"] = not Path(directory).exists()
++    assert report["temporary_home_removed"]
++    print(json.dumps(report, indent=2, sort_keys=True))
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tests/core/test_mcp_documentation.py b/tests/core/test_mcp_documentation.py
+new file mode 100644
+index 0000000..870852c
+--- /dev/null
++++ b/tests/core/test_mcp_documentation.py
+@@ -0,0 +1,63 @@
++"""Consumer examples stay tied to the discoverable MCP schema and CI smoke."""
++from __future__ import annotations
++
++import importlib.util
++import json
++from pathlib import Path
++import re
++import unittest
++
++ROOT = Path(__file__).resolve().parents[2]
++DOC = ROOT / "docs/mcp.md"
++
++
++class MCPDocumentationTests(unittest.TestCase):
++    def test_agent_neutral_configuration_and_single_readme_link(self):
++        text = DOC.read_text()
++        examples = re.findall(r"```json\n(.*?)\n```", text, re.DOTALL)
++        self.assertEqual([json.loads(example) for example in examples], [
++            {"mcpServers": {"buoy": {"command": "buoy", "args": ["mcp"]}}},
++        ])
++        self.assertEqual((ROOT / "README.md").read_text().count("(docs/mcp.md)"), 1)
++        self.assertIn("uv sync --locked --extra mcp --python 3.13", text)
++        self.assertIn("uv run --locked --extra mcp buoy mcp", text)
++        self.assertIn("MCP is unreleased", text)
++        self.assertIn("does **not** auto-load `.env`", text)
++
++    def test_ci_preserves_base_and_requires_clean_extra_smoke(self):
++        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
++        self.assertIn("--extra mcp --python ${{ matrix.python-version }}", workflow)
++        self.assertIn("exact_token_count(load_pinned_tokenizer()", workflow)
++        self.assertIn("mcp_installation_smoke.py --mode base", workflow)
++        self.assertIn("mcp_installation_smoke.py --mode extra", workflow)
++        self.assertIn('"$wheel[mcp]"', workflow)
++        self.assertIn("HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1", workflow)
++
++
++@unittest.skipUnless(importlib.util.find_spec("mcp"), "optional MCP extra not installed")
++class MCPDocumentedSchemaTests(unittest.IsolatedAsyncioTestCase):
++    async def test_documented_signatures_match_discovered_required_fields_and_defaults(self):
++        from mcp import Client
++        from buoy_search.mcp import create_server
++
++        text = DOC.read_text()
++        signatures = {
++            "retrieve": ("retrieve(query: string, namespaces?: string[] | null, top_k: integer = 5)", ["query"], {"namespaces": None, "top_k": 5}),
++            "catalog_list": ("catalog_list(search?: string | null, include_all: boolean = false)", [], {"search": None, "include_all": False}),
++            "catalog_show": ("catalog_show(namespace: string)", ["namespace"], {}),
++        }
++        async with Client(create_server()) as client:
++            tools = (await client.list_tools()).tools
++        self.assertEqual({tool.name for tool in tools}, set(signatures))
++        for tool in tools:
++            signature, required, defaults = signatures[tool.name]
++            self.assertIn(f"### `{signature}`", text)
++            schema = tool.input_schema
++            self.assertEqual(schema.get("required", []), required)
++            self.assertEqual(set(schema["properties"]), set(required) | set(defaults))
++            self.assertEqual({key: value["default"] for key, value in schema["properties"].items() if "default" in value}, defaults)
++            self.assertFalse(schema["additionalProperties"])
++
++
++if __name__ == "__main__":
++    unittest.main()

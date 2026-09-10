@@ -15,6 +15,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception:
         started_at_ns = None
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments[:1] == ["mcp"]:
+        from buoy_search.mcp import main as mcp_main
+
+        return mcp_main(arguments[1:])
     if arguments[:1] == ["telemetry"]:
         from buoy_search.cli.telemetry import main as telemetry_main
 

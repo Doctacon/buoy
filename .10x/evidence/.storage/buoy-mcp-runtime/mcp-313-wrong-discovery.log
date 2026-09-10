@@ -1,0 +1,136 @@
+test_discovery_imports_are_inert_without_sdk (test_mcp.MCPLaunchTests.test_discovery_imports_are_inert_without_sdk) ... ok
+test_lazy_help_and_missing_extra (test_mcp.MCPLaunchTests.test_lazy_help_and_missing_extra) ... ok
+test_top_level_help_advertises_mcp (test_mcp.MCPLaunchTests.test_top_level_help_advertises_mcp) ... ok
+test_cancellation_eof_and_signals_reap_only_command_child (test_mcp.MCPStdioTests.test_cancellation_eof_and_signals_reap_only_command_child) ... ok
+test_official_stdio_client_initialize_discover_invalid_and_disconnect (test_mcp.MCPStdioTests.test_official_stdio_client_initialize_discover_invalid_and_disconnect) ... Executing <Task pending name='Task-23' coro=<MCPStdioTests.test_official_stdio_client_initialize_discover_invalid_and_disconnect() running at /Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server/tests/cli/test_mcp.py:317> cb=[_run_until_complete_cb() at /Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/asyncio/base_events.py:182] created at /Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/asyncio/runners.py:100> took 0.518 seconds
+ok
+test_wire_stdout_is_only_protocol_and_help_is_inert (test_mcp.MCPStdioTests.test_wire_stdout_is_only_protocol_and_help_is_inert) ... ok
+test_actual_catalog_cli_parity (test_mcp.MCPToolTests.test_actual_catalog_cli_parity) ... ERROR
+test_actual_retrieve_cli_provider_model_parity (test_mcp.MCPToolTests.test_actual_retrieve_cli_provider_model_parity) ... ERROR
+test_discovery_has_exact_strict_read_tools (test_mcp.MCPToolTests.test_discovery_has_exact_strict_read_tools) ... ok
+test_failures_are_sanitized_no_retry_and_safe_warning_once (test_mcp.MCPToolTests.test_failures_are_sanitized_no_retry_and_safe_warning_once) ... ok
+test_fixed_argv_and_value_containment (test_mcp.MCPToolTests.test_fixed_argv_and_value_containment) ... ok
+test_invalid_inputs_never_launch_and_do_not_echo_values (test_mcp.MCPToolTests.test_invalid_inputs_never_launch_and_do_not_echo_values) ... ok
+
+======================================================================
+ERROR: test_actual_catalog_cli_parity (test_mcp.MCPToolTests.test_actual_catalog_cli_parity)
+----------------------------------------------------------------------
+  + Exception Group Traceback (most recent call last):
+  |   File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/unittest/async_case.py", line 93, in _callTestMethod
+  |     if self._callMaybeAsync(method) is not None:
+  |        ~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  |   File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/unittest/async_case.py", line 115, in _callMaybeAsync
+  |     return self._asyncioRunner.run(
+  |            ~~~~~~~~~~~~~~~~~~~~~~~^
+  |         func(*args, **kwargs),
+  |         ^^^^^^^^^^^^^^^^^^^^^^
+  |         context=self._asyncioTestContext,
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |     )
+  |     ^
+  |   File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/asyncio/runners.py", line 118, in run
+  |     return self._loop.run_until_complete(task)
+  |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  |   File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/asyncio/base_events.py", line 721, in run_until_complete
+  |     return future.result()
+  |            ~~~~~~~~~~~~~^^
+  |   File "/Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server/tests/cli/test_mcp.py", line 78, in run
+  |     async with Client(create_server()) as client:
+  |                ~~~~~~^^^^^^^^^^^^^^^^^
+  |   File "/tmp/buoy-mcp-runtime.LJClud/venv/lib/python3.13/site-packages/mcp/client/client.py", line 475, in __aexit__
+  |     await self._exit_stack.__aexit__(exc_type, exc_val, exc_tb)
+  |   File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/contextlib.py", line 768, in __aexit__
+  |     raise exc
+  |   File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/contextlib.py", line 751, in __aexit__
+  |     cb_suppress = await cb(*exc_details)
+  |                   ^^^^^^^^^^^^^^^^^^^^^^
+  |   File "/tmp/buoy-mcp-runtime.LJClud/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 811, in __aexit__
+  |     raise BaseExceptionGroup(
+  |         "unhandled errors in a TaskGroup", self._exceptions
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Exception Group Traceback (most recent call last):
+    |   File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/contextlib.py", line 751, in __aexit__
+    |     cb_suppress = await cb(*exc_details)
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/tmp/buoy-mcp-runtime.LJClud/venv/lib/python3.13/site-packages/mcp/client/session.py", line 514, in __aexit__
+    |     result = await self._task_group.__aexit__(exc_type, exc_val, exc_tb)
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/tmp/buoy-mcp-runtime.LJClud/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 811, in __aexit__
+    |     raise BaseExceptionGroup(
+    |         "unhandled errors in a TaskGroup", self._exceptions
+    |     ) from None
+    | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+    +-+---------------- 1 ----------------
+      | Traceback (most recent call last):
+      |   File "/Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server/tests/cli/test_mcp.py", line 80, in run
+      |     await function(self)
+      |   File "/Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server/tests/cli/test_mcp.py", line 178, in test_actual_catalog_cli_parity
+      |     from cli.test_catalog_cli import make_card, make_snapshot, run_cli
+      | ModuleNotFoundError: No module named 'cli'
+      +------------------------------------
+
+======================================================================
+ERROR: test_actual_retrieve_cli_provider_model_parity (test_mcp.MCPToolTests.test_actual_retrieve_cli_provider_model_parity)
+----------------------------------------------------------------------
+  + Exception Group Traceback (most recent call last):
+  |   File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/unittest/async_case.py", line 93, in _callTestMethod
+  |     if self._callMaybeAsync(method) is not None:
+  |        ~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  |   File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/unittest/async_case.py", line 115, in _callMaybeAsync
+  |     return self._asyncioRunner.run(
+  |            ~~~~~~~~~~~~~~~~~~~~~~~^
+  |         func(*args, **kwargs),
+  |         ^^^^^^^^^^^^^^^^^^^^^^
+  |         context=self._asyncioTestContext,
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |     )
+  |     ^
+  |   File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/asyncio/runners.py", line 118, in run
+  |     return self._loop.run_until_complete(task)
+  |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  |   File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/asyncio/base_events.py", line 721, in run_until_complete
+  |     return future.result()
+  |            ~~~~~~~~~~~~~^^
+  |   File "/Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server/tests/cli/test_mcp.py", line 78, in run
+  |     async with Client(create_server()) as client:
+  |                ~~~~~~^^^^^^^^^^^^^^^^^
+  |   File "/tmp/buoy-mcp-runtime.LJClud/venv/lib/python3.13/site-packages/mcp/client/client.py", line 475, in __aexit__
+  |     await self._exit_stack.__aexit__(exc_type, exc_val, exc_tb)
+  |   File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/contextlib.py", line 768, in __aexit__
+  |     raise exc
+  |   File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/contextlib.py", line 751, in __aexit__
+  |     cb_suppress = await cb(*exc_details)
+  |                   ^^^^^^^^^^^^^^^^^^^^^^
+  |   File "/tmp/buoy-mcp-runtime.LJClud/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 811, in __aexit__
+  |     raise BaseExceptionGroup(
+  |         "unhandled errors in a TaskGroup", self._exceptions
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Exception Group Traceback (most recent call last):
+    |   File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/contextlib.py", line 751, in __aexit__
+    |     cb_suppress = await cb(*exc_details)
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/tmp/buoy-mcp-runtime.LJClud/venv/lib/python3.13/site-packages/mcp/client/session.py", line 514, in __aexit__
+    |     result = await self._task_group.__aexit__(exc_type, exc_val, exc_tb)
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/tmp/buoy-mcp-runtime.LJClud/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 811, in __aexit__
+    |     raise BaseExceptionGroup(
+    |         "unhandled errors in a TaskGroup", self._exceptions
+    |     ) from None
+    | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+    +-+---------------- 1 ----------------
+      | Traceback (most recent call last):
+      |   File "/Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server/tests/cli/test_mcp.py", line 80, in run
+      |     await function(self)
+      |   File "/Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server/tests/cli/test_mcp.py", line 226, in test_actual_retrieve_cli_provider_model_parity
+      |     from cli.test_catalog_cli import FixedEmbedder, make_card, make_snapshot
+      | ModuleNotFoundError: No module named 'cli'
+      +------------------------------------
+
+----------------------------------------------------------------------
+Ran 12 tests in 5.382s
+
+FAILED (errors=2)

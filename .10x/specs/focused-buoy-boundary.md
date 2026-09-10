@@ -1,14 +1,17 @@
 Status: active
 Created: 2026-07-30
-Updated: 2026-08-13
-Amended-By: .10x/specs/automatic-multi-corpus-retrieval.md
+Updated: 2026-09-10
+Amended-By: .10x/specs/automatic-multi-corpus-retrieval.md, .10x/specs/buoy-mcp-stdio-server.md
 
 # Focused Buoy Boundary
 
 The catalog, namespace discovery, automatic routing, and bounded
 multi-namespace retrieval exclusions below are amended by
-`.10x/specs/automatic-multi-corpus-retrieval.md`. All other product and release
-boundaries remain active.
+`.10x/specs/automatic-multi-corpus-retrieval.md`. The owner-approved local
+stdio MCP adapter is an additive interface governed by
+`.10x/specs/buoy-mcp-stdio-server.md`; it exposes existing retrieval and catalog
+reads only and does not restore the Command Center or a remote HTTP service.
+All other product and release boundaries remain active.
 
 ## Product contract
 
@@ -31,6 +34,7 @@ The public CLI contains:
 - `retrieve`
 - `evals`
 - `catalog`
+- `mcp` (local stdio adapter; optional dependency)
 
 `retrieve` without `--namespace` validates account inventory against
 `buoy-routing-catalog-v1` and routes automatically. One to three repeated
@@ -80,7 +84,8 @@ work branch and draft pull request.
 
 ## Acceptance criteria
 
-1. CLI help exposes the five indexing/retrieval commands plus bounded `catalog`.
+1. CLI help exposes the five indexing/retrieval commands, bounded `catalog`,
+   and the local read-only `mcp` adapter.
 2. Website, repository, local-document, DuckDB, BigQuery, and Snowflake planning
    tests pass.
 3. Apply dry run remains catalog-free; approved apply registers only after
