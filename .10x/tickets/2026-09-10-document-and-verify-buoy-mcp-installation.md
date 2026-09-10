@@ -1,4 +1,4 @@
-Status: open
+Status: active
 Created: 2026-09-10
 Updated: 2026-09-10
 Parent: .10x/tickets/2026-09-10-buoy-mcp-server-plan.md
@@ -84,3 +84,10 @@ its existing owner rather than narrowing acceptance after the fact.
 - 2026-09-10: Opened the bounded documentation/installed-verification follow-on
   in the initial spec-first preparation turn. No documentation implementation,
   build, installation, tests, or live operations performed.
+- 2026-09-10: Runtime independent review passed; dependent execution begun on
+  `work/buoy-mcp-server` at `f9ddf19`. Added source-only installation guidance,
+  agent-neutral configuration and tested-tool documentation, exactly one README
+  link, source-named schema/docs checks and clean installed-wheel stdio smoke.
+  Existing base tokenizer/data smoke remains intact; installed-extra CI coverage
+  is additive. No runtime/spec/package/skill behavior changed. Final committed
+  build, isolated base/extra installs and required offline gates follow.

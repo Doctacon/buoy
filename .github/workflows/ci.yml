@@ -73,6 +73,11 @@ jobs:
           uv build --out-dir dist
       - name: Smoke a clean wheel installation
         run: |
+          export HOME="$RUNNER_TEMP/buoy-wheel-home"
+          export XDG_CACHE_HOME="$RUNNER_TEMP/buoy-wheel-cache"
+          export UV_CACHE_DIR="$XDG_CACHE_HOME/uv" HF_HOME="$XDG_CACHE_HOME/hf" TORCH_HOME="$XDG_CACHE_HOME/torch"
+          export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1
+          mkdir -p "$HOME"
           uv venv --python 3.13 "$RUNNER_TEMP/buoy-wheel-smoke"
           uv pip install --python "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" dist/*.whl
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" --help >/dev/null
@@ -117,3 +122,16 @@ jobs:
               assert authority.certification_passed is True
               assert authority.receipts is not None
           PY
+      - name: Verify base and extra MCP wheel installations
+        run: |
+          set -- dist/*.whl
+          test "$#" -eq 1
+          wheel="$(realpath "$1")"
+          export HOME="$RUNNER_TEMP/buoy-mcp-install-home" UV_CACHE_DIR="$RUNNER_TEMP/buoy-mcp-install-cache"
+          mkdir -p "$HOME"
+          uv venv --python 3.13 "$RUNNER_TEMP/buoy-mcp-wheel-smoke"
+          uv pip install --python "$RUNNER_TEMP/buoy-mcp-wheel-smoke/bin/python" "$wheel[mcp]"
+          env -i PATH="$PATH" HOME="$HOME" HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1 \
+            "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" tests/core/mcp_installation_smoke.py --mode base --wheel "$wheel"
+          env -i PATH="$PATH" HOME="$HOME" HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1 \
+            "$RUNNER_TEMP/buoy-mcp-wheel-smoke/bin/python" tests/core/mcp_installation_smoke.py --mode extra --wheel "$wheel"

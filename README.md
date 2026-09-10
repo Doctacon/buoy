@@ -33,6 +33,7 @@ buoy retrieve "<question>"
 
 - [Index a source](docs/indexing.md)
 - [Retrieve with automatic routing](docs/retrieval.md)
+- [Connect an MCP client](docs/mcp.md)
 - [Inspect local retrieval telemetry](docs/telemetry.md)
 - [Evaluate search quality](docs/evaluation.md)
 - [Migrate from an earlier version](docs/migrating-to-buoy.md)
