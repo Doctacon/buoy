@@ -1,7 +1,7 @@
-Status: active
+Status: done
 Created: 2026-09-10
 Updated: 2026-09-10
-Parent: .10x/tickets/2026-09-10-buoy-mcp-server-plan.md
+Parent: .10x/tickets/done/2026-09-10-buoy-mcp-server-plan.md
 Depends-On: None
 
 # Implement Buoy MCP Server
@@ -96,10 +96,10 @@ validation belong to the dependent child; keep runtime results reviewable for
 that handoff. No package release/version change, source reorganization, user
 runtime modification, or repair of unrelated existing work.
 
-Blockers: None in the approved contract. Revalidate the current task base before
-editing; open a blocker for source/spec or SDK incompatibility that would change
-scope/acceptance. Implementation begins only in a subsequent turn after this
-initial ticket/spec authoring turn.
+Blockers: None. All seven runtime criteria are supported by the runtime and
+final installed evidence, independent review, and parent acceptance mapping.
+The SDK compatibility issue was repaired within the approved behavioral
+contract, without changing retrieval semantics or weakening shutdown checks.
 
 ## Progress and notes (append-only)
 
@@ -142,3 +142,16 @@ initial ticket/spec authoring turn.
   checked; final structured attestation restored for parent independent review.
   Ticket remains active; consumer docs and clean installed-wheel acceptance
   remain with the dependent phase.
+- 2026-09-10: Parent closure: independent runtime and installation reviews pass
+  with no required findings. Final product commit `89cecb2` retains runtime
+  implementation `dba28f0`; final 1,342-test suites pass on both required Python
+  versions. Parent independently verified artifact/source bytes, original-file
+  preservation, and all four installed base/extra smoke combinations. Every
+  criterion maps to `.10x/evidence/2026-09-10-buoy-mcp-parent-acceptance.md`;
+  `.10x/reviews/2026-09-10-buoy-mcp-runtime-review.md` records the runtime review.
+  Retrospective preserved SDK/input/async-lifecycle constraints in
+  `.10x/knowledge/buoy-mcp-sdk-compatibility.md` and installed-identity learning
+  in the existing reproducible-installed-wheel knowledge record. No material
+  spec drift or remaining in-scope blocker. Closed for the implemented local
+  work branch; no hosted CI, integration, live account validation, or release
+  is claimed or authorized by closure.

@@ -50,8 +50,10 @@ These are local observations, not a freshness claim about GitHub.
 Existing dirty work belongs to the portable-skill workstream: README release
 v0.6.5/skill link, `pyproject.toml` skill-artifact exclusion, `skills/`, and
 corresponding `.10x` terminal/evidence/spec/review changes. Do not stage, revert,
-copy wholesale, or claim ownership of that work. Its owner is
-`.10x/tickets/done/2026-09-05-ship-portable-buoy-agent-skill.md`.
+copy wholesale, or claim ownership of that work. Its owner remains in the
+original checkout at
+`/Users/crlough/Code/personal/turbo-search/.10x/tickets/done/2026-09-05-ship-portable-buoy-agent-skill.md`;
+that uncommitted workstream is not part of the develop-based MCP task tree.
 
 ## External sources and findings
 
@@ -93,4 +95,4 @@ owner's subsequent explicit approval of the concrete v1 contract, recorded in
 `.10x/specs/buoy-mcp-stdio-server.md`,
 `.10x/specs/buoy-mcp-retrieval-tool.md`, and
 `.10x/specs/buoy-mcp-catalog-tools.md`. Implementation/verification is owned by
-`.10x/tickets/2026-09-10-buoy-mcp-server-plan.md`; none is claimed complete.
+`.10x/tickets/done/2026-09-10-buoy-mcp-server-plan.md`; none is claimed complete.

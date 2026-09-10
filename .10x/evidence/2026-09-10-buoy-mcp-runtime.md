@@ -1,12 +1,12 @@
 Status: recorded
 Created: 2026-09-10
 Updated: 2026-09-10
-Relates-To: .10x/tickets/2026-09-10-implement-buoy-mcp-server.md
+Relates-To: .10x/tickets/done/2026-09-10-implement-buoy-mcp-server.md
 
 # Buoy MCP runtime implementation evidence
 
 Review readiness: ready for independent review (ticket remains active)
-Owner: `.10x/tickets/2026-09-10-implement-buoy-mcp-server.md`
+Owner: `.10x/tickets/done/2026-09-10-implement-buoy-mcp-server.md`
 Branch: `work/buoy-mcp-server`
 Base: `db5e8e1597e908c30fff76ec2aba565f1e2fbcbc` + approved record `6c9b6d8`
 Raw evidence: `.10x/evidence/.storage/buoy-mcp-runtime/`

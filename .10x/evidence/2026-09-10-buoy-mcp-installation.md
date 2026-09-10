@@ -1,7 +1,7 @@
 Status: recorded
 Created: 2026-09-10
 Updated: 2026-09-10
-Relates-To: .10x/tickets/2026-09-10-document-and-verify-buoy-mcp-installation.md
+Relates-To: .10x/tickets/done/2026-09-10-document-and-verify-buoy-mcp-installation.md
 
 # Buoy MCP documentation and installed-wheel acceptance
 

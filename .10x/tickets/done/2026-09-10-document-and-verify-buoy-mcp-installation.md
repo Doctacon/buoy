@@ -1,8 +1,8 @@
-Status: active
+Status: done
 Created: 2026-09-10
 Updated: 2026-09-10
-Parent: .10x/tickets/2026-09-10-buoy-mcp-server-plan.md
-Depends-On: .10x/tickets/2026-09-10-implement-buoy-mcp-server.md
+Parent: .10x/tickets/done/2026-09-10-buoy-mcp-server-plan.md
+Depends-On: .10x/tickets/done/2026-09-10-implement-buoy-mcp-server.md
 
 # Document and Verify Buoy MCP Installation
 
@@ -19,7 +19,7 @@ Read completely:
 - `.10x/specs/buoy-mcp-retrieval-tool.md`
 - `.10x/specs/buoy-mcp-catalog-tools.md`
 - `.10x/research/2026-09-10-buoy-mcp-adapter-substrate.md`
-- `.10x/tickets/2026-09-10-implement-buoy-mcp-server.md` and its evidence/review
+- `.10x/tickets/done/2026-09-10-implement-buoy-mcp-server.md` and its evidence/review
 - `.10x/specs/pi-worktree-development-flow.md`
 
 ## Write boundary
@@ -74,10 +74,9 @@ merge, HTTP service, or unrelated documentation cleanup. Dependency package
 fetches for isolated installs are permitted execution mechanics, not authority
 for provider data access or model acquisition.
 
-Blockers: None beyond the declared runtime-child dependency. Work is not ready
-for execution until that dependency has passing reviewable evidence. If an
-installed behavior contradicts a spec, preserve the finding and return it to
-its existing owner rather than narrowing acceptance after the fact.
+Blockers: None. The runtime dependency and all eight installation criteria
+are satisfied by recorded evidence and independent review. No runtime repair
+or behavioral change was needed in this dependent slice.
 
 ## Progress and notes (append-only)
 
@@ -103,3 +102,16 @@ its existing owner rather than narrowing acceptance after the fact.
   and its `.storage/buoy-mcp-installation/` directory. No runtime owner repair
   was needed. Ticket remains active for parent independent review/closure;
   no live provider/model validation, hosted CI, Windows or release is claimed.
+- 2026-09-10: Parent closure: the independent installation review passed with no
+  findings and is preserved at
+  `.10x/reviews/2026-09-10-buoy-mcp-installation-review.md`. Parent re-read all
+  eight criteria, checked current product bytes still equal tested `89cecb2`,
+  rehashed both retained artifacts and original-file preservation entries, and
+  independently reran all four installed base/extra combinations successfully.
+  The complete acceptance map and literal temporary-root cleanup observations
+  are `.10x/evidence/2026-09-10-buoy-mcp-parent-acceptance.md`.
+  Retrospective updated the existing installed-wheel identity knowledge rather
+  than leaving stale editable-version learning only in logs. Specs, docs,
+  schemas, evidence, and review agree; no in-scope blocker remains. Closed for
+  the local work branch only, without integration/publication/client-install
+  authority or a live-provider/Windows/hosted-CI claim.
