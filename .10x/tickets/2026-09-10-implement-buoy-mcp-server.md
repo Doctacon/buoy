@@ -133,3 +133,12 @@ initial ticket/spec authoring turn.
   live provider operations. Ticket stays active for parent independent review
   and dependent consumer/installed-wheel acceptance. Blockers: none remaining
   in runtime implementation; independent review not yet performed.
+- 2026-09-10: Recovered final runtime handoff after the orchestration WebSocket
+  connection failed following clean implementation commit
+  `dba28f01076f81bdad01ea46edf934abc7d15597`. Reconfirmed saved full/focused test
+  logs and authoritative versions; no broad checks rerun and no source, test,
+  packaging, CI, or governing spec changed. Normalized only the evidence record's
+  required 10x headers and retained its observed facts. Recovery diff hygiene
+  checked; final structured attestation restored for parent independent review.
+  Ticket remains active; consumer docs and clean installed-wheel acceptance
+  remain with the dependent phase.
