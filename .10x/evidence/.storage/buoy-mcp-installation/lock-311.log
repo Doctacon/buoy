@@ -1,0 +1,4 @@
+
+$ uv lock --check --python /tmp/bmi.FsHuj7/extra311/bin/python
+Using CPython 3.11.10 interpreter at: /private/tmp/bmi.FsHuj7/extra311/bin/python
+Resolved 171 packages in 1ms

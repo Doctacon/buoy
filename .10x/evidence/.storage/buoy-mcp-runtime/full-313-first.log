@@ -1,0 +1,37 @@
+Warning: could not remove plan artifact directory under state root: /tmp/tmp83h5r5is/state
+Warning: could not remove plan artifact directory under state root: /tmp/tmpu8h2v3et/state
+Executing <Task pending name='Task-23' coro=<MCPStdioTests.test_official_stdio_client_initialize_discover_invalid_and_disconnect() running at /Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server/tests/cli/test_mcp.py:316> cb=[_run_until_complete_cb() at /Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/asyncio/base_events.py:182] created at /Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/asyncio/runners.py:100> took 0.518 seconds
+/tmp/buoy-mcp-runtime.LJClud/venv/lib/python3.13/site-packages/lxml/html/__init__.py:1891: DeprecationWarning: The 'strip_cdata' option of HTMLParser() has never done anything and will eventually be removed.
+  super().__init__(**kwargs)
+Exception in thread Thread-93 (run_worker):
+Traceback (most recent call last):
+  File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server/src/buoy_search/retrieval/embedding_worker.py", line 1434, in run_worker
+    directory_fd = _prepare_identity_directory(selected)
+  File "/Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server/src/buoy_search/retrieval/embedding_worker.py", line 323, in _prepare_identity_directory
+    raise EmbeddingWorkerError("internal_worker_failure")
+buoy_search.retrieval.embedding_worker.EmbeddingWorkerError: local embedding worker failed: internal worker failure
+/Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server/tests/retrieval/test_embedding_worker.py:916: ResourceWarning: unclosed <socket.socket fd=3, family=1, type=1, proto=0>
+  failures: list[Exception] = []
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/unittest/mock.py:2236: ResourceWarning: unclosed <socket.socket fd=3, family=1, type=1, proto=0>
+  def __init__(self, name, parent):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+Exception in thread Thread-98 (run_worker):
+Traceback (most recent call last):
+  File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "/Users/crlough/.local/share/uv/python/cpython-3.13.0-macos-aarch64-none/lib/python3.13/threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server/src/buoy_search/retrieval/embedding_worker.py", line 1434, in run_worker
+    directory_fd = _prepare_identity_directory(selected)
+  File "/Users/crlough/Code/personal/turbo-search.worktrees/buoy-mcp-server/src/buoy_search/retrieval/embedding_worker.py", line 323, in _prepare_identity_directory
+    raise EmbeddingWorkerError("internal_worker_failure")
+buoy_search.retrieval.embedding_worker.EmbeddingWorkerError: local embedding worker failed: internal worker failure

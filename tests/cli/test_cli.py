@@ -1343,7 +1343,7 @@ class CliTests(unittest.TestCase):
         choices = parser._subparsers._group_actions[0].choices
         self.assertEqual(
             set(choices),
-            {"crawl", "plan", "apply", "retrieve", "evals", "catalog"},
+            {"crawl", "plan", "apply", "retrieve", "evals", "catalog", "mcp"},
         )
         retrieve_help = choices["retrieve"].format_help()
         apply_help = parser._subparsers._group_actions[0].choices["apply"].format_help()

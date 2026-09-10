@@ -1,0 +1,4 @@
+
+$ uv lock --check
+Using CPython 3.14.7 interpreter at: /opt/homebrew/opt/python@3.14/bin/python3.14
+Resolved 171 packages in 7ms
