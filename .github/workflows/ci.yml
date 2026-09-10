@@ -36,7 +36,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - name: Sync locked dependencies
-        run: uv sync --locked --python ${{ matrix.python-version }}
+        run: uv sync --locked --extra mcp --python ${{ matrix.python-version }}
       - name: Validate source and frozen contracts
         env:
           BUOY_RANKING_AUTHORITY_INTRODUCTION: "true"
@@ -44,11 +44,13 @@ jobs:
           BUOY_RANKING_PR_BASE_REF: ${{ github.event.pull_request.base.sha }}
           BUOY_RANKING_PUSH_BEFORE: ${{ github.event.before }}
         run: |
-          PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate_ranking_contract.py
-          PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate_ranking_promotion.py
-          PYTHONDONTWRITEBYTECODE=1 uv run python scripts/c6_syntax_forecast.py validate
+          PYTHONDONTWRITEBYTECODE=1 uv run --extra mcp python scripts/validate_ranking_contract.py
+          PYTHONDONTWRITEBYTECODE=1 uv run --extra mcp python scripts/validate_ranking_promotion.py
+          PYTHONDONTWRITEBYTECODE=1 uv run --extra mcp python scripts/c6_syntax_forecast.py validate
+      - name: Require optional MCP SDK
+        run: uv run --extra mcp python -c "from mcp.server import MCPServer; from buoy_search.mcp import create_server; create_server()"
       - name: Run tests
-        run: PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*.py' -q
+        run: PYTHONDONTWRITEBYTECODE=1 uv run --extra mcp python -m unittest discover -s tests -p 'test_*.py' -q
 
   build:
     name: Build distributions
@@ -74,6 +76,8 @@ jobs:
           uv venv --python 3.13 "$RUNNER_TEMP/buoy-wheel-smoke"
           uv pip install --python "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" dist/*.whl
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" --help >/dev/null
+          "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" mcp --help >/dev/null
+          if "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" mcp; then exit 1; fi
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" -m buoy_search --help >/dev/null
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" - <<'PY'
           import hashlib

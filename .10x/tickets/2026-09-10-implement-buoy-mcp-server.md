@@ -111,3 +111,25 @@ initial ticket/spec authoring turn.
   on `work/buoy-mcp-server`, based on live-confirmed develop `db5e8e1`.
   Follow that worktree's copy for active execution progress; the original
   checkout remains untouched except this workstream's `.10x` records.
+- 2026-09-10: Runtime implemented in the assigned worktree: optional official SDK,
+  lazy launch/help, exactly three strict typed read tools, fixed CLI subprocess
+  mapping, sanitized diagnostics, safe warning preservation, and cancellation /
+  EOF / SIGTERM / SIGINT child cleanup. No retrieval/catalog/worker semantics or
+  consumer docs changed.
+- 2026-09-10: SDK compatibility blocker found and resolved with live supervisor
+  approval: SDK 2.2.0's default stdio thread blocks signal shutdown; AnyIO's
+  non-daemon pool also blocks interpreter finalization even when abandoned.
+  Approved exact consumer pin `mcp==2.2.0`, one underlying SDK serving seam,
+  and cancellable owned unbuffered input while retaining SDK framing/stdout
+  protection. The pin/workaround removal condition and failing evidence are in
+  `.10x/evidence/2026-09-10-buoy-mcp-runtime.md`. No spec was rewritten.
+- 2026-09-10: Both full credential-free/offline suites passed 1339 tests on
+  CPython 3.11.10 and 3.13.0. Final narrow SDK literal-JSON-search preservation
+  change passed all 12 MCP tests on both. Lock, ranking-contract, explicit-base
+  promotion, C6, base-without-extra smoke, build/metadata inspection, original
+  preservation hashes, and diff hygiene passed. Raw failure/repair history and
+  reviewer source diff are under `.10x/evidence/.storage/buoy-mcp-runtime/`.
+  All runtime checks are fake-backed/credential-free; no model downloads or
+  live provider operations. Ticket stays active for parent independent review
+  and dependent consumer/installed-wheel acceptance. Blockers: none remaining
+  in runtime implementation; independent review not yet performed.

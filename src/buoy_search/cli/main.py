@@ -317,6 +317,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     configure_catalog_parser(subparsers)
+    subparsers.add_parser("mcp", help="serve read-only MCP tools over local stdio (optional extra)")
 
     crawl_parser = subparsers.add_parser(
         "crawl",
