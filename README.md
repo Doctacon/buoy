@@ -7,8 +7,8 @@
 *Search that stays anchored to the source.* [![CI](https://github.com/Doctacon/buoy/actions/workflows/ci.yml/badge.svg)](https://github.com/Doctacon/buoy/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 Buoy turns websites, public GitHub repositories, local documents, and prepared
-database tables into a Turbopuffer search index that returns relevant passages
-with citations.
+database tables into Turbopuffer search indexes, auto-routing your questions
+to the correct namespaces and returning relevant passages with citations.
 
 ## Quick start
 
