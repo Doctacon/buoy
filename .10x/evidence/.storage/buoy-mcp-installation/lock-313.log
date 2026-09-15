@@ -1,4 +1,0 @@
-
-$ uv lock --check --python /tmp/bmi.FsHuj7/extra313/bin/python
-Using CPython 3.13.0 interpreter at: /tmp/bmi.FsHuj7/extra313/bin/python
-Resolved 171 packages in 0.87ms

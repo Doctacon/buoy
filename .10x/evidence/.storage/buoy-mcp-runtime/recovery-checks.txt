@@ -1,9 +1,0 @@
-$ git diff --check
-$ git diff dba28f01076f81bdad01ea46edf934abc7d15597 --exit-code -- src tests pyproject.toml uv.lock .github .10x/specs
-$ python3: verify normalized headers, preserved evidence facts, saved passing logs, original preservation manifest
-Saved evidence verified: full-311-final.log: 1339 tests OK (not rerun)
-Saved evidence verified: full-313-final.log: 1339 tests OK (not rerun)
-Saved evidence verified: mcp-311-final.log: 12 tests OK (not rerun)
-Saved evidence verified: mcp-313-final.log: 12 tests OK (not rerun)
-Original preservation manifest: 9 entries unchanged
-Required headers valid; evidence facts preserved; ticket active; runtime/test/spec diff empty

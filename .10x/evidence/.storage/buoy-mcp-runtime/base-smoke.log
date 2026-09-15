@@ -1,3 +1,0 @@
-['--help'] exit 0 stdout_bytes 1256 stderr ''
-['mcp', '--help'] exit 0 stdout_bytes 164 stderr ''
-['mcp'] exit 1 stdout_bytes 0 stderr 'MCP support is not installed. Install Buoy with the optional extra: buoy-search[mcp].\n'

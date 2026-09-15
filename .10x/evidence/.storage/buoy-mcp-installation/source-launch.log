@@ -1,2 +1,0 @@
-$ UV_PROJECT_ENVIRONMENT=/tmp/buoy-mcp-runtime.LJClud/venv uv run --locked --extra mcp buoy mcp </dev/null (env -i, isolated HOME/cache, offline)
-exit=0 stdout_bytes=0 stderr_bytes=0
