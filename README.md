@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/buoy.svg" alt="Buoy" width="160">
+  <img src="images/buoy.png" alt="Buoy">
 </p>
 
 # Buoy
