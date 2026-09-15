@@ -270,7 +270,7 @@ Defaults favor a useful but conservative first plan:
 | Setting | Default |
 | --- | --- |
 | Discovery | sitemap, then link fallback if empty |
-| Website cap | 3,000 pages / 120,000 chunks |
+| Website cap | 6,000 pages / 240,000 chunks |
 | Concurrency | 2 global / 4 per domain |
 | Download delay | 0.25 seconds |
 | Docs versions | warn before crawling repeated version families |

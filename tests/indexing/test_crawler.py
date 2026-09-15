@@ -67,10 +67,10 @@ class CrawlerHelperTests(unittest.TestCase):
             self.assertEqual(elapsed_since(1.0), 0.0)
 
     def test_default_caps_are_useful_for_site_plans(self) -> None:
-        self.assertEqual(DEFAULT_CRAWL_MAX_PAGES, 3000)
-        self.assertEqual(DEFAULT_CRAWL_MAX_CHUNKS, 120000)
-        self.assertEqual(DEFAULT_GITHUB_REPO_MAX_FILES, 5000)
-        self.assertEqual(DEFAULT_GITHUB_REPO_MAX_CHUNKS, 100000)
+        self.assertEqual(DEFAULT_CRAWL_MAX_PAGES, 6000)
+        self.assertEqual(DEFAULT_CRAWL_MAX_CHUNKS, 240000)
+        self.assertEqual(DEFAULT_GITHUB_REPO_MAX_FILES, 10000)
+        self.assertEqual(DEFAULT_GITHUB_REPO_MAX_CHUNKS, 200000)
 
     def test_validate_base_url_accepts_absolute_http_urls_and_strips_fragment(self) -> None:
         self.assertEqual(

@@ -1540,8 +1540,8 @@ class CliTests(unittest.TestCase):
             self.assertEqual(options.crawl_strategy, "sitemap")
             self.assertEqual(options.docs_version_policy, "warn")
             self.assertEqual(options.language_policy, "english")
-            self.assertEqual(options.max_pages, 3000)
-            self.assertEqual(options.max_chunks, 120000)
+            self.assertEqual(options.max_pages, 6000)
+            self.assertEqual(options.max_chunks, 240000)
             return fake_plan_crawl_summary(options)
 
         stdout = StringIO()
@@ -1570,8 +1570,8 @@ class CliTests(unittest.TestCase):
             out_dir = Path(tmp) / "github-crawl"
 
             def fake_github_crawl(source, options: CrawlOptions) -> dict[str, object]:  # noqa: ANN001
-                self.assertEqual(options.max_pages, 5000)
-                self.assertEqual(options.max_chunks, 100000)
+                self.assertEqual(options.max_pages, 10000)
+                self.assertEqual(options.max_chunks, 200000)
                 self.assertFalse(options.repo_file_cards)
                 self.assertFalse(options.repo_oversize_file_cards)
                 write_fake_github_page(options.out_dir / "pages")
@@ -1945,8 +1945,8 @@ class CliTests(unittest.TestCase):
         state_root = root / "state"
 
         def fake_github_crawl(source, options: CrawlOptions) -> dict[str, object]:  # noqa: ANN001
-            self.assertEqual(options.max_pages, 5000)
-            self.assertEqual(options.max_chunks, 100000)
+            self.assertEqual(options.max_pages, 10000)
+            self.assertEqual(options.max_chunks, 200000)
             self.assertEqual(options.repo_max_file_bytes, 123456)
             self.assertTrue(options.repo_search_metadata)
             self.assertTrue(options.repo_file_cards)
