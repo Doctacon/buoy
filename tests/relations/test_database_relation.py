@@ -22,7 +22,7 @@ from buoy_search.relations.base import (
     validate_selected_database_rows,
     write_database_corpus,
 )
-from buoy_search.planning.plan_artifacts import GENERIC_SITE_TURBOPUFFER_SCHEMA, SOURCE_METADATA_ROW_FIELDS
+from buoy_search.planning.plan_artifacts import GENERIC_SITE_SEARCH_SCHEMA, SOURCE_METADATA_ROW_FIELDS
 
 
 @dataclass(frozen=True)
@@ -72,7 +72,7 @@ class DatabaseRelationTests(unittest.TestCase):
                     self.assertEqual(source.namespace_candidate, f"{backend}-gong-calls-v1")
                     self.assertEqual(
                         source.default_out_dir,
-                        Path(tmp) / f".buoy/artifacts/site-crawls/{backend}-gong-calls",
+                        Path(tmp) / f".buoy-local/artifacts/site-crawls/{backend}-gong-calls",
                     )
                     self.assertEqual(
                         source.document_url("call/1 ? ü"),
@@ -171,8 +171,8 @@ class DatabaseRelationTests(unittest.TestCase):
             self.assertTrue(summary["limit_reached"])
             self.assertTrue(summary["source_credentials_required"])
             self.assertTrue(summary["source_api_calls_occurred"])
-            self.assertFalse(summary["turbopuffer_credentials_required"])
-            self.assertFalse(summary["turbopuffer_api_calls"])
+            self.assertFalse(summary["index_credentials_required"])
+            self.assertFalse(summary["local_index_operations"])
 
     def test_database_provenance_has_fixed_turbopuffer_schema_and_whitelist(self) -> None:
         fields = {
@@ -181,7 +181,7 @@ class DatabaseRelationTests(unittest.TestCase):
             "database_relation",
             "database_document_id",
         }
-        self.assertTrue(fields.issubset(GENERIC_SITE_TURBOPUFFER_SCHEMA))
+        self.assertTrue(fields.issubset(GENERIC_SITE_SEARCH_SCHEMA))
         self.assertTrue(fields.issubset(SOURCE_METADATA_ROW_FIELDS))
 
 

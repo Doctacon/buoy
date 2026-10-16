@@ -14,7 +14,16 @@ src/buoy_search/_version.py
 venv/
 ENV/
 .buoy/
+.buoy-local/
 .turbo-search/
+
+# Local corpora and portable offline installation assets
+*.duckdb
+*.duckdb.wal
+*.duckdb.lock
+wheelhouse/
+hf-cache/
+requirements-local.txt
 
 # Local environment/secrets files
 .env

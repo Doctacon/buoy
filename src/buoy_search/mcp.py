@@ -49,8 +49,8 @@ def create_server():
                 print(WORKER_FALLBACK_WARNING, file=sys.stderr)
             if completed.returncode:
                 return error(
-                    "Buoy read failed. Check TURBOPUFFER_API_KEY in the server environment, "
-                    "namespace/catalog availability, and local model setup."
+                    "Buoy read failed. Check BUOY_HOME in the server environment, "
+                    "local namespace/catalog availability, and offline model setup."
                 )
             payload = json.loads(completed.stdout, parse_constant=_reject_json_constant)
             if not isinstance(payload, dict):

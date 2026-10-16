@@ -126,7 +126,7 @@ class AutoresearchRunnerTests(unittest.TestCase):
             self.assertTrue((out_dir / "report.md").exists())
             self.assertEqual(result["mode"], "fixture")
             self.assertEqual(result["status"], "passed")
-            self.assertFalse(result["safety"]["turbopuffer_api_calls"])
+            self.assertFalse(result["safety"]["local_index_operations"])
             self.assertEqual(result["eval"]["passed"], 2)
             self.assertAlmostEqual(result["repo_metrics"]["repo_search_score"], 100.0)
             report = (out_dir / "report.md").read_text(encoding="utf-8")
@@ -180,7 +180,7 @@ class AutoresearchRunnerTests(unittest.TestCase):
         self.assertEqual(result["experiment_id"], "repo-search-fixture-baseline")
         self.assertEqual(result["mode"], "fixture")
         self.assertEqual(result["status"], "passed")
-        self.assertFalse(result["safety"]["turbopuffer_api_calls"])
+        self.assertFalse(result["safety"]["local_index_operations"])
         self.assertAlmostEqual(result["score"], 100.0)
         self.assertEqual(result["eval"]["passed"], 10)
 

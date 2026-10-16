@@ -10,7 +10,7 @@ import buoy_search.planning.plan_artifacts as plan_artifacts_module
 from buoy_search.planning.applied_state import AppliedStateRow, build_applied_state
 from buoy_search.indexing.chunker import IndexingPlan, IndexingStats, MarkdownChunk, process_corpus
 from buoy_search.planning.plan_artifacts import (
-    GENERIC_SITE_TURBOPUFFER_SCHEMA,
+    GENERIC_SITE_SEARCH_SCHEMA,
     MAX_ROUTING_PROTOTYPE_CHARACTERS,
     MAX_ROUTING_PROTOTYPES,
     PLAN_SCHEMA_VERSION,
@@ -308,7 +308,7 @@ class PlanArtifactTests(unittest.TestCase):
         })
         self.assertEqual(artifacts.plan.site_id, "pdf-research-notes-abc123")
         self.assertEqual(artifacts.plan.namespace_candidate, "pdf-research-notes-abc123-v1")
-        self.assertIn("pdf_filename", GENERIC_SITE_TURBOPUFFER_SCHEMA)
+        self.assertIn("pdf_filename", GENERIC_SITE_SEARCH_SCHEMA)
         page = artifacts.manifest.pages[0]
         self.assertEqual(page.source_metadata["source_kind"], "pdf")
         self.assertEqual(page.source_metadata["pdf_filename"], "Research Notes.pdf")
@@ -367,7 +367,7 @@ class PlanArtifactTests(unittest.TestCase):
         })
         self.assertEqual(artifacts.plan.site_id, "file-csv-research-notes-abc123")
         self.assertEqual(artifacts.plan.namespace_candidate, "file-csv-research-notes-abc123-v1")
-        self.assertIn("file_filename", GENERIC_SITE_TURBOPUFFER_SCHEMA)
+        self.assertIn("file_filename", GENERIC_SITE_SEARCH_SCHEMA)
         page = artifacts.manifest.pages[0]
         self.assertEqual(page.source_metadata["source_kind"], "local_file")
         self.assertEqual(page.source_metadata["file_filename"], "Research Notes.csv")
@@ -756,7 +756,7 @@ class PlanArtifactTests(unittest.TestCase):
         self.assertEqual(row["plan_id"], "plan_example")
         self.assertEqual(row["applied_at"], "2026-06-20T12:00:00+00:00")
         for field in ("site_id", "canonical_url", "page_hash", "chunk_hash", "embedding_text_hash", "plan_id", "applied_at"):
-            self.assertIn(field, GENERIC_SITE_TURBOPUFFER_SCHEMA)
+            self.assertIn(field, GENERIC_SITE_SEARCH_SCHEMA)
 
 
 if __name__ == "__main__":

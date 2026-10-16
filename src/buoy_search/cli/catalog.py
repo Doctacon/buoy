@@ -1,11 +1,10 @@
-"""Authenticated remote routing-catalog CLI."""
+"""Credential-free local routing-catalog CLI."""
 
 from __future__ import annotations
 
 import argparse
 from dataclasses import asdict, replace
 import json
-import os
 from pathlib import Path
 import re
 import sys
@@ -68,27 +67,27 @@ class _CatalogOperatorError(RemoteCatalogError):
 def configure_catalog_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     catalog = subparsers.add_parser(
         "catalog",
-        help="manage the remote namespace routing catalog",
+        help="manage the local namespace routing catalog",
         description=(
             f"Manage validated routing cards in remote namespace {REMOTE_CATALOG_NAMESPACE}. "
-            "Commands require TURBOPUFFER_API_KEY. Mutations preview unless --approve is supplied."
+            "Stored locally in DuckDB; no API key. Mutations preview unless --approve is supplied."
         ),
     )
     commands = catalog.add_subparsers(dest="catalog_command")
 
-    parser = commands.add_parser("list", help="list remote live routing cards")
+    parser = commands.add_parser("list", help="list local live routing cards")
     parser.add_argument("search", nargs="?", default=None)
     parser.add_argument("--all", action="store_true", help="Include disabled and stale cards.")
     _add_common(parser)
     parser.set_defaults(func=_run_list)
 
-    parser = commands.add_parser("show", help="show one remote routing card")
+    parser = commands.add_parser("show", help="show one local routing card")
     parser.add_argument("namespace")
     parser.add_argument("--include-vector", action="store_true", help="Include vector in JSON output only.")
     _add_common(parser)
     parser.set_defaults(func=_run_show)
 
-    parser = commands.add_parser("upsert", help="create or update one complete remote manual card")
+    parser = commands.add_parser("upsert", help="create or update one complete local manual card")
     parser.add_argument("namespace")
     parser.add_argument(
         "--source-kind",
@@ -129,7 +128,7 @@ def configure_catalog_parser(subparsers: argparse._SubParsersAction[argparse.Arg
         "--state-root",
         type=Path,
         default=None,
-        help="Local applied-state root. Defaults to the absolute user-global ~/.buoy directory.",
+        help="Local applied-state root. Defaults to the absolute user-global ~/.buoy-local directory.",
     )
     parser.add_argument("--apply-id", required=True)
     repair_precondition = parser.add_mutually_exclusive_group(required=True)
@@ -184,7 +183,7 @@ def configure_catalog_parser(subparsers: argparse._SubParsersAction[argparse.Arg
     parser.set_defaults(func=_run_set_routing_examples)
 
     for operation in ("enable", "disable"):
-        parser = commands.add_parser(operation, help=f"{operation} one remote card")
+        parser = commands.add_parser(operation, help=f"{operation} one local card")
         parser.add_argument("namespace")
         parser.add_argument("--approve", action="store_true")
         _add_common(parser)
@@ -192,7 +191,7 @@ def configure_catalog_parser(subparsers: argparse._SubParsersAction[argparse.Arg
 
 
 def _add_common(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--region", default=None, help="Override TURBOPUFFER_REGION.")
+    parser.add_argument("--region", default=None, choices=[DEFAULT_REGION], help="Compatibility label: local only.")
     parser.add_argument("--json", action="store_true", help="Print JSON output.")
 
 
@@ -239,14 +238,7 @@ def _normalized_reviewed_examples(values: object) -> list[str]:
 
 
 def _resolved_region(args: argparse.Namespace) -> str:
-    return args.region or os.environ.get("TURBOPUFFER_REGION", DEFAULT_REGION)
-
-
-def _credentials() -> str:
-    value = os.environ.get("TURBOPUFFER_API_KEY")
-    if not value:
-        raise RemoteCatalogError("TURBOPUFFER_API_KEY must be set for remote catalog access")
-    return value
+    return args.region or DEFAULT_REGION
 
 
 def _compatibility(region: str) -> CompatibilityContract:
@@ -260,7 +252,7 @@ def _compatibility(region: str) -> CompatibilityContract:
 
 def _read(args: argparse.Namespace) -> tuple[object, RemoteCatalogSnapshot]:
     region = _resolved_region(args)
-    client = REMOTE_CATALOG_CLIENT_FACTORY(api_key=_credentials(), region=region)
+    client = REMOTE_CATALOG_CLIENT_FACTORY(region=region)
     return client, read_remote_catalog(client, region=region, compatibility=_compatibility(region))
 
 
@@ -999,7 +991,6 @@ def _run_repair_apply(args: argparse.Namespace) -> int:
                     config=config,
                     namespace=namespace,
                     apply_id=args.apply_id,
-                    api_key=_credentials(),
                 )
                 payload = {
                     "command": "catalog repair-apply",
@@ -1010,7 +1001,7 @@ def _run_repair_apply(args: argparse.Namespace) -> int:
                     "plan_id": verified.plan["plan_id"],
                     "apply_id": args.apply_id,
                     "routing_passage_count": len(verified.routing_prototypes),
-                    "turbopuffer_api_calls": True,
+                    "local_index_operations": True,
                     "routing_model_loaded": False,
                     "catalog_card_write_attempted": False,
                     "mutation_status": "inspection",
@@ -1043,7 +1034,7 @@ def _run_repair_apply(args: argparse.Namespace) -> int:
                         if expected_revision is not None
                         else {"card_absent": True}
                     ),
-                    "turbopuffer_api_calls": False,
+                    "local_index_operations": False,
                     "routing_model_loaded": False,
                     "mutation_status": "preview",
                 }
@@ -1063,7 +1054,6 @@ def _run_repair_apply(args: argparse.Namespace) -> int:
                     config=config,
                     namespace=namespace,
                     apply_id=args.apply_id,
-                    api_key=_credentials(),
                     expected_card_revision=expected_revision,
                     expect_absent=bool(args.expect_absent),
                 )
@@ -1079,7 +1069,7 @@ def _run_repair_apply(args: argparse.Namespace) -> int:
                     "catalog_registered": False,
                     "automatic_retrieval_ready": False,
                     "catalog_card_write_attempted": exc.card_write_attempted,
-                    "turbopuffer_api_calls": exc.api_calls_occurred,
+                    "local_index_operations": exc.api_calls_occurred,
                     "plan_retained_for_catalog_repair": True,
                     "catalog_error": str(exc),
                     "catalog_repair_command": exc.repair_command,
@@ -1162,7 +1152,6 @@ def _run_migrate_routing_v2(args: argparse.Namespace) -> int:
 
         compatibility = _compatibility(region)
         client = REMOTE_CATALOG_CLIENT_FACTORY(
-            api_key=_credentials(),
             region=region,
         )
         strong_read_calls = None
@@ -1389,7 +1378,6 @@ def _run_migrate_routing_v3(args: argparse.Namespace) -> int:
 
         compatibility = _compatibility(region)
         client = REMOTE_CATALOG_CLIENT_FACTORY(
-            api_key=_credentials(),
             region=region,
         )
         strong_read_calls = None
@@ -1612,7 +1600,6 @@ def _run_set_routing_examples(args: argparse.Namespace) -> int:
 
         compatibility = _compatibility(region)
         client = REMOTE_CATALOG_CLIENT_FACTORY(
-            api_key=_credentials(),
             region=region,
         )
         strong_read_calls = None

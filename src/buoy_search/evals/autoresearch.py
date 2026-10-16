@@ -1,7 +1,7 @@
 """One-shot config-only autoresearch runner for repository search evals.
 
 The runner executes exactly one registered experiment. It never mutates source,
-local applied state, or turbopuffer namespaces. Fixture mode is fully local;
+local applied state, or DuckDB namespaces. Fixture mode is fully local;
 live mode is retrieval-only through the existing eval harness.
 """
 
@@ -357,7 +357,7 @@ def build_result(*, experiment: AutoresearchExperiment, eval_result: EvalRunResu
             {
                 "dry_run": True,
                 "credentials_required": False,
-                "turbopuffer_api_calls": False,
+                "local_index_operations": False,
                 "api_calls_occurred": False,
                 "failed": total - passed,
                 "not_run": 0,
@@ -397,7 +397,7 @@ def build_result(*, experiment: AutoresearchExperiment, eval_result: EvalRunResu
             "live_writes_allowed": False,
             "namespace_management_allowed": False,
             "state_mutation_allowed": False,
-            "turbopuffer_api_calls": experiment.mode == "live",
+            "local_index_operations": experiment.mode == "live",
         },
         "experiment": experiment.plan_dict(out_dir=out_dir),
         "eval": eval_payload,
@@ -460,7 +460,7 @@ def render_report(result: Mapping[str, object]) -> str:
         [
             "## Safety",
             "",
-            "This runner executes one config-only trial. It does not mutate source code, local applied state, turbopuffer rows, or namespaces.",
+            "This runner executes one config-only trial. It does not mutate source code, local applied state, DuckDB rows, or namespaces.",
             "Live mode, when selected, is retrieval-only through the existing eval harness.",
             "",
         ]

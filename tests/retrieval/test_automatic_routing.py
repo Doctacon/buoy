@@ -135,7 +135,7 @@ def make_card(
             aliases=list(aliases or []),
             tags=["website"],
             semantic_origin="manual",
-            region="gcp-us-central1",
+            region="local",
             embedding_model=ROUTING_MODEL,
             embedding_precision=embedding_precision,
             plan_schema_version=2,
@@ -165,7 +165,7 @@ def snapshot(
         live_namespace_ids=live,
         cards=cards,
         compatibility=CompatibilityContract(
-            region="gcp-us-central1",
+            region="local",
             embedding_model=ROUTING_MODEL,
             embedding_precision="float32",
         ),
@@ -1068,8 +1068,8 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         payload = json.loads(stdout)
         self.assertEqual((result, stderr), (0, ""))
         self.assertTrue(payload["dry_run"])
-        self.assertTrue(payload["credentials_required"])
-        self.assertTrue(payload["turbopuffer_api_calls"])
+        self.assertFalse(payload["credentials_required"])
+        self.assertTrue(payload["local_index_operations"])
         self.assertFalse(payload["content_retrieval_occurred"])
         self.assertEqual(payload["routing"]["selection_reason"], "unique_title_or_alias")
         self.assertEqual(payload["routing"]["initial_fanout"], 1)
@@ -1803,7 +1803,7 @@ class AutomaticRoutingCliTests(unittest.TestCase):
             live_namespace_ids=(REMOTE_CATALOG_NAMESPACE, "eligible", "disabled"),
             cards=(eligible, disabled, stale),
             compatibility=CompatibilityContract(
-                region="gcp-us-central1",
+                region="local",
                 embedding_model=ROUTING_MODEL,
                 embedding_precision="float32",
             ),
@@ -1856,17 +1856,17 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
         self.assertIn("unrecognized arguments: --route-top-k 1", stderr.getvalue())
 
-    def test_missing_key_fails_before_client_even_if_ambient_namespace_is_set(self) -> None:
+    def test_local_client_is_reached_without_key_and_ambient_namespace_is_ignored(self) -> None:
         with patch(
             "buoy_search.cli.main.REMOTE_CATALOG_CLIENT_FACTORY",
-            side_effect=AssertionError("client constructed"),
+            side_effect=RuntimeError("local catalog unavailable"),
         ):
             result, stdout, stderr = run_cli(
                 ["retrieve", "query", "--json"],
                 env={"TURBOPUFFER_NAMESPACE": "must-be-ignored"},
             )
         self.assertEqual((result, stdout), (2, ""))
-        self.assertIn("TURBOPUFFER_API_KEY", stderr)
+        self.assertIn("local catalog unavailable", stderr)
 
     def test_explicit_preview_bypasses_credentials_catalog_and_route_model(self) -> None:
         with patch(
@@ -1896,7 +1896,7 @@ class AutomaticRoutingCliTests(unittest.TestCase):
         self.assertEqual(payload["routing"]["mode"], "explicit")
         self.assertFalse(payload["routing"]["active"])
         self.assertFalse(payload["credentials_required"])
-        self.assertFalse(payload["turbopuffer_api_calls"])
+        self.assertFalse(payload["local_index_operations"])
         self.assertNotIn("evidence", payload)
 
     def test_explicit_live_single_and_multi_bypass_active_evidence_gate(self) -> None:

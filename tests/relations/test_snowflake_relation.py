@@ -359,7 +359,7 @@ class SnowflakeRelationTests(unittest.TestCase):
                 summary = crawl_snowflake_relation(source, options)
             self.assertTrue(summary["credentials_required"])
             self.assertTrue(summary["api_calls_occurred"])
-            self.assertFalse(summary["turbopuffer_api_calls"])
+            self.assertFalse(summary["local_index_operations"])
             serialized = str(summary) + "".join(
                 page.read_text(encoding="utf-8") for page in (Path(tmp) / "pages").glob("*.md")
             )

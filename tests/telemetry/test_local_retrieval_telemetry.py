@@ -254,7 +254,7 @@ class LocalRetrievalTelemetryTests(unittest.TestCase):
                 )
                 self.assertEqual([hit.id for hit in result.hits], ["one"])
                 self.assertFalse(local_telemetry_enabled())
-                self.assertFalse((self.home / ".buoy").exists())
+                self.assertFalse((self.home / ".buoy-local").exists())
 
     def test_opt_in_publishes_one_canonical_useful_trace_envelope(self) -> None:
         self.enable_telemetry()
@@ -621,7 +621,7 @@ class LocalRetrievalTelemetryTests(unittest.TestCase):
         )
         self.assertEqual(completed.stdout, "")
         self.assertEqual(completed.stderr, "")
-        self.assertFalse((self.home / ".buoy").exists())
+        self.assertFalse((self.home / ".buoy-local").exists())
 
         sdk_failure_home = self.home / "sdk-import-failure"
         sdk_failure_environment = dict(environment)
@@ -651,7 +651,7 @@ class LocalRetrievalTelemetryTests(unittest.TestCase):
         )
         self.assertEqual(sdk_failure.stdout, "")
         self.assertEqual(sdk_failure.stderr, "")
-        self.assertFalse((sdk_failure_home / ".buoy").exists())
+        self.assertFalse((sdk_failure_home / ".buoy-local").exists())
 
     def test_controlled_nanosecond_clock_becomes_naive_utc_microseconds(
         self,
@@ -695,7 +695,7 @@ class LocalRetrievalTelemetryTests(unittest.TestCase):
             "same query",
             self.options()[0],
         ).to_dict()
-        buoy_home = self.home / ".buoy"
+        buoy_home = self.home / ".buoy-local"
         buoy_home.mkdir(mode=0o700)
         redirected = self.home / "redirected"
         redirected.mkdir(mode=0o700)
@@ -922,7 +922,7 @@ class LocalRetrievalTelemetryTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
         self.assertEqual(stderr.getvalue(), "")
         start.assert_not_called()
-        self.assertFalse((self.home / ".buoy").exists())
+        self.assertFalse((self.home / ".buoy-local").exists())
 
     def test_queue_lock_drop_does_not_change_retrieval_result(self) -> None:
         baseline = self.single_retriever().retrieve(
@@ -958,7 +958,7 @@ class LocalRetrievalTelemetryTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
         self.assertEqual(stderr.getvalue(), "")
         start.assert_not_called()
-        self.assertFalse((self.home / ".buoy").exists())
+        self.assertFalse((self.home / ".buoy-local").exists())
 
 
 if __name__ == "__main__":

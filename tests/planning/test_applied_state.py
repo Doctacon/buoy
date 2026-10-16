@@ -66,7 +66,7 @@ class AppliedStateStoreTests(unittest.TestCase):
             with mock.patch("buoy_search.local_paths.Path.home", return_value=home):
                 paths = applied_state_paths(site_id="example-com", namespace="site-example-com-v1")
 
-        self.assertEqual(paths.state_dir, home / ".buoy/state/example-com/site-example-com-v1")
+        self.assertEqual(paths.state_dir, home / ".buoy-local/state/example-com/site-example-com-v1")
         self.assertTrue(paths.state_dir.is_absolute())
         self.assertEqual(paths.database_path, paths.state_dir / "state.duckdb")
         self.assertEqual(paths.lock_path, paths.state_dir / "apply.lock")
@@ -75,7 +75,7 @@ class AppliedStateStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             home.mkdir()
-            expected = home / ".buoy"
+            expected = home / ".buoy-local"
             with mock.patch("buoy_search.local_paths.Path.home", return_value=home):
                 resolved, warning = resolve_state_root(None)
 
@@ -119,11 +119,11 @@ class AppliedStateStoreTests(unittest.TestCase):
                     for path in cwd.rglob("*")
                     if path.is_file()
                 }
-                self.assertEqual(resolved, home / ".buoy")
+                self.assertEqual(resolved, home / ".buoy-local")
                 self.assertIsNone(warning)
                 self.assertEqual(after_tree, before_tree)
                 self.assertEqual(after_files, before_files)
-                self.assertFalse((home / ".buoy").exists())
+                self.assertFalse((home / ".buoy-local").exists())
 
     def test_explicit_project_state_roots_remain_relative_and_usable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -163,7 +163,7 @@ class AppliedStateStoreTests(unittest.TestCase):
                             )
                             self.assertEqual(loaded, sample_state())
                             self.assertEqual((resolved / "marker").read_text(encoding="utf-8"), "preserve")
-                    self.assertFalse((home / ".buoy").exists())
+                    self.assertFalse((home / ".buoy-local").exists())
             finally:
                 os.chdir(original_cwd)
 

@@ -1,7 +1,7 @@
 """GitHub repository acquisition and corpus helpers.
 
-The acquisition path is local-only with respect to turbopuffer: it never reads
-Turbopuffer credentials, embeds text, or performs vector writes. Public GitHub
+The acquisition path is local-only with respect to DuckDB: it never reads
+DuckDB credentials, embeds text, or performs vector writes. Public GitHub
 metadata is used only to resolve clone/default-branch information; git remains
 the source-of-truth content acquisition mechanism.
 """
@@ -593,7 +593,7 @@ def build_github_repo_summary(
         "command": "crawl",
         "dry_run": True,
         "credentials_required": False,
-        "turbopuffer_api_calls": False,
+        "local_index_operations": False,
         "api_calls_occurred": False,
         "source_kind": "github_repo",
         "base_url": source.repo_root_url,

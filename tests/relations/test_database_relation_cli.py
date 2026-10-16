@@ -17,6 +17,8 @@ from buoy_search.relations.snowflake import SnowflakeRelationError, SnowflakeRel
 from buoy_search.planning.plan_artifacts import verify_plan_artifacts
 
 
+# Warehouse adapters are mocked; explicitly authorize their source-only path.
+@patch.dict("os.environ", {"BUOY_ALLOW_NETWORK": "1"})
 class DatabaseRelationCliTests(unittest.TestCase):
     def run_cli(self, args: list[str]) -> tuple[int, str, str]:
         stdout = StringIO()
@@ -162,8 +164,8 @@ class DatabaseRelationCliTests(unittest.TestCase):
             self.assertTrue(summary["api_calls_occurred"])
             self.assertTrue(summary["source_credentials_required"])
             self.assertTrue(summary["source_api_calls_occurred"])
-            self.assertFalse(summary["turbopuffer_credentials_required"])
-            self.assertFalse(summary["turbopuffer_api_calls"])
+            self.assertFalse(summary["index_credentials_required"])
+            self.assertFalse(summary["local_index_operations"])
             self.assertEqual(summary["namespace"], "customer-conversations")
             self.assertNotIn("catalog_registration", summary)
             plan = json.loads((out / "plan.json").read_text(encoding="utf-8"))
@@ -264,7 +266,7 @@ class DatabaseRelationCliTests(unittest.TestCase):
                         self.assertEqual(stdout, "")
                         self.assertIn(expected, stderr)
 
-            self.assertTrue((home / ".buoy").is_dir())
+            self.assertTrue((home / ".buoy-local").is_dir())
             self.assertFalse(Path(".buoy-test-not-created").exists())
 
     def test_invalid_backend_flag_and_path_combinations_fail_clearly(self) -> None:

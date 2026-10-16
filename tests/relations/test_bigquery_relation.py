@@ -433,7 +433,7 @@ class BigQueryRelationTests(unittest.TestCase):
             self.assertTrue(summary["credentials_required"])
             self.assertTrue(summary["api_calls_occurred"])
             self.assertTrue(summary["source_credentials_required"])
-            self.assertFalse(summary["turbopuffer_credentials_required"])
+            self.assertFalse(summary["index_credentials_required"])
             serialized = str(summary) + "".join(
                 page.read_text(encoding="utf-8") for page in (Path(tmp) / "pages").glob("*.md")
             )

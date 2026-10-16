@@ -1,12 +1,12 @@
 [project]
 name = "buoy-search"
 dynamic = ["version"]
-description = "Plan, index, and search public knowledge sources with anchored citations."
+description = "Local DuckDB hybrid search with offline embeddings and anchored citations."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [{ name = "Buoy maintainers" }]
-keywords = ["hybrid-search", "rag", "retrieval", "turbopuffer", "vector-search"]
+keywords = ["hybrid-search", "rag", "retrieval", "duckdb", "vector-search", "offline"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -21,8 +21,8 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
 ]
 dependencies = [
-    "turbopuffer",
     "sentence-transformers",
+    "torch>=2.6",
     "transformers==5.12.1",
     "PyYAML",
     "scrapling[fetchers]==0.4.9",
@@ -37,6 +37,9 @@ dependencies = [
 mcp = ["mcp==2.2.0", "anyio>=4.5,<5", "pydantic>=2.11,<3"]
 bigquery = ["google-cloud-bigquery>=3.25,<4"]
 snowflake = ["snowflake-connector-python>=3.12,<5"]
+
+[dependency-groups]
+dev = ["pytest>=8,<10"]
 
 [project.urls]
 Repository = "https://github.com/Doctacon/buoy"
@@ -65,6 +68,16 @@ packages = ["src/buoy_search"]
 
 [tool.hatch.build.targets.sdist]
 artifacts = ["images/buoy.svg"]
+
+# WSL/Linux and Windows use CPU wheels by default: no multi-GB CUDA runtime.
+# GPU use is optional and requires an explicitly installed matching torch build.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

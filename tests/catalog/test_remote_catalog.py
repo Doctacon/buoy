@@ -63,7 +63,7 @@ from buoy_search.catalog.remote import (
 )
 
 UNIT_VECTOR = [1.0] + [0.0] * (ROUTING_DIMENSIONS - 1)
-REGION = "gcp-us-central1"
+REGION = "local"
 MODEL = "BAAI/bge-small-en-v1.5"
 
 
@@ -1675,9 +1675,9 @@ class ErrorTests(unittest.TestCase):
             def __init__(self, **kwargs: object) -> None:
                 raise ProviderFailure(raw)
 
-        with patch.dict("sys.modules", {"turbopuffer": SimpleNamespace(Turbopuffer=FailingTP)}):
+        with patch("buoy_search.storage.duckdb.DuckDBClient", FailingTP):
             factory_trace = formatted_remote_failure(
-                lambda: create_client(api_key=secret_key, region=REGION)
+                lambda: create_client(region=REGION)
             )
 
         class ListClient:
@@ -1845,22 +1845,21 @@ class ErrorTests(unittest.TestCase):
             def __init__(self, **kwargs: object) -> None:
                 calls.append(kwargs)
 
-        fake_module = SimpleNamespace(Turbopuffer=FakeTP)
-        with patch.dict("sys.modules", {"turbopuffer": fake_module}), patch.dict(
+        with patch("buoy_search.storage.duckdb.DuckDBClient", FakeTP), patch.dict(
             os.environ,
             {"TURBOPUFFER_API_KEY": "must-not-read", "TURBOPUFFER_REGION": "must-not-read"},
         ):
-            client = create_client(api_key="explicit-key", region=REGION)
+            client = create_client(region=REGION)
         self.assertIsInstance(client, FakeTP)
-        self.assertEqual(calls, [{"api_key": "explicit-key", "region": REGION}])
+        self.assertEqual(calls, [{}])
 
         class FailingTP:
             def __init__(self, **kwargs: object) -> None:
                 raise RuntimeError(f"bad explicit-secret-key in {kwargs}")
 
-        with patch.dict("sys.modules", {"turbopuffer": SimpleNamespace(Turbopuffer=FailingTP)}):
+        with patch("buoy_search.storage.duckdb.DuckDBClient", FailingTP):
             with self.assertRaisesRegex(RemoteCatalogError, "RuntimeError") as raised:
-                create_client(api_key="explicit-secret-key", region=REGION)
+                create_client(region=REGION)
         self.assertNotIn("explicit-secret-key", str(raised.exception))
 
 

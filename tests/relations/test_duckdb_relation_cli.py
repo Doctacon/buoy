@@ -83,7 +83,7 @@ class DuckDBRelationCliTests(unittest.TestCase):
             self.assertEqual(payload["documents_skipped_limit"], 1)
             self.assertTrue(payload["document_limit_reached"])
             self.assertFalse(payload["credentials_required"])
-            self.assertFalse(payload["turbopuffer_api_calls"])
+            self.assertFalse(payload["local_index_operations"])
             self.assertNotIn("catalog_registration", payload)
             plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
             verified = verify_plan_artifacts(out_dir / "plan.json")
@@ -245,7 +245,7 @@ class DuckDBRelationCliTests(unittest.TestCase):
 
             self.assertEqual(result, 0, stderr)
             payload = json.loads(stdout)
-            expected = home / ".buoy/artifacts/site-crawls/duckdb-stable-docs-plan"
+            expected = home / ".buoy-local/artifacts/site-crawls/duckdb-stable-docs-plan"
             self.assertEqual(payload["out_dir"], str(expected))
             self.assertTrue((expected / "plan.json").is_file())
             self.assertFalse((root / "artifacts").exists())

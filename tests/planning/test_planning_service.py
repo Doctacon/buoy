@@ -59,7 +59,7 @@ def crawl_summary(options: CrawlOptions) -> dict[str, object]:
         "credentials_required": False,
         "source_credentials_required": False,
         "source_api_calls_occurred": False,
-        "turbopuffer_api_calls": False,
+        "local_index_operations": False,
         "api_calls_occurred": False,
         "source_kind": "website",
         "base_url": options.base_url,
@@ -91,6 +91,8 @@ def crawl_summary(options: CrawlOptions) -> dict[str, object]:
     }
 
 
+# These tests deliberately exercise injected, mocked online-source crawlers.
+@patch.dict("os.environ", {"BUOY_ALLOW_NETWORK": "1"})
 class PlanningServiceTests(unittest.TestCase):
     def test_default_plan_output_is_global_and_distinct_from_database_crawl_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -102,11 +104,11 @@ class PlanningServiceTests(unittest.TestCase):
                         SimpleNamespace(kind="website"),
                         "https://example.com/docs/",
                     ),
-                    home / ".buoy/artifacts/site-crawls/example-com-plan",
+                    home / ".buoy-local/artifacts/site-crawls/example-com-plan",
                 )
                 for kind in ("duckdb_relation", "bigquery_relation", "snowflake_relation"):
                     with self.subTest(kind=kind):
-                        crawl_dir = home / ".buoy/artifacts/site-crawls" / kind.removesuffix("_relation")
+                        crawl_dir = home / ".buoy-local/artifacts/site-crawls" / kind.removesuffix("_relation")
                         self.assertEqual(
                             default_plan_out_dir(
                                 SimpleNamespace(kind=kind, default_out_dir=crawl_dir),

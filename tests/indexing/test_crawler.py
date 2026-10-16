@@ -95,7 +95,7 @@ class CrawlerHelperTests(unittest.TestCase):
             self.assertEqual(source_id_for_url(url), "scrapling-readthedocs-io")
             self.assertEqual(
                 default_out_dir(url),
-                Path(tmp) / ".buoy/artifacts/site-crawls/scrapling-readthedocs-io",
+                Path(tmp) / ".buoy-local/artifacts/site-crawls/scrapling-readthedocs-io",
             )
 
     def test_local_pdf_path_defaults_are_filename_and_hash_based(self) -> None:
@@ -122,7 +122,7 @@ class CrawlerHelperTests(unittest.TestCase):
             with patch("buoy_search.local_paths.Path.home", return_value=Path(tmp)):
                 self.assertEqual(
                     default_out_dir(str(pdf_path)),
-                    Path(tmp) / ".buoy/artifacts/site-crawls" / source.source_id,
+                    Path(tmp) / ".buoy-local/artifacts/site-crawls" / source.source_id,
                 )
 
     def test_local_file_path_defaults_are_extension_filename_and_hash_based(self) -> None:
@@ -150,7 +150,7 @@ class CrawlerHelperTests(unittest.TestCase):
             with patch("buoy_search.local_paths.Path.home", return_value=Path(tmp)):
                 self.assertEqual(
                     default_out_dir(str(csv_path)),
-                    Path(tmp) / ".buoy/artifacts/site-crawls" / source.source_id,
+                    Path(tmp) / ".buoy-local/artifacts/site-crawls" / source.source_id,
                 )
 
     def test_local_file_unsupported_existing_extension_fails_clearly(self) -> None:
@@ -169,7 +169,7 @@ class CrawlerHelperTests(unittest.TestCase):
             self.assertEqual(source_id_for_url("pdf://pdf-quarterly-report-abc123"), "pdf-quarterly-report-abc123")
             self.assertEqual(
                 default_out_dir("pdf://pdf-quarterly-report-abc123"),
-                Path(tmp) / ".buoy/artifacts/site-crawls/pdf-quarterly-report-abc123",
+                Path(tmp) / ".buoy-local/artifacts/site-crawls/pdf-quarterly-report-abc123",
             )
             self.assertEqual(validate_base_url("pdf://pdf-quarterly-report-abc123#ignored"), "pdf://pdf-quarterly-report-abc123")
 
@@ -181,7 +181,7 @@ class CrawlerHelperTests(unittest.TestCase):
             self.assertEqual(source_id_for_url("file://file-csv-quarterly-report-abc123"), "file-csv-quarterly-report-abc123")
             self.assertEqual(
                 default_out_dir("file://file-csv-quarterly-report-abc123"),
-                Path(tmp) / ".buoy/artifacts/site-crawls/file-csv-quarterly-report-abc123",
+                Path(tmp) / ".buoy-local/artifacts/site-crawls/file-csv-quarterly-report-abc123",
             )
             self.assertEqual(validate_base_url("file://file-csv-quarterly-report-abc123#ignored"), "file://file-csv-quarterly-report-abc123")
 
@@ -202,14 +202,14 @@ class CrawlerHelperTests(unittest.TestCase):
             self.assertEqual(source.namespace_candidate, "github-doctacon-open-streaming-lab-v1")
             self.assertEqual(
                 source.default_out_dir,
-                Path(tmp) / ".buoy/artifacts/site-crawls/github-doctacon-open-streaming-lab",
+                Path(tmp) / ".buoy-local/artifacts/site-crawls/github-doctacon-open-streaming-lab",
             )
         self.assertEqual(namespace_candidate(url), "github-doctacon-open-streaming-lab-v1")
         self.assertEqual(source_id_for_url(url), "github-doctacon-open-streaming-lab")
         with patch("buoy_search.local_paths.Path.home", return_value=Path(tmp)):
             self.assertEqual(
                 default_out_dir(url),
-                Path(tmp) / ".buoy/artifacts/site-crawls/github-doctacon-open-streaming-lab",
+                Path(tmp) / ".buoy-local/artifacts/site-crawls/github-doctacon-open-streaming-lab",
             )
 
     def test_explicit_source_detection_does_not_require_home_resolution(self) -> None:

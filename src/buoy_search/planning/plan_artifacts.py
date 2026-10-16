@@ -37,7 +37,7 @@ from buoy_search.planning.plan_validation import (
 )
 from buoy_search.source_url import validate_http_url_authority
 from buoy_search.indexing.chunker import (
-    TURBOPUFFER_SCHEMA,
+    SEARCH_SCHEMA,
     IndexingPlan,
     MarkdownChunk,
     parse_markdown_file,
@@ -81,8 +81,8 @@ _DIFF_FIELDS = (
     "retained_stale_rows",
 )
 
-GENERIC_SITE_TURBOPUFFER_SCHEMA = {
-    **TURBOPUFFER_SCHEMA,
+GENERIC_SITE_SEARCH_SCHEMA = {
+    **SEARCH_SCHEMA,
     "site_id": {"type": "string"},
     "canonical_url": {"type": "string"},
     "page_hash": {"type": "string"},

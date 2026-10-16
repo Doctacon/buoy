@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -96,7 +97,7 @@ def fake_github_crawl_summary(source, options: CrawlOptions) -> dict[str, object
         "command": "crawl",
         "dry_run": True,
         "credentials_required": False,
-        "turbopuffer_api_calls": False,
+        "local_index_operations": False,
         "api_calls_occurred": False,
         "source_kind": "github_repo",
         "base_url": source.repo_root_url,
@@ -159,7 +160,7 @@ def fake_plan_crawl_summary(options: CrawlOptions) -> dict[str, object]:
         "command": "crawl",
         "dry_run": True,
         "credentials_required": False,
-        "turbopuffer_api_calls": False,
+        "local_index_operations": False,
         "api_calls_occurred": False,
         "base_url": options.base_url,
         "allowed_host": "example.com",
@@ -196,6 +197,8 @@ def fake_plan_crawl_summary(options: CrawlOptions) -> dict[str, object]:
     }
 
 
+# Online-source behavior here uses fake crawlers; policy defaults are tested separately.
+@patch.dict("os.environ", {"BUOY_ALLOW_NETWORK": "1"})
 class CliTests(unittest.TestCase):
     def test_retrieval_text_explains_no_relevant_evidence_without_claiming_no_answer(self) -> None:
         class Output:
@@ -295,7 +298,7 @@ class CliTests(unittest.TestCase):
         with redirect_stdout(detailed_stdout):
             print_retrieval_text(Output({"dry_run": False, "namespace": "site-example-v1", "hits": [], "fusion": "server_rrf", "ranking_mode": "page", "ranking_profile": "none", "ranking_aggregation": "max", "embedding_precision": "float16"}), explain=True)
             for dry_run in (True, False):
-                print_eval_text({"dry_run": dry_run, "namespace": "site-example-v1", "region": "gcp-us-central1", "embedding_precision": "float16", "total": 0, "top_k": 5, "candidates": 50, "ranking_mode": "page", "ranking_profile": "none", "ranking_aggregation": "max", "passed": 0, "pass_rate": 0.0, "cases": []})
+                print_eval_text({"dry_run": dry_run, "namespace": "site-example-v1", "region": "local", "embedding_precision": "float16", "total": 0, "top_k": 5, "candidates": 50, "ranking_mode": "page", "ranking_profile": "none", "ranking_aggregation": "max", "passed": 0, "pass_rate": 0.0, "cases": []})
 
         self.assertEqual(detailed_stdout.getvalue().count("embedding_precision: float16"), 3)
 
@@ -594,7 +597,7 @@ class CliTests(unittest.TestCase):
                     "dry_run": True,
                     "query": "What is PTR?",
                     "namespace": "site-rentptr-com-v1",
-                    "region": "gcp-us-central1",
+                    "region": "local",
                     "embedding_model": "BAAI/bge-small-en-v1.5",
                     "embedding_precision": "float32",
                     "top_k": 5,
@@ -707,7 +710,7 @@ class CliTests(unittest.TestCase):
             stderr = StringIO()
             with patch(
                 "buoy_search.cli.main.EMBEDDING_WORKER_CAPABILITY_FACTORY",
-                side_effect=AssertionError("worker capability inspected"),
+                return_value=True,
             ), patch(
                 "buoy_search.cli.main.HybridRetriever.from_config",
                 side_effect=AssertionError("retriever constructed"),
@@ -830,7 +833,7 @@ class CliTests(unittest.TestCase):
                 self.embedder.encode([query])
                 return Result()
 
-        def encode(texts: object) -> list[list[float]]:
+        def encode(texts: object, **_kwargs: object) -> list[list[float]]:
             calls.append(list(texts))
             return [[1.0] + [0.0] * 383]
 
@@ -900,11 +903,11 @@ class CliTests(unittest.TestCase):
         ) -> Retriever:
             return Retriever(embedder, reranker_loader)
 
-        def encode(texts: object) -> list[list[float]]:
+        def encode(texts: object, **_kwargs: object) -> list[list[float]]:
             embed_calls.append(list(texts))
             return [[1.0] + [0.0] * 383]
 
-        def score(query: str, passages: object) -> list[float]:
+        def score(query: str, passages: object, **_kwargs: object) -> list[float]:
             score_calls.append((query, list(passages)))
             return [0.75, 0.25]
 
@@ -1104,7 +1107,7 @@ class CliTests(unittest.TestCase):
                 self.embedder.encode([f"{query} again"])
                 return Result()
 
-        def worker_encode(texts: object) -> list[list[float]]:
+        def worker_encode(texts: object, **_kwargs: object) -> list[list[float]]:
             worker_calls.append(list(texts))
             raise RuntimeError(secret)
 
@@ -1285,10 +1288,10 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(result, 0, stderr.getvalue())
             payload = json.loads(stdout.getvalue())
-            expected = home / ".buoy/artifacts/site-crawls/example-com-plan"
+            expected = home / ".buoy-local/artifacts/site-crawls/example-com-plan"
             self.assertEqual(payload["out_dir"], str(expected))
             self.assertTrue((expected / "plan.json").is_file())
-            self.assertFalse((home / ".buoy/state").exists())
+            self.assertFalse((home / ".buoy-local/state").exists())
             self.assertEqual((project / ".buoy/marker").read_text(encoding="utf-8"), ".buoy")
             self.assertEqual((project / ".turbo-search/marker").read_text(encoding="utf-8"), ".turbo-search")
             self.assertFalse((project / "artifacts").exists())
@@ -1422,7 +1425,7 @@ class CliTests(unittest.TestCase):
                 "command": "crawl",
                 "dry_run": True,
                 "credentials_required": False,
-                "turbopuffer_api_calls": False,
+                "local_index_operations": False,
                 "api_calls_occurred": False,
                 "base_url": "https://scrapling.readthedocs.io/en/latest/",
                 "allowed_host": "scrapling.readthedocs.io",
@@ -1476,7 +1479,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertTrue(payload["dry_run"])
         self.assertFalse(payload["credentials_required"])
-        self.assertFalse(payload["turbopuffer_api_calls"])
+        self.assertFalse(payload["local_index_operations"])
         self.assertFalse(payload["api_calls_occurred"])
         self.assertEqual(payload["namespace_candidate"], "site-scrapling-readthedocs-io-v1")
         self.assertEqual(payload["sample_chunks"][0]["title"], "Intro")
@@ -1497,12 +1500,12 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             home.mkdir()
-            out_dir = home / ".buoy/artifacts/site-crawls/example-com"
+            out_dir = home / ".buoy-local/artifacts/site-crawls/example-com"
             fake_summary = {
                 "command": "crawl",
                 "dry_run": True,
                 "credentials_required": False,
-                "turbopuffer_api_calls": False,
+                "local_index_operations": False,
                 "api_calls_occurred": False,
                 "base_url": "https://example.com/",
                 "allowed_host": "example.com",
@@ -1684,7 +1687,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(payload["documents_converted"], 1)
             self.assertEqual(payload["pages_scraped"], 1)
             self.assertEqual(payload["chunks_generated"], 1)
-            self.assertFalse(payload["turbopuffer_api_calls"])
+            self.assertFalse(payload["local_index_operations"])
             site_mock.assert_not_called()
 
     def test_crawl_command_accepts_supported_local_file_path(self) -> None:
@@ -1724,7 +1727,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(payload["documents_converted"], 1)
             self.assertEqual(payload["pages_scraped"], 1)
             self.assertEqual(payload["chunks_generated"], 1)
-            self.assertFalse(payload["turbopuffer_api_calls"])
+            self.assertFalse(payload["local_index_operations"])
             site_mock.assert_not_called()
 
     def test_plan_command_writes_artifacts_and_first_apply_diff_without_credentials(self) -> None:
@@ -1785,7 +1788,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["command"], "plan")
         self.assertTrue(payload["dry_run"])
         self.assertFalse(payload["credentials_required"])
-        self.assertFalse(payload["turbopuffer_api_calls"])
+        self.assertFalse(payload["local_index_operations"])
         self.assertFalse(payload["api_calls_occurred"])
         self.assertTrue(payload["state_first_apply"])
         self.assertEqual(payload["diff"]["rows_to_upsert"], 1)
@@ -2121,7 +2124,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["pdf_filename"], "Research Notes.pdf")
         self.assertEqual(payload["pdf_sha256"], pdf_sha256)
         self.assertFalse(payload["credentials_required"])
-        self.assertFalse(payload["turbopuffer_api_calls"])
+        self.assertFalse(payload["local_index_operations"])
         self.assertEqual(payload["diff"]["rows_to_upsert"], 1)
         self.assertFalse(payload["applied_state"]["present"])
         self.assertEqual({path.name for path in out_dir.iterdir()}, {"plan.json", "delta.duckdb"})
@@ -2181,7 +2184,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["file_extension"], "csv")
         self.assertEqual(payload["file_sha256"], file_sha256)
         self.assertFalse(payload["credentials_required"])
-        self.assertFalse(payload["turbopuffer_api_calls"])
+        self.assertFalse(payload["local_index_operations"])
         self.assertEqual(payload["diff"]["rows_to_upsert"], 1)
         self.assertFalse(payload["applied_state"]["present"])
         self.assertEqual({path.name for path in out_dir.iterdir()}, {"plan.json", "delta.duckdb"})
@@ -2321,7 +2324,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertTrue(payload["dry_run"])
         self.assertFalse(payload["credentials_required"])
-        self.assertFalse(payload["turbopuffer_api_calls"])
+        self.assertFalse(payload["local_index_operations"])
         self.assertEqual(payload["top_k"], 3)
         self.assertEqual(payload["candidates"], 20)
         self.assertEqual(payload["doc_kind"], "library")
@@ -2478,7 +2481,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["ranking_profile"], "none")
         self.assertEqual(payload["ranking_pool"], 20)
         self.assertEqual(payload["ranking_aggregation"], "capped_sum_3")
-        self.assertFalse(payload["turbopuffer_api_calls"])
+        self.assertFalse(payload["local_index_operations"])
 
     def test_retrieve_command_supports_generic_runtime_overrides_in_dry_run(self) -> None:
         stdout = StringIO()
@@ -2491,7 +2494,7 @@ class CliTests(unittest.TestCase):
                     "--namespace",
                     "site-scrapling-readthedocs-io-v1",
                     "--region",
-                    "gcp-us-central1",
+                    "local",
                     "--embedding-model",
                     "BAAI/bge-small-en-v1.5",
                     "--json",
@@ -2502,33 +2505,34 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertTrue(payload["dry_run"])
         self.assertFalse(payload["credentials_required"])
-        self.assertFalse(payload["turbopuffer_api_calls"])
+        self.assertFalse(payload["local_index_operations"])
         self.assertEqual(payload["namespace"], "site-scrapling-readthedocs-io-v1")
-        self.assertEqual(payload["region"], "gcp-us-central1")
+        self.assertEqual(payload["region"], "local")
         self.assertEqual(payload["embedding_model"], "BAAI/bge-small-en-v1.5")
         self.assertEqual(payload["ranking_mode"], "page")
         self.assertEqual(payload["ranking_profile"], "none")
         self.assertEqual(payload["ranking_pool"], 20)
         self.assertEqual(payload["ranking_aggregation"], "max")
 
-    def test_plain_explicit_retrieval_requires_api_key(self) -> None:
-        stdout = StringIO()
-        stderr = StringIO()
-        with patch.dict("os.environ", {}, clear=True):
-            with redirect_stdout(stdout), redirect_stderr(stderr):
-                result = main(
-                    [
-                        "retrieve",
-                        "How does LinkExtractor filter links?",
-                        "--namespace",
-                        "site-scrapling-readthedocs-io-v1",
-                        "--json",
-                    ]
-                )
+    def test_plain_explicit_retrieval_needs_no_api_key(self) -> None:
+        stdout, stderr = StringIO(), StringIO()
+        embedder = SimpleNamespace(encode=lambda _texts: [[1.0] + [0.0] * 383])
+        namespace = SimpleNamespace(multi_query=lambda **_kwargs: {"rows": []})
+        with patch.dict("os.environ", {}, clear=True), patch(
+            "buoy_search.retrieval.retriever.SentenceTransformerEmbedder", return_value=embedder
+        ), patch(
+            "buoy_search.retrieval.retriever.build_namespace", return_value=namespace
+        ) as factory, redirect_stdout(stdout), redirect_stderr(stderr):
+            result = main([
+                "retrieve", "How does LinkExtractor filter links?",
+                "--namespace", "site-scrapling-readthedocs-io-v1",
+                "--no-embedding-worker", "--json",
+            ])
 
-        self.assertEqual(result, 2)
-        self.assertEqual(stdout.getvalue(), "")
-        self.assertIn("TURBOPUFFER_API_KEY must be set", stderr.getvalue())
+        self.assertEqual((result, stderr.getvalue()), (0, ""))
+        self.assertFalse(json.loads(stdout.getvalue())["credentials_required"])
+        factory.assert_called_once()
+        self.assertNotIn("api_key", factory.call_args.kwargs)
 
     def test_evals_command_dry_run_lists_cases_without_credentials(self) -> None:
         stdout = StringIO()
@@ -2551,7 +2555,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertTrue(payload["dry_run"])
         self.assertFalse(payload["credentials_required"])
-        self.assertFalse(payload["turbopuffer_api_calls"])
+        self.assertFalse(payload["local_index_operations"])
         self.assertGreaterEqual(payload["total"], 4)
         self.assertEqual(payload["top_k"], 3)
         self.assertEqual(payload["candidates"], 30)
@@ -2599,7 +2603,7 @@ class CliTests(unittest.TestCase):
                     "--namespace",
                     "site-scrapling-readthedocs-io-v1",
                     "--region",
-                    "gcp-us-central1",
+                    "local",
                     "--embedding-model",
                     "BAAI/bge-small-en-v1.5",
                     "--top-k",
@@ -2614,9 +2618,9 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertTrue(payload["dry_run"])
         self.assertFalse(payload["credentials_required"])
-        self.assertFalse(payload["turbopuffer_api_calls"])
+        self.assertFalse(payload["local_index_operations"])
         self.assertEqual(payload["namespace"], "site-scrapling-readthedocs-io-v1")
-        self.assertEqual(payload["region"], "gcp-us-central1")
+        self.assertEqual(payload["region"], "local")
         self.assertEqual(payload["embedding_model"], "BAAI/bge-small-en-v1.5")
         self.assertEqual(payload["top_k"], 4)
         self.assertEqual(payload["candidates"], 40)
@@ -2627,26 +2631,23 @@ class CliTests(unittest.TestCase):
         self.assertGreaterEqual(payload["total"], 4)
         self.assertIn("LinkExtractor", payload["cases"][1]["expected_topics"])
 
-    def test_evals_live_with_generic_overrides_is_gated_by_api_key(self) -> None:
-        stdout = StringIO()
-        stderr = StringIO()
-        with patch.dict("os.environ", {}, clear=True):
-            with redirect_stdout(stdout), redirect_stderr(stderr):
-                result = main(
-                    [
-                        "evals",
-                        "--live",
-                        "--dataset",
-                        "src/buoy_search/data/scrapling_retrieval_smoke_evals.json",
-                        "--namespace",
-                        "site-scrapling-readthedocs-io-v1",
-                        "--json",
-                    ]
-                )
+    def test_local_evals_need_no_api_key(self) -> None:
+        stdout, stderr = StringIO(), StringIO()
+        embedder = SimpleNamespace(encode=lambda _texts: [[1.0] + [0.0] * 383])
+        namespace = SimpleNamespace(multi_query=lambda **_kwargs: {"rows": []})
+        with patch.dict("os.environ", {}, clear=True), patch(
+            "buoy_search.retrieval.retriever.SentenceTransformerEmbedder", return_value=embedder
+        ), patch(
+            "buoy_search.retrieval.retriever.build_namespace", return_value=namespace
+        ), redirect_stdout(stdout), redirect_stderr(stderr):
+            result = main([
+                "evals", "--live", "--dataset",
+                "src/buoy_search/data/scrapling_retrieval_smoke_evals.json",
+                "--namespace", "site-scrapling-readthedocs-io-v1", "--json",
+            ])
 
-        self.assertEqual(result, 2)
-        self.assertEqual(stdout.getvalue(), "")
-        self.assertIn("TURBOPUFFER_API_KEY must be set", stderr.getvalue())
+        self.assertEqual((result, stderr.getvalue()), (0, ""))
+        self.assertFalse(json.loads(stdout.getvalue())["credentials_required"])
 
 
 if __name__ == "__main__":

@@ -380,16 +380,13 @@ class RoutingQualityCollectorTests(unittest.TestCase):
         )
         self.assertFalse(report["activation"]["ready"])
 
-    def test_missing_environment_key_fails_before_client_or_models(self) -> None:
-        forbidden = AssertionError("live dependency called before credential gate")
+    def test_local_client_is_reached_without_environment_key(self) -> None:
         with (
             patch.dict(os.environ, {}, clear=True),
-            patch.object(runner, "create_client", side_effect=forbidden),
-            patch.object(runner, "load_routing_embedder", side_effect=forbidden),
+            patch.object(runner, "create_client", side_effect=RuntimeError("local catalog unavailable")),
+            patch.object(runner, "load_routing_embedder", side_effect=AssertionError("model loaded before catalog")),
         ):
-            with self.assertRaisesRegex(
-                runner.RoutingQualityCollectionError, "process environment"
-            ):
+            with self.assertRaisesRegex(RuntimeError, "local catalog unavailable"):
                 runner.collect_live_run(
                     synthetic_dataset(), collector_invocation=("collect",)
                 )

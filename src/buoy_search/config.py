@@ -1,8 +1,4 @@
-"""Runtime configuration helpers for the Buoy CLI.
-
-This module intentionally does not read secrets. Live commands read turbopuffer
-credentials at the call site only after explicit user approval.
-"""
+"""Non-secret runtime configuration for local DuckDB-backed Buoy."""
 
 from __future__ import annotations
 
@@ -10,7 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import os
 
-DEFAULT_REGION = "gcp-us-central1"
+DEFAULT_REGION = "local"
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_EMBEDDING_PRECISION = "float32"
 EMBEDDING_PRECISIONS = ("float32", "float16")
@@ -57,9 +53,8 @@ def load_config(
 ) -> RuntimeConfig:
     """Load non-secret runtime configuration from environment defaults.
 
-    Deliberately excludes TURBOPUFFER_API_KEY so help and dry-run commands can be
-    used safely without credentials. Removed branded embedding variables are
-    rejected by CLI entry points before dispatch and never become configuration.
+    No API keys or cloud region variables are read. Removed branded embedding
+    variables are rejected by CLI entry points before dispatch.
     """
 
     # Retain the keyword for source compatibility; removal emits no warnings.
@@ -73,7 +68,7 @@ def load_config(
         )
 
     return RuntimeConfig(
-        region=os.environ.get("TURBOPUFFER_REGION", DEFAULT_REGION),
+        region=DEFAULT_REGION,
         embedding_model=embedding_model,
         embedding_precision=embedding_precision,
     )

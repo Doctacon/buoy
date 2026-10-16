@@ -192,8 +192,8 @@ class EvalRunResult:
         payload: dict[str, object] = {
             "command": "evals",
             "dry_run": self.dry_run,
-            "credentials_required": not self.dry_run,
-            "turbopuffer_api_calls": not self.dry_run,
+            "credentials_required": False,
+            "local_index_operations": not self.dry_run,
             "api_calls_occurred": not self.dry_run,
             "region": self.region,
             "namespace": self.namespace,

@@ -18,6 +18,7 @@ from typing import Iterable, Mapping, Protocol, Sequence
 import unicodedata
 from urllib.parse import urlsplit
 
+from buoy_search.local_models import LocalModelError, load_sentence_transformer
 from buoy_search.model_progress import suppress_model_progress_bars
 from buoy_search.planning.plan_artifacts import PLAN_SCHEMA_VERSION, stable_hash
 from buoy_search.retrieval.retriever import RANKING_AGGREGATIONS, RANKING_MODES, RANKING_PROFILES
@@ -1045,20 +1046,16 @@ def parse_catalog(payload: object) -> CatalogDocument:
 class _SentenceTransformerRoutingEmbedder:
     def __init__(self) -> None:
         try:
-            from sentence_transformers import SentenceTransformer
-        except ImportError as exc:  # pragma: no cover
-            raise CatalogError("sentence-transformers is required for catalog vectors; run `uv sync` first") from exc
-        try:
             with suppress_model_progress_bars():
-                self._model = SentenceTransformer(
+                self._model = load_sentence_transformer(
                     ROUTING_MODEL,
                     revision=ROUTING_MODEL_REVISION,
-                    local_files_only=True,
                 )
-        except Exception as exc:
+        except LocalModelError as exc:
             raise CatalogError(
                 f"pinned routing model {ROUTING_MODEL}@{ROUTING_MODEL_REVISION} is not cached locally; "
-                "cache that exact revision explicitly and retry (downloads and substitutions are disabled)"
+                "run `python scripts/prepare_local_models.py --download` on an online machine, "
+                "copy its Hugging Face cache, and retry (downloads and substitutions are disabled)"
             ) from exc
 
     def encode(self, texts: Sequence[str]) -> list[list[float]]:

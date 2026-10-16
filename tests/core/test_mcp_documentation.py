@@ -20,7 +20,7 @@ class MCPDocumentationTests(unittest.TestCase):
         ])
         self.assertEqual((ROOT / "README.md").read_text().count("(docs/mcp.md)"), 1)
         self.assertIn("uv sync --locked --extra mcp --python 3.13", text)
-        self.assertIn("uv run --locked --extra mcp buoy mcp", text)
+        self.assertIn("uv run --no-sync buoy mcp", text)
         self.assertIn("MCP is unreleased", text)
         self.assertIn("does **not** auto-load `.env`", text)
 
