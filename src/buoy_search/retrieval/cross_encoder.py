@@ -45,7 +45,7 @@ class _PinnedMiniLMReranker:
         except ImportError as exc:  # pragma: no cover - depends on optional install.
             raise CrossEncoderRerankerError(
                 "sentence-transformers is required for cross-namespace reranking; "
-                "run `uv sync` first"
+                "reinstall buoy-search"
             ) from exc
         except LocalModelError as exc:
             raise CrossEncoderRerankerError(str(exc)) from exc
@@ -64,9 +64,9 @@ class _PinnedMiniLMReranker:
         except Exception as exc:
             raise CrossEncoderRerankerError(
                 f"pinned reranker {CROSS_ENCODER_MODEL}@{CROSS_ENCODER_REVISION} "
-                "is not cached locally; run `python scripts/prepare_local_models.py "
-                "--download` on an online machine and copy its Hugging Face cache "
-                "(downloads and substitutions are disabled)"
+                "is not cached locally; run `buoy setup --download-models` once "
+                "where downloads are permitted, or transfer the prepared cache "
+                "(automatic downloads and substitutions are disabled)"
             ) from exc
 
     def score(self, query: str, passages: Sequence[str]) -> list[float]:

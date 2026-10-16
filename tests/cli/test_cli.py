@@ -1346,12 +1346,13 @@ class CliTests(unittest.TestCase):
         choices = parser._subparsers._group_actions[0].choices
         self.assertEqual(
             set(choices),
-            {"crawl", "plan", "apply", "retrieve", "evals", "catalog", "mcp"},
+            {"setup", "crawl", "plan", "apply", "retrieve", "evals", "catalog", "mcp"},
         )
         retrieve_help = choices["retrieve"].format_help()
         apply_help = parser._subparsers._group_actions[0].choices["apply"].format_help()
 
         self.assertIn("local-only", help_text)
+        self.assertIn("setup", help_text)
         self.assertIn("crawl", help_text)
         self.assertIn("plan", help_text)
         self.assertIn("apply", help_text)
@@ -1360,7 +1361,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("catalog", help_text)
         self.assertIn("website, repository, document, DuckDB, BigQuery, and Snowflake", " ".join(help_text.split()))
         normalized_retrieve_help = " ".join(retrieve_help.split())
-        self.assertIn("Automatically route through the authenticated remote catalog", normalized_retrieve_help)
+        self.assertIn("Automatically route through the local catalog", normalized_retrieve_help)
         self.assertIn("repeat up to three times", normalized_retrieve_help)
         self.assertIn("--namespace NAMESPACE", normalized_retrieve_help)
         self.assertNotIn("--live", normalized_retrieve_help)

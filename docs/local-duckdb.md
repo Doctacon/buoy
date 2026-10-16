@@ -44,15 +44,27 @@ swap=4GB
 Apply that configuration with `wsl --shutdown` from PowerShell. It is a suggested
 WSL allocation, not a requirement; leave sufficient RAM for Windows.
 
-From this branch in the Linux filesystem:
+## Normal installation: two commands
+
+**Local operation does not require an air-gapped installation.** If initial
+package/model downloads are permitted, install this branch as a normal tool:
 
 ```bash
-uv sync --locked --extra mcp
-uv run --no-sync python scripts/prepare_local_models.py --download
+uv tool install --torch-backend cpu "buoy-search[mcp] @ git+https://github.com/Doctacon/buoy.git@local-duckdb"
+buoy setup --download-models
 ```
 
-`uv` uses CPU-only PyTorch wheels on Linux/Windows. Models default to CPU and
-float32. The 4 GB GPU remains available to other applications. Inference uses
+No manual virtual environment or environment variables are needed. The setup
+command downloads only the two pinned models; normal indexing/search never
+downloads anything. From a checkout, use `.[mcp]` in place of the Git requirement.
+A supplied wheel can be installed using its filesystem path instead (include
+`[mcp]` after the wheel path if you need MCP).
+This branch is not the existing PyPI release: use the branch URL, checkout, or
+wheel rather than plain `uv tool install buoy-search`.
+
+`--torch-backend cpu` selects CPU-only PyTorch wheels on Linux/Windows. On macOS,
+omit that option; the standard macOS wheels do not include CUDA. Models default
+to CPU and float32. The 4 GB GPU remains available to other applications. Inference uses
 small BGE embeddings and MiniLM reranking, not a local generative LLM.
 
 Normal usage after setup:
@@ -61,18 +73,21 @@ Normal usage after setup:
 export BUOY_HOME="$HOME/.buoy-local"  # optional; this is the default
 export BUOY_TELEMETRY=off             # optional; telemetry is already opt-in
 
-uv run --no-sync buoy plan ./notes.md --namespace notes
-uv run --no-sync buoy apply --dry-run
-uv run --no-sync buoy apply --approve
-uv run --no-sync buoy retrieve "What is the deployment procedure?" --namespace notes
-uv run --no-sync buoy retrieve "What is the deployment procedure?" --json
-uv run --no-sync buoy catalog list --all --json
+buoy plan ./notes.md --namespace notes
+buoy apply --dry-run
+buoy apply --approve
+buoy retrieve "What is the deployment procedure?" --namespace notes
+buoy retrieve "What is the deployment procedure?" --json
+buoy catalog list --all --json
 ```
 
 If multiple pending plans exist, select one with `apply --plan /path/to/plan.json`.
 Stale rows are retained unless you explicitly approve `--delete-stale`.
 
 ## Fully disconnected installation
+
+**Skip this section for normal `uv tool install` setup.** It is only for a target
+that is prohibited from downloading even packages and model weights.
 
 Package installation and initial model acquisition need a connected **staging
 machine**, not access from the work laptop. Use a Linux x86-64 staging environment

@@ -18,32 +18,34 @@ namespace routing, local reranking, anchored citations, JSON output, and MCP.
 
 Recommended target: **Ubuntu in Windows WSL2**, Python 3.11–3.13, `uv`, and Git.
 CPU defaults suit a 32 GB RAM / 4 GB VRAM laptop; the GPU is not needed.
-After checking out this branch:
+Install this branch directly as a normal tool inside WSL:
 
 ```bash
-uv sync --locked --extra mcp
+uv tool install --torch-backend cpu "buoy-search[mcp] @ git+https://github.com/Doctacon/buoy.git@local-duckdb"
+buoy setup --download-models
+```
 
-# ONE-TIME ONLINE SETUP, on an approved connected machine only:
-uv run --no-sync python scripts/prepare_local_models.py --download
+That's the setup. Package installation and the explicit one-time model download
+use the internet; normal indexing and search do not. No manual virtual environment,
+model paths, API keys, or running database service are needed. A supplied wheel
+can be installed with the same `uv tool install --torch-backend cpu` command,
+using its path instead of the Git requirement. From a checkout, use `.[mcp]`.
+On macOS, omit `--torch-backend cpu`.
 
-# All commands below work offline once dependencies and models are installed:
-uv run --no-sync buoy plan ./research-notes.pdf --namespace work-notes
-uv run --no-sync buoy apply --dry-run
-uv run --no-sync buoy apply --approve
-uv run --no-sync buoy retrieve "What do the notes say?"
+```bash
+buoy plan ./research-notes.pdf --namespace work-notes
+buoy apply --dry-run
+buoy apply --approve
+buoy retrieve "What do the notes say?"
 ```
 
 The default home is `~/.buoy-local/`, **separate from earlier Buoy installations**.
 Set `BUOY_HOME` to move the index and its state together. Do not reuse a
 cloud-era applied-state ledger: re-plan and re-index your original sources.
 
-For a folder of documents or source code:
-
-```bash
-uv run --no-sync python scripts/import_local_directory.py ./docs ./knowledge.duckdb
-uv run --no-sync buoy plan ./knowledge.duckdb --relation documents --source-id work-docs
-uv run --no-sync buoy apply --approve
-```
+For bulk text/code folders, see the [folder import helper](docs/local-duckdb.md#import-local-folders-and-repositories).
+The separate [air-gapped installation procedure](docs/local-duckdb.md#fully-disconnected-installation)
+is needed **only if the target cannot download packages/models during setup**.
 
 Website, GitHub, BigQuery, and Snowflake acquisition is disabled by default.
 It can be explicitly enabled on a connected staging machine with

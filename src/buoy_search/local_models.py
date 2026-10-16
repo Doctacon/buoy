@@ -98,7 +98,7 @@ def load_sentence_transformer(
         from sentence_transformers import SentenceTransformer
     except ImportError as exc:  # pragma: no cover - dependency install failure.
         raise LocalModelError(
-            "sentence-transformers is required for local embeddings; run `uv sync` first"
+            "sentence-transformers is required for local embeddings; reinstall buoy-search"
         ) from exc
 
     configure_torch_threads()
@@ -117,7 +117,7 @@ def load_sentence_transformer(
     except Exception as exc:
         raise LocalModelError(
             f"pinned model {model_name}@{pinned_revision} is not available in the "
-            "local Hugging Face cache; on an online machine run "
-            "`python scripts/prepare_local_models.py --download` and copy that "
-            "cache to this host (automatic downloads are disabled)"
+            "local Hugging Face cache; run `buoy setup --download-models` once "
+            "where downloads are permitted, or transfer the prepared cache "
+            "to this host (automatic downloads are disabled)"
         ) from exc

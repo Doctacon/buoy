@@ -73,6 +73,8 @@ jobs:
           uv venv --python 3.13 "$RUNNER_TEMP/buoy-wheel-smoke"
           uv pip install --torch-backend cpu --python "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" dist/*.whl
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" --help >/dev/null
+          "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" setup --help >/dev/null
+          if "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" setup; then exit 1; fi
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" mcp --help >/dev/null
           if "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" mcp; then exit 1; fi
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" -m buoy_search --help >/dev/null

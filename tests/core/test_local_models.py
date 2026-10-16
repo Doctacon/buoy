@@ -5,6 +5,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from types import ModuleType
 from unittest.mock import patch
@@ -147,7 +149,7 @@ class LocalModelRuntimeTests(unittest.TestCase):
             ),
             self.assertRaisesRegex(
                 LocalModelError,
-                "prepare_local_models.py --download.*automatic downloads",
+                "buoy setup --download-models.*automatic downloads",
             ),
         ):
             load_sentence_transformer(BGE_MODEL, BGE_REVISION)
@@ -157,12 +159,16 @@ class LocalModelRuntimeTests(unittest.TestCase):
             load_sentence_transformer(BGE_MODEL, "main")
 
 
-class ProvisioningScriptTests(unittest.TestCase):
+class ProvisioningCommandTests(unittest.TestCase):
     def test_exact_snapshots_are_downloaded_only_after_acknowledgment(self) -> None:
-        from scripts import prepare_local_models as prepare
+        from buoy_search.cli import setup as prepare
+        from buoy_search.cli.entrypoint import main
 
-        with self.assertRaisesRegex(SystemExit, "network use was not authorized"):
-            prepare.main([])
+        stderr = StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            main(["setup"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("network use was not authorized", stderr.getvalue())
 
         calls: list[dict[str, object]] = []
         hub = ModuleType("huggingface_hub")
@@ -189,8 +195,8 @@ class ProvisioningScriptTests(unittest.TestCase):
                 patch.dict(sys.modules, {"huggingface_hub": hub}),
             ):
                 self.assertEqual(
-                    prepare.main(
-                        ["--download", "--cache-dir", os.fspath(root / "cache")]
+                    main(
+                        ["setup", "--download-models", "--cache-dir", os.fspath(root / "cache")]
                     ),
                     0,
                 )
@@ -209,10 +215,48 @@ class ProvisioningScriptTests(unittest.TestCase):
         )
         for call, snapshot in zip(calls, prepare.MODEL_SNAPSHOTS, strict=True):
             self.assertFalse(call["local_files_only"])
+            self.assertFalse(call["token"])
             self.assertEqual(call["allow_patterns"], list(snapshot.files))
             self.assertEqual(
                 call["cache_dir"], os.fspath((root / "cache" / "hub").resolve())
             )
+
+    def test_setup_help_is_lightweight_and_does_not_load_model_frameworks(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, "-I", "-c", (
+                "import sys; from buoy_search.cli.entrypoint import main; "
+                "\ntry: main(['setup', '--help'])"
+                "\nexcept SystemExit as exc: assert exc.code == 0"
+                "\nassert 'torch' not in sys.modules"
+                "\nassert 'sentence_transformers' not in sys.modules"
+                "\nassert 'huggingface_hub' not in sys.modules"
+                "\nassert 'buoy_search.cli.main' not in sys.modules"
+            )],
+            capture_output=True, text=True, check=False, timeout=20,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("--download-models", completed.stdout)
+
+    def test_legacy_script_delegates_to_installed_command(self) -> None:
+        from buoy_search.cli import setup
+        from scripts import prepare_local_models
+
+        self.assertIs(prepare_local_models.main, setup.main)
+        self.assertTrue(setup._parser().parse_args(["--download"]).download)
+
+    def test_setup_rejects_incomplete_downloads(self) -> None:
+        from buoy_search.cli.entrypoint import main
+
+        hub = ModuleType("huggingface_hub")
+        with tempfile.TemporaryDirectory() as temporary:
+            hub.snapshot_download = lambda **_kwargs: temporary
+            with (
+                patch.dict(os.environ, {}, clear=True),
+                patch.dict(sys.modules, {"huggingface_hub": hub}),
+                redirect_stdout(StringIO()),
+                self.assertRaisesRegex(RuntimeError, "missing required files"),
+            ):
+                main(["setup", "--download-models"])
 
 
 if __name__ == "__main__":

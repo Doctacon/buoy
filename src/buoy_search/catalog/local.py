@@ -1054,8 +1054,8 @@ class _SentenceTransformerRoutingEmbedder:
         except LocalModelError as exc:
             raise CatalogError(
                 f"pinned routing model {ROUTING_MODEL}@{ROUTING_MODEL_REVISION} is not cached locally; "
-                "run `python scripts/prepare_local_models.py --download` on an online machine, "
-                "copy its Hugging Face cache, and retry (downloads and substitutions are disabled)"
+                "run `buoy setup --download-models` once where downloads are permitted, "
+                "or transfer a prepared cache (automatic downloads and substitutions are disabled)"
             ) from exc
 
     def encode(self, texts: Sequence[str]) -> list[list[float]]:

@@ -317,6 +317,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     configure_catalog_parser(subparsers)
+    subparsers.add_parser("setup", help="one-time download of the pinned local models")
     subparsers.add_parser("mcp", help="serve read-only MCP tools over local stdio (optional extra)")
 
     crawl_parser = subparsers.add_parser(
@@ -748,7 +749,7 @@ def build_parser() -> argparse.ArgumentParser:
         "retrieve",
         help="retrieve relevant chunks across the most relevant corpora",
         description=(
-            "Automatically route through the authenticated remote catalog, or bypass routing "
+            "Automatically route through the local catalog, or bypass routing "
             "with one or more explicit --namespace values."
         ),
     )
