@@ -1,484 +1,130 @@
-# Automatic and explicit retrieval
+# Local retrieval
 
-`buoy retrieve QUERY` automatically chooses the relevant indexed corpora. The
-router reads the live Turbopuffer namespace inventory and the validated cards
-in `buoy-routing-catalog-v1`, then searches at most three content namespaces.
-
-```bash
-export TURBOPUFFER_API_KEY=...
-
-# Inspect the automatic route. This reads routing state but not content.
-buoy retrieve "How is approximate vector recall evaluated?" --dry-run
-
-# Run the selected retrieval.
-buoy retrieve "How is approximate vector recall evaluated?"
-```
-
-## Output modes
-
-Every successful live retrieval uses compact, citation-first text by default,
-including an explicit single namespace:
-
-```text
-Found 1 passage.
-
-1. Retry behavior
-   https://docs.example.com/retries · Backoff
-   Requests use bounded exponential backoff and stop after the configured...
-```
-
-Each hit contains its rank, title, best available citation, optional section,
-and a whitespace-collapsed excerpt capped at 320 characters. Citation choice
-prefers a URL, then a repository path, source path, or stable row identifier.
-Compact text omits namespace and ranking diagnostics, tags, redundant paths,
-model and precision details, scores, and positive evidence diagnostics.
-
-Use `--explain` to render the same result in the established detailed text
-format. It includes the namespace, ordered tags, paths, embedding precision,
-model, fusion/reranking, scores, and evidence diagnostics that apply. `--json`
-retains the existing structured contract. `--explain` and `--json` are mutually
-exclusive; combining them fails before configuration, credentials, model
-loading, or provider calls. Dry-run and plan output remain detailed.
-
-Output mode is presentation only. It does not change routing, widening,
-retrieval, deduplication, ranking, deterministic tie-breaking, per-corpus
-coverage promotion, result limits, evidence assessment, or provider calls.
-Partial-failure warnings still identify failed namespaces. The existing
-`assessment_failed` warning also remains visible in compact text, while
-`supported`, `unassessed`, and shadow `would_*` evidence diagnostics are hidden.
-No-relevant-evidence and inconclusive messages are unchanged. Buoy returns
-passages and citations; it does not synthesize an answer.
-
-`--plan` is an alias for `--dry-run`. Buoy reads credentials only from the
-process environment and does not load `.env` automatically. If a local `.env`
-is the intended credential source, load it explicitly into the command
-subshell:
+`buoy retrieve QUERY` chooses relevant indexed corpora from the routing catalog
+in your local DuckDB database, then searches at most three content namespaces.
+No API key or region setting is needed. Set `BUOY_HOME` and `HF_HOME` consistently
+with indexing; see [offline setup](local-duckdb.md).
 
 ```bash
-(
-  set -a
-  . ./.env
-  set +a
-  buoy retrieve "How is approximate vector recall evaluated?"
-)
+# Inspect routing without querying content (uses cached routing models).
+buoy retrieve "How do we deploy?" --dry-run
+
+# Automatic local search.
+buoy retrieve "How do we deploy?"
+
+# Bypass routing and search one explicit namespace.
+buoy retrieve "How do we deploy?" --namespace work-docs
+
+# Search up to three namespaces, embedding once and reranking locally.
+buoy retrieve "How do we deploy?" --namespace work-docs --namespace work-code
 ```
 
-The runtime also reads `TURBOPUFFER_REGION` (default
-`gcp-us-central1`), `BUOY_EMBEDDING_MODEL`, and
-`BUOY_EMBEDDING_PRECISION`. `TURBOPUFFER_NAMESPACE` is ignored.
+## Hybrid search and ranking
 
-## Persistent embedding worker
+Each content namespace combines:
 
-On supported POSIX systems, `retrieve` reuses the exact pinned
-`BAAI/bge-small-en-v1.5` float32 model in a private local worker by default. The
-same resident model serves automatic semantic routing and the final retrieval
-query embedding. This amortizes Sentence Transformers and Torch initialization
-across nearby commands.
+1. DuckDB native exact cosine vector search over 384-dimensional float32 vectors.
+2. BM25 keyword scoring over title (boost 2), section path (boost 1.5), and content.
+3. Client-side reciprocal-rank fusion, with deterministic tie-breaking.
+4. Existing page/file/chunk grouping and optional repository ranking heuristics.
 
-The worker owns only the local embedder. Turbopuffer credentials, provider
-clients, catalog and namespace requests, reranking, results, telemetry storage,
-and rendering remain in the invoking CLI process. The worker exits after five
-minutes without a valid embedding request and may retain roughly 185–516 MB
-while warm.
+`--top-k` sets the final result limit; `--candidates` controls each retrieval
+channel's candidate pool. `--doc-kind` filters both channels before their limit.
+Use `buoy retrieve --help` for grouping/ranking overrides. Multi-namespace results
+use the pinned local MiniLM cross-encoder and bounded cross-namespace fusion.
+No generative LLM is invoked: Buoy returns evidence, not a synthesized answer.
 
-Use the established per-command in-process model explicitly when needed:
+This is **not ANN/HNSW**. The retained internal `ANN` query expression is executed
+as exact DuckDB cosine search. No extension installation is necessary. Local
+BM25 tokenization and search rankings differ from the previous hosted backend;
+old cloud metrics are not performance or quality promises for this branch.
+
+## Output and previews
+
+Compact text shows the best citation and a short passage excerpt. `--explain`
+includes namespaces, scores, grouping and evidence diagnostics. `--json` returns
+the structured result. `--explain` and `--json` are mutually exclusive.
+
+`--plan` aliases `--dry-run`:
+
+- An **explicit namespace preview** does not read the index or load a model.
+- An **automatic preview** reads the local catalog and runs local route selection,
+  but does not issue a content search or modify the index.
+
+No command reads `TURBOPUFFER_API_KEY`, `TURBOPUFFER_REGION`, or
+`TURBOPUFFER_NAMESPACE`. Those obsolete settings have no effect. The legacy
+`--region` option accepts `local` only. The default embedding contract is pinned
+BGE-small, float32; keep it unchanged between indexing and retrieval.
+
+JSON `credentials_required` is false. `local_index_operations` describes local
+storage work. Historical generic `api_calls_occurred`, request counters, and
+provider-invocation telemetry count calls to the local storage interface; they
+do not represent HTTP traffic or billable operations.
+
+## Persistent local model worker
+
+On WSL2/POSIX, retrieval can reuse pinned models in a private local worker.
+Communication uses a Unix-domain socket, not an external service. The worker
+exits after five minutes of inactivity. Cached model weights are required even
+when the worker is enabled. Missing models never trigger a download.
 
 ```bash
-buoy retrieve "How is approximate vector recall evaluated?" \
-  --no-embedding-worker
+buoy retrieve "How do we deploy?" --namespace work-docs --no-embedding-worker
 ```
 
-Custom embedding models, float16, unsupported platforms, and the opt-out use
-the in-process backend directly without creating worker state. An explicit
-namespace `--dry-run` performs no embedding and starts no worker. An automatic
-`--dry-run` may use the worker to select the route while retaining its existing
-no-content-query boundary.
+Use `--no-embedding-worker` to force in-process inference, for troubleshooting,
+or when experimenting with an explicitly installed GPU runtime. A failed worker
+falls back to in-process inference with one bounded warning. Models default to
+CPU; the recommended installation does not use your laptop's limited VRAM.
 
-If an eligible worker fails, Buoy prints one bounded warning and uses the
-in-process model for the failed and all later embeddings in that command. The
-fallback does not repeat provider catalog or content operations and does not
-expose worker paths, frames, query text, credentials, raw exceptions, or PIDs.
-There is no environment-variable activation. The former
-`--experimental-embedding-worker` flag has been removed.
+## Automatic routing and evidence
 
-## Automatic routing
+Approved apply registers the namespace's card automatically, including up to
+eight representative passages from the reviewed source. The first local apply
+creates the reserved schema-v3 catalog. No separate cloud provisioning is needed.
 
-Automatic routing is intentionally bounded. Reserved control namespaces such
-as `buoy-routing-catalog-v1` and `buoy-evidence-*` are never content candidates.
-Valid enabled compatible cards are candidates. Stale, missing, incompatible,
-and disabled cards are reported but do not prevent valid cards from being
-searched; malformed catalog state still fails before any content query.
+Routing prefers exact normalized titles/aliases. Otherwise it takes a bounded
+vector shortlist and compares candidate passages with the pinned local reranker.
+An uncalibrated/new catalog uses up to three candidates rather than claiming
+certified singleton confidence. Disabled, stale, missing, and incompatible cards
+are reported; malformed catalog state fails rather than silently ignoring it.
 
-Selection first looks for complete normalized titles or aliases in the
-question:
+Automatic evidence assessment retains the existing provisional relevance gate.
+Its historical thresholds have **not been recalibrated for DuckDB or your work
+corpus**. Inspect results and evaluate representative questions. Explicit namespace
+search bypasses automatic routing/abstention when you need raw search behavior.
+Empty results are not proof that an answer does not exist. Partial namespace
+failures retain successful results with `incomplete=true`; total failure is an
+error, not a fabricated empty success.
 
-- one named corpus selects that corpus;
-- two or three named corpora select all of them in deterministic order;
-- more than three named corpora fails with guidance to use explicit selection;
-- otherwise a pinned local semantic router selects one corpus only when the
-  catalog exactly matches the installed certified projection and the top
-  result clears both the confidence and margin thresholds;
-- an ambiguous semantic route selects the top three, or every eligible corpus
-  when fewer than three exist.
-
-Every schema-v3 plan includes up to eight representative source passages.
-Approved apply embeds and stores the reviewed passages and their individual
-shortlist vectors on the namespace's one routing card, without a generative LLM
-or invented questions. Operator-authored
-`routing_examples` remain separate and take priority within the shared
-eight-passage budget. A new or content-refreshed card participates immediately;
-because its projection is provisional, descriptor-free routing starts with the
-best three candidates until a later reviewed certification updates the exact
-confidence authority. Exact title/alias matches still select the named card.
-
-Automatic `--dry-run` requires `TURBOPUFFER_API_KEY` because live inventory and
-catalog reads are routing authority. It performs those read-only requests and
-one local route embedding, then reports selected cards, confidence, coverage,
-and expected fanout. It does not embed the content query, query a content
-namespace, or write provider state.
-
-### Growing the routing catalog
-
-Adding a corpus does not require an LLM, a catalog command, or synchronous
-evaluation. `plan` derives source-grounded routing passages and `apply`
-publishes them with the card. A later certification can add reviewed route
-canaries and authorize calibrated singleton routing; certification is an
-optimization, not a prerequisite for automatic search.
-
-The unreleased scalable-routing reader understands an additive
-`routing_examples` card field containing at most eight reviewed questions the
-corpus can answer. These examples are separate from aliases and tags and never
-trigger exact-name routing. The bounded prototype route takes an exact in-
-memory vector shortlist of at most twelve cards from the already-read catalog.
-Each card is nominated by its best base/example/source-passage vector, so a
-relevant passage is not diluted by the centroid of a diverse source. MiniLM
-then compares the shortlisted cards' bounded passage banks.
-It still queries at most three content namespaces and adds no provider query
-per card.
-
-Activation is staged through one installed package artifact. The clean dormant
-checkpoint keeps schema-v1 `mode=collect`, so ordinary automatic retrieval
-continues to use the legacy hybrid selector while the exact source and 65-case
-suite are recollected and independently audited. Only that exact report may
-authorize the artifact-only schema-v2 `mode=active` checkpoint that is the
-intended final state of this Unreleased source package. Until certification is
-recorded, the dormant checkpoint remains collect-only. In active mode, exact
-title and alias matches remain authoritative; descriptor-free routing selects
-one corpus only when both the approved finite score and margin floors pass, and
-otherwise selects at most three. A malformed artifact or source-receipt
-mismatch stops before content access. Valid eligible-card projection drift
-switches to provisional top-three routing instead of disabling automatic
-search.
-
-The installed artifact, not a command-line option, environment variable, or
-catalog mutation, determines which selector is authorized. Even the final
-active task tree is not integration, publication, or deployment. Ordinary apply
-never invents capability questions. It preserves reviewed manual examples and
-adds only deterministic excerpts that were visible in the reviewed plan.
-
-## Explicit override
-
-Supply `--namespace` to bypass namespace listing, catalog reads, and route-model
-work. Repeat it to search a known set of two or three namespaces:
+## Catalog management
 
 ```bash
-# Local, provider-free preview of one known namespace.
-buoy retrieve "How are retries configured?" \
-  --namespace github-example-service-v1 \
-  --dry-run
-
-# Explicit multi-corpus retrieval.
-export TURBOPUFFER_API_KEY=...
-buoy retrieve "Compare retry and deployment guidance" \
-  --namespace github-example-service-v1 \
-  --namespace site-example-docs-v1
+buoy catalog list --all --json
+buoy catalog show work-docs --json
+buoy catalog disable work-docs           # preview
+buoy catalog disable work-docs --approve # commit
+buoy catalog enable work-docs --approve
 ```
 
-Explicit namespaces must be unique and may be repeated at most three times. A
-single explicit namespace preserves its established retrieval, ranking, and
-JSON result contract; its default live text uses the same compact renderer as
-every other live retrieval. An explicit preview is local, credential-free, and
-provider-free.
-
-## Search, widening, and reranking
-
-The content query is embedded once. Each selected namespace runs ANN plus
-boosted BM25 over title, section path, and content, then performs
-within-namespace reciprocal-rank fusion and the source-aware file/page ranking
-already used by single-namespace retrieval.
-
-Source-aware defaults remain:
-
-- websites, local documents, and database relations: page mode, no repository
-  profile, pool 20, max aggregation;
-- repositories: file mode, `repo-code` profile, pool 100,
-  `adaptive-sum-3` aggregation.
-
-A confident one-corpus route initially queries only that corpus. If it is
-empty, fails, or returns a best evidence score below the provisional cutoff,
-Buoy widens once to the next two route candidates. An explicit
-single-namespace request does not cross this automatic evidence boundary and
-retains its established raw-search behavior. A route that starts with two or
-three corpora queries them concurrently, with at most three workers.
-
-For a true multi-corpus result, each successful namespace contributes at most
-eight hits. Buoy collapses exact citation/section/content duplicates, retains
-at most 24 candidates, and gives each candidate a local MiniLM rank. The final
-order uses fixed equal-weight reciprocal-rank fusion (`k=60`) of that MiniLM
-rank and the candidate's existing namespace-local rank. Raw provider scores
-and corpus-route scores are never mixed across namespaces. This keeps strong
-local evidence from being erased while still letting the cross-encoder compare
-the combined candidate set. The requested `--top-k` is the final global limit.
-When that limit has room for every nonempty selected corpus, Buoy also retains
-the existing local-rank-one hit from each corpus. If this safety rail replaces
-a lower global result, JSON reports the promoted namespace; if `top_k` is too
-small to represent every corpus, JSON reports that coverage was impossible.
-Reranker load or inference failure fails the multi-corpus request rather than
-returning an arbitrary cross-corpus order.
-
-The exact model is `cross-encoder/ms-marco-MiniLM-L-6-v2` at immutable revision
-`c5ee24cb16019beea0893ab7796b1df96625c6b8`. Loading is CPU-only,
-`local_files_only`, safetensors-only, and remote code is disabled. Retrieval
-does not download a model or accept an unpinned substitute. The snapshot is
-about 88 MB. With the routing model already resident, a measured 24-candidate
-run on the development Mac took about 0.58 seconds and added about 151 MiB of
-peak working memory using the fixed batch size of eight. It is already present
-in the development environment. If that exact snapshot is not
-in the Hugging Face cache, an ambiguous multi-corpus request fails before its
-content queries. A high-confidence single-corpus route queries that corpus
-first; if evidence assessment then needs the missing model, the request fails
-with a generic assessment error before widening or presenting results.
-
-Overrides remain explicit:
-
-```bash
-buoy retrieve "customer cancellation reason" \
-  --namespace customer-conversations \
-  --ranking-mode page \
-  --ranking-profile none \
-  --ranking-pool 20 \
-  --ranking-aggregation max
-```
-
-`--doc-kind` applies one exact metadata filter. Tags remain output and routing
-card metadata, not retrieval-filter authority.
-
-## Automatic evidence assessment
-
-Automatic routing answers which indexed corpus is the closest fit; it cannot
-by itself show that the returned rows are useful evidence. For live automatic
-text and JSON retrieval, Buoy therefore scores the first up to five hits from
-the exact final ranking, never beyond the requested `top_k`, with the same
-immutable MiniLM revision used for cross-corpus reranking. Multi-corpus
-retrieval reuses its existing scores. Automatic single-corpus retrieval may
-load the model for this bounded check but keeps its original result order.
-Explicit `--namespace` retrieval is unchanged and bypasses this check.
-
-The current rule is deliberately simple: if the best final score is below
-`-8.0`, the result is weak. The number is a raw cross-encoder score, not a
-percentage, probability, or universal measure that can be compared with other
-models. It applies only to the pinned model and retrieval contract documented
-here.
-
-The project owner explicitly approved `-8.0` on 2026-08-14 as a provisional
-packaged starting point. The calibration revision is
-`owner-approved-provisional-minus-8-v1`. There is no CLI, environment-variable,
-or runtime threshold override. In the observed 50-question run, the
-five questions categorized as `no_answer` scored from `-11.2867` through
-`-9.6270`, while all 45 questions categorized as `answer_expected` scored
-`-5.8328` or higher. This separates question categories, not relevant from
-irrelevant returned evidence.
-
-There is already a known false support above the cutoff:
-`d11-vector-recall-debug` asked about exact versus ANN recall in Turbopuffer but
-automatic retrieval returned unrelated Dagster, Oscilar, and Thistle passages
-with a top score of `-5.8328`. The `m10` case also scored `-3.178` without
-returning any of its three judged overview pages, although unjudged alternates
-could still be useful. Against the incomplete judged-URL/group signal, `-8.0`
-produced TP30, FP15, FN0, and TN5: 15 of 45 accepted cases, or 33%, missed that
-signal. That is not a complete relevance judgment, but it makes the residual
-false-support risk explicit. Evaluation must monitor accepted-passage quality,
-and the cutoff may change only through a new reviewed packaged revision as
-broader passage-level judgments are collected.
-
-A weak high-confidence one-corpus result widens once to the next two routed
-candidates with reason `weak_top1`. After that final attempt:
-
-- a score at or above `-8.0` returns the normal ranked hits as `supported`;
-- a score below `-8.0` with every namespace search complete returns no hits as
-  `no_relevant_evidence`; and
-- a score below `-8.0` with any namespace failure returns no hits as
-  `inconclusive`, preserves the attributed failures, and marks the response
-  incomplete.
-
-If every namespace fails, retrieval still fails normally. The complete weak
-text result says “No sufficiently relevant evidence was found in the indexed
-corpora.” An inconclusive result says that namespace failures prevented a
-complete assessment. Neither outcome claims that an answer does not exist.
-Automatic preview does not query content, so it reports the planned threshold
-but cannot make an evidence decision.
-
-## Results and failures
-
-The underlying result retains its source URL/path, title, section, content
-preview, stable row identity, score diagnostics, and ordered tags. Compact text
-shows only the citation-first subset described above; `--explain` exposes the
-detailed text representation. Automatic and explicit multi-corpus JSON retain
-selected `namespaces`, routing and reranking details, per-hit `namespace`,
-per-namespace summaries, and failures. Automatic live JSON additionally
-retains the governed `evidence` mode, status, model and calibration identities,
-the `-8.0` threshold, bounded score features, and whether weak evidence
-triggered widening. It does not include extra raw content in evidence
-diagnostics.
-
-One selected namespace failing does not discard successful results. Buoy
-redacts and attributes the failed namespace and marks the combined response
-`incomplete`. If every attempted namespace fails, the command fails. An empty
-namespace is not itself a provider failure; it contributes no candidates, and
-the one-corpus automatic path still performs its single widening attempt.
-
-## Catalog inspection and management
-
-Catalog reads and mutations require `TURBOPUFFER_API_KEY` because
-`buoy-routing-catalog-v1` is remote authority:
-
-```bash
-buoy catalog list
-buoy catalog list --all
-buoy catalog show site-example-docs-v1
-
-# Preview, then approve the same enablement change.
-buoy catalog disable site-example-docs-v1
-buoy catalog disable site-example-docs-v1 --approve
-buoy catalog enable site-example-docs-v1
-buoy catalog enable site-example-docs-v1 --approve
-```
-
-`catalog upsert` creates or replaces one complete manual card; use
-`buoy catalog upsert --help` for its required source, embedding, and ranking
-fields. The unreleased reader accepts repeatable `--routing-example` values
-for a complete manual-card preview. Prefer the narrower reviewed-example
-operator below when only that field is changing. `upsert`, `enable`, and
-`disable` are previews unless `--approve` is present. They modify routing cards
-only. They never delete, enable, disable, or otherwise mutate a content
-namespace.
-
-Source-derived routing passages are system-owned. Generic `catalog upsert`
-cannot set, clear, or replace them and preserves an existing passage bank. Only
-approved apply, retained-plan repair, or a separately governed
-migration/backfill may mutate that bank.
+`catalog upsert` edits complete manual cards; see its help for required source,
+embedding and ranking fields. Mutations preview unless `--approve` is explicit.
+Manual titles, summaries, aliases, tags, and enabled state survive later applies.
+Disabling a card only affects automatic routing; it does not delete content.
 
 ### Reader-first schema and reviewed examples
 
-Deploy the exact v1/v2-compatible reader everywhere before changing the shared
-catalog schema. The reader deployment itself is inert. Then capture a fresh
-read-only migration preview:
+Fresh local indexes start at schema v3. Existing compatible local catalogs can
+still use the revision-bound `migrate-routing-v2`, `migrate-routing-v3`, and
+`set-routing-examples` commands. Preview first, inspect their JSON, and supply the
+exact requested revision/projection hashes with approval. These commands change
+catalog state, not indexed content. The system-owned source passage bank is
+updated by approved apply, not generic manual card editing.
 
-```bash
-buoy catalog migrate-routing-v2 --json
-```
+A post-content catalog failure is reported as `partial_success`; content and
+applied state remain committed. Retain the plan and follow the emitted
+`catalog repair-apply --inspect-current` or revision-bound repair command rather
+than replaying a baseline-stale apply. See [indexing](indexing.md).
 
-Review its normalized schema fingerprint, exact four nonfilterable additions,
-complete namespace/card-revision bindings, vector-inclusive projection hash,
-old-reader warning, and zero performed writes. Approval must use both exact
-values emitted by that same preview:
-
-```bash
-buoy catalog migrate-routing-v2 \
-  --expected-snapshot-revision REPLACE_WITH_PREVIEW_SHA256 \
-  --expected-projection-sha256 REPLACE_WITH_PREVIEW_SHA256 \
-  --approve --json
-```
-
-The approved migration issues one schema-only request. It sends no rows and
-then requires an unchanged, complete schema-v2 strong read. Drift or incomplete
-verification is a failure requiring a new preview; Buoy never attempts schema
-rollback.
-
-Before a shared catalog can receive plan-derived passages, deploy the
-v1/v2/v3-compatible reader everywhere and repeat the same reviewed migration
-flow for the additive `routing_passages` text plus its flattened individual
-vector bank and hash:
-
-```bash
-buoy catalog migrate-routing-v3 --json
-
-buoy catalog migrate-routing-v3 \
-  --expected-snapshot-revision REPLACE_WITH_PREVIEW_SHA256 \
-  --expected-projection-sha256 REPLACE_WITH_PREVIEW_SHA256 \
-  --approve --json
-```
-
-This is also schema-only and preserves every existing row. Provision a missing
-catalog through a separately reviewed operator action; neither first nor
-ordinary apply creates catalog schema. An existing shared v1/v2 catalog is
-never upgraded by ordinary apply. Until exact v3 exists, content may commit but
-card registration reports partial success, performs no catalog mutation, and
-retains the plan for the emitted `catalog repair-apply --inspect-current`
-command. After provisioning or migration, run that read-only command to
-revalidate the retained plan and committed IDs under the namespace lock and
-strongly read exact-v3 card state. It performs no model work or write, keeps the
-plan, and emits an approval command bound to observed card absence or its exact
-revision. Review that binding before running the repair. A failure after apply
-already observed exact-v3 state may emit the bound command directly.
-
-The stored passages are bounded but verbatim-derived source excerpts. Buoy
-redacts them and their vectors from normal output, but a credential allowed to
-query raw catalog rows can read them. Treat raw catalog access as source-content
-access, not metadata-only access.
-
-After schema v2 or v3 is verified, preview one card's reviewed questions.
-Repeat `--routing-example` for one through eight exact questions:
-
-```bash
-buoy catalog set-routing-examples site-example-docs-v1 \
-  --routing-example "How do I configure bounded retries?" \
-  --routing-example "Where is request timeout behavior defined?" --json
-```
-
-Review the normalized questions, current and intended revisions, both prototype
-hashes, and the one-card/one-write budget. Approval is conditional on the exact
-current revision from that preview:
-
-```bash
-buoy catalog set-routing-examples site-example-docs-v1 \
-  --routing-example "How do I configure bounded retries?" \
-  --routing-example "Where is request timeout behavior defined?" \
-  --expected-card-revision REPLACE_WITH_PREVIEW_SHA256 --approve --json
-```
-
-This operation preserves every base and non-prototype card field and must affect
-exactly the target's deterministic row ID. Repeating an already-stored canonical
-set is a zero-model, zero-write success. Later ordinary applies preserve reviewed
-examples on both manual and generated cards. Neither command reads or writes a
-content namespace, changes enablement, or changes the packaged routing
-authority. Collect mode uses the legacy hybrid route; only the separately
-certified active artifact authorizes bounded prototype routing.
-
-## Evaluation
-
-The ordinary `buoy evals` command still evaluates one explicitly named corpus:
-
-```bash
-buoy evals --namespace site-example-docs-v1 --dry-run
-buoy evals --namespace site-example-docs-v1 --live
-```
-
-The bounded-routing quality gate projects the approved 50-query retrieval
-basket and adds five owner-approved route-only canaries for each of RentPTR,
-Salesforce, and WhiteboxGeo. The exact 65-case suite reserves six cases for
-threshold calibration and locks the other 59 for certification. The three
-packaged canary files are evaluation ground truth only; ordinary routing never
-reads their question text. Adding or changing an eligible corpus makes the
-catalog provisional and forces top-three routing immediately. Promoting that
-state back to calibrated singleton routing requires a new reviewed pack and a
-complete-suite replay so the enlarged certified catalog cannot silently steal
-an existing route.
-
-Provider-backed route scoring is read-only: it reads namespace inventory and
-the routing catalog, performs one local route embedding and one bounded local
-reranker call per case, and performs no content query or provider write. The
-separate 50-case end-to-end retrieval evaluation still compares automatic
-results with exhaustive search of all four eligible logical corpora; the
-disabled duplicate Dagster namespace is covered by a card but never earns
-route or retrieval credit.
+The database and routing cards contain source excerpts. Filesystem access to
+BUOY_HOME is content access; protect it accordingly.

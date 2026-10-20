@@ -24,7 +24,7 @@ from buoy_search.catalog.remote import (
     read_remote_catalog,
 )
 
-REGION = "gcp-us-central1"
+REGION = "local"
 MODEL = "BAAI/bge-small-en-v1.5"
 PRIVACY_SENTINELS = (
     "tpuf_PRIVATE_CREDENTIAL",

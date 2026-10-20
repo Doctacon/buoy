@@ -1,8 +1,7 @@
-"""Turbopuffer-backed routing catalog with explicit credentials and safe writes.
+"""Validated routing catalog persisted alongside content in local DuckDB.
 
-The public catalog CLI, automatic retrieval, and successful-apply registration
-share this module. It never reads credentials, local catalog files, or other
-process state; callers resolve and inject the client configuration explicitly.
+The historical module name is retained for Python consumers. No remote client
+or network transport exists; the CLI, routing, and apply share these contracts.
 """
 
 from __future__ import annotations
@@ -263,17 +262,34 @@ def _sanitized_remote_operation(
     return decorate
 
 
-def create_client(*, api_key: str, region: str) -> RemoteClient:
-    """Construct the SDK client from explicit values without reading environment."""
+def create_client(*, region: str) -> RemoteClient:
+    """Return an inert local client. Region is retained as catalog metadata."""
+
+    from buoy_search.storage.duckdb import DuckDBClient
 
     try:
-        import turbopuffer
-    except ImportError as exc:  # pragma: no cover - package dependency.
-        raise RemoteCatalogError("turbopuffer is required; run `uv sync` first") from exc
+        return DuckDBClient()
+    except Exception as exc:
+        raise _remote_error("client construction", exc) from None
+
+
+def initialize_local_catalog(client: RemoteClient) -> None:
+    """Bootstrap the current catalog schema on the first approved local apply.
+
+    Never called by read-only commands, and never upgrades an existing schema.
+    Injected clients retain their existing lifecycle.
+    """
+    from buoy_search.storage.duckdb import DuckDBClient
+
+    if not isinstance(client, DuckDBClient):
+        return
+    resource = remote_catalog_resource(client)
     try:
-        return turbopuffer.Turbopuffer(api_key=api_key, region=region)
-    except Exception as exc:  # pragma: no cover - constructor is inert in SDK 2.4.
-        raise _remote_error("client construction", exc, secrets=(api_key,)) from None
+        resource.metadata()
+    except Exception as exc:
+        if getattr(exc, "status_code", None) != 404:
+            raise
+        resource.write(schema=REMOTE_CATALOG_SCHEMA_V3, distance_metric=DISTANCE_METRIC)
 
 
 def remote_catalog_resource(client: RemoteClient) -> NamespaceResource:
@@ -387,7 +403,12 @@ def card_to_remote_row(
         include_routing_passages=schema_version == REMOTE_SCHEMA_V3,
     )
     _remote_schema(schema_version)
-    return {"id": remote_card_id(parsed.namespace), **payload}
+    row = {"id": remote_card_id(parsed.namespace), **payload}
+    # Validate the persisted float32 projection before mutating storage. A
+    # caller-created high-precision card must not write successfully and then
+    # fail its vector hash/revision checks on the very next catalog read.
+    card_from_remote_row(row, region=parsed.region, schema_version=schema_version)
+    return row
 
 
 def card_from_remote_row(
@@ -693,7 +714,7 @@ def read_remote_catalog(
         )
         if REMOTE_CATALOG_NAMESPACE not in first_ids:
             raise RemoteCatalogMissingError(
-                f"remote catalog namespace {REMOTE_CATALOG_NAMESPACE!r} does not exist in region {region!r}"
+                f"local catalog namespace {REMOTE_CATALOG_NAMESPACE!r} does not exist; plan and apply a source first"
             )
         resource = remote_catalog_resource(client)
         metadata = _call(

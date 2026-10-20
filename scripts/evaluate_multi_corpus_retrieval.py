@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Collect and gate Buoy's governed read-only multi-corpus evaluation.
 
-Live collection reads ``TURBOPUFFER_API_KEY`` only from the already-sourced
+Local collection uses the DuckDB index in ``BUOY_HOME`` and the
 process environment. It never opens dotenv files and its provider surfaces are
 restricted to inventory, catalog reads, and content queries. The persisted run
 contains no questions, retrieved text, vectors, model inputs, or credentials.
@@ -183,14 +183,8 @@ def collect_live_run(
 ) -> dict[str, object]:
     """Collect all 50 cases using provider reads and exact local model contracts."""
 
-    api_key = os.environ.get("TURBOPUFFER_API_KEY")
-    if not api_key:
-        raise EvaluationCollectionError(
-            "TURBOPUFFER_API_KEY must already be set in the process environment; "
-            "this evaluator does not load .env files"
-        )
     base_config = load_config()
-    client = create_client(api_key=api_key, region=base_config.region)
+    client = create_client(region=base_config.region)
     snapshot = read_remote_catalog(
         client,
         region=base_config.region,
@@ -229,7 +223,7 @@ def collect_live_run(
             embedding_precision=card.embedding_precision,
         )
         try:
-            content_namespace = build_namespace(config=config, api_key=api_key)
+            content_namespace = build_namespace(config=config)
         except Exception:
             content_namespace = None
         if content_namespace is None:

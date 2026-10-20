@@ -2,40 +2,67 @@
   <img src="images/buoy.png" alt="Buoy">
 </p>
 
-# Buoy
+# Buoy — local DuckDB edition
 
-*Search that stays anchored to the source.* [![CI](https://github.com/Doctacon/buoy/actions/workflows/ci.yml/badge.svg)](https://github.com/Doctacon/buoy/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+*Search that stays anchored to the source, on your own machine.*
 
-Buoy turns websites, public GitHub repositories, local documents, and prepared
-database tables into Turbopuffer search indexes, auto-routing your questions
-to the correct namespaces and returning relevant passages with citations.
+This branch replaces Turbopuffer completely with a **local DuckDB database**.
+Documents, vectors, keyword indexes, routing cards, and retrieval stay on disk.
+No account, API key, vector server, GPU, or downloadable DuckDB extension is
+required. Models run locally and **never download during indexing or search**.
+
+Preserved: reviewed plan/apply, incremental updates, hybrid vector/BM25 search,
+namespace routing, local reranking, anchored citations, JSON output, and MCP.
 
 ## Quick start
 
-You need Python 3.11 or newer, `uv`, Git, and a
-[Turbopuffer](https://turbopuffer.com/) account. Install Buoy from GitHub:
+Recommended target: **Ubuntu in Windows WSL2**, Python 3.11–3.13, `uv`, and Git.
+CPU defaults suit a 32 GB RAM / 4 GB VRAM laptop; the GPU is not needed.
+Install this branch directly as a normal tool inside WSL:
 
 ```bash
-uv tool install "git+https://github.com/Doctacon/buoy.git@v0.6.7"
+uv tool install --torch-backend cpu "buoy-search[mcp] @ git+https://github.com/Doctacon/buoy.git@local-duckdb"
+buoy setup --download-models
 ```
 
-Set your Turbopuffer API key, then plan a source, apply it, and search it:
+That's the setup. Package installation and the explicit one-time model download
+use the internet; normal indexing and search do not. No manual virtual environment,
+model paths, API keys, or running database service are needed. A supplied wheel
+can be installed with the same `uv tool install --torch-backend cpu` command,
+using its path instead of the Git requirement. From a checkout, use `.[mcp]`.
+On macOS, omit `--torch-backend cpu`.
 
 ```bash
-export TURBOPUFFER_API_KEY=...
-
-buoy plan <source>
-buoy apply
-buoy retrieve "<question>"
+buoy plan ./research-notes.pdf --namespace work-notes
+buoy apply --dry-run
+buoy apply --approve
+buoy retrieve "What do the notes say?"
 ```
 
-## Learn more
+The default home is `~/.buoy-local/`, **separate from earlier Buoy installations**.
+Set `BUOY_HOME` to move the index and its state together. Do not reuse a
+cloud-era applied-state ledger: re-plan and re-index your original sources.
 
-- [Index a source](docs/indexing.md)
+For bulk text/code folders, see the [folder import helper](docs/local-duckdb.md#import-local-folders-and-repositories).
+The separate [air-gapped installation procedure](docs/local-duckdb.md#fully-disconnected-installation)
+is needed **only if the target cannot download packages/models during setup**.
+
+Website, GitHub, BigQuery, and Snowflake acquisition is disabled by default.
+It can be explicitly enabled on a connected staging machine with
+`BUOY_ALLOW_NETWORK=1`; it is not necessary for local use.
+
+## Setup and reference
+
+- **[WSL2 and fully offline installation](docs/local-duckdb.md)** — model transfer,
+  CPU wheels, hardware limits, backups, migration, and troubleshooting
+- [Index sources](docs/indexing.md)
 - [Retrieve with automatic routing](docs/retrieval.md)
 - [Connect an MCP client](docs/mcp.md)
-- [Inspect local retrieval telemetry](docs/telemetry.md)
-- [Evaluate search quality](docs/evaluation.md)
-- [Migrate from an earlier version](docs/migrating-to-buoy.md)
+- [Local telemetry](docs/telemetry.md)
+- [Evaluation](docs/evaluation.md)
 
-Buoy is licensed under the [Apache License 2.0](LICENSE).
+Vector search uses DuckDB's built-in exact cosine distance, not experimental
+persistent HNSW. It favors reliable offline persistence over large-corpus speed.
+Earlier cloud benchmark scores do not describe this backend.
+
+[Apache License 2.0](LICENSE).

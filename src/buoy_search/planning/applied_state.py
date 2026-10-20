@@ -1,7 +1,7 @@
 """Compact local DuckDB applied state for focused source indexing.
 
 The state store does not read credentials, load embedding models, or call
-Turbopuffer. It is the local incremental-diff baseline for future plan/apply
+DuckDB. It is the local incremental-diff baseline for future plan/apply
 commands.
 """
 

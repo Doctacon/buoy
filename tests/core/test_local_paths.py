@@ -38,7 +38,7 @@ class LocalPathTests(unittest.TestCase):
             finally:
                 os.chdir(original_cwd)
 
-            expected_home = home / ".buoy"
+            expected_home = home / ".buoy-local"
             self.assertEqual(first, second)
             self.assertEqual(
                 first,
@@ -59,7 +59,7 @@ class LocalPathTests(unittest.TestCase):
             try:
                 os.chdir(home)
                 with patch("buoy_search.local_paths.Path.home", return_value=home):
-                    self.assertEqual(default_state_root(), home / ".buoy")
+                    self.assertEqual(default_state_root(), home / ".buoy-local")
             finally:
                 os.chdir(original_cwd)
 
@@ -83,7 +83,7 @@ class LocalPathTests(unittest.TestCase):
 
     def test_containment_rejects_dot_segment_escape_and_sibling_prefix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / ".buoy"
+            root = Path(tmp) / ".buoy-local"
 
             self.assertTrue(is_within(root / "artifacts" / "site-crawls", root))
             self.assertFalse(is_within(root / "artifacts" / ".." / ".." / "outside", root))
@@ -95,12 +95,12 @@ class LocalPathTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             home.mkdir()
-            target = home / ".buoy" / "artifacts" / "site-crawls" / "plan"
+            target = home / ".buoy-local" / "artifacts" / "site-crawls" / "plan"
 
             with patch("buoy_search.local_paths.Path.home", return_value=home):
                 prepare_default_buoy_home(target)
 
-            buoy_home = home / ".buoy"
+            buoy_home = home / ".buoy-local"
             self.assertTrue(buoy_home.is_dir())
             self.assertEqual(stat.S_IMODE(buoy_home.stat().st_mode), 0o700)
             self.assertFalse((buoy_home / "artifacts").exists())
@@ -114,7 +114,7 @@ class LocalPathTests(unittest.TestCase):
             with patch("buoy_search.local_paths.Path.home", return_value=home):
                 prepare_default_buoy_home(root / "explicit" / "output")
 
-            self.assertFalse((home / ".buoy").exists())
+            self.assertFalse((home / ".buoy-local").exists())
             self.assertFalse((root / "explicit").exists())
 
     @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unavailable")
@@ -125,11 +125,11 @@ class LocalPathTests(unittest.TestCase):
             external = root / "external"
             home.mkdir()
             external.mkdir()
-            (home / ".buoy").symlink_to(external, target_is_directory=True)
+            (home / ".buoy-local").symlink_to(external, target_is_directory=True)
 
             with patch("buoy_search.local_paths.Path.home", return_value=home):
                 with self.assertRaisesRegex(LocalPathError, "must be a real directory"):
-                    prepare_default_buoy_home(home / ".buoy" / "state")
+                    prepare_default_buoy_home(home / ".buoy-local" / "state")
 
             self.assertEqual(list(external.iterdir()), [])
 
@@ -137,7 +137,7 @@ class LocalPathTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             home.mkdir()
-            boundary = home / ".buoy"
+            boundary = home / ".buoy-local"
             boundary.write_text("not a directory", encoding="utf-8")
 
             with patch("buoy_search.local_paths.Path.home", return_value=home):

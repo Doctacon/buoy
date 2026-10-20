@@ -701,7 +701,7 @@ class MultiCorpusEvalRunnerCliTests(unittest.TestCase):
             ]
         )
 
-    def test_collect_requires_an_explicitly_sourced_environment_key_before_live_work(self) -> None:
+    def test_local_collect_reaches_client_without_environment_key(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "report.json"
             stdout = StringIO()
@@ -711,7 +711,7 @@ class MultiCorpusEvalRunnerCliTests(unittest.TestCase):
                 patch.object(
                     runner,
                     "create_client",
-                    side_effect=AssertionError("provider must not be called"),
+                    side_effect=RuntimeError("local catalog unavailable"),
                 ),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
@@ -720,8 +720,8 @@ class MultiCorpusEvalRunnerCliTests(unittest.TestCase):
 
         self.assertEqual(result, 2)
         self.assertEqual(stdout.getvalue(), "")
-        self.assertIn("process environment", stderr.getvalue())
-        self.assertIn("does not load .env files", stderr.getvalue())
+        self.assertIn("local catalog unavailable", stderr.getvalue())
+        self.assertNotIn("API_KEY", stderr.getvalue())
 
     def test_catalog_resource_failure_cannot_leak_secret_from_live_collector(self) -> None:
         secret = "tpuf_EVALUATOR_RESOURCE_SECRET"
@@ -910,7 +910,7 @@ class MultiCorpusEvalRunnerCliTests(unittest.TestCase):
             patch.object(
                 runner,
                 "build_namespace",
-                side_effect=lambda *, config, api_key: providers[config.namespace],
+                side_effect=lambda *, config: providers[config.namespace],
             ),
             patch.object(
                 runner,

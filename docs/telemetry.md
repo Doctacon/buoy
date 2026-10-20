@@ -29,12 +29,12 @@ observations.
 ## What is stored
 
 When enabled, Buoy publishes a sanitized private command envelope beneath
-`~/.buoy/telemetry/inbox-v2/`. Direct Python retriever calls outside a Buoy
+`~/.buoy-local/telemetry/inbox-v2/`. Direct Python retriever calls outside a Buoy
 command retain the version-1 pipeline envelope in `inbox-v1`. One short-lived
 Buoy writer drains those envelopes into:
 
 ```text
-~/.buoy/telemetry/telemetry.duckdb
+~/.buoy-local/telemetry/telemetry.duckdb
 ```
 
 The version-2 database contains one row per observed command plus an optional
@@ -124,7 +124,7 @@ exact closed database, builds and validates a private scratch copy, and keeps a
 byte-for-byte version-1 backup at:
 
 ```text
-~/.buoy/telemetry/telemetry-v1-backup.duckdb
+~/.buoy-local/telemetry/telemetry-v1-backup.duckdb
 ```
 
 Buoy then atomically publishes the validated schema-version-2 database. If a
@@ -149,7 +149,7 @@ The versioned views are the stable starting point for analysis. Open the
 database read-only with the DuckDB command-line client:
 
 ```bash
-duckdb -readonly ~/.buoy/telemetry/telemetry.duckdb
+duckdb -readonly ~/.buoy-local/telemetry/telemetry.duckdb
 ```
 
 Summarize retrieval volume, latency, and outcomes by day:

@@ -30,8 +30,8 @@ from buoy_search.catalog.local import (
     ROUTING_MODEL_REVISION,
     ROUTING_PRECISION,
 )
+from buoy_search.local_models import load_sentence_transformer, resolved_device
 from buoy_search.local_paths import default_buoy_home, normalized_absolute
-from buoy_search.model_progress import suppress_model_progress_bars
 from buoy_search.retrieval.cross_encoder import (
     CROSS_ENCODER_BATCH_SIZE,
     CROSS_ENCODER_MAX_LENGTH,
@@ -47,7 +47,7 @@ PRECISION = ROUTING_PRECISION
 DIMENSIONS = ROUTING_DIMENSIONS
 RERANKER_MODEL = CROSS_ENCODER_MODEL
 RERANKER_REVISION = CROSS_ENCODER_REVISION
-RERANKER_DEVICE = "cpu"
+RERANKER_DEVICE = resolved_device()
 RERANKER_MAX_LENGTH = CROSS_ENCODER_MAX_LENGTH
 RERANKER_BATCH_SIZE = CROSS_ENCODER_BATCH_SIZE
 RERANKER_LOCAL_FILES_ONLY = True
@@ -1095,7 +1095,16 @@ def _clear_stale_runtime(directory_fd: int) -> None:
 
 
 def _minimal_worker_environment() -> dict[str, str]:
-    return {
+    # The worker changes cwd and discards ambient credentials. Preserve only
+    # local cache/resource settings, making relative paths absolute first so a
+    # transferred HF_HOME works just as it does for in-process inference.
+    cache_home = os.environ.get(
+        "HF_HOME",
+        os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "huggingface"),
+    )
+    environment = {
+        "HF_HOME": os.fspath(normalized_absolute(Path(cache_home).expanduser())),
+        "BUOY_MODEL_THREADS": os.environ.get("BUOY_MODEL_THREADS", "4"),
         "BUOY_TELEMETRY": "off",
         "DO_NOT_TRACK": "1",
         "HF_HUB_DISABLE_TELEMETRY": "1",
@@ -1105,6 +1114,11 @@ def _minimal_worker_environment() -> dict[str, str]:
         "TOKENIZERS_PARALLELISM": "false",
         "TRANSFORMERS_OFFLINE": "1",
     }
+    for name in ("HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE", "TRANSFORMERS_CACHE"):
+        value = os.environ.get(name)
+        if value is not None:
+            environment[name] = os.fspath(normalized_absolute(Path(value).expanduser()))
+    return environment
 
 
 def _spawn_worker(paths: WorkerPaths) -> None:
@@ -1279,14 +1293,7 @@ def score(
 
 class _LocalModel:
     def __init__(self) -> None:
-        from sentence_transformers import SentenceTransformer
-
-        with suppress_model_progress_bars():
-            self._model = SentenceTransformer(
-                MODEL,
-                revision=REVISION,
-                local_files_only=True,
-            )
+        self._model = load_sentence_transformer(MODEL, revision=REVISION)
 
     def encode(self, texts: Sequence[str]) -> list[list[float]]:
         values = self._model.encode(

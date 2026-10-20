@@ -4,6 +4,7 @@ from contextlib import nullcontext
 from dataclasses import replace
 import json
 import math
+import os
 import traceback
 import unittest
 from unittest.mock import patch
@@ -1261,13 +1262,21 @@ class CatalogModelTests(unittest.TestCase):
         import types
         fake_module = types.ModuleType("sentence_transformers")
         fake_module.SentenceTransformer = FakeSentenceTransformer  # type: ignore[attr-defined]
-        with patch.dict("sys.modules", {"sentence_transformers": fake_module}):
+        with patch.dict(os.environ, {}, clear=True), patch.dict(
+            "sys.modules", {"sentence_transformers": fake_module}
+        ):
             embedder = load_routing_embedder()
             self.assertEqual(embedder.encode(["passage"]), [UNIT_VECTOR])
         self.assertEqual(calls[0][0], (ROUTING_MODEL,))
         self.assertEqual(
             calls[0][1],
-            {"revision": ROUTING_MODEL_REVISION, "local_files_only": True},
+            {
+                "revision": ROUTING_MODEL_REVISION,
+                "local_files_only": True,
+                "trust_remote_code": False,
+                "device": "cpu",
+                "model_kwargs": {"use_safetensors": True},
+            },
         )
 
         class MissingSentenceTransformer:
@@ -1276,7 +1285,9 @@ class CatalogModelTests(unittest.TestCase):
 
         missing_module = types.ModuleType("sentence_transformers")
         missing_module.SentenceTransformer = MissingSentenceTransformer  # type: ignore[attr-defined]
-        with patch.dict("sys.modules", {"sentence_transformers": missing_module}), self.assertRaisesRegex(
+        with patch.dict(os.environ, {}, clear=True), patch.dict(
+            "sys.modules", {"sentence_transformers": missing_module}
+        ), self.assertRaisesRegex(
             CatalogError, "not cached locally.*downloads and substitutions are disabled"
         ):
             load_routing_embedder()

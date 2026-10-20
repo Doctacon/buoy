@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import json
@@ -36,7 +38,7 @@ from tests.catalog.test_remote_catalog import (
 )
 
 
-REGION = "gcp-us-central1"
+REGION = "local"
 TARGET_PHRASE = "quantum barnacle failover"
 
 
@@ -201,10 +203,7 @@ class FakeProvider:
         self,
         *,
         config: RuntimeConfig,
-        api_key: str,
     ) -> FakeContentNamespace:
-        if api_key != "test-key":
-            raise AssertionError("unexpected fake-provider credential")
         return FakeContentNamespace(self, config.namespace)
 
     def apply_embedder(self, *_args: object, **_kwargs: object) -> QueryEmbedder:
@@ -232,6 +231,10 @@ class FakeProvider:
         return embedder
 
 
+# Content storage is injected in this suite. Real index/ledger guards are covered
+# by tests/storage/test_local_workflow.py rather than consulting an ambient DB.
+@patch("buoy_search.planning.apply.local_namespace_apply_lock", lambda _namespace: nullcontext())
+@patch("buoy_search.planning.apply.validate_local_index_baseline", lambda *_args, **_kwargs: None)
 class AutomaticRoutingAfterApplyAcceptanceTests(unittest.TestCase):
     def test_approved_apply_is_immediately_namespace_free_retrievable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -320,15 +323,18 @@ class AutomaticRoutingAfterApplyAcceptanceTests(unittest.TestCase):
 
             with patch.dict(
                 os.environ,
-                {"TURBOPUFFER_API_KEY": "test-key"},
+                {},
                 clear=True,
+            ), patch(
+                "tests.catalog.test_remote_catalog.REGION",
+                REGION,
             ), patch.object(
                 apply_module,
                 "SentenceTransformerEmbedder",
                 side_effect=provider.apply_embedder,
             ), patch.object(
                 apply_module,
-                "TurbopufferWriter",
+                "DuckDBWriter",
                 side_effect=provider.writer,
             ), patch.object(
                 apply_module,

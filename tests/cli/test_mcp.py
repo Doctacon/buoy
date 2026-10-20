@@ -175,7 +175,7 @@ class MCPToolTests(unittest.IsolatedAsyncioTestCase):
 
     @with_client
     async def test_actual_catalog_cli_parity(self):
-        from cli.test_catalog_cli import make_card, make_snapshot, run_cli
+        from tests.cli.test_catalog_cli import make_card, make_snapshot, run_cli
         from buoy_search.catalog.remote import REMOTE_SCHEMA_V3
         cards = [
             make_card("z-live", title="Data_Vault", routing_examples=["reviewed lookup question"], routing_passages=["private source passage"]),
@@ -223,8 +223,8 @@ class MCPToolTests(unittest.IsolatedAsyncioTestCase):
 
     @with_client
     async def test_actual_retrieve_cli_provider_model_parity(self):
-        from cli.test_catalog_cli import FixedEmbedder, make_card, make_snapshot
-        from retrieval.test_multi_namespace_retrieval import RankedNamespace, EmptyNamespace, FailingNamespace, RecordingEmbedder, FixedReranker
+        from tests.cli.test_catalog_cli import FixedEmbedder, make_card, make_snapshot
+        from tests.retrieval.test_multi_namespace_retrieval import RankedNamespace, EmptyNamespace, FailingNamespace, RecordingEmbedder, FixedReranker
         from buoy_search.cli.main import main
         from buoy_search.retrieval.retriever import HybridRetriever, MultiNamespaceRetriever
         from types import SimpleNamespace

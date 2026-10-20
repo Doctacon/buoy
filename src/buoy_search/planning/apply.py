@@ -1,7 +1,7 @@
 """Apply helpers for focused source-index plans.
 
 Preflight verification is local-only: it reads plan artifacts and local state,
-but does not read credentials, load embedding models, or call turbopuffer.
+but does not read credentials, load embedding models, or call DuckDB.
 Approved apply is explicit and writes only fully verified rows from the exact
 baseline-bound compact delta.
 """
@@ -36,10 +36,11 @@ from buoy_search.planning.applied_state import (
     save_applied_state,
 )
 from buoy_search.config import DEFAULT_REGION, RuntimeConfig
+from buoy_search.storage.apply_guard import local_namespace_apply_lock, validate_local_index_baseline
 from buoy_search.indexing.chunker import (
     VECTOR_DIMENSIONS,
     SentenceTransformerEmbedder,
-    TurbopufferWriter,
+    DuckDBWriter,
     batched,
 )
 from buoy_search.catalog.local import (
@@ -65,7 +66,7 @@ from buoy_search.catalog.remote import (
     update_remote_card,
 )
 from buoy_search.planning.plan_artifacts import (
-    GENERIC_SITE_TURBOPUFFER_SCHEMA,
+    GENERIC_SITE_SEARCH_SCHEMA,
     MAX_PLAN_JSON_BYTES,
     PLAN_SCHEMA_VERSION,
     ChunkManifestRecord,
@@ -751,7 +752,7 @@ def catalog_registration_preview(
         "action": "create_or_update_after_content_and_state_commit",
         "remote_catalog_state": "unknown_until_approved",
         "required_catalog_schema_version": REMOTE_SCHEMA_V3,
-        "routing_catalog_prerequisite": "exact_schema_v3_reader_first_setup",
+        "routing_catalog_prerequisite": "bootstrapped_locally_on_first_approved_apply",
         "manual_semantics_preserved": True,
         "enabled_state_preserved": True,
         "routing_prototype_strategy": verified.plan["routing_prototypes"]["strategy"],
@@ -900,13 +901,11 @@ def inspect_apply_catalog_repair(
     config: RuntimeConfig,
     namespace: str,
     apply_id: str,
-    api_key: str,
 ) -> JsonObject:
     """Strong-read exact v3 and return an opaque, revision-bound repair command."""
 
     try:
         client = REMOTE_CATALOG_CLIENT_FACTORY(
-            api_key=api_key,
             region=config.region,
         )
         compatibility = CompatibilityContract(
@@ -964,7 +963,6 @@ def register_apply_catalog_card(
     config: RuntimeConfig,
     namespace: str,
     apply_id: str,
-    api_key: str,
     expected_card_revision: str | None = None,
     expect_absent: bool = False,
 ) -> JsonObject:
@@ -987,7 +985,10 @@ def register_apply_catalog_card(
     try:
         # Projection can load the pinned local route model, but happens only
         # after content and local state are durably committed by the caller.
-        client = REMOTE_CATALOG_CLIENT_FACTORY(api_key=api_key, region=config.region)
+        client = REMOTE_CATALOG_CLIENT_FACTORY(region=config.region)
+        from buoy_search.catalog.remote import initialize_local_catalog
+
+        initialize_local_catalog(client)
         api_calls_occurred = True
         compatibility = CompatibilityContract(
             region=config.region,
@@ -1221,7 +1222,7 @@ def run_approved_apply(
         raise ApplyPlanError("Cannot run --delete-stale because the recomputed diff has no stale rows.")
 
     emit_progress("apply: acquiring namespace lock")
-    with acquire_namespace_apply_lock(
+    with local_namespace_apply_lock(namespace), acquire_namespace_apply_lock(
         site_id=str(verified.plan["site_id"]),
         namespace=namespace,
         state_root=verified.state_root,
@@ -1236,10 +1237,8 @@ def run_approved_apply(
         stale_row_ids = stale_row_ids_for_delete(verified)
         if delete_stale and not stale_row_ids:
             raise ApplyPlanError("Cannot run --delete-stale because the recomputed diff has no stale rows.")
+        validate_local_index_baseline(verified, delete_stale=delete_stale)
         plan_id = str(verified.plan["plan_id"])
-        api_key = os.environ.get("TURBOPUFFER_API_KEY")
-        if not api_key:
-            raise RuntimeError("TURBOPUFFER_API_KEY must be set in the environment for approved apply.")
         applied_at = datetime.now(timezone.utc).isoformat()
         next_state = build_state_after_apply(
             verified, applied_at=applied_at, delete_stale=delete_stale
@@ -1249,7 +1248,7 @@ def run_approved_apply(
         rows_written = 0
         rows_deleted = 0
         embeddings_generated = 0
-        writer: TurbopufferWriter | None = None
+        writer: DuckDBWriter | None = None
         total_rows = len(rows_to_upsert)
         total_batches = (total_rows + batch_size - 1) // batch_size
         emit_progress(
@@ -1258,10 +1257,9 @@ def run_approved_apply(
             f"embedding_batch={embedding_batch_size}; write_batch={batch_size}"
         )
         if rows_to_upsert or (delete_stale and stale_row_ids):
-            writer = TurbopufferWriter(
+            writer = DuckDBWriter(
                 config=config,
-                api_key=api_key,
-                schema=GENERIC_SITE_TURBOPUFFER_SCHEMA,
+                schema=GENERIC_SITE_SEARCH_SCHEMA,
             )
 
         if rows_to_upsert:
@@ -1400,7 +1398,6 @@ def run_approved_apply(
                 config=config,
                 namespace=namespace,
                 apply_id=next_state.last_apply_id,
-                api_key=api_key,
             )
         except _CatalogRegistrationAttemptError as exc:
             catalog_registration_seconds = elapsed_since(
@@ -1419,7 +1416,7 @@ def run_approved_apply(
             )
             partial = {
                 **receipt,
-                "turbopuffer_api_calls": api_calls_occurred,
+                "local_index_operations": api_calls_occurred,
                 "api_calls_occurred": api_calls_occurred,
                 "partial_success": True,
                 "catalog_registered": False,
@@ -1450,7 +1447,7 @@ def run_approved_apply(
         return {
             **receipt,
             "timing": timing,
-            "turbopuffer_api_calls": True,
+            "local_index_operations": True,
             "api_calls_occurred": True,
             "partial_success": False,
             **registration,
@@ -1548,9 +1545,9 @@ def build_apply_summary(
         "approved": approved,
         "delete_stale": delete_stale,
         "dry_run": not approved,
-        "credentials_required": approved,
-        "credentials_required_for_approved_apply": True,
-        "turbopuffer_api_calls": api_calls_occurred,
+        "credentials_required": False,
+        "credentials_required_for_approved_apply": False,
+        "local_index_operations": api_calls_occurred,
         "api_calls_occurred": api_calls_occurred,
         "namespace": namespace,
         "region": region,

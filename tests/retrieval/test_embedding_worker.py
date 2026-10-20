@@ -1047,6 +1047,29 @@ class EmbeddingWorkerLifecycleTests(unittest.TestCase):
             call.join(timeout=2)
         self.assertEqual(maximum, 1)
 
+    def test_worker_inherits_only_local_cache_and_thread_settings(self) -> None:
+        with patch.dict(os.environ, {
+            "HF_HOME": "relative-model-cache",
+            "HF_HUB_CACHE": "relative-hub",
+            "BUOY_MODEL_THREADS": "2",
+            "HF_TOKEN": "secret",
+            "TURBOPUFFER_API_KEY": "secret",
+            "HTTPS_PROXY": "https://proxy.invalid",
+            "HF_HUB_OFFLINE": "0",
+        }, clear=True):
+            environment = worker._minimal_worker_environment()
+        self.assertEqual(environment["HF_HOME"], os.path.abspath("relative-model-cache"))
+        self.assertEqual(environment["HF_HUB_CACHE"], os.path.abspath("relative-hub"))
+        self.assertEqual(environment["BUOY_MODEL_THREADS"], "2")
+        self.assertEqual(environment["HF_HUB_OFFLINE"], "1")
+        self.assertFalse({"HF_TOKEN", "TURBOPUFFER_API_KEY", "HTTPS_PROXY"} & environment.keys())
+
+    def test_worker_resolves_default_cache_from_parent_home_or_xdg(self) -> None:
+        with patch.dict(os.environ, {"HOME": "/example/home"}, clear=True):
+            self.assertEqual(worker._minimal_worker_environment()["HF_HOME"], "/example/home/.cache/huggingface")
+        with patch.dict(os.environ, {"XDG_CACHE_HOME": "relative-cache"}, clear=True):
+            self.assertEqual(worker._minimal_worker_environment()["HF_HOME"], os.path.abspath("relative-cache/huggingface"))
+
     def test_spawn_is_detached_offline_and_has_no_credentials(self) -> None:
         directory_fd = worker._prepare_identity_directory(self.paths)
         os.close(directory_fd)
@@ -1105,7 +1128,9 @@ class EmbeddingWorkerLifecycleTests(unittest.TestCase):
         constructor = Mock(return_value=model)
         fake_module = Mock(SentenceTransformer=constructor)
 
-        with patch.dict(sys.modules, {"sentence_transformers": fake_module}):
+        with patch.dict(os.environ, {}, clear=True), patch.dict(
+            sys.modules, {"sentence_transformers": fake_module}
+        ):
             selected = worker._LocalModel()
             values = selected.encode(["query"])
 
@@ -1113,6 +1138,9 @@ class EmbeddingWorkerLifecycleTests(unittest.TestCase):
             worker.MODEL,
             revision=worker.REVISION,
             local_files_only=True,
+            trust_remote_code=False,
+            device="cpu",
+            model_kwargs={"use_safetensors": True},
         )
         model.encode.assert_called_once_with(
             ["query"],

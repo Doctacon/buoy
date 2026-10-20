@@ -126,7 +126,7 @@ class _FakeRouting:
         self.selected_cards = [
             SimpleNamespace(
                 namespace=f"site-auto-{index}-v1",
-                region="gcp-us-central1",
+                region="local",
                 embedding_model="BAAI/bge-small-en-v1.5",
                 embedding_precision="float32",
                 ranking_mode="page",
@@ -143,7 +143,7 @@ class _FakeRouting:
             "active": True,
             "strategy": "title_alias_then_semantic",
             "catalog_namespace": "buoy-routing-catalog-v3",
-            "region": "gcp-us-central1",
+            "region": "local",
             "snapshot_revision": 1,
             "credentials_required": True,
             "read_only_api_calls_occurred": True,
@@ -700,8 +700,8 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
         with redirect_stderr(stderr):
             self.assertEqual(main(["retrieve", "query", "--json"]), 2)
         rows = self._rows()
-        self.assertIn("TURBOPUFFER_API_KEY", stderr.getvalue())
-        self.assertEqual(rows.command[7:11], ("error", 2, "configuration_error", False))
+        self.assertIn("does not exist", stderr.getvalue())
+        self.assertEqual(rows.command[7:11], ("error", 2, "catalog_error", False))
         names = [span[3] for span in rows.spans]
         self.assertEqual(names.count("buoy.cli.bootstrap"), 1)
         self.assertEqual(names.count("buoy.retrieve.prepare"), 1)
@@ -999,7 +999,7 @@ class RetrieveCommandTelemetryTests(unittest.TestCase):
             )
         self.assertEqual(result, 0)
         publish.assert_not_called()
-        self.assertFalse((self.home / ".buoy").exists())
+        self.assertFalse((self.home / ".buoy-local").exists())
 
         os.environ["BUOY_TELEMETRY"] = "local"
         with patch.object(

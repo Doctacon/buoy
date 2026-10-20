@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -114,15 +113,16 @@ class MarkdownChunkerTests(unittest.TestCase):
 class SentenceTransformerEmbedderTests(unittest.TestCase):
     def test_constructor_suppresses_third_party_progress(self) -> None:
         model = SimpleNamespace(device="cpu")
-        with patch.dict(
-            sys.modules,
-            {"sentence_transformers": SimpleNamespace(SentenceTransformer=lambda _name: model)},
-        ), patch(
+        with patch(
+            "buoy_search.local_models.load_sentence_transformer",
+            return_value=model,
+        ) as load_model, patch(
             "buoy_search.indexing.chunker.suppress_model_progress_bars",
             return_value=nullcontext(),
         ) as suppress:
             SentenceTransformerEmbedder("model")
 
+        load_model.assert_called_once_with("model")
         suppress.assert_called_once_with()
 
     def test_float16_requires_accelerator_and_halves_accelerator_model(self) -> None:
@@ -135,13 +135,23 @@ class SentenceTransformerEmbedderTests(unittest.TestCase):
                 self.half_called = True
                 return self
 
-        with patch.dict(sys.modules, {"sentence_transformers": SimpleNamespace(SentenceTransformer=lambda _name: FakeModel("cpu"))}):
+        cpu_model = FakeModel("cpu")
+        with patch(
+            "buoy_search.local_models.load_sentence_transformer",
+            return_value=cpu_model,
+        ) as load_cpu:
             with self.assertRaisesRegex(RuntimeError, "requires a CUDA or Apple MPS accelerator"):
                 SentenceTransformerEmbedder("model", precision="float16")
+        load_cpu.assert_called_once_with("model")
+        self.assertFalse(cpu_model.half_called)
 
         model = FakeModel("mps:0")
-        with patch.dict(sys.modules, {"sentence_transformers": SimpleNamespace(SentenceTransformer=lambda _name: model)}):
+        with patch(
+            "buoy_search.local_models.load_sentence_transformer",
+            return_value=model,
+        ) as load_accelerator:
             SentenceTransformerEmbedder("model", precision="float16")
+        load_accelerator.assert_called_once_with("model")
         self.assertTrue(model.half_called)
 
 

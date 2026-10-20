@@ -5,14 +5,14 @@ This is an optional interface, not an HTTP/SSE service or background MCP daemon.
 
 ## Install from a source checkout
 
-MCP is unreleased: the published release in the README quick start does not
-include it. Use a source checkout that contains `src/buoy_search/mcp.py`, with
+MCP is unreleased on the upstream release line; this local branch includes it.
+Use a source checkout that contains `src/buoy_search/mcp.py`, with
 Python 3.11 or newer and `uv`. From that checkout's root:
 
 ```bash
 uv sync --locked --extra mcp --python 3.13
-uv run --locked --extra mcp buoy mcp --help
-uv run --locked --extra mcp buoy mcp
+uv run --no-sync buoy mcp --help
+uv run --no-sync buoy mcp
 ```
 
 The last command serves protocol messages on stdout until the client disconnects
@@ -32,18 +32,21 @@ An agent-neutral example (configuration locations differ by client):
 
 The client must resolve the **extra-installed** executable. For the source setup
 above, use the absolute path to the checkout's `.venv/bin/buoy` if that directory
-is not on the client's PATH. On Windows virtual environments use `Scripts`
-instead of `bin`; Windows execution has not been verified here.
+is not on the client's PATH. On Windows, run this executable **inside WSL2**;
+native Windows Python is not supported. A Windows desktop MCP host can launch
+`wsl.exe -d Ubuntu -- /home/<user>/buoy/.venv/bin/buoy mcp` as its command/args.
+Set the Linux BUOY_HOME and HF_HOME in that process's environment (for example,
+via `wsl.exe ... -- env BUOY_HOME=... HF_HOME=... /path/to/buoy mcp`).
 
-Clients, especially desktop applications, may not inherit your shell's PATH or
-environment. Arrange for the launched server process to receive
-`TURBOPUFFER_API_KEY` and any existing Buoy region configuration through your
-client's supported environment mechanism. Do not put credentials in tool
-arguments, command-line arguments, or checked-in configuration. The example
-stores no credentials and does not assume shell-variable interpolation in JSON.
-Buoy does **not** auto-load `.env`. Connecting a client does not add an account or
-namespace ACL: tools have the existing credential's provider access, and returned
-evidence goes to the invoking client.
+Clients may not inherit your shell's environment. Give the server the same
+`BUOY_HOME` and `HF_HOME` used for indexing and model setup. No API key is needed;
+models and DuckDB reads stay local. Buoy does **not** auto-load `.env`.
+
+**MCP returns source passages to the invoking client.** Connecting a cloud-hosted
+assistant can send those passages off the laptop even though Buoy itself is
+local. For a 100% local work environment, use only an approved local MCP client
+and local inference, with OS/network restrictions as appropriate. Filesystem
+permissions, not per-namespace accounts, protect the index.
 
 ## Tools
 

@@ -179,7 +179,7 @@ class RoutingSelection:
             "catalog_namespace": self.catalog_namespace,
             "region": self.region,
             "snapshot_revision": self.snapshot_revision,
-            "credentials_required": True,
+            "credentials_required": False,
             "read_only_api_calls_occurred": True,
             "content_retrieval_occurred": False,
             "routing_model": ROUTING_MODEL,
@@ -255,7 +255,7 @@ class RoutedRetrievalPlan:
         payload = {
             **self.plan.to_dict(),
             "credentials_required": routing["credentials_required"],
-            "turbopuffer_api_calls": routing["read_only_api_calls_occurred"],
+            "local_index_operations": routing["read_only_api_calls_occurred"],
             "api_calls_occurred": routing["read_only_api_calls_occurred"],
             "routing": routing,
         }

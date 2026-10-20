@@ -1,7 +1,7 @@
 """Reusable local-only planning application service.
 
 The service materializes source content and writes verified review artifacts. It
-never embeds content, reads turbopuffer credentials, calls turbopuffer, or
+never embeds content, reads index credentials, calls DuckDB, or
 updates applied state.
 """
 
@@ -177,6 +177,9 @@ class PlanningService:
         progress_callback: ProgressCallback | None,
     ) -> PlanningResult:
         source = source_from_request(request)
+        from buoy_search.network_policy import require_source_network
+
+        require_source_network(source)
         base_url = str(getattr(source, "base_url"))
         if request.repo_chunking_arm and not isinstance(source, GitHubRepoSource):
             raise ValueError("--repo-chunking-arm is supported only for GitHub repositories.")
@@ -422,7 +425,9 @@ def source_from_request(request: PlanningRequest) -> object:
 
 def crawl_source_with_plan(source: object, options: CrawlOptions) -> CrawlExecution:
     """Dispatch to the current source implementation through lazy adapter imports."""
+    from buoy_search.network_policy import require_source_network
 
+    require_source_network(source)
     source_kind = getattr(source, "kind", None)
     if source_kind == "duckdb_relation":
         from buoy_search.relations.duckdb import crawl_duckdb_relation_with_plan
@@ -535,8 +540,8 @@ def plan_summary(
             "source_api_calls_occurred": bool(
                 crawl_summary.get("source_api_calls_occurred", False)
             ),
-            "turbopuffer_credentials_required": False,
-            "turbopuffer_api_calls": False,
+            "index_credentials_required": False,
+            "local_index_operations": False,
             "api_calls_occurred": bool(crawl_summary.get("source_api_calls_occurred", False)),
             "namespace": plan_dict["namespace"],
             "namespace_candidate": plan_dict["namespace_candidate"],

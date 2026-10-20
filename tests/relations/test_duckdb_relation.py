@@ -48,7 +48,7 @@ class DuckDBRelationTests(unittest.TestCase):
             with patch("buoy_search.local_paths.Path.home", return_value=Path(tmp)):
                 self.assertEqual(
                     first_source.default_out_dir,
-                    Path(tmp) / ".buoy/artifacts/site-crawls/duckdb-gong-calls",
+                    Path(tmp) / ".buoy-local/artifacts/site-crawls/duckdb-gong-calls",
                 )
             self.assertEqual(first_source.document_url("call/1 ?"), "duckdb://gong-calls/call%2F1%20%3F")
             self.assertEqual(
@@ -319,7 +319,7 @@ class DuckDBRelationTests(unittest.TestCase):
             self.assertEqual(summary["documents_selected"], 2)
             self.assertFalse(summary["source_credentials_required"])
             self.assertFalse(summary["source_api_calls_occurred"])
-            self.assertFalse(summary["turbopuffer_credentials_required"])
+            self.assertFalse(summary["index_credentials_required"])
             self.assertTrue(summary["title_column_detected"])
             self.assertEqual(summary["namespace_candidate"], "duckdb-knowledge-base-v1")
             page_files = sorted((out_dir / "pages").glob("*.md"))

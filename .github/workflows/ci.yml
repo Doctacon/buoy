@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - develop
+      - local-duckdb
 
 permissions:
   contents: read
@@ -37,6 +38,11 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Sync locked dependencies
         run: uv sync --locked --extra mcp --python ${{ matrix.python-version }}
+      - name: Test offline local search
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: uv run --no-sync pytest -q
 
   build:
     name: Build distributions
@@ -65,8 +71,10 @@ jobs:
           export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1
           mkdir -p "$HOME"
           uv venv --python 3.13 "$RUNNER_TEMP/buoy-wheel-smoke"
-          uv pip install --python "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" dist/*.whl
+          uv pip install --torch-backend cpu --python "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" dist/*.whl
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" --help >/dev/null
+          "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" setup --help >/dev/null
+          if "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" setup; then exit 1; fi
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" mcp --help >/dev/null
           if "$RUNNER_TEMP/buoy-wheel-smoke/bin/buoy" mcp; then exit 1; fi
           "$RUNNER_TEMP/buoy-wheel-smoke/bin/python" -m buoy_search --help >/dev/null

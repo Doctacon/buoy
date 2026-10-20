@@ -15,6 +15,14 @@ forecast_module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(forecast_module)
 
 
+@unittest.skipUnless(
+    all((ROOT / path).is_file() for path in (
+        forecast_module.FORECAST_PATH,
+        forecast_module.AUTHORITY_PATH,
+        forecast_module.TOKEN_REPORT_PATH,
+    )),
+    "historical .10x syntax-experiment evidence was removed from the upstream repository",
+)
 class C6SyntaxForecastTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

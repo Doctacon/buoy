@@ -1,6 +1,9 @@
 # Evaluate search quality
 
-Use hand-authored datasets to make retrieval changes measurable. Eval listing is local-only by default; live evaluation is an explicit retrieval operation against an already-applied namespace.
+Use hand-authored datasets to make retrieval changes measurable. Both listing and
+live evaluation are local: live mode searches an already-applied DuckDB namespace
+using cached models. No API key is needed. Old cloud benchmark results do not
+certify this backend, tokenization, or your work corpus.
 
 ## Inspect an eval dataset
 
@@ -12,12 +15,11 @@ uv run buoy evals \
   --json
 ```
 
-Dry-run mode lists questions and expected source hints without credentials, embeddings, or turbopuffer calls.
+Dry-run mode lists questions and expected source hints without embeddings or index queries.
 
 ## Run live evals
 
 ```bash
-export TURBOPUFFER_API_KEY="..."
 uv run buoy evals \
   --live \
   --dataset src/buoy_search/data/scrapling_retrieval_smoke_evals.json \

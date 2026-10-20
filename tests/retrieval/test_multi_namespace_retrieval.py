@@ -842,10 +842,10 @@ class CrossEncoderLoaderTests(unittest.TestCase):
 
 
 class MultiNamespaceCliTests(unittest.TestCase):
-    def test_missing_cli_namespace_enters_auto_mode_and_key_failure_precedes_client(self) -> None:
+    def test_missing_cli_namespace_enters_local_catalog_without_key(self) -> None:
         with patch.dict(os.environ, {}, clear=True), patch(
             "buoy_search.cli.main.REMOTE_CATALOG_CLIENT_FACTORY",
-            side_effect=AssertionError("client constructed without key"),
+            side_effect=RuntimeError("local catalog unavailable"),
         ):
             stdout = StringIO()
             stderr = StringIO()
@@ -853,7 +853,7 @@ class MultiNamespaceCliTests(unittest.TestCase):
                 result = main(["retrieve", "query", "--json"])
         self.assertEqual(result, 2)
         self.assertEqual(stdout.getvalue(), "")
-        self.assertIn("TURBOPUFFER_API_KEY", stderr.getvalue())
+        self.assertIn("local catalog unavailable", stderr.getvalue())
 
     def test_duplicate_cli_namespace_fails_before_config(self) -> None:
         with patch("buoy_search.cli.main.config_from_args", side_effect=AssertionError("config loaded")):
@@ -875,10 +875,10 @@ class MultiNamespaceCliTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
         self.assertIn("must not repeat namespace ID 'site-repeat-v1'", stderr.getvalue())
 
-    def test_environment_namespace_is_ignored_and_does_not_bypass_auto_credentials(self) -> None:
+    def test_environment_namespace_is_ignored_by_local_catalog(self) -> None:
         with patch.dict(os.environ, {"TURBOPUFFER_NAMESPACE": "site-env-v1"}, clear=True), patch(
             "buoy_search.cli.main.REMOTE_CATALOG_CLIENT_FACTORY",
-            side_effect=AssertionError("client constructed without key"),
+            side_effect=RuntimeError("local catalog unavailable"),
         ):
             stdout, stderr = StringIO(), StringIO()
             with redirect_stdout(stdout), redirect_stderr(stderr):
@@ -886,7 +886,7 @@ class MultiNamespaceCliTests(unittest.TestCase):
 
         self.assertEqual(result, 2)
         self.assertEqual(stdout.getvalue(), "")
-        self.assertIn("TURBOPUFFER_API_KEY", stderr.getvalue())
+        self.assertIn("local catalog unavailable", stderr.getvalue())
         self.assertNotIn("site-env-v1", stderr.getvalue())
 
     def test_repeated_cli_namespaces_replace_environment_and_preserve_order(self) -> None:

@@ -200,15 +200,8 @@ def collect_live_run(
 ) -> dict[str, object]:
     """Collect one read-only candidate/baseline observation for every case."""
 
-    api_key = os.environ.get("TURBOPUFFER_API_KEY")
-    if not api_key:
-        raise RoutingQualityCollectionError(
-            "TURBOPUFFER_API_KEY must already be set in the process environment; "
-            "this evaluator does not load .env files"
-        )
-
     config = load_config()
-    raw_client = create_client(api_key=api_key, region=config.region)
+    raw_client = create_client(region=config.region)
     client = _ReadOnlyCatalogClient(raw_client)
     snapshot = require_complete_routing_coverage(
         read_remote_catalog(

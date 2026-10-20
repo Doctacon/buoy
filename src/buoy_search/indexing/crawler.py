@@ -1,6 +1,6 @@
 """Dry-run source acquisition helpers for focused indexing.
 
-This module intentionally contains no turbopuffer write path and does not read
+This module intentionally contains no DuckDB write path and does not read
 credentials. Scrapling is imported lazily by the crawl execution path so helper
 functions and tests can run without network access.
 """
@@ -2281,7 +2281,7 @@ def build_summary(
         "command": "crawl",
         "dry_run": True,
         "credentials_required": False,
-        "turbopuffer_api_calls": False,
+        "local_index_operations": False,
         "api_calls_occurred": False,
         "base_url": validate_base_url(options.base_url),
         "allowed_host": host_from_url(options.base_url),
@@ -2335,7 +2335,7 @@ def build_local_document_summary(
         "command": "crawl",
         "dry_run": True,
         "credentials_required": False,
-        "turbopuffer_api_calls": False,
+        "local_index_operations": False,
         "api_calls_occurred": False,
         "source_kind": source.kind,
         "base_url": source.base_url,
