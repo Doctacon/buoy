@@ -9,7 +9,7 @@ import stat
 from buoy_search.config import RuntimeConfigError
 
 
-BUOY_HOME_NAME = ".buoy-local"
+BUOY_HOME_NAME = ".buoy"
 ARTIFACTS_RELATIVE_ROOT = Path("artifacts") / "site-crawls"
 
 
@@ -24,15 +24,8 @@ def normalized_absolute(path: Path) -> Path:
 
 
 def default_buoy_home() -> Path:
-    """Return the shared local index/state root, isolated from cloud-era state.
+    """Return the absolute user-global Buoy application home."""
 
-    BUOY_HOME moves the index, applied-state baselines, plans and workers
-    together. Do not reuse an old cloud-backed applied-state directory.
-    """
-
-    override = os.environ.get("BUOY_HOME")
-    if override:
-        return normalized_absolute(Path(override).expanduser())
     try:
         home = normalized_absolute(Path.home())
     except (OSError, RuntimeError) as exc:
@@ -89,7 +82,7 @@ def prepare_default_buoy_home(path: Path, *, require_resolved_home: bool = False
         observed = home.lstat()
     except FileNotFoundError:
         try:
-            home.mkdir(mode=0o700, parents=True)
+            home.mkdir(mode=0o700)
         except FileExistsError:
             observed = home.lstat()
         except OSError as exc:

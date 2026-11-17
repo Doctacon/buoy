@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from contextlib import nullcontext
-
 from dataclasses import replace
 import json
 from pathlib import Path
@@ -49,7 +47,7 @@ from tests.cli.test_apply_cli import (
 from tests.cli.test_catalog_cli import run_cli
 
 
-REGION = "local"
+REGION = "gcp-us-central1"
 MODEL = "BAAI/bge-small-en-v1.5"
 UNIT_VECTOR = [1.0] + [0.0] * (ROUTING_DIMENSIONS - 1)
 
@@ -137,10 +135,6 @@ def generated_card(namespace: str):  # noqa: ANN201 - test helper
     )
 
 
-# Content storage is injected in this suite. Real index/ledger guards are covered
-# by tests/storage/test_local_workflow.py rather than consulting an ambient DB.
-@patch("buoy_search.planning.apply.local_namespace_apply_lock", lambda _namespace: nullcontext())
-@patch("buoy_search.planning.apply.validate_local_index_baseline", lambda *_args, **_kwargs: None)
 class ApplyCatalogRegistrationTests(unittest.TestCase):
     def setUp(self) -> None:
         reset_fakes()
@@ -859,6 +853,7 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
                             config=config,
                             namespace=namespace,
                             apply_id="apply_current",
+                            api_key="test-key",
                         )
 
                     self.assertTrue(result["catalog_registered"])
@@ -932,6 +927,7 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
                     config=RuntimeConfig(region=REGION, namespace=namespace),
                     namespace=namespace,
                     apply_id="apply_current",
+                    api_key="test-key",
                 )
 
         self.assertEqual(result["catalog_mutation_status"], "updated")
@@ -1020,6 +1016,7 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
                     config=RuntimeConfig(region=REGION, namespace=namespace),
                     namespace=namespace,
                     apply_id="apply_current",
+                    api_key="test-key",
                 )
 
         self.assertTrue(result["routing_projection_reused"])
@@ -1073,6 +1070,7 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
                         config=RuntimeConfig(region=REGION, namespace=namespace),
                         namespace=namespace,
                         apply_id="apply_current",
+                        api_key="test-key",
                     )
 
         self.assertEqual(read.call_count, 1)
@@ -1132,6 +1130,7 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
                         config=RuntimeConfig(region=REGION, namespace=namespace),
                         namespace=namespace,
                         apply_id="apply_current",
+                        api_key="test-key",
                     )
 
         self.assertIn("schema-v3 migration", str(raised.exception))
@@ -1173,6 +1172,7 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
                         config=RuntimeConfig(region=REGION, namespace=namespace),
                         namespace=namespace,
                         apply_id="apply_current",
+                        api_key="test-key",
                     )
 
         repair = shlex.split(raised.exception.repair_command)
@@ -1236,6 +1236,7 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
                         config=RuntimeConfig(region=REGION, namespace=namespace),
                         namespace=namespace,
                         apply_id="apply_current",
+                        api_key=secret,
                     )
 
         self.assertIn("namespace resource acquisition", str(raised.exception))
@@ -1277,7 +1278,7 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
 
             with patch.dict(
                 "os.environ",
-                {},
+                {"TURBOPUFFER_API_KEY": "test-key"},
                 clear=True,
             ), patch.object(
                 apply_module,
@@ -1285,7 +1286,7 @@ class ApplyCatalogRegistrationTests(unittest.TestCase):
                 FakeEmbedder,
             ), patch.object(
                 apply_module,
-                "DuckDBWriter",
+                "TurbopufferWriter",
                 FakeWriter,
             ), patch.object(
                 apply_module,

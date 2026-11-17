@@ -1,6 +1,8 @@
-"""Local Markdown ingestion, chunking, embedding, and DuckDB writes.
+"""Markdown ingestion, chunking, embedding, and turbopuffer writer helpers.
 
-Parsing never loads models. Only the approved plan/apply path writes the index.
+Parsing and chunking are local-only and do not load embedding models, read
+credentials, or contact external APIs. Live writes are performed by the explicit
+plan/apply path, which injects credentials at the call site.
 """
 
 from __future__ import annotations
@@ -57,8 +59,8 @@ DOC_KIND_ALIASES = {
     "customer": "customers",
 }
 
-SEARCH_SCHEMA = {
-    "vector": {"type": f"[{VECTOR_DIMENSIONS}]f32", "ann": True},
+TURBOPUFFER_SCHEMA = {
+    "vector": {"type": f"[{VECTOR_DIMENSIONS}]f16", "ann": True},
     "content": {"type": "string", "full_text_search": True, "filterable": False},
     "title": {"type": "string", "full_text_search": True},
     "url": {"type": "string"},
@@ -531,10 +533,14 @@ class SentenceTransformerEmbedder:
     """Lazy local BGE embedder used only for approved live apply/retrieval paths."""
 
     def __init__(self, model_name: str, *, precision: str = "float32") -> None:
-        from buoy_search.local_models import load_sentence_transformer
-
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as exc:  # pragma: no cover - depends on optional install.
+            raise RuntimeError(
+                "sentence-transformers is required for approved live embedding. Run `uv sync` first."
+            ) from exc
         with suppress_model_progress_bars():
-            self._model = load_sentence_transformer(model_name)
+            self._model = SentenceTransformer(model_name)
         if precision == "float16":
             device_type = str(self._model.device).split(":", 1)[0]
             if device_type not in {"cuda", "mps"}:
@@ -556,21 +562,53 @@ class SentenceTransformerEmbedder:
         return [embedding.tolist() if hasattr(embedding, "tolist") else list(embedding) for embedding in embeddings]
 
 
-class DuckDBWriter:
-    """Persist content and vectors in the local, transaction-protected index."""
+class TurbopufferWriter:
+    """Small wrapper around the turbopuffer SDK write path."""
 
-    def __init__(self, *, config: RuntimeConfig, schema: dict[str, object] | None = None) -> None:
-        from buoy_search.storage.duckdb import DuckDBClient
+    def __init__(self, *, config: RuntimeConfig, api_key: str, schema: dict[str, object] | None = None) -> None:
+        try:
+            import turbopuffer as tpuf
+        except ImportError as exc:  # pragma: no cover - depends on optional install.
+            raise RuntimeError("turbopuffer is required for approved apply. Run `uv sync` first.") from exc
 
-        self._schema = schema or SEARCH_SCHEMA
-        self._namespace = DuckDBClient().namespace(config.namespace)
+        self._tpuf = tpuf
+        self._schema = schema or TURBOPUFFER_SCHEMA
+        self._namespace = self._build_namespace(tpuf, config, api_key)
+
+    @staticmethod
+    def _build_namespace(tpuf: object, config: RuntimeConfig, api_key: str) -> object:
+        if hasattr(tpuf, "api_key"):
+            setattr(tpuf, "api_key", api_key)
+        if hasattr(tpuf, "api_base_url"):
+            setattr(tpuf, "api_base_url", f"https://{config.region}.turbopuffer.com")
+        if hasattr(tpuf, "Turbopuffer"):
+            try:
+                client = tpuf.Turbopuffer(api_key=api_key, region=config.region)  # type: ignore[attr-defined]
+            except TypeError:
+                client = tpuf.Turbopuffer(api_key=api_key)  # type: ignore[attr-defined]
+            if hasattr(client, "namespace"):
+                return client.namespace(config.namespace)
+            if hasattr(client, "Namespace"):
+                return client.Namespace(config.namespace)
+        if hasattr(tpuf, "Namespace"):
+            return tpuf.Namespace(config.namespace)  # type: ignore[attr-defined]
+        raise RuntimeError("Unsupported turbopuffer SDK: no Namespace constructor found.")
 
     def upsert_rows(self, rows: Sequence[dict[str, object]]) -> None:
-        self._namespace.write(
-            upsert_rows=list(rows),
-            schema=self._schema,
-            distance_metric="cosine_distance",
-        )
+        try:
+            self._namespace.write(
+                upsert_rows=list(rows),
+                schema=self._schema,
+                distance_metric="cosine_distance",
+            )
+        except TypeError:
+            # Some SDK versions use ``rows`` for upserts. Keep the fallback local
+            # to approved apply so dry-runs never depend on SDK shape.
+            self._namespace.write(
+                rows=list(rows),
+                schema=self._schema,
+                distance_metric="cosine_distance",
+            )
 
     def delete_rows(self, row_ids: Sequence[str]) -> None:
         """Delete whole documents by row ID."""

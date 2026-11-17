@@ -29,7 +29,7 @@ from buoy_search.catalog.remote import (
 )
 
 
-REGION = "local"
+REGION = "gcp-us-central1"
 API_KEY = "test-api-key"
 UNIT_VECTOR = [1.0] + [0.0] * (ROUTING_DIMENSIONS - 1)
 
@@ -309,7 +309,7 @@ class CatalogCliTests(unittest.TestCase):
 
         self.assertEqual(result, 2)
         self.assertEqual(stdout, "")
-        self.assertEqual(observed["state_root"], home / ".buoy-local")
+        self.assertEqual(observed["state_root"], home / ".buoy")
         self.assertIn("stop after state-root resolution", stderr)
 
     def test_routing_v2_operators_report_invalid_config_before_remote_access(self) -> None:
@@ -446,19 +446,16 @@ class CatalogCliTests(unittest.TestCase):
         self.assertEqual((result, stdout), (2, ""))
         self.assertIn("no card for namespace 'missing'", stderr)
 
-    def test_local_catalog_requires_no_credentials(self) -> None:
-        factory = Mock(return_value=object())
+    def test_credentials_are_required_before_factory_use(self) -> None:
+        factory = Mock(side_effect=AssertionError("factory called without credentials"))
         result, stdout, stderr = run_cli(
             ["catalog", "list", "--json"],
             env={},
-            patches=(
-                patch("buoy_search.cli.catalog.REMOTE_CATALOG_CLIENT_FACTORY", factory),
-                patch("buoy_search.cli.catalog.read_remote_catalog", return_value=make_snapshot()),
-            ),
+            patches=(patch("buoy_search.cli.catalog.REMOTE_CATALOG_CLIENT_FACTORY", factory),),
         )
-        self.assertEqual((result, stderr), (0, ""))
-        self.assertEqual(json.loads(stdout)["cards"], [])
-        factory.assert_called_once_with(region="local")
+        self.assertEqual((result, stdout), (2, ""))
+        self.assertIn("TURBOPUFFER_API_KEY must be set", stderr)
+        factory.assert_not_called()
 
     def test_provider_failure_is_redacted_from_cli_error(self) -> None:
         result, stdout, stderr = run_cli(["catalog", "list", "--json"], client=ExplodingClient())

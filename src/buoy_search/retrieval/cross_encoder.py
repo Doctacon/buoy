@@ -6,13 +6,6 @@ from functools import lru_cache
 import math
 from typing import Protocol, Sequence
 
-from buoy_search.local_models import (
-    LocalModelError,
-    configure_local_runtime,
-    configure_torch_threads,
-    model_thread_count,
-    resolved_device,
-)
 from buoy_search.model_progress import suppress_model_progress_bars
 
 CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -34,21 +27,13 @@ class CrossEncoderReranker(Protocol):
 
 class _PinnedMiniLMReranker:
     def __init__(self) -> None:
-        configure_local_runtime()
         try:
-            device = resolved_device()
-            # Validate before importing model dependencies; apply after the
-            # sentence-transformers import has made torch available.
-            model_thread_count()
             from sentence_transformers import CrossEncoder
-            configure_torch_threads()
         except ImportError as exc:  # pragma: no cover - depends on optional install.
             raise CrossEncoderRerankerError(
                 "sentence-transformers is required for cross-namespace reranking; "
-                "reinstall buoy-search"
+                "run `uv sync` first"
             ) from exc
-        except LocalModelError as exc:
-            raise CrossEncoderRerankerError(str(exc)) from exc
 
         try:
             with suppress_model_progress_bars():
@@ -57,16 +42,15 @@ class _PinnedMiniLMReranker:
                     revision=CROSS_ENCODER_REVISION,
                     local_files_only=True,
                     trust_remote_code=False,
-                    device=device,
+                    device="cpu",
                     max_length=CROSS_ENCODER_MAX_LENGTH,
                     model_kwargs={"use_safetensors": True},
                 )
         except Exception as exc:
             raise CrossEncoderRerankerError(
                 f"pinned reranker {CROSS_ENCODER_MODEL}@{CROSS_ENCODER_REVISION} "
-                "is not cached locally; run `buoy setup --download-models` once "
-                "where downloads are permitted, or transfer the prepared cache "
-                "(automatic downloads and substitutions are disabled)"
+                "is not cached locally; cache that exact revision and retry "
+                "(downloads and substitutions are disabled)"
             ) from exc
 
     def score(self, query: str, passages: Sequence[str]) -> list[float]:

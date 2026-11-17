@@ -1,8 +1,8 @@
-"""Hybrid retrieval helpers for DuckDB-backed site search.
+"""Hybrid retrieval helpers for turbopuffer-backed site search.
 
-Dry-run planning is local-only and model-free. Live retrieval is isolated behind
-``HybridRetriever.from_config`` and uses only the local database and cached
-models; no credentials or network service are involved.
+Dry-run planning is local-only. Live retrieval is intentionally isolated behind
+``HybridRetriever.from_config`` so credentials are read only when the caller has
+explicitly opted into a live turbopuffer query.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 import hashlib
 import math
+import os
 import re
 from typing import Any, Callable, Literal, Mapping, Protocol, Sequence
 import unicodedata
@@ -357,15 +358,15 @@ class RetrievalResult:
     ranking_pool: int
     ranking_aggregation: str
     dry_run: bool = False
-    local_index_operations: bool = True
+    turbopuffer_api_calls: bool = True
 
     def to_dict(self) -> dict[str, object]:
         return {
             "command": "retrieve",
             "dry_run": self.dry_run,
-            "credentials_required": False,
-            "local_index_operations": self.local_index_operations,
-            "api_calls_occurred": self.local_index_operations,
+            "credentials_required": not self.dry_run,
+            "turbopuffer_api_calls": self.turbopuffer_api_calls,
+            "api_calls_occurred": self.turbopuffer_api_calls,
             "content_retrieval_occurred": not self.dry_run,
             "query": self.query,
             "region": self.region,
@@ -483,8 +484,8 @@ class MultiNamespaceRetrievalResult:
         payload: dict[str, object] = {
             "command": "retrieve",
             "dry_run": False,
-            "credentials_required": False,
-            "local_index_operations": True,
+            "credentials_required": True,
+            "turbopuffer_api_calls": True,
             "api_calls_occurred": True,
             "content_retrieval_occurred": True,
             "query": self.query,
@@ -557,7 +558,7 @@ class RetrievalPlan:
             "dry_run": True,
             "plan": True,
             "credentials_required": False,
-            "local_index_operations": False,
+            "turbopuffer_api_calls": False,
             "api_calls_occurred": False,
             "query": self.query,
             "region": self.config.region,
@@ -572,9 +573,9 @@ class RetrievalPlan:
             "ranking_profile": self.options.ranking_profile,
             "ranking_pool": self.options.ranking_pool,
             "ranking_aggregation": self.options.ranking_aggregation,
-            "live_execution": "omit --dry-run/--plan to embed the query and call DuckDB",
+            "live_execution": "omit --dry-run/--plan to embed the query and call turbopuffer",
             "retrieval": {
-                "request": "DuckDB multi_query",
+                "request": "turbopuffer multi_query",
                 "subqueries": [ann_subquery, bm25_subquery],
                 "rerank_by": ["RRF"],
                 "fallback": "client-side reciprocal-rank fusion if server RRF is unsupported or separate lists are returned",
@@ -598,7 +599,7 @@ class MultiNamespaceRetrievalPlan:
             "dry_run": True,
             "plan": True,
             "credentials_required": False,
-            "local_index_operations": False,
+            "turbopuffer_api_calls": False,
             "api_calls_occurred": False,
             "query": self.query,
             "region": first.config.region,
@@ -651,7 +652,7 @@ class MultiNamespaceRetrievalPlan:
 
 
 class HybridRetriever:
-    """Small wrapper around query embedding and DuckDB multi-query."""
+    """Small wrapper around query embedding and turbopuffer multi-query."""
 
     def __init__(
         self,
@@ -671,7 +672,14 @@ class HybridRetriever:
         *,
         embedder: Embedder | None = None,
     ) -> "HybridRetriever":
-        """Build a local retriever; models must already be cached."""
+        """Build a live retriever, reading the API key from the environment only."""
+
+        api_key = os.environ.get("TURBOPUFFER_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "TURBOPUFFER_API_KEY must be set in the environment for live retrieval. "
+                "Use `retrieve --dry-run` or `retrieve --plan` to inspect the plan without credentials."
+            )
         selected_embedder = embedder
         if selected_embedder is None:
             selected_embedder = instrument_in_process_embedder(
@@ -681,7 +689,7 @@ class HybridRetriever:
                 )
             )
         try:
-            namespace = build_namespace(config=config)
+            namespace = build_namespace(config=config, api_key=api_key)
         except Exception:
             raise RuntimeError(
                 f"Could not prepare namespace {config.namespace!r}."
@@ -924,6 +932,12 @@ class MultiNamespaceRetriever:
         namespaces = [config.namespace for config in configs]
         if len(namespaces) != len(set(namespaces)):
             raise ValueError("namespace configs must be unique")
+        api_key = os.environ.get("TURBOPUFFER_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "TURBOPUFFER_API_KEY must be set in the environment for live retrieval. "
+                "Use `retrieve --dry-run` or `retrieve --plan` to inspect the plan without credentials."
+            )
         selected_embedder = embedder
         if selected_embedder is None:
             selected_embedder = instrument_in_process_embedder(
@@ -940,7 +954,7 @@ class MultiNamespaceRetriever:
         retrievers: list[HybridRetriever] = []
         for config in configs:
             try:
-                namespace = build_namespace(config=config)
+                namespace = build_namespace(config=config, api_key=api_key)
             except Exception:
                 raise RuntimeError(
                     f"Could not prepare namespace {config.namespace!r}."
@@ -1836,7 +1850,7 @@ def build_multi_query_subqueries(
     doc_kind: str | None = None,
     include_attributes: Sequence[str] = RETRIEVAL_ATTRIBUTES,
 ) -> list[dict[str, object]]:
-    """Build ANN and boosted BM25 subqueries for one DuckDB multi-query."""
+    """Build ANN and boosted BM25 subqueries for one turbopuffer multi-query."""
 
     common: dict[str, object] = {
         "limit": candidates,
@@ -1926,11 +1940,28 @@ def run_multi_query(
         return response, fusion
 
 
-def build_namespace(*, config: RuntimeConfig) -> object:
-    """Acquire a local namespace without opening the database or loading models."""
-    from buoy_search.storage.duckdb import DuckDBClient
+def build_namespace(*, config: RuntimeConfig, api_key: str) -> object:
+    try:
+        import turbopuffer as tpuf
+    except ImportError as exc:  # pragma: no cover - depends on optional install.
+        raise RuntimeError("turbopuffer is required for live retrieval. Run `uv sync` first.") from exc
 
-    return DuckDBClient().namespace(config.namespace)
+    if hasattr(tpuf, "api_key"):
+        setattr(tpuf, "api_key", api_key)
+    if hasattr(tpuf, "api_base_url"):
+        setattr(tpuf, "api_base_url", f"https://{config.region}.turbopuffer.com")
+    if hasattr(tpuf, "Turbopuffer"):
+        try:
+            client = tpuf.Turbopuffer(api_key=api_key, region=config.region)  # type: ignore[attr-defined]
+        except TypeError:
+            client = tpuf.Turbopuffer(api_key=api_key)  # type: ignore[attr-defined]
+        if hasattr(client, "namespace"):
+            return client.namespace(config.namespace)
+        if hasattr(client, "Namespace"):
+            return client.Namespace(config.namespace)
+    if hasattr(tpuf, "Namespace"):
+        return tpuf.Namespace(config.namespace)  # type: ignore[attr-defined]
+    raise RuntimeError("Unsupported turbopuffer SDK: no Namespace constructor found.")
 
 
 def is_unsupported_rerank_type_error(exc: TypeError) -> bool:
@@ -1956,8 +1987,8 @@ def user_friendly_query_error(exc: BaseException) -> str:
         else provider
     )
     return (
-        "Local retrieval failed. Confirm the --namespace has been indexed in this BUOY_HOME, "
-        "the database is accessible, and the cached embedding model matches the corpus. "
+        "Live retrieval failed. Likely fixes: confirm TURBOPUFFER_API_KEY is set, "
+        "the explicit --namespace has been indexed, and TURBOPUFFER_REGION matches the indexed corpus. "
         f"Provider error: {detail}."
     )
 

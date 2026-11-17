@@ -310,14 +310,13 @@ def add_database_source_arguments(command_parser: argparse.ArgumentParser) -> No
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="buoy",
-        description="Plan website, repository, document, DuckDB, BigQuery, and Snowflake sources. Planning is local-only with respect to DuckDB; remote warehouses authenticate only to the source.",
+        description="Plan website, repository, document, DuckDB, BigQuery, and Snowflake sources. Planning is local-only with respect to turbopuffer; remote warehouses authenticate only to the source.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     subparsers = parser.add_subparsers(dest="command")
 
     configure_catalog_parser(subparsers)
-    subparsers.add_parser("setup", help="one-time download of the pinned local models")
     subparsers.add_parser("mcp", help="serve read-only MCP tools over local stdio (optional extra)")
 
     crawl_parser = subparsers.add_parser(
@@ -326,8 +325,8 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Crawl an HTTP(S) website, ingest a public GitHub repository or local document, or read "
             "one document-shaped DuckDB, BigQuery, or Snowflake table/view. Remote database sources "
-            "use source credentials and APIs only; this command never reads index credentials "
-            "or writes to DuckDB."
+            "use source credentials and APIs only; this command never reads turbopuffer credentials "
+            "or writes to turbopuffer."
         ),
     )
     crawl_parser.add_argument(
@@ -487,11 +486,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     plan_parser = subparsers.add_parser(
         "plan",
-        help="plan a website, repository, local document, or one DuckDB/BigQuery/Snowflake relation; no DuckDB writes",
+        help="plan a website, repository, local document, or one DuckDB/BigQuery/Snowflake relation; no turbopuffer writes",
         description=(
             "Materialize one source into reviewable local plan artifacts. BigQuery uses Application "
             "Default Credentials and Snowflake uses a named connection during planning only. Source "
-            "warehouse API calls occur, but index credentials are not read and DuckDB is not called."
+            "warehouse API calls occur, but turbopuffer credentials are not read and turbopuffer is not called."
         ),
     )
     plan_parser.add_argument(
@@ -703,14 +702,13 @@ def build_parser() -> argparse.ArgumentParser:
     apply_parser.add_argument(
         "--region",
         default=None,
-        choices=[DEFAULT_REGION],
-        help="Compatibility label; local DuckDB uses only 'local'.",
+        help="Override TURBOPUFFER_REGION for apply and the registered retrieval contract.",
     )
     apply_parser.add_argument(
         "--batch-size",
         type=positive_int,
         default=64,
-        help="DuckDB upsert batch size for approved apply mode.",
+        help="Turbopuffer upsert batch size for approved apply mode.",
     )
     apply_parser.add_argument(
         "--embedding-batch-size",
@@ -749,7 +747,7 @@ def build_parser() -> argparse.ArgumentParser:
         "retrieve",
         help="retrieve relevant chunks across the most relevant corpora",
         description=(
-            "Automatically route through the local catalog, or bypass routing "
+            "Automatically route through the authenticated remote catalog, or bypass routing "
             "with one or more explicit --namespace values."
         ),
     )
@@ -832,21 +830,21 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "List or execute hand-authored retrieval smoke evals for the configured namespace. "
             "Default mode is safe: it lists eval questions and expected source hints without "
-            "credentials, embeddings, or DuckDB calls. Pass --live to run retrieval "
-            "against DuckDB."
+            "credentials, embeddings, or turbopuffer calls. Pass --live to run retrieval "
+            "against turbopuffer."
         ),
     )
     evals_parser.add_argument(
         "--live",
         action="store_true",
-        help="Execute evals against the local DuckDB index using cached models.",
+        help="Execute live evals. Reads TURBOPUFFER_API_KEY from the environment and calls turbopuffer.",
     )
     evals_parser.add_argument(
         "--dry-run",
         "--list",
         dest="dry_run",
         action="store_true",
-        help="List eval questions and expected hints without credentials or DuckDB API calls (default).",
+        help="List eval questions and expected hints without credentials or turbopuffer API calls (default).",
     )
     evals_parser.add_argument(
         "--top-k",
@@ -906,19 +904,18 @@ def add_runtime_config_arguments(
     *,
     require_namespace: bool = False,
 ) -> None:
-    """Add non-secret DuckDB runtime overrides to a command."""
+    """Add non-secret turbopuffer runtime overrides to a command."""
 
     command_parser.add_argument(
         "--region",
         default=None,
-        choices=[DEFAULT_REGION],
-        help="Compatibility label; local DuckDB uses only 'local'.",
+        help="Override TURBOPUFFER_REGION for this command without changing the environment.",
     )
     command_parser.add_argument(
         "--namespace",
         action="append",
         required=require_namespace,
-        help="Explicit DuckDB namespace to search; repeat up to three times to bypass automatic routing.",
+        help="Explicit turbopuffer namespace to search; repeat up to three times to bypass automatic routing.",
     )
     command_parser.add_argument(
         "--embedding-model",
@@ -1214,9 +1211,6 @@ def _apply_source_cap_defaults(args: argparse.Namespace, source: object) -> None
 
 
 def crawl_source(source: object, options: CrawlOptions) -> dict[str, object]:
-    from buoy_search.network_policy import require_source_network
-
-    require_source_network(source)
     source_kind = getattr(source, "kind", None)
     if source_kind == "duckdb_relation":
         from buoy_search.relations.duckdb import crawl_duckdb_relation
@@ -1431,7 +1425,7 @@ def _run_apply(args: argparse.Namespace) -> int:
         progress.finish()
         print(str(exc), file=sys.stderr)
         return 2
-    region = args.region or DEFAULT_REGION
+    region = args.region or os.environ.get("TURBOPUFFER_REGION", DEFAULT_REGION)
     if not args.approve:
         summary = apply_preflight_summary(
             verified,
@@ -1464,7 +1458,7 @@ def _run_apply(args: argparse.Namespace) -> int:
                 "dry_run": False,
                 "cancelled": True,
                 "confirmation": "declined_or_unavailable",
-                "local_index_operations": False,
+                "turbopuffer_api_calls": False,
                 "api_calls_occurred": False,
                 "state_updated": False,
             }
@@ -1827,7 +1821,6 @@ def _prepare_default_embedding_worker(
             or not activate
             or config.embedding_model != DEFAULT_EMBEDDING_MODEL
             or config.embedding_precision != DEFAULT_EMBEDDING_PRECISION
-            or os.environ.get("BUOY_DEVICE", "cpu") != "cpu"
             or not EMBEDDING_WORKER_CAPABILITY_FACTORY()
         ):
             return None
@@ -1836,7 +1829,6 @@ def _prepare_default_embedding_worker(
             not disabled
             and config.embedding_model == DEFAULT_EMBEDDING_MODEL
             and config.embedding_precision == DEFAULT_EMBEDDING_PRECISION
-            and os.environ.get("BUOY_DEVICE", "cpu") == "cpu"
             and EMBEDDING_WORKER_CAPABILITY_FACTORY()
         )
         set_policy(
@@ -2012,7 +2004,11 @@ def _run_retrieve(
                                     reranker_loader=lambda: reranker,
                                 )
                     except RuntimeError as exc:
-                        category = "model_error"
+                        category = (
+                            "configuration_error"
+                            if not os.environ.get("TURBOPUFFER_API_KEY")
+                            else "model_error"
+                        )
                         command.set_error_type(category)
                         raise _RetrieveCommandFailure(
                             f"Retrieval failed: {exc}", category
@@ -2044,6 +2040,13 @@ def _run_retrieve(
                         else None
                     ),
                 )
+                api_key = os.environ.get("TURBOPUFFER_API_KEY")
+                if not api_key:
+                    command.set_error_type("configuration_error")
+                    raise _RetrieveCommandFailure(
+                        "TURBOPUFFER_API_KEY must be set for automatic routing.",
+                        "configuration_error",
+                    )
                 try:
                     evidence_calibration = load_evidence_calibration()
                 except EvidenceCalibrationError as exc:
@@ -2063,6 +2066,7 @@ def _run_retrieve(
                         error_type="catalog_error",
                     ):
                         client = REMOTE_CATALOG_CLIENT_FACTORY(
+                            api_key=api_key,
                             region=base_config.region,
                         )
                         snapshot = read_remote_catalog(
@@ -2256,7 +2260,11 @@ def _run_retrieve(
                                     reranker_loader=load_command_reranker,
                                 )
                     except RuntimeError as exc:
-                        category = "model_error"
+                        category = (
+                            "configuration_error"
+                            if not os.environ.get("TURBOPUFFER_API_KEY")
+                            else "model_error"
+                        )
                         command.set_error_type(category)
                         raise _RetrieveCommandFailure(
                             f"Multi-corpus retrieval failed: {exc}", category
@@ -2370,7 +2378,7 @@ def _run_evals(args: argparse.Namespace) -> int:
 
 def print_crawl_text(payload: dict[str, object]) -> None:
     source_kind = payload.get("source_kind", "website")
-    print("Source crawl dry-run (no embeddings or index writes):")
+    print("Source crawl dry-run (no turbopuffer credentials, embeddings, or turbopuffer API calls):")
     print(f"  source_kind: {source_kind}")
     print(f"  base_url: {payload['base_url']}")
     if source_kind == "github_repo":
@@ -2421,7 +2429,7 @@ def print_crawl_text(payload: dict[str, object]) -> None:
 
 def print_plan_text(payload: dict[str, object]) -> None:
     source_kind = payload.get("source_kind", "website")
-    print("Source RAG plan (no embeddings or index writes):")
+    print("Source RAG plan (no turbopuffer credentials, embeddings, or turbopuffer API calls):")
     print(f"  source_kind: {source_kind}")
     print(f"  base_url: {payload['base_url']}")
     if source_kind == "github_repo":
@@ -2604,7 +2612,7 @@ def print_apply_text(payload: dict[str, object], *, stream: TextIO | None = None
     if approved:
         emit("Source index apply completed (confirmed live upsert path):")
     else:
-        emit("Source index apply preflight (no embeddings or index operations):")
+        emit("Source index apply preflight (no credentials, embeddings, or turbopuffer API calls):")
     emit(f"  source: {payload['base_url']}")
     emit(f"  plan_path: {payload['plan_path']}")
     emit(f"  plan_id: {payload['plan_id']}")
@@ -2736,7 +2744,7 @@ def print_retrieval_text(
     payload = output.to_dict()
     if payload.get("dry_run"):
         if "namespace" in payload:
-            print("Retrieval plan (dry-run; no embeddings or index operations):")
+            print("Retrieval plan (dry-run; no credentials, embeddings, or turbopuffer API calls):")
             print(f"  query: {payload['query']}")
             print(f"  namespace: {payload['namespace']} ({payload['region']})")
         else:
@@ -2810,7 +2818,7 @@ def print_retrieval_text(
                 f"aggregation={payload.get('ranking_aggregation')}"
             )
         print("  hybrid: ANN over vector + boosted BM25 over title/section_path/content + RRF per namespace")
-        print("  local: omit --dry-run/--plan to search DuckDB using cached models; no API key required")
+        print("  live: omit --dry-run/--plan to execute; TURBOPUFFER_API_KEY is read from the environment only")
         return
 
     hits = payload.get("hits", [])
@@ -2931,7 +2939,7 @@ def print_retrieval_text(
 
 def print_eval_text(payload: dict[str, object]) -> None:
     if payload.get("dry_run"):
-        print("Retrieval smoke evals (dry-run; no embeddings or index operations):")
+        print("Retrieval smoke evals (dry-run; no credentials, embeddings, or turbopuffer API calls):")
         print(f"  namespace: {payload['namespace']} ({payload['region']})")
         print(
             f"  evals: {payload['total']}; top_k: {payload['top_k']}; "
@@ -2939,7 +2947,7 @@ def print_eval_text(payload: dict[str, object]) -> None:
             f"ranking: {payload.get('ranking_mode')}/{payload.get('ranking_profile')}/"
             f"{payload.get('ranking_aggregation')}"
         )
-        print("  local: pass --live to evaluate the DuckDB index; no API key required")
+        print("  live: pass --live to execute; TURBOPUFFER_API_KEY is read from the environment only")
     else:
         print(
             f"Retrieval smoke evals: {payload['passed']}/{payload['total']} passed "
